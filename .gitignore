@@ -1,0 +1,33 @@
+﻿# dependências
+/node_modules
+/.pnp
+.pnp.*
+
+# testes
+/coverage
+/test-results/
+/playwright-report/
+
+# next.js
+/.next/
+/out/
+/build
+next-env.d.ts
+*.tsbuildinfo
+
+# segredos: nunca commitar; .env.example fica versionado
+.env*
+!.env.example
+
+# amostras de relatórios do Consistem têm dado real de cliente (ficam no Drive)
+docs/amostras/*.xlsx
+docs/amostras/*.csv
+docs/amostras/*.xls
+
+# misc
+.DS_Store
+*.pem
+npm-debug.log*
+.vercel
+.supabase/
+supabase/.temp/
