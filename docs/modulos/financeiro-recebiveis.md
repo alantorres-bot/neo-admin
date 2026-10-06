@@ -7,16 +7,16 @@ Código do módulo: `financeiro.recebiveis` · Prefixo das tabelas: `rec_`
 
 A aplicação executa a rotina de contas a receber de ponta a ponta: recebe os títulos, envia boletos, confirma pagamentos, cobra atrasos e controla renegociações, pedindo decisão humana só onde há risco.
 
-1. **Títulos:** importados do Consistem (relatório "Consulta de Títulos em Aberto", CSV/XLSX) ou lançados manualmente.
+1. **Títulos:** sincronizados da **API do Consistem** (contas a receber em aberto; ver seção 9), com importação de relatório CSV/XLSX como plano B, ou lançados manualmente.
 2. **Boletos:** sem API bancária. O boleto é gerado no banco/Consistem; o PDF é anexado na aplicação, que cuida do envio e do acompanhamento.
-3. **Pagamentos:** sem retorno bancário. Baixa pela importação do relatório de títulos pagos do Consistem ou baixa manual com comprovante.
+3. **Pagamentos:** sem retorno bancário. A API lista só títulos em aberto: o que some da lista vira pendência "Possível baixa" para conferência humana (data e valor). Baixa também por importação do relatório de títulos pagos ou manual com comprovante.
 4. **Canais:** e-mail e WhatsApp.
 
 ## 2. Escopo
 
 | Entra no MVP | Fica fora (fase 2) |
 | --- | --- |
-| Importação da carteira e cadastro manual | Integração por API com o Consistem |
+| Sincronização da carteira pela API do Consistem, importação de relatório (plano B) e cadastro manual | Baixa automática pela API (depende de a API expor títulos pagos) |
 | Clientes, contatos de cobrança e contratos | Emissão automática de boletos |
 | Upload do PDF do boleto e vínculo com o título | Baixa automática por retorno bancário (CNAB) |
 | Envio de boleto por e-mail e WhatsApp, com registro | Negativação e protesto automático |
@@ -107,14 +107,28 @@ Ver `supabase/migrations/0100_financeiro_recebiveis.sql`.
 | webhook-whatsapp | Resposta do cliente | Registra interação; botões "Já programei", "2ª via", "Quero negociar" atualizam estágio |
 | resumo-semanal | Segunda 7h30 | Aging, recebido x previsto, acordos em risco; rascunho no Gmail |
 
-## 9. Importação do Consistem
+## 9. Integração com o Consistem (API de contas a receber)
 
-O layout exato dos relatórios será fornecido por amostra (`docs/amostras/`). Mapear colunas em arquivo de configuração, não fixo no código. Campos mínimos esperados: empresa, código/nome do cliente, CNPJ, documento, parcela, emissão, vencimento, valor, (pagos: data e valor do pagamento).
+Decisão do usuário (06/10/2026): usar a API REST do Consistem, a mesma já em produção no **gestor-akf** (`consistem_api.py`) e no NEOControl.
+
+- **Acesso:** base `https://erp.neoformas.com.br/api`; header `Authorization: <token do CSMEN050>` (sem "Bearer") e header `empresa: <código>`. Paginação por `continuationToken`; retry em HTTP 429.
+- **Endpoints:** `GET /financeiro/v10/contasReceber?tipoTitulo=0` (0 = em aberto: `codTitulo, codCliente, codPortador, dataEmissao, dataVenc, valorTitulo`) e `GET /cadastrosgerais/v10/cliente?situacao=1` (nome e CPF/CNPJ; a API de títulos só traz o código do cliente).
+- **Segredo:** `CONSISTEM_API_KEY` em *Supabase > Edge Functions > Secrets* (nunca em arquivo versionado nem no chat). Opcional: `CONSISTEM_BASE_URL`.
+- **Empresa:** `empresas.codigo_erp` (migration 0101) liga a empresa do Neo Admin ao código dela no Consistem. Sem código, não sincroniza.
+- **Função:** `supabase/functions/rec-sincronizar-consistem` (lógica pura e testada em `supabase/functions/_shared/consistem-receber.ts`). Chamável por gestor do Financeiro ou por agendamento. Ações: `sincronizar` (com `simular: true` só mostra o que faria) e `amostra` (nomes e tipos dos campos da API, sem valores).
+- **Regras:**
+  - Chave de conciliação: empresa + `codTitulo` (+ parcela, hoje sempre `1`). Título novo entra como `importado`; título existente só tem emissão, vencimento e valor atualizados.
+  - Cliente: casa por `contrapartes.codigo_erp`; senão por CPF/CNPJ (e passa a ter o código); senão cria como `cliente`. Documento inválido ou repetido entra sem documento.
+  - **Nunca baixa sozinho.** Título aberto (origem importação) que a API deixou de listar vira pendência "Possível baixa: <título>" na Fila do dia; se voltar à lista, a pendência é cancelada.
+  - Lista vazia da API com títulos abertos no banco = provável falha: nada é alterado.
+  - Pago, renegociado, cancelado e origem manual/acordo nunca são alterados pela sincronização; se a API ainda os lista como abertos, só contam como divergência.
+  - Cada execução grava em `importacoes` (`arquivo = 'api:consistem'`; `linhas_baixadas` = possíveis baixas).
+- **Plano B (relatório):** o importador genérico (CSV/XLSX, modelo de mapeamento salvo) continua para títulos pagos e para contingência. Amostra real em `docs/amostras/` (fora do Git).
 
 ## 10. Fases internas do módulo
 
 1. **Fase 1 — Base do módulo:** migration 0100, configuração de clientes no módulo, contratos (encargos, cedido), menu Financeiro > Recebíveis. (Login, empresas e contrapartes já vêm do núcleo.)
-2. **Fase 2 — Carteira:** importação de títulos em aberto e pagos, tela Carteira, view de valor atualizado, testes de encargos.
+2. **Fase 2 — Carteira:** sincronização pela API (Edge Function `rec-sincronizar-consistem`, feita), importação de títulos pagos, tela Carteira, view de valor atualizado, testes de encargos.
 3. **Fase 3 — Boletos:** upload, leitura do PDF, vínculo com títulos.
 4. **Fase 4 — Régua e e-mail:** modelos, motor da régua, Fila do dia, rascunhos no Gmail.
 5. **Fase 5 — Painel e ficha do cliente.**
