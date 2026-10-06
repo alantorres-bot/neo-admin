@@ -34,6 +34,7 @@ const primeiro = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] 
 type LinhaTitulo = {
   id: string; contraparte_id: string; documento: string; parcela: string; emissao: string | null; vencimento: string;
   valor: number | string; valor_atualizado: number | string; estagio: string; dias_atraso: number; faixa: string; cedido: boolean; contestado: boolean;
+  nota_fiscal: string | null; nota_saida_id: string | null;
 };
 
 export default async function PaginaRecebiveis({ searchParams }: PageProps<"/financeiro/recebiveis">) {
@@ -47,6 +48,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   const faixaPedida = primeiro(parametros.faixa);
   const faixa = ehFaixa(faixaPedida) ? faixaPedida : null;
   const pagina = Math.max(1, Number.parseInt(primeiro(parametros.pagina), 10) || 1);
+  const aguardandoBoleto = primeiro(parametros.situacao) === "aguardando_boleto";
 
   const supabase = await criarClienteServidor();
 
@@ -64,6 +66,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     if (!data || data.length < 1000) break;
   }
   const resumo = resumirCarteira(resumoLinhas);
+  const { count: qtdAguardandoBoleto } = await supabase.from("rec_vw_titulos").select("id", { count: "exact", head: true }).eq("estagio", "aguardando_boleto");
   const vencidoAtualizado = resumo.atualizadoCentavos - resumo.aVencer.centavos; // a vencer não tem encargos
 
   // 2) Lista filtrada e paginada.
@@ -75,12 +78,13 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   }
   let consulta = supabase
     .from("rec_vw_titulos")
-    .select("id, contraparte_id, documento, parcela, emissao, vencimento, valor, valor_atualizado, estagio, dias_atraso, faixa, cedido, contestado", { count: "exact" })
+    .select("id, contraparte_id, documento, parcela, emissao, vencimento, valor, valor_atualizado, estagio, dias_atraso, faixa, cedido, contestado, nota_fiscal, nota_saida_id", { count: "exact" })
     .neq("faixa", "encerrado")
     .order("vencimento")
     .order("documento")
     .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
   if (faixa) consulta = consulta.eq("faixa", faixa);
+  if (aguardandoBoleto) consulta = consulta.eq("estagio", "aguardando_boleto");
   if (busca) {
     consulta = idsClientes.length > 0
       ? consulta.or(`documento.ilike.%${busca}%,contraparte_id.in.(${idsClientes.join(",")})`)
@@ -99,6 +103,14 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     for (const c of data ?? []) nomes.set(c.id as string, c.nome as string);
   }
 
+  // NF e pedidos dos títulos desta página.
+  const idsNotas = [...new Set(titulos.map((t) => t.nota_saida_id).filter((x): x is string => x !== null))];
+  const pedidosDaNota = new Map<string, string[]>();
+  if (idsNotas.length > 0) {
+    const { data } = await supabase.from("rec_notas_saida").select("id, pedidos").in("id", idsNotas);
+    for (const n of data ?? []) pedidosDaNota.set(n.id as string, (n.pedidos as string[]) ?? []);
+  }
+
   // 3) Última sincronização com o Consistem.
   const { data: ultimas } = await supabase.from("importacoes")
     .select("criado_em, linhas_novas, linhas_alteradas, linhas_baixadas")
@@ -112,6 +124,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     const qs = new URLSearchParams();
     if (busca) qs.set("q", busca);
     if (faixa) qs.set("faixa", faixa);
+    if (aguardandoBoleto) qs.set("situacao", "aguardando_boleto");
     if (p > 1) qs.set("pagina", String(p));
     const texto = qs.toString();
     return `/financeiro/recebiveis${texto ? `?${texto}` : ""}`;
@@ -175,13 +188,17 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
             <option value="">Todas as faixas</option>
             {FAIXAS_ABERTAS.map((f) => <option key={f} value={f}>{ROTULO_FAIXA[f]}</option>)}
           </select>
+          <select name="situacao" defaultValue={aguardandoBoleto ? "aguardando_boleto" : ""} aria-label="Situação" className="h-8 rounded-lg border bg-background px-2 text-sm">
+            <option value="">Todas as situações</option>
+            <option value="aguardando_boleto">Aguardando boleto ({qtdAguardandoBoleto ?? 0})</option>
+          </select>
           <Button type="submit" variant="secondary">Filtrar</Button>
-          {(busca || faixa) && <Button variant="ghost" render={<Link href="/financeiro/recebiveis" />}>Limpar</Button>}
+          {(busca || faixa || aguardandoBoleto) && <Button variant="ghost" render={<Link href="/financeiro/recebiveis" />}>Limpar</Button>}
         </form>
 
         {titulos.length === 0 ? (
           <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">
-            {total === 0 && !busca && !faixa ? "Nenhum título em aberto. Use “Sincronizar agora” para trazer a carteira do Consistem." : "Nenhum título encontrado com esse filtro."}
+            {total === 0 && !busca && !faixa && !aguardandoBoleto ? "Nenhum título em aberto. Use “Sincronizar agora” para trazer a carteira do Consistem." : "Nenhum título encontrado com esse filtro."}
           </p>
         ) : (
           <div className="overflow-x-auto rounded-lg border">
@@ -189,6 +206,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
               <TableHeader>
                 <TableRow>
                   <TableHead>Documento</TableHead>
+                  <TableHead>Pedido / NF</TableHead>
                   <TableHead>Cliente</TableHead>
                   <TableHead>Emissão</TableHead>
                   <TableHead>Vencimento</TableHead>
@@ -202,6 +220,10 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
                 {titulos.map((t) => (
                   <TableRow key={t.id}>
                     <TableCell className="font-medium tabular-nums">{t.documento}{t.parcela !== "1" ? `/${t.parcela}` : ""}</TableCell>
+                    <TableCell className="text-xs leading-tight text-muted-foreground">
+                      {t.nota_fiscal ? <span className="block">NF {t.nota_fiscal}</span> : <span className="block">—</span>}
+                      {(t.nota_saida_id && pedidosDaNota.get(t.nota_saida_id)?.length) ? <span className="block">Pedido {pedidosDaNota.get(t.nota_saida_id)!.join(", ")}</span> : null}
+                    </TableCell>
                     <TableCell className="max-w-72 truncate" title={nomes.get(t.contraparte_id)}>{nomes.get(t.contraparte_id) ?? "—"}</TableCell>
                     <TableCell className="tabular-nums">{formatarData(t.emissao) || "—"}</TableCell>
                     <TableCell className="tabular-nums">{formatarData(t.vencimento)}</TableCell>
@@ -221,7 +243,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-          <span>{total} {total === 1 ? "título" : "títulos"}{(busca || faixa) ? " no filtro" : ""}</span>
+          <span>{total} {total === 1 ? "título" : "títulos"}{(busca || faixa || aguardandoBoleto) ? " no filtro" : ""}</span>
           {totalPaginas > 1 && (
             <span className="flex items-center gap-2">
               {pagina > 1 && <Button variant="outline" size="sm" render={<Link href={link(pagina - 1)} />}>Anterior</Button>}

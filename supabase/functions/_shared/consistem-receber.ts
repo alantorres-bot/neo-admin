@@ -133,6 +133,11 @@ export type TituloApi = {
   vencimento: string;
   valorCentavos: number;
   codPortador: string;
+  /** Número da nota fiscal de origem (sem zeros à esquerda); vazio nos lançamentos que não vêm de NF. */
+  nota: string;
+  /** Chave de acesso da NF-e (44 dígitos) ou vazio. */
+  chaveNfe: string;
+  tipoCobranca: string;
 };
 
 export type ResultadoTitulo = { ok: true; titulo: TituloApi } | { ok: false; motivo: string; documento: string };
@@ -158,6 +163,9 @@ export function normalizarTituloApi(r: Record<string, unknown>): ResultadoTitulo
       vencimento,
       valorCentavos,
       codPortador: texto(r.codPortador),
+      nota: numeroNota(r.notaFiscal),
+      chaveNfe: chaveNfe(r.chaveNfeNotaFiscal),
+      tipoCobranca: texto(r.tipoCobranca),
     },
   };
 }
@@ -212,6 +220,11 @@ export type TituloBanco = {
   valorCentavos: number;
   estagio: string;
   origem: string;
+  /** Dados de nota/cobrança já gravados (ausentes nos títulos anteriores à migration 0103). */
+  notaFiscal?: string | null;
+  chaveNfe?: string | null;
+  codPortador?: string | null;
+  tipoCobranca?: string | null;
 };
 
 export const ESTAGIOS_ENCERRADOS = ["pago", "renegociado", "cancelado"] as const;
@@ -219,12 +232,15 @@ const encerrado = (estagio: string) => (ESTAGIOS_ENCERRADOS as readonly string[]
 export const chaveTitulo = (documento: string, parcela: string) => `${documento}\u0000${parcela}`;
 
 export type Alteracao = { id: string; campos: { vencimento?: string; valor?: number; emissao?: string | null } };
+/** Completa dados de nota e cobrança que o Consistem informa e o banco ainda não tinha (ou que mudaram, como o portador). */
+export type Enriquecimento = { id: string; campos: { nota_fiscal?: string; chave_nfe?: string; cod_portador?: string; tipo_cobranca?: string } };
 
 export type Plano = {
   /** Existem na API e não no banco. */
   novos: TituloApi[];
   /** Existem nos dois, com data/valor diferentes (a API é a fonte da verdade desses campos). */
   alterados: Alteracao[];
+  enriquecidos: Enriquecimento[];
   inalterados: number;
   /** Abertos no banco (veio do Consistem) que a API não lista mais: provável pagamento. NUNCA baixa sozinho. */
   possiveisBaixas: TituloBanco[];
@@ -240,7 +256,7 @@ export function planejarSincronizacao(titulosApi: TituloApi[], titulosBanco: Tit
   const banco = new Map(titulosBanco.map((t) => [chaveTitulo(t.documento, t.parcela), t]));
   const vistos = new Set<string>();
   const plano: Plano = {
-    novos: [], alterados: [], inalterados: 0, possiveisBaixas: [], presentes: [], divergentes: [], duplicadosApi: [],
+    novos: [], alterados: [], enriquecidos: [], inalterados: 0, possiveisBaixas: [], presentes: [], divergentes: [], duplicadosApi: [],
   };
 
   for (const t of titulosApi) {
@@ -267,6 +283,13 @@ export function planejarSincronizacao(titulosApi: TituloApi[], titulosBanco: Tit
     if (t.emissao && existente.emissao !== t.emissao) campos.emissao = t.emissao;
     if (Object.keys(campos).length > 0) plano.alterados.push({ id: existente.id, campos });
     else plano.inalterados++;
+
+    const extra: Enriquecimento["campos"] = {};
+    if (t.nota && !existente.notaFiscal) extra.nota_fiscal = t.nota;
+    if (t.chaveNfe && !existente.chaveNfe) extra.chave_nfe = t.chaveNfe;
+    if (t.codPortador && t.codPortador !== (existente.codPortador ?? "")) extra.cod_portador = t.codPortador;
+    if (t.tipoCobranca && t.tipoCobranca !== (existente.tipoCobranca ?? "")) extra.tipo_cobranca = t.tipoCobranca;
+    if (Object.keys(extra).length > 0) plano.enriquecidos.push({ id: existente.id, campos: extra });
   }
 
   for (const t of titulosBanco) {
@@ -274,6 +297,184 @@ export function planejarSincronizacao(titulosApi: TituloApi[], titulosBanco: Tit
     if (!vistos.has(chaveTitulo(t.documento, t.parcela))) plano.possiveisBaixas.push(t);
   }
   return plano;
+}
+
+// ---------------------------------------------------------------- NF de saída e entrada na esteira (Etapa 1a)
+
+export type NotaSaida = {
+  nota: string;
+  serie: string;
+  chave: string;
+  codCliente: string;
+  valorCentavos: number | null;
+  emissao: string | null;
+  /** Todos os pedidos da NF: o do cabeçalho e os dos itens (faturamento agrupado). */
+  pedidos: string[];
+};
+
+/** NF de saída da API. O pedido vem no cabeçalho (`codPedido`) ou nos itens (`itemPedidoAgrupado[].codPedido`). */
+export function normalizarNotaSaida(r: Record<string, unknown>): NotaSaida | null {
+  const nota = numeroNota(r.codNumNota);
+  if (nota === "") return null;
+  const pedidos = new Set<string>();
+  const cabecalho = texto(r.codPedido);
+  if (cabecalho) pedidos.add(cabecalho);
+  const itens = Array.isArray(r.itensNotaFiscalSaida) ? (r.itensNotaFiscalSaida as Record<string, unknown>[]) : [];
+  for (const item of itens) {
+    const agrupados = Array.isArray(item?.itemPedidoAgrupado) ? (item.itemPedidoAgrupado as Record<string, unknown>[]) : [];
+    for (const a of agrupados) {
+      const p = texto(a?.codPedido);
+      if (p) pedidos.add(p);
+    }
+  }
+  return {
+    nota,
+    serie: texto(r.serie),
+    chave: chaveNfe(r.chaveAcesso),
+    codCliente: texto(r.codCliente),
+    valorCentavos: paraCentavos(r.valorTotal),
+    emissao: paraDataIso(r.dataEmissao),
+    pedidos: [...pedidos].sort(),
+  };
+}
+
+export type IndiceNotas = { porChave: Map<string, number>; porNotaCliente: Map<string, number[]> };
+
+export function indexarNotas(notas: readonly NotaSaida[]): IndiceNotas {
+  const porChave = new Map<string, number>();
+  const porNotaCliente = new Map<string, number[]>();
+  notas.forEach((n, i) => {
+    if (n.chave) porChave.set(n.chave, i);
+    const k = `${n.nota}\u0000${n.codCliente}`;
+    porNotaCliente.set(k, [...(porNotaCliente.get(k) ?? []), i]);
+  });
+  return { porChave, porNotaCliente };
+}
+
+export type Vinculo =
+  | { ok: true; indice: number; via: "chave" | "nota_cliente" }
+  | { ok: false; motivo: "sem_nota" | "nao_encontrada" | "ambigua" };
+
+/**
+ * Liga o título à NF que o originou. Só os dois caminhos provados com dados reais (Etapa 0): chave da NF-e e
+ * número da nota + cliente. Mais de uma NF candidata = ambígua (não liga, para nunca ligar errado).
+ */
+export function ligarTituloNota(t: Pick<TituloApi, "nota" | "chaveNfe" | "codCliente">, indice: IndiceNotas): Vinculo {
+  if (t.chaveNfe) {
+    const i = indice.porChave.get(t.chaveNfe);
+    if (i !== undefined) return { ok: true, indice: i, via: "chave" };
+  }
+  if (!t.nota) return { ok: false, motivo: "sem_nota" };
+  const candidatas = indice.porNotaCliente.get(`${t.nota}\u0000${t.codCliente}`) ?? [];
+  if (candidatas.length === 1) return { ok: true, indice: candidatas[0], via: "nota_cliente" };
+  return { ok: false, motivo: candidatas.length > 1 ? "ambigua" : "nao_encontrada" };
+}
+
+/** Tantos títulos novos de uma vez indicam carga em lote (banco vazio, reimportação), não faturamento do dia. */
+export const LIMITE_ENTRADA_LOTE = 50;
+/** O boleto precisa estar pronto antes do D-7 da régua (envio do boleto). */
+export const DIAS_ANTES_VENCIMENTO_BOLETO = 8;
+export const PREFIXO_BOLETO = "Anexar boleto";
+
+export type DecisaoEntrada = { abrir: boolean; motivo?: "sem_inicio" | "antes_do_inicio" | "lote_grande" | "sem_novos" };
+
+/** Decide se os títulos novos desta rodada entram na esteira (abrem pendência de boleto). `inicio` = data configurada. */
+export function decidirEntrada(qtdNovos: number, hoje: string, inicio: string | null): DecisaoEntrada {
+  if (qtdNovos === 0) return { abrir: false, motivo: "sem_novos" };
+  if (!inicio) return { abrir: false, motivo: "sem_inicio" };
+  if (hoje < inicio) return { abrir: false, motivo: "antes_do_inicio" };
+  if (qtdNovos > LIMITE_ENTRADA_LOTE) return { abrir: false, motivo: "lote_grande" };
+  return { abrir: true };
+}
+
+const diasEntre = (a: string, b: string) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000);
+
+/** Prazo para anexar o boleto: D-8 do vencimento mais próximo; se já passou, hoje. */
+export function prazoBoleto(vencimento: string, hoje: string): string {
+  const alvo = addDias(vencimento, -DIAS_ANTES_VENCIMENTO_BOLETO);
+  return alvo > hoje ? alvo : hoje;
+}
+
+/** Quanto mais perto do vencimento, mais urgente: até 3 dias crítica, até 10 alta, depois normal. */
+export function criticidadeBoleto(vencimento: string, hoje: string): "critica" | "alta" | "normal" {
+  const dias = diasEntre(vencimento, hoje);
+  if (dias <= 3) return "critica";
+  if (dias <= 10) return "alta";
+  return "normal";
+}
+
+// ---- Pendência "Anexar boleto": calculada a partir do que está no banco (títulos em `aguardando_boleto`), não do
+// que chegou nesta rodada. Assim a função é idempotente e uma rodada que falhou no meio é consertada pela seguinte.
+
+export type TituloEsteira = {
+  id: string;
+  documento: string;
+  parcela: string;
+  vencimento: string;
+  valorCentavos: number;
+  notaSaidaId: string | null;
+  contraparteId: string;
+  codCliente: string;
+  nomeCliente: string;
+};
+
+export type NotaEsteira = { id: string; nota: string; pedidos: string[] };
+
+export type GrupoBoleto = {
+  /** Uma pendência por NF; título sem NF = uma pendência por título. */
+  referenciaTabela: "rec_notas_saida" | "rec_titulos";
+  referenciaId: string;
+  nota: NotaEsteira | null;
+  titulos: TituloEsteira[];
+  contraparteId: string;
+  codCliente: string;
+  nomeCliente: string;
+  vencimentoMaisProximo: string;
+  valorCentavos: number;
+};
+
+/** Agrupa os títulos aguardando boleto: parcelas da mesma NF viram um grupo; sem NF, um grupo por título. */
+export function agruparBoletosPendentes(titulos: readonly TituloEsteira[], notas: readonly NotaEsteira[]): GrupoBoleto[] {
+  const notaPorId = new Map(notas.map((n) => [n.id, n]));
+  const grupos = new Map<string, GrupoBoleto>();
+  for (const t of titulos) {
+    const nota = t.notaSaidaId ? (notaPorId.get(t.notaSaidaId) ?? null) : null;
+    const referenciaTabela = nota ? "rec_notas_saida" : "rec_titulos";
+    const referenciaId = nota ? nota.id : t.id;
+    const g = grupos.get(referenciaId) ?? {
+      referenciaTabela, referenciaId, nota, titulos: [], contraparteId: t.contraparteId, codCliente: t.codCliente,
+      nomeCliente: t.nomeCliente, vencimentoMaisProximo: t.vencimento, valorCentavos: 0,
+    } as GrupoBoleto;
+    g.titulos.push(t);
+    g.valorCentavos += t.valorCentavos;
+    if (t.vencimento < g.vencimentoMaisProximo) g.vencimentoMaisProximo = t.vencimento;
+    grupos.set(referenciaId, g);
+  }
+  return [...grupos.values()].sort((a, b) => a.vencimentoMaisProximo.localeCompare(b.vencimentoMaisProximo) || a.referenciaId.localeCompare(b.referenciaId));
+}
+
+/** Título da pendência. Começa sempre por PREFIXO_BOLETO (a função consulta as abertas por esse prefixo). */
+export function tituloPendenciaBoleto(g: GrupoBoleto): string {
+  const qtd = g.titulos.length;
+  const quem = g.nomeCliente.trim() || `cliente ${g.codCliente}`;
+  const primeiro = g.titulos[0];
+  const origem = g.nota ? `NF ${g.nota.nota}` : primeiro.documento + (primeiro.parcela !== "1" ? `/${primeiro.parcela}` : "");
+  return `${PREFIXO_BOLETO}${qtd > 1 ? "(s)" : ""}: ${origem} — ${quem}${qtd > 1 ? ` (${qtd} parcelas)` : ""}`;
+}
+
+const dataBr = (iso: string) => iso.split("-").reverse().join("/");
+const moedaBr = (centavos: number) => {
+  const [inteiro, frac] = (centavos / 100).toFixed(2).split(".");
+  return `R$ ${inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${frac}`;
+};
+
+/** Descrição da pendência: o que anexar (documento, vencimento, valor) e os pedidos da NF. */
+export function descricaoPendenciaBoleto(g: GrupoBoleto): string {
+  const ordenados = [...g.titulos].sort((a, b) => a.vencimento.localeCompare(b.vencimento) || a.documento.localeCompare(b.documento));
+  const linhas = ordenados.slice(0, 12).map((t) => `• ${t.documento}${t.parcela !== "1" ? `/${t.parcela}` : ""} — vence ${dataBr(t.vencimento)} — ${moedaBr(t.valorCentavos)}`);
+  if (ordenados.length > 12) linhas.push(`… e mais ${ordenados.length - 12}`);
+  const pedidos = g.nota && g.nota.pedidos.length > 0 ? `\nPedido${g.nota.pedidos.length > 1 ? "s" : ""}: ${g.nota.pedidos.join(", ")}.` : "";
+  return `Anexe o boleto e envie ao cliente até o prazo da pendência (o envio da régua é 7 dias antes do vencimento).\n${linhas.join("\n")}${pedidos}`;
 }
 
 // ---------------------------------------------------------------- vínculo NF de saída <-> título (Etapa 0)

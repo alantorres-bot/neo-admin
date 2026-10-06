@@ -77,7 +77,7 @@ describe("normalizarTituloApi", () => {
     const r = normalizarTituloApi(base);
     expect(r).toEqual({
       ok: true,
-      titulo: { documento: "Z00028B", parcela: "1", codCliente: "191", emissao: "2026-09-28", vencimento: "2026-10-28", valorCentavos: 5_400_000, codPortador: "91" },
+      titulo: { documento: "Z00028B", parcela: "1", codCliente: "191", emissao: "2026-09-28", vencimento: "2026-10-28", valorCentavos: 5_400_000, codPortador: "91", nota: "", chaveNfe: "", tipoCobranca: "" },
     });
   });
   it("usa o campo de parcela quando a API trouxer", () => {
@@ -183,7 +183,7 @@ describe("buscarTodasPaginas", () => {
 
 describe("planejarSincronizacao", () => {
   const api = (documento: string, extra: Partial<TituloApi> = {}): TituloApi => ({
-    documento, parcela: "1", codCliente: "1", emissao: "2026-09-01", vencimento: "2026-10-10", valorCentavos: 100_00, codPortador: "91", ...extra,
+    documento, parcela: "1", codCliente: "1", emissao: "2026-09-01", vencimento: "2026-10-10", valorCentavos: 100_00, codPortador: "91", nota: "", chaveNfe: "", tipoCobranca: "", ...extra,
   });
   const banco = (id: string, documento: string, extra: Partial<TituloBanco> = {}): TituloBanco => ({
     id, documento, parcela: "1", emissao: "2026-09-01", vencimento: "2026-10-10", valorCentavos: 100_00, estagio: "importado", origem: "importacao", ...extra,

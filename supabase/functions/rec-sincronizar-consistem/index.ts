@@ -25,25 +25,44 @@
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import {
   addDias,
+  agruparBoletosPendentes,
   analisarVinculo,
   BASE_URL_PADRAO,
   buscarObjeto,
   buscarTodasPaginas,
+  chaveTitulo,
   ConsistemErro,
+  criticidadeBoleto,
+  decidirEntrada,
+  descricaoPendenciaBoleto,
   documentoFormatado,
+  indexarNotas,
+  ligarTituloNota,
   normalizarClienteApi,
+  normalizarNotaSaida,
   normalizarTituloApi,
   PAGINACAO,
   planejarSincronizacao,
+  prazoBoleto,
+  PREFIXO_BOLETO,
+  tituloPendenciaBoleto,
   type ClienteApi,
   type ConfigConsistem,
+  type NotaEsteira,
+  type NotaSaida,
   type TituloApi,
   type TituloBanco,
+  type TituloEsteira,
 } from "../_shared/consistem-receber.ts";
 
 const MODULO = "financeiro.recebiveis";
 const PREFIXO_BAIXA = "Possível baixa: ";
 const LOTE = 200;
+const CONFIG_INICIO_ESTEIRA = "financeiro.recebiveis.esteira_a_partir_de";
+
+/** Data de hoje no fuso de Cuiabá, 'aaaa-mm-dd'. */
+const hojeCuiaba = (): string =>
+  new Intl.DateTimeFormat("en-CA", { timeZone: "America/Cuiaba", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
 const CABECALHOS = { "Content-Type": "application/json; charset=utf-8" };
 const responder = (corpo: Record<string, unknown>, status = 200) =>
@@ -164,8 +183,9 @@ async function sincronizarEmpresa(
 ): Promise<ResumoEmpresa> {
   const cfg: ConfigConsistem = { ...cfgBase, empresa: empresa.codigo_erp };
   const buscar = (url: string, init: { headers: Record<string, string> }) => fetch(url, init);
+  const hoje = hojeCuiaba();
 
-  // 1) API
+  // 1) API: títulos em aberto
   const registros = await buscarTodasPaginas(buscar, cfg, "financeiro/v10/contasReceber", { tipoTitulo: 0, paginacao: PAGINACAO });
   const titulosApi: TituloApi[] = [];
   const recusados: { documento: string; motivo: string }[] = [];
@@ -179,16 +199,19 @@ async function sincronizarEmpresa(
   type LinhaTitulo = {
     id: string; contraparte_id: string; documento: string; parcela: string; emissao: string | null;
     vencimento: string; valor: number | string; estagio: string; origem: string;
+    nota_fiscal: string | null; chave_nfe: string | null; cod_portador: string | null; tipo_cobranca: string | null; nota_saida_id: string | null;
   };
   const linhas = await lerTudo<LinhaTitulo>((de, ate) =>
     banco.from("rec_titulos")
-      .select("id, contraparte_id, documento, parcela, emissao, vencimento, valor, estagio, origem")
+      .select("id, contraparte_id, documento, parcela, emissao, vencimento, valor, estagio, origem, nota_fiscal, chave_nfe, cod_portador, tipo_cobranca, nota_saida_id")
       .eq("empresa_id", empresa.id).order("id").range(de, ate));
   const titulosBanco: TituloBanco[] = linhas.map((l) => ({
     id: l.id, documento: l.documento, parcela: l.parcela, emissao: l.emissao, vencimento: l.vencimento,
     valorCentavos: Math.round(Number(l.valor) * 100), estagio: l.estagio, origem: l.origem,
+    notaFiscal: l.nota_fiscal, chaveNfe: l.chave_nfe, codPortador: l.cod_portador, tipoCobranca: l.tipo_cobranca,
   }));
   const contraparteDoTitulo = new Map(linhas.map((l) => [l.id, l.contraparte_id]));
+  const linhaPorChave = new Map(linhas.map((l) => [chaveTitulo(l.documento, l.parcela), l]));
 
   // Trava de segurança: lista vazia da API com títulos abertos no banco = provável falha, não "todos pagaram".
   const abertosDoConsistem = titulosBanco.filter((t) => t.origem === "importacao" && !["pago", "renegociado", "cancelado"].includes(t.estagio)).length;
@@ -197,11 +220,62 @@ async function sincronizarEmpresa(
   }
 
   const plano = planejarSincronizacao(titulosApi, titulosBanco);
+
+  // 2b) NFs de saída: de qual nota veio cada título e quais pedidos ela atende. Janela: os últimos 7 dias e, se houver
+  // título ainda sem nota ligada (novo, ou anterior à migration 0103) emitido nos últimos 60 dias, desde a emissão dele.
+  const presentes = new Set(plano.presentes);
+  const novosPorChave = new Set(plano.novos.map((t) => chaveTitulo(t.documento, t.parcela)));
+  const precisaLigar = titulosApi.filter((t) => {
+    if (!t.nota && !t.chaveNfe) return false;
+    const chave = chaveTitulo(t.documento, t.parcela);
+    if (novosPorChave.has(chave)) return true;
+    const l = linhaPorChave.get(chave);
+    return l !== undefined && presentes.has(l.id) && l.nota_saida_id === null;
+  });
+  const limiteJanela = addDias(hoje, -60);
+  let desde = addDias(hoje, -7);
+  for (const t of precisaLigar) if (t.emissao && t.emissao >= limiteJanela && t.emissao < desde) desde = t.emissao;
+
+  let registrosNotas: Record<string, unknown>[];
+  try {
+    registrosNotas = await buscarTodasPaginas(buscar, cfg, "comercial/v10/notaFiscalSaida", {
+      situacao: 2, dataEmissaoInicio: desde, dataEmissaoFim: hoje, paginacao: PAGINACAO,
+    });
+  } catch (e) {
+    // Sem as NFs o título entraria na esteira sem pedido e sem agrupar parcelas, e na rodada seguinte não seria mais "novo".
+    throw new Error(`Falha ao consultar as NFs de saída (nada foi gravado): ${e instanceof Error ? e.message : "erro"}`);
+  }
+  const notas: NotaSaida[] = [];
+  const notasVistas = new Set<string>();
+  for (const r of registrosNotas) {
+    const n = normalizarNotaSaida(r);
+    if (!n) continue;
+    const k = `${n.nota}\u0000${n.serie}`;
+    if (notasVistas.has(k)) continue;
+    notasVistas.add(k);
+    notas.push(n);
+  }
+  const indiceNotas = indexarNotas(notas);
+  const notaDoTitulo = new Map<string, number>(); // chave do título -> índice da NF
+  const naoLigados = { ambigua: 0, nao_encontrada: 0 };
+  for (const t of precisaLigar) {
+    const v = ligarTituloNota(t, indiceNotas);
+    if (v.ok) notaDoTitulo.set(chaveTitulo(t.documento, t.parcela), v.indice);
+    else if (v.motivo === "ambigua") naoLigados.ambigua++;
+    else if (v.motivo === "nao_encontrada") naoLigados.nao_encontrada++;
+  }
+
+  // Entrada na esteira: só títulos novos a partir da data de início, e nunca em carga em lote.
+  const { data: cfgInicio } = await banco.from("configuracoes").select("valor").eq("chave", CONFIG_INICIO_ESTEIRA).maybeSingle();
+  const inicio = typeof cfgInicio?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfgInicio.valor) ? cfgInicio.valor : null;
+  const decisao = decidirEntrada(plano.novos.length, hoje, inicio);
+
   const resumo: ResumoEmpresa = {
     empresa: empresa.nome_curto,
     titulosNaApi: registros.length,
     novos: plano.novos.length,
     alterados: plano.alterados.length,
+    enriquecidos: plano.enriquecidos.length,
     inalterados: plano.inalterados,
     possiveisBaixas: plano.possiveisBaixas.length,
     divergentes: plano.divergentes.length,
@@ -211,8 +285,14 @@ async function sincronizarEmpresa(
     // Conferência de leitura dos valores (só agregados, sem dados de cliente).
     valorTotalApi: titulosApi.reduce((s, t) => s + t.valorCentavos, 0) / 100,
     maiorValorApi: titulosApi.reduce((m, t) => Math.max(m, t.valorCentavos), 0) / 100,
-    vencidosNaApi: titulosApi.filter((t) => t.vencimento < new Date().toISOString().slice(0, 10)).length,
+    vencidosNaApi: titulosApi.filter((t) => t.vencimento < hoje).length,
     clientesDistintos: new Set(titulosApi.map((t) => t.codCliente)).size,
+    notasConsultadas: notas.length,
+    janelaNotasDesde: desde,
+    titulosLigadosANota: notaDoTitulo.size,
+    titulosSemNotaLigada: naoLigados,
+    entrada: decisao.abrir ? "novos entram em aguardando_boleto" : `não abre pendência (${decisao.motivo})`,
+    esteiraAPartirDe: inicio,
     simulacao: simular,
   };
   if (simular) return resumo;
@@ -232,7 +312,30 @@ async function sincronizarEmpresa(
   }
   Object.assign(resumo, contagem);
 
+  // 3b) NFs ligadas a algum título (só elas são guardadas): upsert pela chave empresa + número + série.
+  const indicesUsados = [...new Set(notaDoTitulo.values())];
+  const idPorNota = new Map<string, string>(); // `${nota}\0${serie}` -> id
+  for (const lote of lotes(indicesUsados)) {
+    const rows = lote.map((i) => {
+      const n = notas[i];
+      return {
+        empresa_id: empresa.id, nota: n.nota, serie: n.serie, chave_acesso: n.chave || null, cod_cliente: n.codCliente || null,
+        valor_total: n.valorCentavos === null ? null : n.valorCentavos / 100, data_emissao: n.emissao, pedidos: n.pedidos,
+        visto_em: new Date().toISOString(),
+      };
+    });
+    const { data, error } = await banco.from("rec_notas_saida").upsert(rows, { onConflict: "empresa_id,nota,serie" }).select("id, nota, serie");
+    if (error) throw new Error(`Falha ao gravar as NFs de saída: ${error.message}`);
+    for (const d of data ?? []) idPorNota.set(`${d.nota}\u0000${d.serie}`, d.id as string);
+  }
+  const idDaNotaDoTitulo = (chave: string): string | null => {
+    const i = notaDoTitulo.get(chave);
+    if (i === undefined) return null;
+    return idPorNota.get(`${notas[i].nota}\u0000${notas[i].serie}`) ?? null;
+  };
+
   // 4) Títulos novos (upsert ignorando duplicata: se rodar duas vezes ao mesmo tempo, não duplica).
+  const agora = new Date().toISOString();
   for (const lote of lotes(plano.novos)) {
     const rows = lote.map((t) => ({
       empresa_id: empresa.id,
@@ -243,17 +346,86 @@ async function sincronizarEmpresa(
       vencimento: t.vencimento,
       valor: t.valorCentavos / 100,
       origem: "importacao",
+      nota_fiscal: t.nota || null,
+      chave_nfe: t.chaveNfe || null,
+      cod_portador: t.codPortador || null,
+      tipo_cobranca: t.tipoCobranca || null,
+      nota_saida_id: idDaNotaDoTitulo(chaveTitulo(t.documento, t.parcela)),
+      estagio: decisao.abrir ? "aguardando_boleto" : "importado",
+      entrou_esteira_em: decisao.abrir ? agora : null,
     }));
     const { error } = await banco.from("rec_titulos").upsert(rows, { onConflict: "empresa_id,documento,parcela", ignoreDuplicates: true });
     if (error) throw new Error(`Falha ao gravar títulos novos: ${error.message}`);
   }
 
-  // 5) Títulos alterados (data/valor mudaram no Consistem).
-  for (const lote of lotes(plano.alterados, 10)) {
-    const resultados = await Promise.all(lote.map((a) => banco.from("rec_titulos").update(a.campos).eq("id", a.id)));
+  // 5) Títulos existentes: data/valor que mudaram no Consistem + dados de nota e cobrança que faltavam + vínculo com a NF.
+  const atualizacoes = new Map<string, Record<string, unknown>>();
+  for (const a of plano.alterados) atualizacoes.set(a.id, { ...a.campos });
+  for (const e of plano.enriquecidos) atualizacoes.set(e.id, { ...(atualizacoes.get(e.id) ?? {}), ...e.campos });
+  let titulosLigados = 0;
+  for (const t of titulosApi) {
+    const chave = chaveTitulo(t.documento, t.parcela);
+    const l = linhaPorChave.get(chave);
+    if (!l || !presentes.has(l.id) || l.nota_saida_id !== null) continue;
+    const idNota = idDaNotaDoTitulo(chave);
+    if (idNota) {
+      atualizacoes.set(l.id, { ...(atualizacoes.get(l.id) ?? {}), nota_saida_id: idNota });
+      titulosLigados++;
+    }
+  }
+  for (const lote of lotes([...atualizacoes.entries()], 10)) {
+    const resultados = await Promise.all(lote.map(([id, campos]) => banco.from("rec_titulos").update(campos).eq("id", id)));
     const falha = resultados.find((r) => r.error);
     if (falha?.error) throw new Error(`Falha ao atualizar títulos: ${falha.error.message}`);
   }
+  resumo.titulosLigadosAgora = titulosLigados;
+
+  // 5b) Pendência "Anexar boleto" para todo título aguardando boleto que ainda não tem uma aberta. Calculada do banco
+  // (não só dos novos desta rodada): se uma rodada falhar no meio, a seguinte conserta.
+  type LinhaAguardando = {
+    id: string; contraparte_id: string; documento: string; parcela: string; vencimento: string; valor: number | string;
+    nota_saida_id: string | null; contrapartes: { codigo_erp: string | null; nome: string } | { codigo_erp: string | null; nome: string }[] | null;
+  };
+  const aguardando = await lerTudo<LinhaAguardando>((de, ate) =>
+    banco.from("rec_titulos")
+      .select("id, contraparte_id, documento, parcela, vencimento, valor, nota_saida_id, contrapartes(codigo_erp, nome)")
+      .eq("empresa_id", empresa.id).eq("estagio", "aguardando_boleto").order("id").range(de, ate));
+  const titulosEsteira: TituloEsteira[] = aguardando.map((l) => {
+    const c = Array.isArray(l.contrapartes) ? l.contrapartes[0] : l.contrapartes;
+    return {
+      id: l.id, documento: l.documento, parcela: l.parcela, vencimento: l.vencimento, valorCentavos: Math.round(Number(l.valor) * 100),
+      notaSaidaId: l.nota_saida_id, contraparteId: l.contraparte_id, codCliente: c?.codigo_erp ?? "", nomeCliente: c?.nome ?? "",
+    };
+  });
+  const idsNotasEsteira = [...new Set(titulosEsteira.map((t) => t.notaSaidaId).filter((x): x is string => x !== null))];
+  const notasEsteira: NotaEsteira[] = [];
+  for (const lote of lotes(idsNotasEsteira)) {
+    const { data, error } = await banco.from("rec_notas_saida").select("id, nota, pedidos").in("id", lote);
+    if (error) throw new Error(`Falha ao ler as NFs da esteira: ${error.message}`);
+    for (const n of data ?? []) notasEsteira.push({ id: n.id as string, nota: n.nota as string, pedidos: (n.pedidos as string[]) ?? [] });
+  }
+  const abertasBoleto = new Set(
+    (await lerTudo<{ referencia_id: string }>((de, ate) =>
+      banco.from("pendencias").select("referencia_id").eq("modulo", MODULO).like("titulo", `${PREFIXO_BOLETO}%`)
+        .in("status", ["aberta", "em_andamento"]).order("id").range(de, ate))).map((p) => p.referencia_id),
+  );
+  const pendenciasBoleto = agruparBoletosPendentes(titulosEsteira, notasEsteira).filter((g) => !abertasBoleto.has(g.referenciaId)).map((g) => ({
+    modulo: MODULO,
+    empresa_id: empresa.id,
+    contraparte_id: g.contraparteId,
+    titulo: tituloPendenciaBoleto(g),
+    descricao: descricaoPendenciaBoleto(g),
+    prazo: prazoBoleto(g.vencimentoMaisProximo, hoje),
+    criticidade: criticidadeBoleto(g.vencimentoMaisProximo, hoje),
+    referencia_tabela: g.referenciaTabela,
+    referencia_id: g.referenciaId,
+    link: "/financeiro/recebiveis?situacao=aguardando_boleto",
+  }));
+  for (const lote of lotes(pendenciasBoleto)) {
+    const { error } = await banco.from("pendencias").insert(lote);
+    if (error) throw new Error(`Falha ao criar pendências de boleto: ${error.message}`);
+  }
+  resumo.pendenciasBoleto = pendenciasBoleto.length;
 
   // 6) Possíveis baixas viram pendência (uma por título, sem repetir).
   const jaPendentes = new Set(
@@ -262,7 +434,6 @@ async function sincronizarEmpresa(
         .like("titulo", `${PREFIXO_BAIXA}%`).in("status", ["aberta", "em_andamento"]).order("id").range(de, ate)))
       .map((p) => p.referencia_id),
   );
-  const hoje = new Date().toISOString().slice(0, 10);
   const pendenciasNovas = plano.possiveisBaixas.filter((t) => !jaPendentes.has(t.id)).map((t) => ({
     modulo: MODULO,
     empresa_id: empresa.id,
@@ -297,7 +468,10 @@ async function sincronizarEmpresa(
     modulo: MODULO,
     tipo: "titulos_abertos",
     arquivo: "api:consistem",
-    mapeamento: { origem: "api", empresa: empresa.codigo_erp, recusados: recusados.slice(0, 20), duplicadosApi: plano.duplicadosApi.slice(0, 20) },
+    mapeamento: {
+      origem: "api", empresa: empresa.codigo_erp, recusados: recusados.slice(0, 20), duplicadosApi: plano.duplicadosApi.slice(0, 20),
+      notasConsultadas: notas.length, titulosLigadosANota: notaDoTitulo.size, entrada: resumo.entrada, pendenciasBoleto: pendenciasBoleto.length,
+    },
     linhas_novas: plano.novos.length,
     linhas_alteradas: plano.alterados.length,
     linhas_baixadas: plano.possiveisBaixas.length, // aqui = "possíveis baixas" (nenhuma é dada automaticamente)
@@ -319,7 +493,7 @@ async function registrarFalha(banco: Banco, mensagem: string, agendado: boolean)
     modulo: MODULO,
     titulo: TITULO_FALHA,
     descricao: `${agendado ? "A sincronização agendada" : "A sincronização manual"} falhou: ${mensagem.slice(0, 300)} Os dados da carteira podem estar desatualizados. Tente "Sincronizar agora" em Financeiro > Recebíveis; se persistir, verifique o token do Consistem (CSMEN050).`,
-    prazo: new Date().toISOString().slice(0, 10),
+    prazo: hojeCuiaba(),
     criticidade: "alta",
     link: "/financeiro/recebiveis",
   });
@@ -408,7 +582,7 @@ Deno.serve(async (req) => {
         const cfg: ConfigConsistem = { ...cfgBase, empresa: e.codigo_erp as string };
         const buscar = (u: string, init: { headers: Record<string, string> }) => fetch(u, init);
         const dias = Math.min(120, Math.max(1, Math.round(Number(corpo.dias) || 30)));
-        const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Cuiaba", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+        const hoje = hojeCuiaba();
         const desde = addDias(hoje, -dias);
 
         const notas = await buscarTodasPaginas(buscar, cfg, "comercial/v10/notaFiscalSaida", {
@@ -452,6 +626,9 @@ Deno.serve(async (req) => {
           nfsSemPedidoNoCabecalho: semPedidoNoCabecalho.length,
           comCodItemPedido: semPedidoNoCabecalho.filter((n) => itensDe(n).some((i) => String(i.codItemPedido ?? "").trim() !== "")).length,
           comItemPedidoAgrupado: semPedidoNoCabecalho.filter((n) => itensDe(n).some((i) => Array.isArray(i.itemPedidoAgrupado) && i.itemPedidoAgrupado.length > 0)).length,
+          // O codPedido dentro do agrupado vem preenchido de verdade (não vazio)?
+          comCodPedidoPreenchido: semPedidoNoCabecalho.filter((n) => itensDe(n).some((i) => Array.isArray(i.itemPedidoAgrupado) && (i.itemPedidoAgrupado as Record<string, unknown>[]).some((a) => String(a?.codPedido ?? "").trim() !== ""))).length,
+          comItemPedidoPreenchido: semPedidoNoCabecalho.filter((n) => itensDe(n).some((i) => Array.isArray(i.itemPedidoAgrupado) && (i.itemPedidoAgrupado as Record<string, unknown>[]).some((a) => String(a?.itemPedido ?? "").trim() !== ""))).length,
           comNumeroPedidoCompra: semPedidoNoCabecalho.filter((n) => itensDe(n).some((i) => String(i.numeroPedidoCompra ?? "").trim() !== "")).length,
           camposDoAgrupado: primeiroAgrupado ? descreverCampos([primeiroAgrupado]) : {},
         };

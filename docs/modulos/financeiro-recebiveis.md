@@ -128,7 +128,7 @@ Decisão do usuário (06/10/2026): usar a API REST do Consistem, a mesma já em 
 ## 10. Fases internas do módulo
 
 1. **Fase 1 — Base do módulo:** migration 0100, configuração de clientes no módulo, contratos (encargos, cedido), menu Financeiro > Recebíveis. (Login, empresas e contrapartes já vêm do núcleo.)
-2. **Fase 2 — Carteira:** sincronização pela API (Edge Function `rec-sincronizar-consistem`, **feita**), tela Carteira e botão "Sincronizar agora" (**feitos**, `app/(plataforma)/financeiro/recebiveis`), agendamento diário (pg_cron, **feito**), importação de títulos pagos, contratos (percentuais de multa e juros por cliente) e testes de encargos.
+2. **Fase 2 — Carteira:** sincronização pela API (Edge Function `rec-sincronizar-consistem`, **feita**), tela Carteira e botão "Sincronizar agora" (**feitos**, `app/(plataforma)/financeiro/recebiveis`), agendamento (pg_cron, **feito**; de hora em hora em dias úteis desde a etapa 1a), entrada do título pela NF e pendência "Anexar boleto" (**feitas**, seção 14), importação de títulos pagos, contratos (percentuais de multa e juros por cliente) e testes de encargos.
 3. **Fase 3 — Boletos:** upload, leitura do PDF, vínculo com títulos.
 4. **Fase 4 — Régua e e-mail:** modelos, motor da régua, Fila do dia, rascunhos no Gmail.
 5. **Fase 5 — Painel e ficha do cliente.**
@@ -185,11 +185,21 @@ Ação `amostra_notas` da Edge Function `rec-sincronizar-consistem` (só leitura
 | `numeroDuplicatas` | sempre vazio: não serve como vínculo |
 | Valor do título | ≤ valor total da NF em 40 de 40 (parcelas somam a NF) |
 
-**Pedido.** O cabeçalho da NF (`codPedido`) só vem preenchido em 28 das 68 NFs, e 32 das 37 NFs que geram título são do tipo 12 (sem pedido no cabeçalho). Mas **as 40 NFs sem pedido no cabeçalho trazem o pedido nos itens**: `itensNotaFiscalSaida[].itemPedidoAgrupado[]` com `codPedido`, `itemPedido` e `qtdFaturadaItemPedido` (faturamento agrupado: uma NF pode juntar vários pedidos). Cadeia final:
+**Pedido (correção de 06/10/2026, depois de gravar os dados).** O cabeçalho da NF (`codPedido`) só vem preenchido em 28 das 68 NFs (11 das 45 NFs ligadas a títulos). As NFs do tipo 12, que são 32 das 37 que geram título, **não trazem pedido**: os itens têm a estrutura `itemPedidoAgrupado[]` (`codPedido`, `itemPedido`, `qtdFaturadaItemPedido`), mas o `codPedido` e o `itemPedido` dentro dela vêm **vazios** nas 83 NFs sem pedido no cabeçalho (janela de 60 dias). A primeira leitura da Etapa 0 contou só a presença da lista e concluiu o contrário; o teste com valores preenchidos desfez isso. Logo, **o pedido só é conhecido para as NFs que o trazem no cabeçalho**; para as demais o vínculo termina na NF.
 
-`pedidoVenda.codPedido` → (cabeçalho `codPedido` **ou** itens `itemPedidoAgrupado[].codPedido`) → `notaFiscalSaida` (`codNumNota`, `chaveAcesso`) → `contasReceber` (`chaveNfeNotaFiscal`; senão `notaFiscal` + `codCliente`; senão prefixo numérico de `codTitulo`).
+Cadeia que funciona hoje: `notaFiscalSaida` (`codNumNota`, `chaveAcesso`, `codPedido` quando existe) → `contasReceber` (`chaveNfeNotaFiscal`; senão `notaFiscal` + `codCliente`). Para ligar as NFs sem pedido ao pedido seria preciso outro caminho (listar `pedidoVenda` e casar por cliente, data e valor; ou um filtro por NF que a API não mostrou), a investigar só se o pedido virar necessário.
 
 Consequências para o desenho:
-- O gatilho da esteira é a **NF emitida / título novo**, não o pedido; o pedido entra como informação ligada à NF (**lista de pedidos por NF**, não um só).
-- Vínculo título → NF em três degraus (chave, nota + cliente, prefixo de `codTitulo`); títulos sem NF (série `Z…`) entram na esteira sem pedido e sem alerta de NF.
+- O gatilho da esteira é a **NF emitida / título novo**, não o pedido; o pedido entra como informação ligada à NF **quando a NF o traz** (lista de pedidos por NF, vazia nas demais). Nada na esteira (boleto, confirmação, cobrança) depende do pedido.
+- Vínculo título → NF em dois degraus provados (chave da NF-e; nº da nota + cliente; ambíguo não liga). O prefixo de `codTitulo` não foi usado: não foi provado para os títulos sem `notaFiscal`. Títulos sem NF (série `Z…`) entram na esteira sem pedido e sem NF.
 - Tipos de nota que geram duplicata: 7 de 22 (`possuiDuplicata`); nem toda NF vira título.
+
+## 14. Entrada do título pela NF — Etapa 1a (feita em 06/10/2026)
+
+- **Gatilho:** a sincronização roda de **hora em hora, segunda a sexta, 08:00–18:00 de Cuiabá** (migration 0104; substituiu o job diário das 07:00). Título novo = NF emitida no Consistem; o atraso máximo é uma hora.
+- **O que cada rodada faz a mais:** consulta as NFs de saída (situação 2) dos últimos 7 dias (ou desde a emissão do título mais antigo ainda sem nota ligada, até 60 dias), liga cada título à sua NF (chave da NF-e; senão nº da nota + cliente; ambíguo não liga), guarda a NF em `rec_notas_saida` com os pedidos que ela traz e completa em `rec_titulos` a nota, a chave, o portador e o tipo de cobrança. Se a consulta de NFs falhar, a rodada inteira falha sem gravar nada (para o título não entrar na esteira sem NF e deixar de ser "novo").
+- **Entrada na esteira:** título novo a partir da data `financeiro.recebiveis.esteira_a_partir_de` (tabela `configuracoes`; hoje `2026-10-06`) nasce em `aguardando_boleto` com `entrou_esteira_em`. **Trava:** mais de 50 títulos novos de uma vez (banco vazio, reimportação) não entram na esteira nem abrem pendência. Títulos anteriores à data nunca abrem pendência.
+- **Pendência "Anexar boleto(s): NF 1395 — Cliente (4 parcelas)":** uma por NF (título sem NF, uma por título), calculada do banco para **todo título em `aguardando_boleto` sem pendência aberta** (idempotente: uma rodada que falhou no meio é consertada pela seguinte). Prazo = vencimento mais próximo menos 8 dias (o envio da régua é D-7); se já passou, hoje. Criticidade: até 3 dias do vencimento crítica, até 10 alta, depois normal. A descrição lista documento, vencimento e valor de cada parcela e os pedidos da NF. Quem conclui a pendência e move o estágio é a etapa 1b (anexo do boleto).
+- **Tela:** coluna "Pedido / NF" e filtro "Aguardando boleto (n)" em Financeiro > Recebíveis.
+- **Testado com a API real:** os 156 títulos em aberto foram completados (60 ligados a NFs na janela de 60 dias; os 74 mais antigos não têm a NF na janela e ficam sem vínculo); NF 1395 (4 parcelas) apagada e recriada pela sincronização entrou em `aguardando_boleto` com uma pendência (alta, prazo D-8, pedido 199), e a 2ª rodada não duplicou nada.
+- **Produção:** ajustar `esteira_a_partir_de` para o dia da virada antes de ligar o job horário (o job só roda onde há `pg_cron`; os segredos do agendamento estão na seção 12).
