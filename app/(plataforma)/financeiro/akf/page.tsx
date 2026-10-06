@@ -109,6 +109,9 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
     if (parte && disponivelParaAntecipar(dados(l))) totais.disponiveis.centavos -= parte.akfCentavos;
   }
 
+  // A vencer na AKF = o que está na AKF (títulos inteiros e partes) menos o que já venceu.
+  const aVencerNaAkf = { quantidade: totais.na_akf.quantidade - totais.vencidos.quantidade, centavos: totais.na_akf.centavos - totais.vencidos.centavos };
+
   const { data: cfgSemBoleto } = await supabase.from("configuracoes").select("valor").eq("chave", "financeiro.akf.clientes_sem_boleto").maybeSingle();
   const termosSemBoleto = Array.isArray(cfgSemBoleto?.valor) ? (cfgSemBoleto.valor as unknown[]).filter((x): x is string => typeof x === "string") : [];
 
@@ -313,10 +316,14 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
         })}
       </nav>
 
-      <div className="grid gap-3 sm:grid-cols-3">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card size="sm">
           <CardHeader><CardDescription>Na AKF{unidade ? ` — ${ROTULO_UNIDADE[unidade]}` : ""}</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(totais.na_akf.centavos)}</CardTitle></CardHeader>
           <CardContent className="text-xs text-muted-foreground">{totais.na_akf.quantidade} títulos em aberto</CardContent>
+        </Card>
+        <Card size="sm">
+          <CardHeader><CardDescription>A vencer na AKF</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(aVencerNaAkf.centavos)}</CardTitle></CardHeader>
+          <CardContent className="text-xs text-muted-foreground">{aVencerNaAkf.quantidade} títulos · {totais.na_akf.centavos > 0 ? Math.round((aVencerNaAkf.centavos / totais.na_akf.centavos) * 100) : 0}% do que está na AKF</CardContent>
         </Card>
         <Card size="sm">
           <CardHeader><CardDescription>Vencidos na AKF</CardDescription><CardTitle className="text-xl tabular-nums text-red-700">{formatarMoeda(totais.vencidos.centavos)}</CardTitle></CardHeader>
