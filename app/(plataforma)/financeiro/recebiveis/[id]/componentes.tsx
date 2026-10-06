@@ -2,14 +2,14 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Check, Copy, Paperclip } from "lucide-react";
+import { Check, Copy, ExternalLink, Mail, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { enviarAnexo } from "@/lib/nucleo/anexos";
 import { MODULO_RECEBIVEIS, TIPO_ANEXO_BOLETO } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { criarClienteNavegador } from "@/lib/supabase/navegador";
-import { marcarBoletoEnviado, salvarLinhaDigitavel } from "./acoes";
+import { criarRascunhoGmail, marcarBoletoEnviado, salvarLinhaDigitavel } from "./acoes";
 
 /** Envia o PDF (ou imagem) do boleto da parcela para o bucket de anexos. O registro fica em `anexos` (tipo boleto). */
 export function AnexarBoleto({ tituloId, temBoleto }: { tituloId: string; temBoleto: boolean }) {
@@ -150,6 +150,38 @@ export function MarcarEnviado({ parcelas, contatoId, canalSugerido }: { parcelas
           {pendente ? "Registrando…" : "Marcar como enviado"}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** "Criar rascunho no Gmail": o rascunho nasce com os boletos em anexo; quem confere e envia é uma pessoa, no Gmail. */
+export function CriarRascunhoGmail({ tituloId, contatoId, desabilitadoPor }: { tituloId: string; contatoId: string | null; desabilitadoPor: string | null }) {
+  const [pendente, iniciar] = useTransition();
+  const [link, setLink] = useState<string>();
+
+  function criar() {
+    iniciar(async () => {
+      const r = await criarRascunhoGmail(tituloId, contatoId);
+      if (r.ok) {
+        setLink(r.url);
+        toast.success(r.aviso ?? `Rascunho criado no Gmail, com ${r.anexos} ${r.anexos === 1 ? "anexo" : "anexos"}.`);
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button type="button" variant="secondary" size="sm" disabled={pendente || desabilitadoPor !== null} onClick={criar} title={desabilitadoPor ?? undefined}>
+        <Mail /> {pendente ? "Criando rascunho…" : "Criar rascunho no Gmail"}
+      </Button>
+      {desabilitadoPor && <span className="text-xs text-muted-foreground">{desabilitadoPor}</span>}
+      {link && (
+        <Button variant="outline" size="sm" render={<a href={link} target="_blank" rel="noreferrer" />}>
+          <ExternalLink /> Abrir o rascunho no Gmail
+        </Button>
+      )}
     </div>
   );
 }
