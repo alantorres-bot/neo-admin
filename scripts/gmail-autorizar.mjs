@@ -104,6 +104,17 @@ function validarCliente(clientId, clientSecret) {
   return null;
 }
 
+/**
+ * Roda `npx <args>` mostrando a saída. No Windows o npx é um .cmd e precisa do cmd.exe; o comando vai inteiro numa
+ * string entre aspas, com argumentos "verbatim", sem `shell: true` (que o Node desaconselha: DEP0190).
+ */
+function rodarNpx(args) {
+  const opcoes = { stdio: ["ignore", "inherit", "inherit"] };
+  if (process.platform !== "win32") return spawnSync("npx", args, opcoes);
+  const linha = ["npx", ...args.map((a) => (/[\s"&|<>^]/.test(a) ? `"${a.replace(/"/g, '\\"')}"` : a))].join(" ");
+  return spawnSync("cmd.exe", ["/d", "/s", "/c", `"${linha}"`], { ...opcoes, windowsVerbatimArguments: true });
+}
+
 function abrirNavegador(url) {
   const [comando, args] =
     process.platform === "win32" ? ["rundll32", ["url.dll,FileProtocolHandler", url]]
@@ -190,7 +201,7 @@ async function main() {
   fs.writeFileSync(arquivo, `GMAIL_CLIENT_ID=${clientId}\nGMAIL_CLIENT_SECRET=${clientSecret}\nGMAIL_REFRESH_TOKEN=${corpo.refresh_token}\nGMAIL_REMETENTE=${remetente}\n`, { mode: 0o600 });
   try {
     console.log("Autorizado. Gravando os segredos no Supabase...");
-    const r = spawnSync("npx", ["supabase", "secrets", "set", "--env-file", arquivo, "--agent", "no"], { stdio: ["ignore", "inherit", "inherit"], shell: process.platform === "win32" });
+    const r = rodarNpx(["supabase", "secrets", "set", "--env-file", arquivo, "--agent", "no"]);
     if (r.status !== 0) throw new Error("Não consegui gravar no Supabase. Confira `npx supabase login` e `npx supabase link`.");
   } finally {
     fs.rmSync(arquivo, { force: true });
