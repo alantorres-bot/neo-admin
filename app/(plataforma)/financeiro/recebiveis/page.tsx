@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -24,6 +25,7 @@ export const metadata: Metadata = { title: "Recebíveis" };
 
 const MODULO = "financeiro.recebiveis";
 const POR_PAGINA = 50;
+const DIAS_OCULTAR = 90;
 const COR_FAIXA: Record<Faixa, string> = {
   a_vencer: "bg-emerald-500",
   "01_15": "bg-amber-400",
@@ -83,24 +85,28 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   const abaPedida = primeiro(parametros.aba) || primeiro(parametros.situacao);
   const aba = ehGrupo(abaPedida) ? abaPedida : null;
   // Unidade: Matriz ou Filial Contagem (documento que começa com 400). Sem escolha, mostra as duas.
+  // "Ocultar vencidos há mais de 90 dias": vale para a tela toda (cartões, aging, abas e lista), para os números baterem.
+  const ocultar = primeiro(parametros.ocultar90) === "1";
   const unidadePedida = primeiro(parametros.unidade);
   const unidade: Unidade | null = unidadePedida === "matriz" || unidadePedida === "contagem" ? unidadePedida : null;
 
   const supabase = await criarClienteServidor();
 
   // 1) Resumo de TODA a carteira em aberto (independe do filtro da lista). PostgREST devolve até 1000 por vez.
-  const resumoLinhas: LinhaResumo[] = [];
+  const todasLinhas: LinhaResumo[] = [];
   for (let de = 0; ; de += 1000) {
     const { data, error } = await supabase
       .from("rec_vw_titulos")
-      .select("faixa, valor, valor_atualizado, contraparte_id, estagio, cedido, contestado, unidade")
+      .select("faixa, valor, valor_atualizado, contraparte_id, estagio, cedido, contestado, unidade, dias_atraso")
       .neq("faixa", "encerrado")
       .order("id")
       .range(de, de + 999);
     if (error) throw new Error(`Falha ao ler a carteira: ${error.message}`);
-    resumoLinhas.push(...((data ?? []) as LinhaResumo[]));
+    todasLinhas.push(...((data ?? []) as LinhaResumo[]));
     if (!data || data.length < 1000) break;
   }
+  const resumoLinhas = ocultar ? todasLinhas.filter((l) => (l.dias_atraso ?? 0) <= DIAS_OCULTAR) : todasLinhas;
+  const ocultos = todasLinhas.filter((l) => (l.dias_atraso ?? 0) > DIAS_OCULTAR && (!unidade || l.unidade === unidade));
   // Totais por unidade (para o seletor) e a carteira da unidade escolhida (para o resto da tela).
   const porUnidade = (u: Unidade) => {
     const linhas = resumoLinhas.filter((l) => l.unidade === u);
@@ -130,6 +136,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
   if (faixa) consulta = consulta.eq("faixa", faixa);
   if (unidade) consulta = consulta.eq("unidade", unidade);
+  if (ocultar) consulta = consulta.lte("dias_atraso", DIAS_OCULTAR);
   // Cada aba é a regra de `grupoDaSituacao` escrita como filtro (precedência: especial > promessa > aguardando boleto > vencido > ...).
   if (aba === "especial") consulta = consulta.or("cedido.eq.true,contestado.eq.true,estagio.in.(em_renegociacao,juridico)");
   else if (aba) {
@@ -223,6 +230,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     if (faixa) qs.set("faixa", faixa);
     if (aba) qs.set("aba", aba);
     if (unidade) qs.set("unidade", unidade);
+    if (ocultar) qs.set("ocultar90", "1");
     if (p > 1) qs.set("pagina", String(p));
     const texto = qs.toString();
     return `/financeiro/recebiveis${texto ? `?${texto}` : ""}`;
@@ -234,15 +242,28 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     if (faixa) qs.set("faixa", faixa);
     if (g) qs.set("aba", g);
     if (unidade) qs.set("unidade", unidade);
+    if (ocultar) qs.set("ocultar90", "1");
     const texto = qs.toString();
     return `/financeiro/recebiveis${texto ? `?${texto}` : ""}`;
   };
   const hrefUnidade = (u: Unidade | null) => {
     const qs = new URLSearchParams();
     if (u) qs.set("unidade", u);
+    if (ocultar) qs.set("ocultar90", "1");
     const texto = qs.toString();
     return `/financeiro/recebiveis${texto ? `?${texto}` : ""}`;
   };
+  // Liga e desliga o "ocultar vencidos há mais de 90 dias" mantendo os outros filtros.
+  const hrefOcultar = (() => {
+    const qs = new URLSearchParams();
+    if (busca) qs.set("q", busca);
+    if (faixa) qs.set("faixa", faixa);
+    if (aba) qs.set("aba", aba);
+    if (unidade) qs.set("unidade", unidade);
+    if (!ocultar) qs.set("ocultar90", "1");
+    const texto = qs.toString();
+    return `/financeiro/recebiveis${texto ? `?${texto}` : ""}`;
+  })();
   const totalDaAba = aba ? porGrupo.find((x) => x.grupo === aba) : null;
 
   return (
@@ -263,6 +284,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
         </div>
       </div>
 
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
       <nav aria-label="Unidade" className="flex flex-wrap gap-px overflow-hidden rounded-[3px] border border-grade bg-grade sm:w-fit">
         {([
           { u: null as Unidade | null, rotulo: "Todas as unidades", ...{ quantidade: totaisUnidade.matriz.quantidade + totaisUnidade.contagem.quantidade, centavos: totaisUnidade.matriz.centavos + totaisUnidade.contagem.centavos } },
@@ -286,6 +308,23 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
           );
         })}
       </nav>
+      <Link
+        href={hrefOcultar}
+        role="checkbox"
+        aria-checked={ocultar}
+        className="flex items-center gap-2 rounded-[3px] px-1 py-1 text-[13px] hover:bg-cabecalho"
+      >
+        <span className={`flex size-4 items-center justify-center rounded-[3px] border ${ocultar ? "border-botao bg-botao text-white" : "border-grade bg-white"}`} aria-hidden>
+          {ocultar && <Check className="size-3" />}
+        </span>
+        Ocultar vencidos há mais de {DIAS_OCULTAR} dias
+        {ocultar && ocultos.length > 0 && (
+          <span className="text-[12px] text-muted-foreground">
+            ({ocultos.length} {ocultos.length === 1 ? "título oculto" : "títulos ocultos"} · {formatarMoeda(ocultos.reduce((x, l) => x + emCentavos(l.valor), 0))})
+          </span>
+        )}
+      </Link>
+      </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card size="sm">
@@ -312,7 +351,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
         <CardHeader><CardTitle>Atraso (aging)</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           {resumo.porFaixa.map((f) => (
-            <Link key={f.faixa} href={`/financeiro/recebiveis?faixa=${f.faixa}${unidade ? `&unidade=${unidade}` : ""}`} className="grid grid-cols-[8rem_1fr_auto] items-center gap-3 rounded-md px-1 py-0.5 text-sm hover:bg-muted/50 sm:grid-cols-[9rem_1fr_16rem]">
+            <Link key={f.faixa} href={`/financeiro/recebiveis?faixa=${f.faixa}${unidade ? `&unidade=${unidade}` : ""}${ocultar ? "&ocultar90=1" : ""}`} className="grid grid-cols-[8rem_1fr_auto] items-center gap-3 rounded-md px-1 py-0.5 text-sm hover:bg-muted/50 sm:grid-cols-[9rem_1fr_16rem]">
               <span>{ROTULO_FAIXA[f.faixa]}</span>
               <span className="h-2.5 rounded-full bg-muted" aria-hidden>
                 <span className={`block h-2.5 rounded-full ${COR_FAIXA[f.faixa]}`} style={{ width: `${f.percentual}%` }} />
@@ -356,6 +395,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
         <form method="get" className="flex flex-wrap items-center gap-2" role="search">
           {aba && <input type="hidden" name="aba" value={aba} />}
           {unidade && <input type="hidden" name="unidade" value={unidade} />}
+          {ocultar && <input type="hidden" name="ocultar90" value="1" />}
           <Input name="q" defaultValue={busca} placeholder="Cliente, código ou documento" aria-label="Buscar" className="w-64" />
           <select name="faixa" defaultValue={faixa ?? ""} aria-label="Faixa de atraso" className="h-8 rounded-[3px] border border-input bg-white px-2 text-[13px]">
             <option value="">Todas as faixas</option>
@@ -436,7 +476,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-          <span>{total} {total === 1 ? "título" : "títulos"}{(busca || faixa || aba || unidade) ? " no filtro" : ""}</span>
+          <span>{total} {total === 1 ? "título" : "títulos"}{(busca || faixa || aba || unidade || ocultar) ? " no filtro" : ""}</span>
           {totalPaginas > 1 && (
             <span className="flex items-center gap-2">
               {pagina > 1 && <Button variant="outline" size="sm" render={<Link href={link(pagina - 1)} />}>Anterior</Button>}

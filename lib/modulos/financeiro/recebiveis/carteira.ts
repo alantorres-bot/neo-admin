@@ -46,6 +46,8 @@ export type LinhaResumo = {
   contestado?: boolean | null;
   /** 'matriz' ou 'contagem' (documento que começa com 400). */
   unidade?: string;
+  /** Dias de atraso (0 se a vencer), vindo da view. */
+  dias_atraso?: number;
 };
 
 export type TotalFaixa = { faixa: Faixa; quantidade: number; centavos: number; percentual: number };
