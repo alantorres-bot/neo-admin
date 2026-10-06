@@ -24,20 +24,84 @@ const EMAIL = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
 
 const base64url = (buf) => buf.toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 
-function perguntar(pergunta, { oculto = false } = {}) {
+/** Pergunta normal (o que se digita aparece na tela). */
+function perguntar(pergunta) {
   return new Promise((resolve) => {
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
-    if (oculto) {
-      rl._writeToOutput = (texto) => {
-        if (texto.includes(pergunta)) process.stdout.write(texto);
-      };
-    }
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
     rl.question(pergunta, (resposta) => {
       rl.close();
-      if (oculto) process.stdout.write("\n");
       resolve(resposta.trim());
     });
   });
+}
+
+/**
+ * Pergunta com a resposta OCULTA: lê tecla a tecla (modo "raw"), nunca ecoa o texto e mostra só um * por caractere.
+ * Aceita colar. Ctrl+C cancela. Sem terminal interativo (entrada redirecionada), lê uma linha.
+ */
+function perguntarOculto(pergunta) {
+  return new Promise((resolve, reject) => {
+    process.stdout.write(pergunta);
+    if (!process.stdin.isTTY) {
+      const rl = readline.createInterface({ input: process.stdin });
+      rl.once("line", (linha) => {
+        rl.close();
+        process.stdout.write("\n");
+        resolve(linha.trim());
+      });
+      return;
+    }
+    let valor = "";
+    const encerrar = () => {
+      process.stdin.removeListener("data", aoReceber);
+      process.stdin.setRawMode(false);
+      process.stdin.pause();
+      process.stdout.write("\n");
+    };
+    const aoReceber = (trecho) => {
+      for (const ch of String(trecho)) {
+        if (ch === "\r" || ch === "\n") {
+          encerrar();
+          resolve(valor.trim());
+          return;
+        }
+        if (ch === "\u0003") {
+          encerrar();
+          reject(new Error("Cancelado."));
+          return;
+        }
+        if (ch === "\u007f" || ch === "\b") {
+          if (valor.length > 0) {
+            valor = valor.slice(0, -1);
+            process.stdout.write("\b \b");
+          }
+          continue;
+        }
+        if (ch >= " ") {
+          valor += ch;
+          process.stdout.write("*");
+        }
+      }
+    };
+    process.stdin.setEncoding("utf8");
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.on("data", aoReceber);
+  });
+}
+
+/** Se o mesmo texto foi colado duas vezes seguidas, fica só um. */
+function semRepeticao(valor) {
+  const meio = valor.length / 2;
+  return Number.isInteger(meio) && meio > 0 && valor.slice(0, meio) === valor.slice(meio) ? valor.slice(0, meio) : valor;
+}
+
+const FORMATO_ID = /^\d{6,}-[a-z0-9]{10,}\.apps\.googleusercontent\.com$/;
+function validarCliente(clientId, clientSecret) {
+  if (!FORMATO_ID.test(clientId)) return "O ID do cliente deve terminar em .apps.googleusercontent.com (copie inteiro, sem espaços).";
+  if (/\s/.test(clientSecret) || clientSecret.length < 20) return "O segredo parece incompleto (tem espaços ou é curto demais).";
+  if (clientSecret.startsWith("GOCSPX-") && !/^GOCSPX-[A-Za-z0-9_-]{20,}$/.test(clientSecret)) return "O segredo começa com GOCSPX- mas tem caracteres inválidos: confira se foi colado inteiro e uma vez só.";
+  return null;
 }
 
 function abrirNavegador(url) {
@@ -85,10 +149,11 @@ function esperarCodigo(estado) {
 
 async function main() {
   console.log("Autorização do Gmail do Neo Admin (só cria rascunhos; não envia nem lê e-mails).\n");
-  const clientId = await perguntar("ID do cliente OAuth: ");
-  const clientSecret = await perguntar("Segredo do cliente OAuth (não aparece ao digitar): ", { oculto: true });
+  const clientId = semRepeticao(await perguntar("ID do cliente OAuth: "));
+  const clientSecret = semRepeticao(await perguntarOculto("Segredo do cliente OAuth (aparece só como *): "));
   const remetente = await perguntar("E-mail da caixa que vai fazer login (onde os rascunhos aparecerão): ");
-  if (!clientId || !clientSecret) throw new Error("Informe o ID e o segredo do cliente.");
+  const problema = validarCliente(clientId, clientSecret);
+  if (problema) throw new Error(problema);
   if (!EMAIL.test(remetente)) throw new Error("E-mail da caixa inválido.");
 
   const estado = base64url(crypto.randomBytes(16));
@@ -136,5 +201,5 @@ async function main() {
 
 main().catch((e) => {
   console.error("\nErro: " + (e instanceof Error ? e.message : String(e)));
-  process.exit(1);
+  process.exitCode = 1;
 });
