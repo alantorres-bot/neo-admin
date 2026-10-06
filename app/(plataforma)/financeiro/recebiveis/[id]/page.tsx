@@ -18,7 +18,7 @@ import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { BaixaManual } from "../baixas/componentes";
-import { AnexarBoleto, BotaoCopiar, CriarRascunhoGmail, LinhaDigitavel, MarcarEnviado } from "./componentes";
+import { AnexarBoleto, BotaoCopiar, CriarRascunhoDados, CriarRascunhoGmail, FormaPagamento, LinhaDigitavel, MarcarDadosEnviados, MarcarEnviado } from "./componentes";
 import { carregarFicha, centavos, ENCERRADOS } from "./dados";
 
 export const metadata: Metadata = { title: "Ficha do título" };
@@ -51,6 +51,8 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
   const { parcelas, contato, contatos, boletoDaParcela, email, whatsapp } = f;
   // Antecipação parcial na AKF (migration 0113): o que já está na AKF e o que resta com a Neo.
   const partesAkf = await lerPartes(supabase, parcelas.map((p) => p.id));
+  // Boleto e transferência andam por caminhos diferentes: as seções de boleto só aparecem se há parcela de boleto.
+  const parcelasBoleto = parcelas.filter((p) => p.forma_pagamento === "boleto");
 
   // O envio pode ser registrado em qualquer parcela em aberto (aguardando, anterior à esteira ou já enviada: reenvio).
   const parcelasEnvio = f.paraMensagem.map((p) => ({
@@ -92,7 +94,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
             const reguaAplica = !!f.corteRegua && p.vencimento >= f.corteRegua && !p.cedido && !p.contestado;
             const etapas = montarEsteira({
               estagio: p.estagio, vencimento: p.vencimento, boletoAnexado: boletoDaParcela.has(p.id), boletoEnviadoEm: p.boleto_enviado_em,
-              dataPagamento: p.data_pagamento, reguaPausadaAte: p.regua_pausada_ate, reguaAplica,
+              dataPagamento: p.data_pagamento, reguaPausadaAte: p.regua_pausada_ate, reguaAplica, forma: p.forma_pagamento,
             }, f.interacoes.filter((i) => i.referencia_id === p.id), f.hoje);
             const naVez = etapas.find((e) => e.estado === "atual");
             const marco = marcoDoAtraso(p.dias_atraso);
@@ -115,6 +117,8 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
                     </Badge>
                   )}
                   {p.contestado && <Badge variant="outline">Contestado</Badge>}
+                  {aberta && podeOperar && <FormaPagamento tituloId={p.id} forma={p.forma_pagamento} />}
+                  {!podeOperar && p.forma_pagamento === "transferencia" && <Badge variant="outline">Transferência</Badge>}
                   {naVez && <span className="text-xs text-marca">Na vez: {naVez.rotulo.toLowerCase()}{naVez.detalhe ? ` (${naVez.detalhe})` : ""}</span>}
                 </div>
                 <ol className="flex flex-wrap gap-1.5" aria-label={`Passos da parcela ${nomeParcela}`}>
@@ -132,7 +136,10 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
                 </ol>
                 {aberta && (
                   <div className="flex flex-wrap items-center gap-2 pt-1">
-                    {p.estagio === "aguardando_boleto" && (
+                    {p.estagio === "aguardando_boleto" && p.forma_pagamento === "transferencia" && (
+                      <Button variant="outline" size="sm" render={<a href="#dados" />}>Enviar dados de pagamento</Button>
+                    )}
+                    {p.estagio === "aguardando_boleto" && p.forma_pagamento === "boleto" && (
                       <>
                         <Button variant="outline" size="sm" render={<a href="#boleto" />}>Anexar boleto</Button>
                         <Button variant="outline" size="sm" render={<a href="#envio" />}>Registrar envio</Button>
@@ -165,13 +172,70 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
         </CardContent>
       </Card>
 
+      {f.paraDados.length > 0 && (
+        <Card size="sm" id="dados">
+          <CardHeader>
+            <CardTitle>Dados para pagamento (transferência)</CardTitle>
+            <CardDescription>
+              Parcelas pagas por transferência (PIX/TED): não há boleto. Copie a mensagem ou crie o rascunho do e-mail no Gmail (sem anexo); o sistema nunca envia.{" "}
+              {contato ? <>Para <strong>{contato.nome}</strong>{contato.email ? ` · ${contato.email}` : ""}{contato.whatsapp ? ` · ${contato.whatsapp}` : ""}.</> : "Este cliente ainda não tem contato com e-mail ou WhatsApp cadastrado."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {!f.dadosPagamento ? (
+              <p className="rounded-[3px] border border-marca bg-marca-clara p-3 text-sm">
+                <strong>Os dados bancários da Neo ainda não foram cadastrados.</strong> Peça ao administrador para preencher “Dados para pagamento por transferência” em Configurações &gt; Empresas; sem isso a mensagem não é montada.
+              </p>
+            ) : (
+              <>
+                {podeOperar && (
+                  <CriarRascunhoDados
+                    tituloId={id}
+                    contatoId={contato?.id ?? null}
+                    desabilitadoPor={!contato?.email ? "O contato escolhido não tem e-mail cadastrado." : !f.emailDados ? "O modelo de e-mail de dados para pagamento está desativado." : null}
+                    idsParcelas={f.paraDados.map((p) => p.id)}
+                  />
+                )}
+                <div className="grid gap-4 lg:grid-cols-2">
+                  {f.emailDados && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-medium">E-mail</h3><BotaoCopiar texto={`${f.emailDados.assunto ?? ""}\n\n${f.emailDados.corpo}`} rotulo="E-mail" /></div>
+                      <p className="text-xs text-muted-foreground">Assunto: {f.emailDados.assunto}</p>
+                      <pre className="whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 font-sans text-sm">{f.emailDados.corpo}</pre>
+                    </div>
+                  )}
+                  {f.whatsappDados && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-medium">WhatsApp</h3><BotaoCopiar texto={f.whatsappDados.corpo} rotulo="WhatsApp" /></div>
+                      <pre className="whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 font-sans text-sm">{f.whatsappDados.corpo}</pre>
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
+            {podeOperar && (
+              <div className="space-y-2 border-t pt-4">
+                <p className="text-sm font-medium">Registrar o envio dos dados</p>
+                <MarcarDadosEnviados
+                  key={f.paraDados.map((p) => p.id).join(",")}
+                  parcelas={f.paraDados.map((p) => ({ id: p.id, rotulo: `${p.documento}${p.parcela !== "1" ? `/${p.parcela}` : ""} — vence ${formatarData(p.vencimento)} — ${formatarMoeda(centavos(p.valor))}` }))}
+                  contatoId={contato?.id ?? null}
+                  canalSugerido={contato?.canal_preferido ?? "whatsapp"}
+                />
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {parcelasBoleto.length > 0 && (<>
       <Card size="sm" id="boleto">
         <CardHeader>
           <CardTitle>Boleto de cada parcela</CardTitle>
           <CardDescription>O boleto é gerado no Consistem ou no banco; anexe aqui o PDF de cada parcela. Anexo não se apaga: para trocar, envie outro (vale o mais recente).</CardDescription>
         </CardHeader>
         <CardContent className="space-y-2">
-          {parcelas.map((p) => {
+          {parcelasBoleto.map((p) => {
             const boleto = boletoDaParcela.get(p.id);
             const aberto = !ENCERRADOS.includes(p.estagio);
             return (
@@ -256,6 +320,8 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
           </CardContent>
         </Card>
       )}
+
+      </>)}
 
       <Card size="sm">
         <CardHeader><CardTitle>Histórico</CardTitle></CardHeader>

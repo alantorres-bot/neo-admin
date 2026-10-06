@@ -164,6 +164,8 @@ export function resumirPorGrupo(linhas: readonly (LinhaResumo & Partial<DadosSit
 /** O que a última interação registrada diz sobre o título (coluna "Andamento"). */
 export const ROTULO_ANDAMENTO: Record<string, string> = {
   boleto_enviado: "Boleto enviado",
+  dados_enviados: "Dados de pagamento enviados",
+  forma_pagamento: "Forma de pagamento alterada",
   rascunho_gmail: "Rascunho de e-mail criado",
   confirmacao: "Cliente confirmou o pagamento",
   sem_resposta_confirmacao: "Sem resposta à confirmação",

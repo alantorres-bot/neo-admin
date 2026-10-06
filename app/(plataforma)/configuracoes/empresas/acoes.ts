@@ -27,6 +27,7 @@ export async function salvarEmpresa(_anterior: EstadoForm, dados: FormData): Pro
     razao_social: entrada.data.razao_social,
     nome_curto: entrada.data.nome_curto,
     cnpj: cnpj.valor,
+    dados_pagamento: String(dados.get("dados_pagamento") ?? "").trim().slice(0, 1000) || null,
     ativa: dados.get("ativa") === "on",
   };
 

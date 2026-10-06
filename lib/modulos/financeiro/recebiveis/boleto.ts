@@ -6,6 +6,8 @@ export const TIPO_ANEXO_BOLETO = "boleto";
 export const MODULO_RECEBIVEIS = "financeiro.recebiveis";
 export const MODELO_BOLETO_EMAIL = "Envio de boleto — e-mail";
 export const MODELO_BOLETO_WHATSAPP = "Envio de boleto — WhatsApp";
+export const MODELO_DADOS_EMAIL = "Dados para pagamento — e-mail";
+export const MODELO_DADOS_WHATSAPP = "Dados para pagamento — WhatsApp";
 
 // ---------------------------------------------------------------- linha digitável
 
@@ -36,6 +38,8 @@ export type DadosMensagem = {
   /** "NF 1395" ou "título Z00031A". */
   referencia: string;
   parcelas: ParcelaMensagem[];
+  /** Dados bancários da empresa para transferência (cadastrados em Configurações > Empresas). */
+  dadosPagamento?: string;
 };
 
 const nomeParcela = (p: ParcelaMensagem) => `${p.documento}${p.parcela !== "1" ? `/${p.parcela}` : ""}`;
@@ -63,6 +67,7 @@ export function variaveisDaMensagem(d: DadosMensagem): Record<string, string> {
     linhas_digitaveis: listarLinhasDigitaveis(d.parcelas),
     total: formatarMoeda(total),
     qtd_parcelas: String(d.parcelas.length),
+    dados_pagamento: (d.dadosPagamento ?? "").trim(),
   };
 }
 

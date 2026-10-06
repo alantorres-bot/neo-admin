@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { enviarAnexo } from "@/lib/nucleo/anexos";
 import { MODULO_RECEBIVEIS, TIPO_ANEXO_BOLETO } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { criarClienteNavegador } from "@/lib/supabase/navegador";
-import { criarRascunhoGmail, marcarBoletoEnviado, salvarLinhaDigitavel } from "./acoes";
+import { criarRascunhoDados, criarRascunhoGmail, definirFormaPagamento, marcarBoletoEnviado, marcarDadosEnviados, salvarLinhaDigitavel } from "./acoes";
 
 /** Envia o PDF (ou imagem) do boleto da parcela para o bucket de anexos. O registro fica em `anexos` (tipo boleto). */
 export function AnexarBoleto({ tituloId, temBoleto }: { tituloId: string; temBoleto: boolean }) {
@@ -202,6 +202,148 @@ export function CriarRascunhoGmail({ tituloId, contatoId, desabilitadoPor, idsPa
       {link && !registrado && (
         <Button type="button" size="sm" disabled={registrando || idsParcelas.length === 0} onClick={registrarEnvio} title="Use depois de enviar o e-mail no Gmail">
           <Check /> {registrando ? "Registrando…" : "Já enviei: marcar boleto como enviado"}
+        </Button>
+      )}
+      {registrado && <span className="text-xs text-emerald-800">Envio registrado.</span>}
+    </div>
+  );
+}
+
+/** "Forma de pagamento" da parcela: boleto (padrão) ou transferência (sem boleto: o que se envia são os dados de pagamento). */
+export function FormaPagamento({ tituloId, forma }: { tituloId: string; forma: "boleto" | "transferencia" }) {
+  const router = useRouter();
+  const [pendente, iniciar] = useTransition();
+
+  function trocar(nova: "boleto" | "transferencia") {
+    if (nova === forma) return;
+    iniciar(async () => {
+      const r = await definirFormaPagamento([tituloId], nova);
+      if (r.ok) {
+        toast.success(r.aviso ?? "Forma de pagamento alterada.");
+        router.refresh();
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
+
+  const classe = (ativa: boolean) => `px-2.5 py-1 text-[12px] ${ativa ? "bg-botao font-bold text-white" : "bg-white text-texto hover:bg-cabecalho"}`;
+  return (
+    <div className="inline-flex items-center gap-2 text-xs">
+      <span className="text-muted-foreground">Pagamento:</span>
+      <span role="group" aria-label="Forma de pagamento" className="inline-flex overflow-hidden rounded-[3px] border border-grade">
+        <button type="button" disabled={pendente} aria-pressed={forma === "boleto"} className={classe(forma === "boleto")} onClick={() => trocar("boleto")}>Boleto</button>
+        <button type="button" disabled={pendente} aria-pressed={forma === "transferencia"} className={classe(forma === "transferencia")} onClick={() => trocar("transferencia")}>Transferência</button>
+      </span>
+    </div>
+  );
+}
+
+/** Registra o envio dos dados de pagamento (transferência) das parcelas marcadas. O sistema não envia: quem enviou registra aqui. */
+export function MarcarDadosEnviados({ parcelas, contatoId, canalSugerido }: { parcelas: { id: string; rotulo: string }[]; contatoId: string | null; canalSugerido: "email" | "whatsapp" | "telefone" | "interno" }) {
+  const router = useRouter();
+  const [marcadas, setMarcadas] = useState<Set<string>>(new Set(parcelas.map((p) => p.id)));
+  const [canal, setCanal] = useState(canalSugerido);
+  const [observacao, setObservacao] = useState("");
+  const [pendente, iniciar] = useTransition();
+
+  function alternar(id: string) {
+    setMarcadas((atual) => {
+      const novo = new Set(atual);
+      if (novo.has(id)) novo.delete(id);
+      else novo.add(id);
+      return novo;
+    });
+  }
+
+  function enviar() {
+    iniciar(async () => {
+      const r = await marcarDadosEnviados({ tituloIds: [...marcadas], canal, contatoId, observacao });
+      if (r.ok) {
+        toast.success(r.aviso ?? "Envio registrado.");
+        setObservacao("");
+        router.refresh();
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-3">
+      <ul className="space-y-1">
+        {parcelas.map((p) => (
+          <li key={p.id}>
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" className="size-4" checked={marcadas.has(p.id)} onChange={() => alternar(p.id)} />
+              <span>{p.rotulo}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <div className="flex flex-wrap items-center gap-2">
+        <select value={canal} onChange={(e) => setCanal(e.target.value as typeof canal)} aria-label="Meio do envio" className="h-8 rounded-lg border bg-background px-2 text-sm">
+          <option value="email">Enviado por e-mail</option>
+          <option value="whatsapp">Enviado por WhatsApp</option>
+          <option value="telefone">Combinado por telefone</option>
+          <option value="interno">Outro meio</option>
+        </select>
+        <Input value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Observação (opcional)" aria-label="Observação" maxLength={500} className="h-8 w-64" />
+        <Button type="button" disabled={pendente || marcadas.size === 0} onClick={enviar}>
+          {pendente ? "Registrando…" : "Marcar dados como enviados"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+/** "Criar rascunho no Gmail" do e-mail de dados para pagamento (sem anexos); depois, "Já enviei" registra o envio em um clique. */
+export function CriarRascunhoDados({ tituloId, contatoId, desabilitadoPor, idsParcelas }: { tituloId: string; contatoId: string | null; desabilitadoPor: string | null; idsParcelas: string[] }) {
+  const router = useRouter();
+  const [pendente, iniciar] = useTransition();
+  const [registrando, iniciarRegistro] = useTransition();
+  const [link, setLink] = useState<string>();
+  const [registrado, setRegistrado] = useState(false);
+
+  function criar() {
+    iniciar(async () => {
+      const r = await criarRascunhoDados(tituloId, contatoId);
+      if (r.ok) {
+        setLink(r.url);
+        toast.success(r.aviso ?? "Rascunho criado no Gmail.");
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
+
+  function registrarEnvio() {
+    iniciarRegistro(async () => {
+      const r = await marcarDadosEnviados({ tituloIds: idsParcelas, canal: "email", contatoId, observacao: "E-mail enviado a partir do rascunho do Gmail." });
+      if (r.ok) {
+        setRegistrado(true);
+        toast.success(r.aviso ?? "Envio registrado.");
+        router.refresh();
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Button type="button" variant="secondary" size="sm" disabled={pendente || desabilitadoPor !== null} onClick={criar} title={desabilitadoPor ?? undefined}>
+        <Mail /> {pendente ? "Criando rascunho…" : "Criar rascunho no Gmail"}
+      </Button>
+      {desabilitadoPor && <span className="text-xs text-muted-foreground">{desabilitadoPor}</span>}
+      {link && (
+        <Button variant="outline" size="sm" render={<a href={link} target="_blank" rel="noreferrer" />}>
+          <ExternalLink /> Abrir o rascunho no Gmail
+        </Button>
+      )}
+      {link && !registrado && (
+        <Button type="button" size="sm" disabled={registrando || idsParcelas.length === 0} onClick={registrarEnvio} title="Use depois de enviar o e-mail no Gmail">
+          <Check /> {registrando ? "Registrando…" : "Já enviei: marcar dados como enviados"}
         </Button>
       )}
       {registrado && <span className="text-xs text-emerald-800">Envio registrado.</span>}

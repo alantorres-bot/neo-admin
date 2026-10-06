@@ -24,6 +24,8 @@ export type TituloEsteira = {
   reguaPausadaAte: string | null;
   /** A régua de cobrança vale para este título (vencimento a partir da data de corte, não cedido nem contestado). */
   reguaAplica: boolean;
+  /** Forma de pagamento: boleto (padrão) ou transferência (sem boleto: o que se envia são os dados de pagamento). */
+  forma?: "boleto" | "transferencia";
 };
 
 export type InteracaoEsteira = { tipo: string; criado_em: string; descricao: string | null };
@@ -49,22 +51,32 @@ export function montarEsteira(t: TituloEsteira, interacoes: readonly InteracaoEs
   const diasAtraso = Math.max(diasEntre(hoje, t.vencimento), 0);
   const etapas: Etapa[] = [];
 
-  // 1) Boleto anexado
-  const enviado = maisRecente(interacoes, (i) => i.tipo === "boleto_enviado");
+  const transferencia = t.forma === "transferencia";
+  const enviado = maisRecente(interacoes, (i) => i.tipo === (transferencia ? "dados_enviados" : "boleto_enviado"));
   const enviadoEm = t.boletoEnviadoEm ?? enviado?.criado_em ?? null;
-  const boletoFeito = t.boletoAnexado || enviadoEm !== null;
-  etapas.push({
-    chave: "boleto", rotulo: "Boleto anexado", quando: null,
-    estado: boletoFeito ? "feita" : t.estagio === "aguardando_boleto" ? "atual" : encerrado ? "fora" : "fora",
-    detalhe: boletoFeito ? null : t.estagio === "aguardando_boleto" ? "falta anexar o PDF" : "não registrado no sistema",
-  });
+  if (transferencia) {
+    // Pago por transferência: não há boleto; o passo é enviar os dados de pagamento (PIX/TED) ao cliente.
+    etapas.push({
+      chave: "envio", rotulo: "Dados de pagamento enviados", quando: enviadoEm,
+      estado: enviadoEm ? "feita" : t.estagio === "aguardando_boleto" ? "atual" : "fora",
+      detalhe: enviadoEm ? null : t.estagio === "aguardando_boleto" ? "falta enviar os dados para a transferência" : "não registrado no sistema",
+    });
+  } else {
+    // 1) Boleto anexado
+    const boletoFeito = t.boletoAnexado || enviadoEm !== null;
+    etapas.push({
+      chave: "boleto", rotulo: "Boleto anexado", quando: null,
+      estado: boletoFeito ? "feita" : t.estagio === "aguardando_boleto" ? "atual" : encerrado ? "fora" : "fora",
+      detalhe: boletoFeito ? null : t.estagio === "aguardando_boleto" ? "falta anexar o PDF" : "não registrado no sistema",
+    });
 
-  // 2) Boleto enviado
-  etapas.push({
-    chave: "envio", rotulo: "Boleto enviado", quando: enviadoEm,
-    estado: enviadoEm ? "feita" : t.estagio === "aguardando_boleto" && t.boletoAnexado ? "atual" : t.estagio === "aguardando_boleto" ? "pendente" : "fora",
-    detalhe: enviadoEm ? null : t.estagio === "aguardando_boleto" ? (t.boletoAnexado ? "falta registrar o envio" : null) : "não registrado no sistema",
-  });
+    // 2) Boleto enviado
+    etapas.push({
+      chave: "envio", rotulo: "Boleto enviado", quando: enviadoEm,
+      estado: enviadoEm ? "feita" : t.estagio === "aguardando_boleto" && t.boletoAnexado ? "atual" : t.estagio === "aguardando_boleto" ? "pendente" : "fora",
+      detalhe: enviadoEm ? null : t.estagio === "aguardando_boleto" ? (t.boletoAnexado ? "falta registrar o envio" : null) : "não registrado no sistema",
+    });
+  }
 
   // 3) Confirmação do pagamento (4 dias antes do vencimento; a janela abre 7 dias antes)
   const confirmou = maisRecente(interacoes, (i) => i.tipo === "confirmacao");

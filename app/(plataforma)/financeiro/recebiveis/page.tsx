@@ -71,7 +71,7 @@ const primeiro = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] 
 type LinhaTitulo = {
   id: string; contraparte_id: string; documento: string; parcela: string; emissao: string | null; vencimento: string;
   valor: number | string; valor_atualizado: number | string; estagio: string; dias_atraso: number; faixa: string; cedido: boolean; contestado: boolean; regua_pausada_ate: string | null;
-  nota_fiscal: string | null; nota_saida_id: string | null; unidade: string;
+  nota_fiscal: string | null; nota_saida_id: string | null; unidade: string; forma_pagamento: string;
 };
 
 export default async function PaginaRecebiveis({ searchParams }: PageProps<"/financeiro/recebiveis">) {
@@ -151,7 +151,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   }
   let consulta = supabase
     .from("rec_vw_titulos")
-    .select("id, contraparte_id, documento, parcela, emissao, vencimento, valor, valor_atualizado, estagio, dias_atraso, faixa, cedido, contestado, regua_pausada_ate, nota_fiscal, nota_saida_id, unidade", { count: "exact" })
+    .select("id, contraparte_id, documento, parcela, emissao, vencimento, valor, valor_atualizado, estagio, dias_atraso, faixa, cedido, contestado, regua_pausada_ate, nota_fiscal, nota_saida_id, unidade, forma_pagamento", { count: "exact" })
     .neq("faixa", "encerrado")
     .order("vencimento")
     .order("documento")
@@ -217,7 +217,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   const acaoDoTitulo = (t: LinhaTitulo): { rotulo: string; href: string; destaque: boolean } => {
     const ficha = `/financeiro/recebiveis/${t.id}`;
     const pendencias = pendenciasDoCliente.get(`${t.contraparte_id}|${t.unidade}`) ?? [];
-    if (t.estagio === "aguardando_boleto") return { rotulo: "Anexar boleto", href: ficha, destaque: true };
+    if (t.estagio === "aguardando_boleto") return { rotulo: t.forma_pagamento === "transferencia" ? "Enviar dados" : "Anexar boleto", href: ficha, destaque: true };
     const marco = marcoDoAtraso(t.dias_atraso);
     if (marco && corteRegua && t.vencimento >= corteRegua && !t.cedido && !t.contestado && t.estagio !== "promessa" && pendencias.some((x) => x.startsWith("Cobrar D+"))) {
       return { rotulo: `Cobrar ${nomeDoMarco(marco)}`, href: `/financeiro/recebiveis/cobrar/${t.contraparte_id}`, destaque: true };
@@ -491,7 +491,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
                     <TableCell className="space-x-1">
                       {(() => {
                         const g = grupoDaSituacao(t);
-                        return <Badge className={COR_GRUPO[g]}>{t.cedido ? "Cedido" : t.contestado ? "Contestado" : t.estagio === "em_renegociacao" ? "Em renegociação" : t.estagio === "juridico" ? "Jurídico" : ROTULO_GRUPO_SELO[g]}</Badge>;
+                        return <Badge className={COR_GRUPO[g]}>{t.cedido ? "Cedido" : t.contestado ? "Contestado" : t.estagio === "em_renegociacao" ? "Em renegociação" : t.estagio === "juridico" ? "Jurídico" : (t.forma_pagamento === "transferencia" && g === "aguardando_boleto" ? "Enviar dados de pagamento" : t.forma_pagamento === "transferencia" && g === "boleto_enviado" ? "Dados enviados" : ROTULO_GRUPO_SELO[g])}</Badge>;
                       })()}
                       {t.estagio === "promessa" && t.regua_pausada_ate && <span className="text-[11px] text-muted-foreground">até {formatarData(t.regua_pausada_ate)}</span>}
                     </TableCell>

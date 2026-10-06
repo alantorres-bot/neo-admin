@@ -3,7 +3,7 @@
 // Tudo com o cliente do usuário (RLS vale).
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  MODELO_BOLETO_EMAIL, MODELO_BOLETO_WHATSAPP, MODULO_RECEBIVEIS, montarMensagem, TIPO_ANEXO_BOLETO,
+  MODELO_BOLETO_EMAIL, MODELO_BOLETO_WHATSAPP, MODELO_DADOS_EMAIL, MODELO_DADOS_WHATSAPP, MODULO_RECEBIVEIS, montarMensagem, TIPO_ANEXO_BOLETO,
   type DadosMensagem, type MensagemMontada, type ParcelaMensagem,
 } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { urlAssinadaAnexo } from "@/lib/nucleo/anexos";
@@ -17,6 +17,7 @@ export type Parcela = {
   id: string; documento: string; parcela: string; emissao: string | null; vencimento: string; valor: number | string; valor_atualizado: number | string;
   dias_atraso: number; estagio: string; linha_digitavel: string | null; boleto_enviado_em: string | null; nota_fiscal: string | null;
   nota_saida_id: string | null; contraparte_id: string; data_pagamento: string | null; regua_pausada_ate: string | null; cedido: boolean; contestado: boolean; unidade: string;
+  forma_pagamento: "boleto" | "transferencia"; empresa_id: string;
 };
 export type Contato = {
   id: string; nome: string; funcao: string | null; email: string | null; whatsapp: string | null; telefone: string | null; finalidades: string[];
@@ -39,8 +40,15 @@ export type Ficha = {
   nomesUsuarios: Map<string, string>;
   /** Parcelas que ainda esperam o envio do boleto. */
   aguardando: Parcela[];
-  /** Parcelas citadas na mensagem: as que aguardam envio; se não há, as demais em aberto. */
+  /** Parcelas de BOLETO citadas na mensagem: as que aguardam envio; se não há, as demais em aberto. */
   paraMensagem: Parcela[];
+  /** Parcelas pagas por TRANSFERÊNCIA citadas na mensagem de dados de pagamento (mesma regra). */
+  paraDados: Parcela[];
+  /** Dados bancários da empresa (Configurações > Empresas); vazio = ainda não cadastrados. */
+  dadosPagamento: string | null;
+  modeloDadosEmailId: string | null;
+  emailDados: MensagemMontada | null;
+  whatsappDados: MensagemMontada | null;
   modeloEmailId: string | null;
   email: MensagemMontada | null;
   whatsapp: MensagemMontada | null;
@@ -50,7 +58,7 @@ export type Ficha = {
   hoje: string;
 };
 
-const COLUNAS = "id, documento, parcela, emissao, vencimento, valor, valor_atualizado, dias_atraso, estagio, linha_digitavel, boleto_enviado_em, nota_fiscal, nota_saida_id, contraparte_id, data_pagamento, regua_pausada_ate, cedido, contestado, unidade";
+const COLUNAS = "id, documento, parcela, emissao, vencimento, valor, valor_atualizado, dias_atraso, estagio, linha_digitavel, boleto_enviado_em, nota_fiscal, nota_saida_id, contraparte_id, data_pagamento, regua_pausada_ate, cedido, contestado, unidade, forma_pagamento, empresa_id";
 
 export async function carregarFicha(supabase: SupabaseClient, id: string, contatoPedido: string, opcoes: { assinarLinks: boolean }): Promise<Ficha | null> {
   const { data: alvo } = await supabase.from("rec_vw_titulos").select(COLUNAS).eq("id", id).maybeSingle();
@@ -72,7 +80,7 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
       .eq("tipo", TIPO_ANEXO_BOLETO).in("referencia_id", ids).order("enviado_em", { ascending: false }),
     supabase.from("interacoes").select("id, referencia_id, canal, tipo, descricao, criado_em, usuario_id").eq("referencia_tabela", "rec_titulos")
       .in("referencia_id", ids).order("criado_em", { ascending: false }).limit(60),
-    supabase.from("modelos_mensagem").select("id, nome, canal, assunto, corpo").eq("modulo", MODULO_RECEBIVEIS).eq("ativo", true).in("nome", [MODELO_BOLETO_EMAIL, MODELO_BOLETO_WHATSAPP]),
+    supabase.from("modelos_mensagem").select("id, nome, canal, assunto, corpo").eq("modulo", MODULO_RECEBIVEIS).eq("ativo", true).in("nome", [MODELO_BOLETO_EMAIL, MODELO_BOLETO_WHATSAPP, MODELO_DADOS_EMAIL, MODELO_DADOS_WHATSAPP]),
     supabase.from("configuracoes").select("valor").eq("chave", "financeiro.recebiveis.regua_a_partir_de").maybeSingle(),
   ]);
 
@@ -107,24 +115,37 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
   const referencia = notaNumero ? `NF ${notaNumero}` : `título ${base.documento}${base.parcela !== "1" ? `/${base.parcela}` : ""}`;
 
   const aguardando = parcelas.filter((p) => p.estagio === "aguardando_boleto");
-  const paraMensagem = aguardando.length > 0 ? aguardando : parcelas.filter((p) => !ENCERRADOS.includes(p.estagio));
-  const dados: DadosMensagem = {
-    contato: contato?.nome ?? "",
-    cliente: nomeCliente,
-    referencia,
-    parcelas: paraMensagem.map((p): ParcelaMensagem => ({
-      documento: p.documento, parcela: p.parcela, vencimento: p.vencimento, valorCentavos: centavos(p.valor), linhaDigitavel: p.linha_digitavel,
-    })),
+  // A NF pode ter parcelas de boleto e de transferência: cada forma tem a sua mensagem (boleto com PDF; transferência com os dados de pagamento).
+  const paraMensagemDe = (forma: "boleto" | "transferencia") => {
+    const daForma = parcelas.filter((p) => p.forma_pagamento === forma);
+    const aguardandoDaForma = daForma.filter((p) => p.estagio === "aguardando_boleto");
+    return aguardandoDaForma.length > 0 ? aguardandoDaForma : daForma.filter((p) => !ENCERRADOS.includes(p.estagio));
   };
+  const paraMensagem = paraMensagemDe("boleto");
+  const paraDados = paraMensagemDe("transferencia");
+  const comoParcelas = (lista: Parcela[]): ParcelaMensagem[] => lista.map((p) => ({
+    documento: p.documento, parcela: p.parcela, vencimento: p.vencimento, valorCentavos: centavos(p.valor), linhaDigitavel: p.linha_digitavel,
+  }));
+  const dados: DadosMensagem = { contato: contato?.nome ?? "", cliente: nomeCliente, referencia, parcelas: comoParcelas(paraMensagem) };
+  const { data: empresaBruta } = await supabase.from("empresas").select("dados_pagamento").eq("id", base.empresa_id).maybeSingle();
+  const dadosPagamento = ((empresaBruta?.dados_pagamento as string | null | undefined) ?? "").trim() || null;
+  const dadosTransferencia: DadosMensagem = { ...dados, parcelas: comoParcelas(paraDados), dadosPagamento: dadosPagamento ?? "" };
   const modeloEmail = modelosBrutos?.find((m) => m.nome === MODELO_BOLETO_EMAIL);
   const modeloWhats = modelosBrutos?.find((m) => m.nome === MODELO_BOLETO_WHATSAPP);
   const email = modeloEmail && paraMensagem.length > 0 ? montarMensagem({ assunto: modeloEmail.assunto as string | null, corpo: modeloEmail.corpo as string }, dados) : null;
   const whatsapp = modeloWhats && paraMensagem.length > 0 ? montarMensagem({ assunto: null, corpo: modeloWhats.corpo as string }, dados) : null;
+  const modeloDadosEmail = modelosBrutos?.find((m) => m.nome === MODELO_DADOS_EMAIL);
+  const modeloDadosWhats = modelosBrutos?.find((m) => m.nome === MODELO_DADOS_WHATSAPP);
+  // Sem dados bancários cadastrados não se monta a mensagem (nada de inventar conta): a tela avisa onde cadastrar.
+  const podeMontarDados = paraDados.length > 0 && dadosPagamento !== null;
+  const emailDados = modeloDadosEmail && podeMontarDados ? montarMensagem({ assunto: modeloDadosEmail.assunto as string | null, corpo: modeloDadosEmail.corpo as string }, dadosTransferencia) : null;
+  const whatsappDados = modeloDadosWhats && podeMontarDados ? montarMensagem({ assunto: null, corpo: modeloDadosWhats.corpo as string }, dadosTransferencia) : null;
 
   return {
     base, parcelas, nomeCliente, codigoErp: (cliente?.codigo_erp as string | null | undefined) ?? null, notaNumero,
     pedidos: (nota?.pedidos as string[] | undefined) ?? [], referencia, contatos, contato, boletoDaParcela, interacoes, nomesUsuarios,
-    aguardando, paraMensagem, modeloEmailId: (modeloEmail?.id as string | undefined) ?? null, email, whatsapp,
+    aguardando, paraMensagem, paraDados, dadosPagamento, modeloDadosEmailId: (modeloDadosEmail?.id as string | undefined) ?? null, emailDados, whatsappDados,
+    modeloEmailId: (modeloEmail?.id as string | undefined) ?? null, email, whatsapp,
     totalCentavos: parcelas.reduce((s, p) => s + centavos(p.valor), 0),
     corteRegua: typeof cfgRegua?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfgRegua.valor) ? cfgRegua.valor : null,
     hoje: hojeEmCuiaba(),

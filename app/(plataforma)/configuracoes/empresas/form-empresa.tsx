@@ -3,6 +3,7 @@
 import { Pencil, Plus } from "lucide-react";
 import { Campo, DialogoFormulario } from "@/components/formularios/dialogo-formulario";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import type { Empresa } from "@/lib/nucleo/tipos";
 import { salvarEmpresa } from "./acoes";
 
@@ -25,6 +26,9 @@ export function DialogoEmpresa({ empresa }: { empresa?: Empresa }) {
       </Campo>
       <Campo id="cnpj" rotulo="CNPJ" dica="Opcional. Aceita com ou sem pontuação.">
         <Input id="cnpj" name="cnpj" defaultValue={empresa?.cnpj ?? ""} inputMode="numeric" placeholder="00.000.000/0000-00" />
+      </Campo>
+      <Campo id="dados_pagamento" rotulo="Dados para pagamento por transferência" dica="Banco, agência, conta e chave PIX, como devem aparecer na mensagem ao cliente. Usado nos títulos pagos por transferência.">
+        <Textarea id="dados_pagamento" name="dados_pagamento" defaultValue={empresa?.dados_pagamento ?? ""} rows={4} maxLength={1000} />
       </Campo>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="ativa" defaultChecked={empresa?.ativa ?? true} className="size-4" />

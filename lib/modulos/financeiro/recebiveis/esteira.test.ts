@@ -86,4 +86,16 @@ describe("montarEsteira", () => {
     expect(estados(e)).toMatchObject({ boleto: "fora", envio: "fora" });
     expect(e[0].detalhe).toBe("não registrado no sistema");
   });
+
+  it("transferência: no lugar de boleto anexado e enviado, um passo só: dados de pagamento enviados", () => {
+    const novo = montarEsteira(base({ estagio: "aguardando_boleto", boletoAnexado: false, boletoEnviadoEm: null, forma: "transferencia" }), [], HOJE);
+    expect(novo.map((x) => x.chave).slice(0, 2)).toEqual(["envio", "confirmacao"]);
+    expect(novo[0]).toMatchObject({ rotulo: "Dados de pagamento enviados", estado: "atual", detalhe: "falta enviar os dados para a transferência" });
+
+    const enviado = montarEsteira(base({ forma: "transferencia", boletoEnviadoEm: null }), [i("dados_enviados", "2026-10-18T14:00:00Z")], HOJE);
+    expect(enviado[0]).toMatchObject({ estado: "feita", quando: "2026-10-18T14:00:00Z" });
+    // um envio de BOLETO antigo não conta como envio dos dados
+    const outro = montarEsteira(base({ estagio: "aguardando_boleto", forma: "transferencia", boletoEnviadoEm: null }), [i("boleto_enviado", "2026-10-18T14:00:00Z")], HOJE);
+    expect(outro[0].estado).toBe("atual");
+  });
 });

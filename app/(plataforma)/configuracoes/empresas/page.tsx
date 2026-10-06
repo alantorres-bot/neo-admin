@@ -13,7 +13,7 @@ export default async function PaginaEmpresas() {
   const supabase = await criarClienteServidor();
   const { data, error } = await supabase
     .from("empresas")
-    .select("id, razao_social, nome_curto, cnpj, ativa")
+    .select("id, razao_social, nome_curto, cnpj, ativa, dados_pagamento")
     .order("ativa", { ascending: false })
     .order("nome_curto");
   if (error) throw new Error(`Falha ao ler as empresas: ${error.message}`);

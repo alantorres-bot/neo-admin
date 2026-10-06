@@ -19,6 +19,8 @@ export type Perfil = {
 
 export type Empresa = {
   id: string; razao_social: string; nome_curto: string; cnpj: string | null; ativa: boolean;
+  /** Dados bancários para pagamento por transferência (texto livre). */
+  dados_pagamento?: string | null;
 };
 
 export type Contraparte = {

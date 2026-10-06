@@ -469,7 +469,7 @@ async function sincronizarEmpresa(
   const aguardando = await lerTudo<LinhaAguardando>((de, ate) =>
     banco.from("rec_titulos")
       .select("id, contraparte_id, documento, parcela, vencimento, valor, nota_saida_id, contrapartes(codigo_erp, nome)")
-      .eq("empresa_id", empresa.id).eq("estagio", "aguardando_boleto").order("id").range(de, ate));
+      .eq("empresa_id", empresa.id).eq("estagio", "aguardando_boleto").eq("forma_pagamento", "boleto").order("id").range(de, ate));
   const titulosEsteira: TituloEsteira[] = aguardando.map((l) => {
     const c = Array.isArray(l.contrapartes) ? l.contrapartes[0] : l.contrapartes;
     return {
