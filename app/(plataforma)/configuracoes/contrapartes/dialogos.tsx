@@ -5,6 +5,7 @@ import { Campo, DialogoFormulario } from "@/components/formularios/dialogo-formu
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatarWhatsapp } from "@/lib/nucleo/documentos";
+import { FINALIDADES, finalidadesDesconhecidas, normalizarFinalidade, ROTULO_FINALIDADE } from "@/supabase/functions/_shared/contatos";
 import { CANAIS_DE_CONTATO, ROTULO_CANAL, ROTULO_TIPO_CONTRAPARTE, TIPOS_CONTRAPARTE } from "@/lib/nucleo/rotulos";
 import type { Contato, Contraparte } from "@/lib/nucleo/tipos";
 import { salvarContato, salvarContraparte } from "./acoes";
@@ -84,6 +85,9 @@ export function DialogoContato({ contraparteId, contato }: { contraparteId: stri
           <Input id="whatsapp" name="whatsapp" defaultValue={contato?.whatsapp ? formatarWhatsapp(contato.whatsapp) : ""} inputMode="tel" />
         </Campo>
       </div>
+      <Campo id="telefone" rotulo="Telefone para ligar" dica="Fixo ou celular, com DDD. Usado nas ligações de confirmação.">
+        <Input id="telefone" name="telefone" defaultValue={contato?.telefone ? formatarWhatsapp(contato.telefone) : ""} inputMode="tel" />
+      </Campo>
       <Campo id="canal_preferido" rotulo="Canal preferido">
         <select id="canal_preferido" name="canal_preferido" defaultValue={contato?.canal_preferido ?? "email"} className="h-8 rounded-lg border bg-background px-2 text-sm">
           {CANAIS_DE_CONTATO.map((c) => (
@@ -91,9 +95,20 @@ export function DialogoContato({ contraparteId, contato }: { contraparteId: stri
           ))}
         </select>
       </Campo>
-      <Campo id="finalidades" rotulo="Finalidades" dica="Separadas por vírgula. Ex.: boleto, cobranca, contrato.">
-        <Input id="finalidades" name="finalidades" defaultValue={contato?.finalidades.join(", ") ?? ""} />
-      </Campo>
+      <fieldset className="grid gap-1.5">
+        <legend className="mb-1 text-sm font-medium">Recebe</legend>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {FINALIDADES.map((f) => (
+            <label key={f} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" name="finalidades" value={f} defaultChecked={contato?.finalidades.some((x) => normalizarFinalidade(x) === f) ?? false} className="size-4" />
+              {ROTULO_FINALIDADE[f]}
+            </label>
+          ))}
+        </div>
+        {contato && finalidadesDesconhecidas(contato.finalidades).length > 0 && (
+          <p className="text-xs text-red-700">Finalidade que o sistema não reconhece: {finalidadesDesconhecidas(contato.finalidades).join(", ")}. Ao salvar, ela é trocada pelas marcadas acima.</p>
+        )}
+      </fieldset>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="ativo" defaultChecked={contato?.ativo ?? true} className="size-4" />
         Contato ativo

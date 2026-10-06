@@ -1,3 +1,4 @@
+import { finalidadesDesconhecidas, normalizarFinalidade, ROTULO_FINALIDADE, type Finalidade } from "@/supabase/functions/_shared/contatos";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -36,7 +37,7 @@ export default async function PaginaContatos({ params }: PageProps<"/configuraco
 
   const { data: contatosBrutos, error } = await supabase
     .from("contatos")
-    .select("id, contraparte_id, nome, funcao, email, whatsapp, canal_preferido, finalidades, ativo")
+    .select("id, contraparte_id, nome, funcao, email, whatsapp, telefone, canal_preferido, finalidades, ativo")
     .eq("contraparte_id", id)
     .order("ativo", { ascending: false })
     .order("nome");
@@ -75,6 +76,7 @@ export default async function PaginaContatos({ params }: PageProps<"/configuraco
                 <TableHead>Função</TableHead>
                 <TableHead>E-mail</TableHead>
                 <TableHead>WhatsApp</TableHead>
+                <TableHead>Telefone</TableHead>
                 <TableHead>Canal</TableHead>
                 <TableHead>Finalidades</TableHead>
                 {podeEditar && <TableHead className="w-24" />}
@@ -87,8 +89,11 @@ export default async function PaginaContatos({ params }: PageProps<"/configuraco
                   <TableCell>{t.funcao ?? "—"}</TableCell>
                   <TableCell>{t.email ?? "—"}</TableCell>
                   <TableCell className="tabular-nums">{t.whatsapp ? formatarWhatsapp(t.whatsapp) : "—"}</TableCell>
+                  <TableCell className="tabular-nums">{t.telefone ? formatarWhatsapp(t.telefone) : "—"}</TableCell>
                   <TableCell>{t.canal_preferido ? ROTULO_CANAL[t.canal_preferido] : "—"}</TableCell>
-                  <TableCell className="space-x-1">{t.finalidades.map((f) => <Badge key={f} variant="outline">{f}</Badge>)}</TableCell>
+                  <TableCell className="space-x-1">{t.finalidades.map((f) => finalidadesDesconhecidas([f]).length > 0
+                    ? <Badge key={f} variant="destructive" title="O sistema não reconhece esta finalidade: edite o contato e escolha as finalidades na lista.">{f}</Badge>
+                    : <Badge key={f} variant="outline">{ROTULO_FINALIDADE[normalizarFinalidade(f) as Finalidade]}</Badge>)}</TableCell>
                   {podeEditar && <TableCell className="text-right"><DialogoContato contraparteId={c.id} contato={t} /></TableCell>}
                 </TableRow>
               ))}

@@ -7,6 +7,7 @@ import { normalizarDocumento, normalizarWhatsapp } from "@/lib/nucleo/documentos
 import { mensagemDeErroBanco } from "@/lib/nucleo/erros";
 import { temAcessoAlgumaArea } from "@/lib/nucleo/permissoes";
 import { TIPOS_CONTRAPARTE, CANAIS_DE_CONTATO } from "@/lib/nucleo/rotulos";
+import { FINALIDADES, normalizarFinalidade } from "@/supabase/functions/_shared/contatos";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
@@ -78,17 +79,17 @@ export async function salvarContato(_anterior: EstadoForm, dados: FormData): Pro
   const whatsapp = whatsappInformado === "" ? null : normalizarWhatsapp(whatsappInformado);
   if (whatsappInformado !== "" && whatsapp === null) return { erro: "WhatsApp inválido. Informe DDD + número, ex.: (65) 99999-9999." };
 
+  const telefoneInformado = String(dados.get("telefone") ?? "").trim();
+  const telefone = telefoneInformado === "" ? null : normalizarWhatsapp(telefoneInformado);
+  if (telefoneInformado !== "" && telefone === null) return { erro: "Telefone inválido. Informe DDD + número, ex.: (65) 3222-0000." };
+
   if (entrada.data.canal_preferido === "email" && entrada.data.email === "" ) return { erro: "Informe o e-mail ou escolha outro canal preferido." };
   if (entrada.data.canal_preferido === "whatsapp" && whatsapp === null) return { erro: "Informe o WhatsApp ou escolha outro canal preferido." };
+  if (entrada.data.canal_preferido === "telefone" && telefone === null && whatsapp === null) return { erro: "Informe o telefone ou escolha outro canal preferido." };
+  if (entrada.data.email === "" && whatsapp === null && telefone === null) return { erro: "Informe pelo menos um meio de contato: e-mail, WhatsApp ou telefone." };
 
-  const finalidades = [
-    ...new Set(
-      String(dados.get("finalidades") ?? "")
-        .split(",")
-        .map((f) => f.trim().toLowerCase())
-        .filter(Boolean),
-    ),
-  ];
+  // Lista fechada (caixas de marcação): só entra o que o sistema reconhece, na grafia certa.
+  const finalidades = [...new Set(dados.getAll("finalidades").map((f) => normalizarFinalidade(String(f))))].filter((f) => (FINALIDADES as readonly string[]).includes(f));
 
   const registro = {
     contraparte_id: entrada.data.contraparte_id,
@@ -96,6 +97,7 @@ export async function salvarContato(_anterior: EstadoForm, dados: FormData): Pro
     funcao: vazioParaNulo(dados.get("funcao")),
     email: entrada.data.email === "" ? null : entrada.data.email.toLowerCase(),
     whatsapp,
+    telefone,
     canal_preferido: entrada.data.canal_preferido,
     finalidades,
     ativo: dados.get("ativo") === "on",

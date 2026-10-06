@@ -28,7 +28,7 @@ export type Contraparte = {
 
 export type Contato = {
   id: string; contraparte_id: string; nome: string; funcao: string | null; email: string | null;
-  whatsapp: string | null; canal_preferido: Canal | null; finalidades: string[]; ativo: boolean;
+  whatsapp: string | null; telefone: string | null; canal_preferido: Canal | null; finalidades: string[]; ativo: boolean;
 };
 
 export type Pendencia = {

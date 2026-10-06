@@ -1,11 +1,12 @@
 import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
+import { escolherContato } from "@/supabase/functions/_shared/contatos";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import type { criarClienteServidor } from "@/lib/supabase/servidor";
 import { ESTAGIOS_COBRAVEIS, planejarCobrancas, type GrupoCobranca, type TituloCobranca } from "@/supabase/functions/_shared/cobranca";
 
 type Cliente = Awaited<ReturnType<typeof criarClienteServidor>>;
 
-export type ContatoCobranca = { id: string; nome: string; funcao: string | null; whatsapp: string | null; email: string | null; finalidades: string[] };
+export type ContatoCobranca = { id: string; nome: string; funcao: string | null; whatsapp: string | null; email: string | null; telefone: string | null; finalidades: string[]; canal_preferido: string | null; ativo: boolean };
 
 export const CONFIG_INICIO_REGUA = "financeiro.recebiveis.regua_a_partir_de";
 const MODULO = "financeiro.recebiveis";
@@ -44,7 +45,7 @@ export async function carregarCobranca(supabase: Cliente, clienteId: string): Pr
     supabase.from("rec_titulos")
       .select("id, documento, parcela, vencimento, valor, estagio, cedido, contestado, unidade, regua_pausada_ate, rec_contratos(multa_pct, juros_mes_pct)")
       .eq("contraparte_id", clienteId).in("estagio", [...ESTAGIOS_COBRAVEIS]).lt("vencimento", hoje).order("vencimento").limit(500),
-    supabase.from("contatos").select("id, nome, funcao, whatsapp, email, finalidades").eq("contraparte_id", clienteId).eq("ativo", true).order("nome"),
+    supabase.from("contatos").select("id, nome, funcao, whatsapp, email, telefone, finalidades, canal_preferido, ativo").eq("contraparte_id", clienteId).eq("ativo", true).order("nome"),
     supabase.from("pendencias").select("referencia_id").eq("modulo", MODULO).eq("referencia_tabela", "rec_titulos").like("titulo", "Possível baixa:%").in("status", ["aberta", "em_andamento"]).limit(500),
   ]);
   const corte = typeof cfg?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfg.valor) ? cfg.valor : null;
@@ -65,8 +66,9 @@ export async function carregarCobranca(supabase: Cliente, clienteId: string): Pr
   const grupos = corte ? planejarCobrancas(titulos, hoje, corte, excluidos) : [];
   const antigos = corte ? titulos.filter((t) => t.vencimento < corte && !t.cedido && !t.contestado) : [];
 
-  const contatoWhatsapp = contatos.find((c) => c.finalidades.includes("cobranca") && c.whatsapp) ?? contatos.find((c) => c.whatsapp) ?? contatos[0] ?? null;
-  const contatoEmail = contatos.find((c) => c.finalidades.includes("cobranca") && c.email) ?? contatos.find((c) => c.finalidades.includes("boleto") && c.email) ?? contatos.find((c) => c.email) ?? null;
+  // Regra única de escolha (`_shared/contatos.ts`): só quem tem o canal; finalidade cobrança antes de boleto no e-mail.
+  const contatoWhatsapp = escolherContato(contatos, "cobranca", "whatsapp");
+  const contatoEmail = escolherContato(contatos, ["cobranca", "boleto"], "email");
 
   return {
     nomeCliente: cliente.nome as string,

@@ -70,6 +70,7 @@ import {
   type TituloConfirmacao,
 } from "../_shared/confirmacao.ts";
 
+import { escolherContato, type ContatoEscolha, type Finalidade } from "../_shared/contatos.ts";
 import {
   criticidadeCobranca,
   descricaoPendenciaCobranca,
@@ -106,6 +107,27 @@ async function lerRestantes(banco: Banco, ids: string[]): Promise<Map<string, nu
     for (const d of data ?? []) mapa.set(d.titulo_id as string, Math.round(Number(d.valor_restante) * 100));
   }
   return mapa;
+}
+
+/**
+ * Nome do contato que personaliza a saudação do WhatsApp de cada cliente: a mesma regra das telas (`_shared/contatos.ts`),
+ * só quem está ativo, tem WhatsApp e, de preferência, a finalidade pedida. Cliente sem contato fica de fora (saudação genérica).
+ */
+async function contatosParaSaudacao(banco: Banco, clientes: string[], finalidades: Finalidade[]): Promise<Map<string, string>> {
+  const nomes = new Map<string, string>();
+  const ids = [...new Set(clientes)];
+  if (ids.length === 0) return nomes;
+  const porCliente = new Map<string, ContatoEscolha[]>();
+  for (const lote of lotes(ids, 100)) {
+    const { data, error } = await banco.from("contatos").select("id, contraparte_id, nome, email, whatsapp, telefone, finalidades, canal_preferido, ativo").in("contraparte_id", lote).eq("ativo", true);
+    if (error) throw new Error(`Falha ao ler os contatos: ${error.message}`);
+    for (const c of data ?? []) porCliente.set(c.contraparte_id as string, [...(porCliente.get(c.contraparte_id as string) ?? []), c as unknown as ContatoEscolha]);
+  }
+  for (const [cliente, lista] of porCliente) {
+    const escolhido = escolherContato(lista, finalidades, "whatsapp");
+    if (escolhido) nomes.set(cliente, escolhido.nome);
+  }
+  return nomes;
 }
 
 const CABECALHOS = { "Content-Type": "application/json; charset=utf-8" };
@@ -504,12 +526,7 @@ async function sincronizarEmpresa(
     const novas = gruposConfirmacao.filter((g) => !existentes.has(tituloPendenciaConfirmacao(g)));
     if (novas.length > 0) {
       // Contato conhecido (finalidade confirmação ou cobrança) personaliza a saudação da mensagem.
-      const { data: contatos } = await banco.from("contatos").select("contraparte_id, nome, finalidades").in("contraparte_id", novas.map((g) => g.contraparteId)).eq("ativo", true).order("nome");
-      const contatoDoCliente = new Map<string, string>();
-      for (const c of contatos ?? []) {
-        const fin = (c.finalidades as string[]) ?? [];
-        if ((fin.includes("confirmacao") || fin.includes("cobranca")) && !contatoDoCliente.has(c.contraparte_id as string)) contatoDoCliente.set(c.contraparte_id as string, c.nome as string);
-      }
+      const contatoDoCliente = await contatosParaSaudacao(banco, novas.map((g) => g.contraparteId), ["confirmacao", "cobranca"]);
       const linhasNovas = novas.map((g) => ({
         modulo: MODULO,
         empresa_id: empresa.id,
@@ -665,13 +682,7 @@ async function sincronizarEmpresa(
       resumo.regua = `trava: ${novasCobrancas.length} pendências de uma vez (limite ${TRAVA_PENDENCIAS_COBRANCA}); confira a data de corte`;
       resumo.pendenciasCobranca = 0;
     } else {
-      const { data: contatos } = novasCobrancas.length === 0 ? { data: [] } : await banco.from("contatos").select("contraparte_id, nome, finalidades")
-        .in("contraparte_id", [...new Set(novasCobrancas.map((g) => g.contraparteId))]).eq("ativo", true).order("nome");
-      const contatoDoCliente = new Map<string, string>();
-      for (const c of contatos ?? []) {
-        const fin = (c.finalidades as string[]) ?? [];
-        if ((fin.includes("cobranca") || fin.includes("confirmacao")) && !contatoDoCliente.has(c.contraparte_id as string)) contatoDoCliente.set(c.contraparte_id as string, c.nome as string);
-      }
+      const contatoDoCliente = await contatosParaSaudacao(banco, novasCobrancas.map((g) => g.contraparteId), ["cobranca", "confirmacao"]);
       const linhasCobranca = novasCobrancas.map((g) => ({
         modulo: MODULO,
         empresa_id: empresa.id,

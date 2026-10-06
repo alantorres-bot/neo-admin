@@ -206,7 +206,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
           <CardTitle>Mensagem pronta</CardTitle>
           <CardDescription>
             Copie o texto ou crie o rascunho do e-mail no Gmail, já com os boletos em anexo (o sistema nunca envia: você confere e envia no Gmail).{" "}
-            {contato ? <>Para <strong>{contato.nome}</strong>{contato.funcao ? ` (${contato.funcao})` : ""}{contato.email ? ` · ${contato.email}` : ""}{contato.whatsapp ? ` · ${contato.whatsapp}` : ""}.</> : "Este cliente ainda não tem contato cadastrado: cadastre em Configurações > Contrapartes e contatos."}
+            {contato ? <>Para <strong>{contato.nome}</strong>{contato.funcao ? ` (${contato.funcao})` : ""}{contato.email ? ` · ${contato.email}` : ""}{contato.whatsapp ? ` · ${contato.whatsapp}` : ""}.</> : contatos.length > 0 ? "Nenhum contato deste cliente tem e-mail ou WhatsApp cadastrado: complete em Configurações > Contrapartes e contatos." : "Este cliente ainda não tem contato cadastrado: cadastre em Configurações > Contrapartes e contatos."}
           </CardDescription>
           {contatos.length > 1 && (
             <form method="get" className="flex items-center gap-2 pt-1">

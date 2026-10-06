@@ -4,6 +4,8 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
+import { formatarWhatsapp } from "@/lib/nucleo/documentos";
+import { escolherContato } from "@/supabase/functions/_shared/contatos";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -26,7 +28,7 @@ const nomeParcela = (t: { documento: string; parcela: string }) => `${t.document
 const quando = (iso: string) => new Intl.DateTimeFormat("pt-BR", { timeZone: FUSO, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
 type Linha = { id: string; documento: string; parcela: string; vencimento: string; valor: number | string; estagio: string; cedido: boolean; contestado: boolean };
-type Contato = { id: string; nome: string; funcao: string | null; whatsapp: string | null; email: string | null; finalidades: string[] };
+type Contato = { id: string; nome: string; funcao: string | null; whatsapp: string | null; email: string | null; telefone: string | null; finalidades: string[]; canal_preferido: string | null; ativo: boolean };
 
 export default async function PaginaConfirmacao({ params, searchParams }: PageProps<"/financeiro/recebiveis/confirmar/[id]">) {
   const { id } = await params;
@@ -47,13 +49,15 @@ export default async function PaginaConfirmacao({ params, searchParams }: PagePr
   const [{ data: linhasBrutas }, { data: contatosBrutos }, { data: interacoesBrutas }] = await Promise.all([
     supabase.from("rec_titulos").select("id, documento, parcela, vencimento, valor, estagio, cedido, contestado").eq("contraparte_id", id).eq("unidade", unidade)
       .in("estagio", ["importado", "aguardando_boleto", "boleto_enviado", "confirmado_cliente"]).gte("vencimento", hoje).order("vencimento").limit(200),
-    supabase.from("contatos").select("id, nome, funcao, whatsapp, email, finalidades").eq("contraparte_id", id).eq("ativo", true).order("nome"),
+    supabase.from("contatos").select("id, nome, funcao, whatsapp, email, telefone, finalidades, canal_preferido, ativo").eq("contraparte_id", id).eq("ativo", true).order("nome"),
     supabase.from("interacoes").select("id, referencia_id, canal, tipo, descricao, criado_em, usuario_id").eq("contraparte_id", id).eq("modulo", MODULO)
       .in("tipo", ["confirmacao", "sem_resposta_confirmacao"]).order("criado_em", { ascending: false }).limit(10),
   ]);
   const linhas = (linhasBrutas ?? []) as Linha[];
   const contatos = (contatosBrutos ?? []) as Contato[];
-  const contato = contatos.find((c) => c.finalidades.includes("confirmacao")) ?? contatos.find((c) => c.finalidades.includes("cobranca")) ?? contatos.find((c) => c.whatsapp) ?? contatos[0] ?? null;
+  // Regra única de escolha (`_shared/contatos.ts`): o WhatsApp da mensagem vai para quem tem WhatsApp; o telefone, para ligar.
+  const contato = escolherContato(contatos, ["confirmacao", "cobranca"], "whatsapp");
+  const contatoLigar = escolherContato(contatos, ["confirmacao", "cobranca"], "telefone");
 
   // Título com parte antecipada na AKF: a confirmação fala só do que resta com a Neo (migration 0113).
   const partes = await lerPartes(supabase, linhas.map((l) => l.id));
@@ -88,7 +92,8 @@ export default async function PaginaConfirmacao({ params, searchParams }: PagePr
             <CardTitle>Mensagem pronta (WhatsApp)</CardTitle>
             <CardDescription>
               Copie e envie pelo seu WhatsApp (o sistema não envia).{" "}
-              {contato ? <>Para <strong>{contato.nome}</strong>{contato.funcao ? ` (${contato.funcao})` : ""}{contato.whatsapp ? ` · ${contato.whatsapp}` : ""}.</> : "Este cliente ainda não tem contato cadastrado: cadastre em Configurações > Contrapartes e contatos."}
+              {contato ? <>Para <strong>{contato.nome}</strong>{contato.funcao ? ` (${contato.funcao})` : ""}{contato.whatsapp ? ` · ${formatarWhatsapp(contato.whatsapp)}` : ""}.</> : contatos.length > 0 ? "Nenhum contato deste cliente tem WhatsApp cadastrado: complete em Configurações > Contrapartes e contatos." : "Este cliente ainda não tem contato cadastrado: cadastre em Configurações > Contrapartes e contatos."}
+              {contatoLigar && <> Para ligar: <strong>{contatoLigar.nome}</strong> · {formatarWhatsapp(contatoLigar.telefone ?? contatoLigar.whatsapp)}.</>}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">

@@ -7,6 +7,7 @@ import {
   type DadosMensagem, type MensagemMontada, type ParcelaMensagem,
 } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { urlAssinadaAnexo } from "@/lib/nucleo/anexos";
+import { escolherContato } from "@/supabase/functions/_shared/contatos";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 
 export const ENCERRADOS = ["pago", "renegociado", "cancelado"];
@@ -18,7 +19,7 @@ export type Parcela = {
   nota_saida_id: string | null; contraparte_id: string; data_pagamento: string | null; regua_pausada_ate: string | null; cedido: boolean; contestado: boolean; unidade: string;
 };
 export type Contato = {
-  id: string; nome: string; funcao: string | null; email: string | null; whatsapp: string | null; finalidades: string[];
+  id: string; nome: string; funcao: string | null; email: string | null; whatsapp: string | null; telefone: string | null; finalidades: string[];
   canal_preferido: "email" | "whatsapp" | "telefone" | "interno" | null;
 };
 export type Interacao = { id: string; referencia_id: string; canal: string; tipo: string; descricao: string | null; criado_em: string; usuario_id: string | null };
@@ -66,7 +67,7 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
   const [{ data: cliente }, { data: nota }, { data: contatosBrutos }, { data: anexosBrutos }, { data: interacoesBrutas }, { data: modelosBrutos }, { data: cfgRegua }] = await Promise.all([
     supabase.from("contrapartes").select("nome, codigo_erp").eq("id", base.contraparte_id).maybeSingle(),
     base.nota_saida_id ? supabase.from("rec_notas_saida").select("nota, pedidos").eq("id", base.nota_saida_id).maybeSingle() : Promise.resolve({ data: null }),
-    supabase.from("contatos").select("id, nome, funcao, email, whatsapp, finalidades, canal_preferido").eq("contraparte_id", base.contraparte_id).eq("ativo", true).order("nome"),
+    supabase.from("contatos").select("id, nome, funcao, email, whatsapp, telefone, finalidades, canal_preferido, ativo").eq("contraparte_id", base.contraparte_id).eq("ativo", true).order("nome"),
     supabase.from("anexos").select("referencia_id, arquivo_path, nome_arquivo, enviado_em").eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "rec_titulos")
       .eq("tipo", TIPO_ANEXO_BOLETO).in("referencia_id", ids).order("enviado_em", { ascending: false }),
     supabase.from("interacoes").select("id, referencia_id, canal, tipo, descricao, criado_em, usuario_id").eq("referencia_tabela", "rec_titulos")
@@ -97,7 +98,9 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
   }
 
   const contatos = (contatosBrutos ?? []) as Contato[];
-  const contato = contatos.find((c) => c.id === contatoPedido) ?? contatos.find((c) => c.finalidades.includes("boleto")) ?? contatos[0] ?? null;
+  // O contato do boleto: o que a pessoa escolheu na tela; senão o da finalidade "boleto" que tenha e-mail, depois o que tenha WhatsApp.
+  // Nunca um contato sem nenhum dos dois (antes caía no primeiro da lista, mesmo sem canal).
+  const contato = contatos.find((c) => c.id === contatoPedido) ?? escolherContato(contatos, "boleto", "email") ?? escolherContato(contatos, "boleto", "whatsapp") ?? null;
 
   const nomeCliente = (cliente?.nome as string | undefined) ?? "";
   const notaNumero = (nota?.nota as string | undefined) ?? null;
