@@ -82,7 +82,7 @@ export async function marcarBoletoEnviado(entrada: z.input<typeof esquemaEnvio>)
     ok: true,
     aviso: concluidas > 0
       ? "Pendência “Anexar boleto” concluída."
-      : "Envio registrado. A pendência continua aberta (há parcelas aguardando boleto ou ela está com outra pessoa).",
+      : "Envio registrado.",
   };
 }
 

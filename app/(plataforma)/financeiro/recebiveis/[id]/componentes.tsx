@@ -124,7 +124,7 @@ export function MarcarEnviado({ parcelas, contatoId, canalSugerido }: { parcelas
     });
   }
 
-  if (parcelas.length === 0) return <p className="text-sm text-muted-foreground">Nenhuma parcela aguardando envio.</p>;
+  if (parcelas.length === 0) return <p className="text-sm text-muted-foreground">Todas as parcelas estão encerradas (pagas ou canceladas).</p>;
   return (
     <div className="space-y-3">
       <ul className="space-y-1">
@@ -155,9 +155,26 @@ export function MarcarEnviado({ parcelas, contatoId, canalSugerido }: { parcelas
 }
 
 /** "Criar rascunho no Gmail": o rascunho nasce com os boletos em anexo; quem confere e envia é uma pessoa, no Gmail. */
-export function CriarRascunhoGmail({ tituloId, contatoId, desabilitadoPor }: { tituloId: string; contatoId: string | null; desabilitadoPor: string | null }) {
+export function CriarRascunhoGmail({ tituloId, contatoId, desabilitadoPor, idsParcelas }: { tituloId: string; contatoId: string | null; desabilitadoPor: string | null; idsParcelas: string[] }) {
+  const router = useRouter();
   const [pendente, iniciar] = useTransition();
+  const [registrando, iniciarRegistro] = useTransition();
   const [link, setLink] = useState<string>();
+  const [registrado, setRegistrado] = useState(false);
+
+  // Depois de enviar o e-mail pelo Gmail: um clique registra o envio (a parcela passa para "Boleto enviado" e o histórico guarda).
+  function registrarEnvio() {
+    iniciarRegistro(async () => {
+      const r = await marcarBoletoEnviado({ tituloIds: idsParcelas, canal: "email", contatoId, observacao: "E-mail enviado a partir do rascunho do Gmail." });
+      if (r.ok) {
+        setRegistrado(true);
+        toast.success(r.aviso ?? "Envio registrado.");
+        router.refresh();
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
 
   function criar() {
     iniciar(async () => {
@@ -182,6 +199,12 @@ export function CriarRascunhoGmail({ tituloId, contatoId, desabilitadoPor }: { t
           <ExternalLink /> Abrir o rascunho no Gmail
         </Button>
       )}
+      {link && !registrado && (
+        <Button type="button" size="sm" disabled={registrando || idsParcelas.length === 0} onClick={registrarEnvio} title="Use depois de enviar o e-mail no Gmail">
+          <Check /> {registrando ? "Registrando…" : "Já enviei: marcar boleto como enviado"}
+        </Button>
+      )}
+      {registrado && <span className="text-xs text-emerald-800">Envio registrado.</span>}
     </div>
   );
 }

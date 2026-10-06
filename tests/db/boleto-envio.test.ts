@@ -105,12 +105,43 @@ describe("rec_marcar_boleto_enviado", () => {
     await expect(marcar(finOperador, [c.a])).rejects.toThrow(/Anexe o boleto/);
   });
 
-  it("não marca duas vezes, nem lista vazia", async () => {
+  it("lista vazia é recusada", async () => {
+    await expect(marcar(finOperador, [])).rejects.toThrow(/pelo menos uma parcela/);
+  });
+
+  it("registrar de novo é um reenvio: o estágio fica, a data do envio é atualizada e há duas interações", async () => {
     const c = await preparar();
     await anexar(c.a);
     await marcar(finOperador, [c.a]);
-    await expect(marcar(finOperador, [c.a])).rejects.toThrow(/já não está aguardando/);
-    await expect(marcar(finOperador, [])).rejects.toThrow(/pelo menos uma parcela/);
+    const primeiro = (await q(`select boleto_enviado_em from rec_titulos where id = $1`, [c.a])).rows[0].boleto_enviado_em as Date;
+    await q(`select pg_sleep(0.05)`);
+    const r = await marcar(finOperador, [c.a], "whatsapp", "Reenviado.");
+    expect(r.rows[0].r.parcelas).toBe(1);
+    const t = (await q(`select estagio, boleto_enviado_em from rec_titulos where id = $1`, [c.a])).rows[0];
+    expect(t.estagio).toBe("boleto_enviado");
+    expect(new Date(t.boleto_enviado_em).getTime()).toBeGreaterThan(new Date(primeiro).getTime());
+    expect((await q(`select canal from interacoes where referencia_id = $1 and tipo = 'boleto_enviado' order by criado_em`, [c.a])).rows.map((x) => x.canal)).toEqual(["email", "whatsapp"]);
+  });
+
+  it("título anterior à esteira (importado) avança para boleto enviado; confirmado e vencido só registram o envio", async () => {
+    const c = await preparar();
+    const ids = [c.a, c.b, c.avulso];
+    for (const id of ids) await anexar(id);
+    await q(`update rec_titulos set estagio = 'importado' where id = $1`, [c.a]);
+    await q(`update rec_titulos set estagio = 'confirmado_cliente' where id = $1`, [c.b]);
+    await q(`update rec_titulos set estagio = 'vencido' where id = $1`, [c.avulso]);
+    await marcar(finOperador, ids);
+    const est = Object.fromEntries((await q(`select id, estagio from rec_titulos where id = any($1::uuid[])`, [ids])).rows.map((x) => [x.id, x.estagio]));
+    expect(est).toEqual({ [c.a]: "boleto_enviado", [c.b]: "confirmado_cliente", [c.avulso]: "vencido" });
+  });
+
+  it("título encerrado, em renegociação ou no jurídico continua recusado", async () => {
+    for (const estagio of ["pago", "cancelado", "renegociado", "em_renegociacao", "juridico"]) {
+      const c = await preparar();
+      await anexar(c.a);
+      await q(`update rec_titulos set estagio = $2::rec_estagio, data_pagamento = case when $2 = 'pago' then current_date end where id = $1`, [c.a, estagio]);
+      await expect(marcar(finOperador, [c.a])).rejects.toThrow(/já está encerrada/);
+    }
   });
 
   it("repetir o mesmo id na lista conta uma vez só", async () => {

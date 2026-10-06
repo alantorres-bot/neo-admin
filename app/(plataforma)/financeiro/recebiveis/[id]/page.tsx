@@ -48,11 +48,12 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
   const supabase = await criarClienteServidor();
   const f = await carregarFicha(supabase, id, primeiro(parametros.contato), { assinarLinks: true });
   if (!f) notFound();
-  const { parcelas, contato, contatos, boletoDaParcela, aguardando, email, whatsapp } = f;
+  const { parcelas, contato, contatos, boletoDaParcela, email, whatsapp } = f;
   // Antecipação parcial na AKF (migration 0113): o que já está na AKF e o que resta com a Neo.
   const partesAkf = await lerPartes(supabase, parcelas.map((p) => p.id));
 
-  const parcelasEnvio = aguardando.map((p) => ({
+  // O envio pode ser registrado em qualquer parcela em aberto (aguardando, anterior à esteira ou já enviada: reenvio).
+  const parcelasEnvio = f.paraMensagem.map((p) => ({
     id: p.id,
     rotulo: `${p.documento}${p.parcela !== "1" ? `/${p.parcela}` : ""} — vence ${formatarData(p.vencimento)} — ${formatarMoeda(centavos(p.valor))}`,
     temBoleto: boletoDaParcela.has(p.id),
@@ -223,7 +224,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
           )}
           {podeOperar && (
             <div className="pt-1">
-              <CriarRascunhoGmail tituloId={id} contatoId={contato?.id ?? null} desabilitadoPor={motivoSemRascunho} />
+              <CriarRascunhoGmail tituloId={id} contatoId={contato?.id ?? null} desabilitadoPor={motivoSemRascunho} idsParcelas={f.paraMensagem.filter((p) => boletoDaParcela.has(p.id)).map((p) => p.id)} />
             </div>
           )}
         </CardHeader>
@@ -248,7 +249,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
         <Card size="sm" id="envio">
           <CardHeader>
             <CardTitle>Registrar o envio</CardTitle>
-            <CardDescription>Depois de enviar ao cliente, marque aqui. A parcela passa para “Boleto enviado”, o envio fica no histórico e, quando a NF não tem mais parcela aguardando, a pendência “Anexar boleto” é concluída.</CardDescription>
+            <CardDescription>Depois de enviar ao cliente (por e-mail, WhatsApp ou outro meio), marque aqui. A parcela passa para “Boleto enviado” e o envio fica no histórico; quando a NF não tem mais parcela aguardando, a pendência “Anexar boleto” é concluída. Em parcela já enviada, registrar de novo é um reenvio (só o histórico e a data do envio mudam). Quem enviou o e-mail pelo rascunho também pode usar o botão “Já enviei” logo abaixo de “Criar rascunho no Gmail”.</CardDescription>
           </CardHeader>
           <CardContent>
             <MarcarEnviado key={parcelasEnvio.map((p) => `${p.id}:${p.temBoleto ? 1 : 0}`).join(",")} parcelas={parcelasEnvio} contatoId={contato?.id ?? null} canalSugerido={contato?.canal_preferido ?? "email"} />
