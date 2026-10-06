@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -54,9 +55,11 @@ export default async function PaginaConfirmacao({ params, searchParams }: PagePr
   const contatos = (contatosBrutos ?? []) as Contato[];
   const contato = contatos.find((c) => c.finalidades.includes("confirmacao")) ?? contatos.find((c) => c.finalidades.includes("cobranca")) ?? contatos.find((c) => c.whatsapp) ?? contatos[0] ?? null;
 
+  // Título com parte antecipada na AKF: a confirmação fala só do que resta com a Neo (migration 0113).
+  const partes = await lerPartes(supabase, linhas.map((l) => l.id));
   const titulos: TituloConfirmacao[] = linhas.map((l) => ({
     id: l.id, contraparteId: id, nomeCliente, documento: l.documento, parcela: l.parcela, vencimento: l.vencimento,
-    valorCentavos: Math.round(Number(l.valor) * 100), estagio: l.estagio, cedido: l.cedido, contestado: l.contestado, unidade,
+    valorCentavos: partes.get(l.id)?.restanteCentavos ?? Math.round(Number(l.valor) * 100), estagio: l.estagio, cedido: l.cedido, contestado: l.contestado, unidade,
   }));
   const [grupo] = agruparPorCliente(titulos, hoje);
   const jaConfirmadas = linhas.filter((l) => l.estagio === "confirmado_cliente" && l.vencimento <= new Date(Date.parse(`${hoje}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10));

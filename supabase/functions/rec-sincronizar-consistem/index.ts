@@ -94,6 +94,20 @@ const CONFIG_MINIMO_CONFIRMACAO = "financeiro.recebiveis.confirmacao_valor_minim
 const hojeCuiaba = (): string =>
   new Intl.DateTimeFormat("en-CA", { timeZone: "America/Cuiaba", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
+/**
+ * Antecipação parcial na AKF (migration 0113): o que RESTA com a Neo em cada título que tem parte antecipada, em centavos.
+ * A confirmação e a cobrança falam do restante (a parte na AKF não é cobrada pela Neo). Título sem parte fica de fora do mapa.
+ */
+async function lerRestantes(banco: Banco, ids: string[]): Promise<Map<string, number>> {
+  const mapa = new Map<string, number>();
+  for (const lote of lotes([...new Set(ids)], 100)) {
+    const { data, error } = await banco.from("akf_vw_valor_restante").select("titulo_id, valor_restante").in("titulo_id", lote);
+    if (error) throw new Error(`Falha ao ler as antecipações parciais: ${error.message}`);
+    for (const d of data ?? []) mapa.set(d.titulo_id as string, Math.round(Number(d.valor_restante) * 100));
+  }
+  return mapa;
+}
+
 const CABECALHOS = { "Content-Type": "application/json; charset=utf-8" };
 const responder = (corpo: Record<string, unknown>, status = 200) =>
   new Response(JSON.stringify(corpo), { status, headers: CABECALHOS });
@@ -472,10 +486,11 @@ async function sincronizarEmpresa(
       .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, cedido, contestado, unidade, contrapartes(nome)")
       .eq("empresa_id", empresa.id).in("estagio", [...ESTAGIOS_CONFIRMAVEIS])
       .gte("vencimento", hoje).lte("vencimento", addDias(hoje, DIAS_JANELA_CONFIRMACAO)).order("id").range(de, ate));
+  const restanteConfirmacao = await lerRestantes(banco, candidatas.map((l) => l.id));
   const gruposConfirmacao = planejarConfirmacoes(
     candidatas.map((l): TituloConfirmacao => ({
       id: l.id, contraparteId: l.contraparte_id, nomeCliente: (Array.isArray(l.contrapartes) ? l.contrapartes[0] : l.contrapartes)?.nome ?? "",
-      documento: l.documento, parcela: l.parcela, vencimento: l.vencimento, valorCentavos: Math.round(Number(l.valor) * 100),
+      documento: l.documento, parcela: l.parcela, vencimento: l.vencimento, valorCentavos: restanteConfirmacao.get(l.id) ?? Math.round(Number(l.valor) * 100),
       estagio: l.estagio, cedido: l.cedido, contestado: l.contestado, unidade: l.unidade === "contagem" ? "contagem" : "matriz",
     })),
     hoje,
@@ -621,12 +636,13 @@ async function sincronizarEmpresa(
         .eq("empresa_id", empresa.id).in("estagio", [...ESTAGIOS_COBRAVEIS]).gte("vencimento", corteRegua).lt("vencimento", hoje).order("id").range(de, ate));
     // Quem saiu da lista de abertos do Consistem provavelmente pagou: não se cobra (a pessoa confere em "Baixas a conferir").
     const naoCobrar = new Set<string>([...plano.possiveisBaixas.map((t) => t.id), ...jaPendentes]);
+    const restanteCobranca = await lerRestantes(banco, candidatasCobranca.map((l) => l.id));
     const gruposCobranca = planejarCobrancas(
       candidatasCobranca.map((l): TituloCobranca => {
         const contrato = Array.isArray(l.rec_contratos) ? l.rec_contratos[0] : l.rec_contratos;
         return {
           id: l.id, contraparteId: l.contraparte_id, nomeCliente: (Array.isArray(l.contrapartes) ? l.contrapartes[0] : l.contrapartes)?.nome ?? "",
-          documento: l.documento, parcela: l.parcela, vencimento: l.vencimento, valorCentavos: Math.round(Number(l.valor) * 100), estagio: l.estagio,
+          documento: l.documento, parcela: l.parcela, vencimento: l.vencimento, valorCentavos: restanteCobranca.get(l.id) ?? Math.round(Number(l.valor) * 100), estagio: l.estagio,
           cedido: l.cedido, contestado: l.contestado, reguaPausadaAte: l.regua_pausada_ate, unidade: l.unidade === "contagem" ? "contagem" : "matriz",
           multaPct: contrato ? Number(contrato.multa_pct) : undefined, jurosMesPct: contrato ? Number(contrato.juros_mes_pct) : undefined,
         };

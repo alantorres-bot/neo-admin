@@ -1,3 +1,4 @@
+import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import type { criarClienteServidor } from "@/lib/supabase/servidor";
 import { ESTAGIOS_COBRAVEIS, planejarCobrancas, type GrupoCobranca, type TituloCobranca } from "@/supabase/functions/_shared/cobranca";
@@ -51,11 +52,13 @@ export async function carregarCobranca(supabase: Cliente, clienteId: string): Pr
   const contatos = (contatosBrutos ?? []) as ContatoCobranca[];
   const excluidos = new Set((baixas ?? []).map((p) => p.referencia_id as string));
 
+  // Título com parte antecipada na AKF: a Neo cobra só o que resta (migration 0113).
+  const partes = await lerPartes(supabase, linhas.map((l) => l.id));
   const titulos: TituloCobranca[] = linhas.map((l) => {
     const contrato = Array.isArray(l.rec_contratos) ? l.rec_contratos[0] : l.rec_contratos;
     return {
       id: l.id, contraparteId: clienteId, nomeCliente: cliente.nome as string, documento: l.documento, parcela: l.parcela, vencimento: l.vencimento,
-      valorCentavos: Math.round(Number(l.valor) * 100), estagio: l.estagio, cedido: l.cedido, contestado: l.contestado, unidade: l.unidade === "contagem" ? "contagem" : "matriz", reguaPausadaAte: l.regua_pausada_ate,
+      valorCentavos: partes.get(l.id)?.restanteCentavos ?? Math.round(Number(l.valor) * 100), estagio: l.estagio, cedido: l.cedido, contestado: l.contestado, unidade: l.unidade === "contagem" ? "contagem" : "matriz", reguaPausadaAte: l.regua_pausada_ate,
       multaPct: contrato ? Number(contrato.multa_pct) : undefined, jurosMesPct: contrato ? Number(contrato.juros_mes_pct) : undefined,
     };
   });

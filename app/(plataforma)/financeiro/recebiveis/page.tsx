@@ -18,6 +18,7 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { marcoDoAtraso, nomeDoMarco, ROTULO_UNIDADE, unidadeDaPendencia, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import { ESTAGIOS_CONFIRMAVEIS } from "@/supabase/functions/_shared/confirmacao";
+import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
 import { PREFERENCIAS, lerPreferenciaBooleana } from "@/lib/nucleo/preferencias";
 import { CaixaOcultar } from "./caixa-ocultar";
 import { BotoesSincronizacao } from "./sincronizar";
@@ -170,6 +171,9 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     const { data } = await supabase.from("contrapartes").select("id, nome").in("id", idsDaPagina);
     for (const c of data ?? []) nomes.set(c.id as string, c.nome as string);
   }
+
+  // Antecipação parcial na AKF (migration 0113): quanto do título já está na AKF e quanto resta com a Neo.
+  const partes = await lerPartes(supabase, titulos.map((t) => t.id));
 
   // Próxima ação: o passo da sequência que está na vez, a partir das pendências abertas do cliente e do estágio do título.
   const pendenciasDoCliente = new Map<string, string[]>();
@@ -446,7 +450,14 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
                     <TableCell className="tabular-nums">{formatarData(t.emissao) || "—"}</TableCell>
                     <TableCell className="tabular-nums">{formatarData(t.vencimento)}</TableCell>
                     <TableCell className={t.dias_atraso > 0 ? "font-medium text-red-700" : "text-muted-foreground"}>{descreverAtraso(t.dias_atraso)}</TableCell>
-                    <TableCell className="text-right tabular-nums">{formatarValor(t.valor)}</TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {formatarValor(t.valor)}
+                      {partes.get(t.id) && (
+                        <span className="block text-[11px] font-normal text-sky-800" title="Antecipação parcial na AKF">
+                          {formatarMoeda(partes.get(t.id)!.akfCentavos)} na AKF · resta {formatarMoeda(partes.get(t.id)!.restanteCentavos)}
+                        </span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right tabular-nums">{t.dias_atraso > 0 ? formatarValor(t.valor_atualizado) : "—"}</TableCell>
                     <TableCell className="space-x-1">
                       {(() => {

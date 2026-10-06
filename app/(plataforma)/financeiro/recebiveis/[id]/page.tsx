@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MODULO_RECEBIVEIS } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { descreverAtraso, ROTULO_ESTAGIO } from "@/lib/modulos/financeiro/recebiveis/carteira";
+import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
 import { montarEsteira, type Etapa } from "@/lib/modulos/financeiro/recebiveis/esteira";
 import { marcoDoAtraso, nomeDoMarco, ROTULO_UNIDADE } from "@/supabase/functions/_shared/cobranca";
 import { ESTAGIOS_CONFIRMAVEIS } from "@/supabase/functions/_shared/confirmacao";
@@ -47,6 +48,8 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
   const f = await carregarFicha(supabase, id, primeiro(parametros.contato), { assinarLinks: true });
   if (!f) notFound();
   const { parcelas, contato, contatos, boletoDaParcela, aguardando, email, whatsapp } = f;
+  // Antecipação parcial na AKF (migration 0113): o que já está na AKF e o que resta com a Neo.
+  const partesAkf = await lerPartes(supabase, parcelas.map((p) => p.id));
 
   const parcelasEnvio = aguardando.map((p) => ({
     id: p.id,
@@ -103,6 +106,11 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
                   <Badge variant="secondary">{ROTULO_ESTAGIO[p.estagio] ?? p.estagio}</Badge>
                   <Badge variant={p.unidade === "contagem" ? "default" : "outline"}>{ROTULO_UNIDADE[p.unidade === "contagem" ? "contagem" : "matriz"]}</Badge>
                   {p.cedido && <Badge variant="outline">Cedido</Badge>}
+                  {partesAkf.get(p.id) && (
+                    <Badge className="bg-sky-100 text-sky-900" title="Antecipação parcial na AKF">
+                      Parcial na AKF: {formatarMoeda(partesAkf.get(p.id)!.akfCentavos)} · resta {formatarMoeda(partesAkf.get(p.id)!.restanteCentavos)}
+                    </Badge>
+                  )}
                   {p.contestado && <Badge variant="outline">Contestado</Badge>}
                   {naVez && <span className="text-xs text-marca">Na vez: {naVez.rotulo.toLowerCase()}{naVez.detalhe ? ` (${naVez.detalhe})` : ""}</span>}
                 </div>

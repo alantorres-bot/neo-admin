@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { marcarNaAkf } from "./acoes";
+import { desdobrarTitulo, encerrarParte, marcarNaAkf } from "./acoes";
 
 export type LinhaAkf = {
   id: string;
@@ -22,7 +22,62 @@ export type LinhaAkf = {
   portador: string;
   naAkf: boolean;
   semBoleto: boolean;
+  /** Valor do título no Consistem, em reais, e o vencimento em aaaa-mm-dd (para o formulário de antecipação parcial). */
+  valorReais: number;
+  vencimentoIso: string;
+  /** Se o título tem parte antecipada: o que resta com a Neo (já formatado) e o que está na AKF. */
+  restante: string | null;
+  naAkfParcial: string | null;
 };
+
+/** "Antecipar parte": o título continua inteiro no Consistem; a parte antecipada (valor e vencimento próprios) fica só aqui. */
+function AnteciparParte({ linha }: { linha: LinhaAkf }) {
+  const router = useRouter();
+  const [aberto, setAberto] = useState(false);
+  const [valor, setValor] = useState("");
+  const [vencimento, setVencimento] = useState(linha.vencimentoIso);
+  const [observacao, setObservacao] = useState("");
+  const [pendente, iniciar] = useTransition();
+
+  function salvar() {
+    const numero = Number(valor.replace(/\./g, "").replace(",", "."));
+    iniciar(async () => {
+      const r = await desdobrarTitulo({ tituloId: linha.id, valor: Number.isFinite(numero) ? numero : 0, vencimento, dataOperacao: null, observacao });
+      if (r.ok) {
+        toast.success(r.aviso);
+        setAberto(false);
+        setValor("");
+        setObservacao("");
+        router.refresh();
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
+
+  return (
+    <div className="space-y-2">
+      <Button type="button" variant="outline" size="sm" onClick={() => setAberto(!aberto)}>{aberto ? "Fechar" : "Antecipar parte"}</Button>
+      {aberto && (
+        <div className="flex min-w-72 flex-col gap-2 rounded-[3px] border border-grade bg-cabecalho p-2 font-normal">
+          <label className="grid gap-1 text-xs">
+            Valor antecipado (R$) — o título tem {linha.valor}
+            <Input value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" placeholder="0,00" className="h-8" />
+          </label>
+          <label className="grid gap-1 text-xs">
+            Vencimento da parte antecipada
+            <Input type="date" value={vencimento} onChange={(e) => setVencimento(e.target.value)} className="h-8" />
+          </label>
+          <label className="grid gap-1 text-xs">
+            Observação (opcional)
+            <Input value={observacao} onChange={(e) => setObservacao(e.target.value)} maxLength={300} placeholder="ex.: borderô 8601" className="h-8" />
+          </label>
+          <Button type="button" size="sm" disabled={pendente} onClick={salvar}>{pendente ? "Salvando…" : "Registrar antecipação parcial"}</Button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 /**
  * Lista de títulos da AKF com seleção. "Disponíveis" oferece "Marcar como na AKF"; as listas de títulos na AKF oferecem
@@ -87,6 +142,7 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
               <TableHead className="text-right">Valor</TableHead>
               <TableHead>Portador</TableHead>
               <TableHead>Situação</TableHead>
+              {podeOperar && acao === "marcar" && <TableHead>Parcial</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -104,17 +160,108 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
                 <TableCell className="max-w-72 truncate" title={l.cliente}>{l.cliente}</TableCell>
                 <TableCell className="tabular-nums">{l.vencimento}</TableCell>
                 <TableCell className={l.vencido ? "font-medium text-red-700" : "text-muted-foreground"}>{l.atraso}</TableCell>
-                <TableCell className="text-right tabular-nums">{l.valor}</TableCell>
+                <TableCell className="text-right tabular-nums">
+                  {l.restante ?? l.valor}
+                  {l.restante && <span className="block text-[11px] font-normal text-muted-foreground">de {l.valor} · {l.naAkfParcial} na AKF</span>}
+                </TableCell>
                 <TableCell className="tabular-nums text-muted-foreground">{l.portador}</TableCell>
                 <TableCell className="space-x-1">
                   <Badge className={l.naAkf ? "bg-sky-100 text-sky-900" : "bg-emerald-100 text-emerald-900"}>{l.naAkf ? "Na AKF" : "Disponível"}</Badge>
                   {l.semBoleto && <Badge variant="outline" title="Operar 1 dia após o vencimento, sem emitir boleto">Sem boleto</Badge>}
+                  {l.restante && <Badge className="bg-sky-100 text-sky-900" title="Parte do título já antecipada na AKF">Parcial na AKF</Badge>}
                 </TableCell>
+                {podeOperar && acao === "marcar" && <TableCell className="align-top"><AnteciparParte linha={l} /></TableCell>}
               </TableRow>
             ))}
           </TableBody>
         </Table>
       </div>
+    </div>
+  );
+}
+
+export type LinhaParte = {
+  id: string;
+  tituloId: string;
+  documento: string;
+  cliente: string;
+  unidade: "matriz" | "contagem";
+  valor: string;
+  vencimento: string;
+  vencida: boolean;
+  dataOperacao: string;
+  restante: string;
+  observacao: string | null;
+};
+
+/** Antecipações parciais ativas: o que está na AKF de cada título que foi antecipado só em parte. */
+export function ListaPartes({ partes, podeOperar }: { partes: LinhaParte[]; podeOperar: boolean }) {
+  const router = useRouter();
+  const [encerrando, setEncerrando] = useState<string | null>(null);
+  const [motivo, setMotivo] = useState("");
+  const [pendente, iniciar] = useTransition();
+
+  function encerrar(id: string) {
+    iniciar(async () => {
+      const r = await encerrarParte({ id, motivo });
+      if (r.ok) {
+        toast.success(r.aviso);
+        setEncerrando(null);
+        setMotivo("");
+        router.refresh();
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-[3px] border border-grade">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Documento</TableHead>
+            <TableHead>Cliente</TableHead>
+            <TableHead className="text-right">Parte na AKF</TableHead>
+            <TableHead>Vencimento da parte</TableHead>
+            <TableHead>Operação</TableHead>
+            <TableHead className="text-right">Resta com a Neo</TableHead>
+            <TableHead>Observação</TableHead>
+            {podeOperar && <TableHead />}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {partes.map((p) => (
+            <TableRow key={p.id}>
+              <TableCell className="font-medium tabular-nums">
+                <Link href={`/financeiro/recebiveis/${p.tituloId}`} className="hover:underline">{p.documento}</Link>
+                {p.unidade === "contagem" && <Badge variant="outline" className="ml-1.5 align-middle">Contagem</Badge>}
+              </TableCell>
+              <TableCell className="max-w-64 truncate" title={p.cliente}>{p.cliente}</TableCell>
+              <TableCell className="text-right tabular-nums">{p.valor}</TableCell>
+              <TableCell className={`tabular-nums ${p.vencida ? "font-medium text-red-700" : ""}`}>{p.vencimento}{p.vencida ? " (vencida)" : ""}</TableCell>
+              <TableCell className="tabular-nums text-muted-foreground">{p.dataOperacao}</TableCell>
+              <TableCell className="text-right tabular-nums">{p.restante}</TableCell>
+              <TableCell className="max-w-48 truncate text-muted-foreground" title={p.observacao ?? undefined}>{p.observacao ?? "—"}</TableCell>
+              {podeOperar && (
+                <TableCell className="align-top">
+                  {encerrando === p.id ? (
+                    <div className="flex min-w-64 flex-col gap-2">
+                      <Input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo (recompra, liquidação, erro…)" aria-label="Motivo do encerramento" maxLength={300} className="h-8" />
+                      <div className="flex gap-2">
+                        <Button type="button" size="sm" disabled={pendente} onClick={() => encerrar(p.id)}>{pendente ? "Salvando…" : "Encerrar"}</Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => { setEncerrando(null); setMotivo(""); }}>Cancelar</Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button type="button" variant="outline" size="sm" onClick={() => { setEncerrando(p.id); setMotivo(""); }}>Encerrar parte</Button>
+                  )}
+                </TableCell>
+              )}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   );
 }

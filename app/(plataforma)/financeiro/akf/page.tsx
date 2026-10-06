@@ -4,9 +4,10 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { lerPartes, lerTodasAsPartes } from "@/lib/modulos/financeiro/akf/parcial";
 import { descreverAtraso, emCentavos, formatarMoeda, formatarValor } from "@/lib/modulos/financeiro/recebiveis/carteira";
 import { sanitizarBusca } from "@/lib/nucleo/erros";
-import { formatarData } from "@/lib/nucleo/fila";
+import { formatarData, hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
@@ -14,7 +15,7 @@ import {
   abertoNaAkf, clienteSemBoleto, disponivelParaAntecipar, ESTAGIOS_ANTECIPAVEIS, PORTADOR_AKF, vencidoNaAkf, type DadosAkf,
 } from "@/supabase/functions/_shared/akf";
 import { ROTULO_UNIDADE, type Unidade } from "@/supabase/functions/_shared/cobranca";
-import { TabelaAkf, type LinhaAkf } from "./componentes";
+import { ListaPartes, TabelaAkf, type LinhaAkf, type LinhaParte } from "./componentes";
 
 export const metadata: Metadata = { title: "AKF" };
 
@@ -31,7 +32,7 @@ const EXPLICACAO: Record<Visao, string> = {
 
 const primeiro = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 
-type LinhaResumo = { faixa: string; valor: number | string; contraparte_id: string; estagio: string; cedido: boolean; contestado: boolean; cod_portador: string | null; unidade: string };
+type LinhaResumo = { id: string; faixa: string; valor: number | string; contraparte_id: string; estagio: string; cedido: boolean; contestado: boolean; cod_portador: string | null; unidade: string };
 type LinhaTitulo = {
   id: string; contraparte_id: string; documento: string; parcela: string; vencimento: string; valor: number | string; dias_atraso: number;
   faixa: string; cedido: boolean; cod_portador: string | null; unidade: string;
@@ -62,7 +63,7 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
   for (let de = 0; ; de += 1000) {
     const { data, error } = await supabase
       .from("rec_vw_titulos")
-      .select("faixa, valor, contraparte_id, estagio, cedido, contestado, cod_portador, unidade")
+      .select("id, faixa, valor, contraparte_id, estagio, cedido, contestado, cod_portador, unidade")
       .neq("faixa", "encerrado")
       .order("id")
       .range(de, de + 999);
@@ -70,8 +71,10 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
     resumoLinhas.push(...((data ?? []) as LinhaResumo[]));
     if (!data || data.length < 1000) break;
   }
+  const partesDoTitulo = await lerTodasAsPartes(supabase);
   const dasUnidades = { matriz: 0, contagem: 0 };
   for (const l of resumoLinhas) if (abertoNaAkf(dados(l)) || disponivelParaAntecipar(dados(l))) dasUnidades[l.unidade === "contagem" ? "contagem" : "matriz"]++;
+  for (const l of resumoLinhas) if (partesDoTitulo.has(l.id)) dasUnidades[l.unidade === "contagem" ? "contagem" : "matriz"]++;
   const doRecorte = unidade ? resumoLinhas.filter((l) => l.unidade === unidade) : resumoLinhas;
   const soma = (filtro: (l: LinhaResumo) => boolean) => {
     const sel = doRecorte.filter(filtro);
@@ -82,6 +85,28 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
     vencidos: soma((l) => vencidoNaAkf(dados(l))),
     disponiveis: soma((l) => disponivelParaAntecipar(dados(l))),
   };
+
+  // Antecipações parciais (migration 0113): a parte na AKF entra em "Na AKF" (e em "Vencidos" se a parte já venceu) e o que
+  // resta com a Neo continua em "Disponíveis", só com o valor restante.
+  const hoje = hojeEmCuiaba();
+  const { data: partesAtivasBrutas, error: erroPartes } = await supabase.from("akf_desdobramentos")
+    .select("id, titulo_id, valor, vencimento, data_operacao, observacao").eq("status", "ativo").order("vencimento");
+  if (erroPartes) throw new Error(`Falha ao ler as antecipações parciais: ${erroPartes.message}`);
+  const titulosAbertos = new Map(doRecorte.map((l) => [l.id, l]));
+  const partesAtivas = (partesAtivasBrutas ?? []).filter((d) => titulosAbertos.has(d.titulo_id as string) && partesDoTitulo.has(d.titulo_id as string));
+  for (const d of partesAtivas) {
+    const centavos = emCentavos(d.valor as number | string);
+    totais.na_akf.quantidade++;
+    totais.na_akf.centavos += centavos;
+    if ((d.vencimento as string) < hoje) {
+      totais.vencidos.quantidade++;
+      totais.vencidos.centavos += centavos;
+    }
+  }
+  for (const l of doRecorte) {
+    const parte = partesDoTitulo.get(l.id);
+    if (parte && disponivelParaAntecipar(dados(l))) totais.disponiveis.centavos -= parte.akfCentavos;
+  }
 
   const { data: cfgSemBoleto } = await supabase.from("configuracoes").select("valor").eq("chave", "financeiro.akf.clientes_sem_boleto").maybeSingle();
   const termosSemBoleto = Array.isArray(cfgSemBoleto?.valor) ? (cfgSemBoleto.valor as unknown[]).filter((x): x is string => typeof x === "string") : [];
@@ -126,8 +151,10 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
     for (const c of data ?? []) nomes.set(c.id as string, c.nome as string);
   }
 
+  const partesDaPagina = visao === "disponiveis" ? await lerPartes(supabase, titulos.map((t) => t.id)) : new Map();
   const linhas: LinhaAkf[] = titulos.map((t) => {
     const cliente = nomes.get(t.contraparte_id) ?? "—";
+    const parte = partesDaPagina.get(t.id);
     return {
       id: t.id,
       documento: `${t.documento}${t.parcela !== "1" ? `/${t.parcela}` : ""}`,
@@ -140,6 +167,41 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
       portador: t.cod_portador ?? "—",
       naAkf: t.cedido || t.cod_portador === PORTADOR_AKF,
       semBoleto: visao === "disponiveis" && clienteSemBoleto(cliente, termosSemBoleto),
+      valorReais: Number(t.valor),
+      vencimentoIso: t.vencimento,
+      restante: parte ? formatarMoeda(parte.restanteCentavos) : null,
+      naAkfParcial: parte ? formatarMoeda(parte.akfCentavos) : null,
+    };
+  });
+
+  // Antecipações parciais ativas, com o título e o cliente (para a lista).
+  const idsPartes = [...new Set(partesAtivas.map((d) => d.titulo_id as string))];
+  const tituloDaParte = new Map<string, { documento: string; contraparte_id: string; unidade: string }>();
+  for (let i = 0; i < idsPartes.length; i += 100) {
+    const { data } = await supabase.from("rec_titulos").select("id, documento, parcela, contraparte_id, unidade").in("id", idsPartes.slice(i, i + 100));
+    for (const t of data ?? []) tituloDaParte.set(t.id as string, { documento: `${t.documento}${t.parcela !== "1" ? `/${t.parcela}` : ""}`, contraparte_id: t.contraparte_id as string, unidade: t.unidade as string });
+  }
+  const nomesPartes = new Map<string, string>();
+  const idsClientesPartes = [...new Set([...tituloDaParte.values()].map((t) => t.contraparte_id))];
+  for (let i = 0; i < idsClientesPartes.length; i += 100) {
+    const { data } = await supabase.from("contrapartes").select("id, nome").in("id", idsClientesPartes.slice(i, i + 100));
+    for (const c of data ?? []) nomesPartes.set(c.id as string, c.nome as string);
+  }
+  const linhasPartes: LinhaParte[] = partesAtivas.map((d) => {
+    const t = tituloDaParte.get(d.titulo_id as string);
+    const resumoParte = partesDoTitulo.get(d.titulo_id as string);
+    return {
+      id: d.id as string,
+      tituloId: d.titulo_id as string,
+      documento: t?.documento ?? "—",
+      cliente: t ? (nomesPartes.get(t.contraparte_id) ?? "—") : "—",
+      unidade: t?.unidade === "contagem" ? "contagem" : "matriz",
+      valor: formatarValor(d.valor as number | string),
+      vencimento: formatarData(d.vencimento as string),
+      vencida: (d.vencimento as string) < hoje,
+      dataOperacao: formatarData(d.data_operacao as string),
+      restante: resumoParte ? formatarMoeda(resumoParte.restanteCentavos) : "—",
+      observacao: (d.observacao as string | null) ?? null,
     };
   });
 
@@ -197,6 +259,18 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
           <CardContent className="text-xs text-muted-foreground">{totais.disponiveis.quantidade} títulos a vencer, ainda com a Neo</CardContent>
         </Card>
       </div>
+
+      {linhasPartes.length > 0 && (
+        <section className="space-y-2">
+          <div>
+            <h2 className="text-base font-bold">Antecipações parciais na AKF ({linhasPartes.length})</h2>
+            <p className="text-xs text-muted-foreground">
+              Títulos antecipados só em parte. O Consistem continua com o título inteiro; aqui a parte na AKF (com o vencimento dela) conta em &quot;Na AKF&quot; e o que resta com a Neo continua em &quot;Disponíveis para antecipar&quot;, com o valor restante.
+            </p>
+          </div>
+          <ListaPartes partes={linhasPartes} podeOperar={podeOperar} />
+        </section>
+      )}
 
       <section className="space-y-3">
         <nav aria-label="Visão" className="flex flex-wrap gap-px overflow-hidden rounded-[3px] border border-grade bg-grade">

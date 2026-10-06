@@ -17,6 +17,52 @@ const esquema = z.object({
   observacao: z.string().trim().max(300).default(""),
 });
 
+const esquemaParcial = z.object({
+  tituloId: z.string().uuid(),
+  valor: z.number().positive("Informe o valor antecipado.").max(999_999_999, "Valor alto demais."),
+  vencimento: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Informe o vencimento da parte antecipada."),
+  dataOperacao: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  observacao: z.string().trim().max(300).default(""),
+});
+
+/**
+ * Antecipação PARCIAL de um título (o Consistem não desdobra o título em Contas a Receber): registra a parte na AKF, com o
+ * valor e o vencimento dela, e o que resta fica disponível na carteira. Função de banco `akf_desdobrar_titulo`, com a RLS de quem chama.
+ */
+export async function desdobrarTitulo(entrada: z.input<typeof esquemaParcial>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro ou acima pode registrar antecipações." };
+  const dados = esquemaParcial.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const { tituloId, valor, vencimento, dataOperacao, observacao } = dados.data;
+
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("akf_desdobrar_titulo", {
+    p_titulo: tituloId, p_valor: valor, p_vencimento: vencimento, p_data_operacao: dataOperacao, p_descricao: observacao || null,
+  });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+
+  revalidatePath("/financeiro/akf");
+  revalidatePath("/financeiro/recebiveis", "layout");
+  return { ok: true, aviso: "Antecipação parcial registrada." };
+}
+
+/** Encerra uma parte antecipada (recompra, liquidação ou lançamento errado). O motivo é obrigatório e fica no histórico. */
+export async function encerrarParte(entrada: { id: string; motivo: string }): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro ou acima pode encerrar antecipações." };
+  const dados = z.object({ id: z.string().uuid(), motivo: z.string().trim().min(5, "Informe o motivo do encerramento.").max(300) }).safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("akf_encerrar_desdobramento", { p_id: dados.data.id, p_motivo: dados.data.motivo });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+
+  revalidatePath("/financeiro/akf");
+  revalidatePath("/financeiro/recebiveis", "layout");
+  return { ok: true, aviso: "Antecipação parcial encerrada." };
+}
+
 /**
  * Marca (ou retira) títulos como "na AKF" à mão, quando o portador ainda não foi atualizado no Consistem. Tudo ou nada, na
  * função de banco `akf_marcar_cedido` (com a RLS de quem chama). Título cedido sai da régua de cobrança de Recebíveis.
