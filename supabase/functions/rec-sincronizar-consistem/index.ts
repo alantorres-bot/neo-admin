@@ -70,7 +70,20 @@ import {
   type TituloConfirmacao,
 } from "../_shared/confirmacao.ts";
 
-import { escolherContato, type ContatoEscolha, type Finalidade } from "../_shared/contatos.ts";
+import {
+  criticidadeCadastro,
+  descricaoPendenciaCadastro,
+  descricaoPendenciaContato,
+  DIAS_ESCOPO_CADASTRO,
+  planejarCadastro,
+  PREFIXO_CADASTRAR_CONTATO,
+  PREFIXO_CONFERIR_CADASTRO,
+  TRAVA_PENDENCIAS_CADASTRO,
+  tituloPendenciaCadastro,
+  tituloPendenciaContato,
+  type ClienteParaCadastro,
+} from "../_shared/clientes.ts";
+import { escolherContato, temContatoUtil, type ContatoEscolha, type Finalidade } from "../_shared/contatos.ts";
 import {
   criticidadeCobranca,
   descricaoPendenciaCobranca,
@@ -718,6 +731,80 @@ async function sincronizarEmpresa(
     resumo.avisoRegua = e instanceof Error ? e.message.slice(0, 200) : "falha na régua de cobrança";
   }
 
+  // 7c) Cadastro de contatos: clientes da MATRIZ com título em aberto a vencer ou vencido há menos de 60 dias (escopo combinado
+  // com o usuário; os antigos e a Filial Contagem ficam para depois). Sem contato útil: "Cadastrar contato: <Cliente>". Sem
+  // CPF/CNPJ: "Conferir cadastro: <Cliente>". As pendências se concluem quando o contato/documento é salvo (ações das telas)
+  // e esta rotina cancela as que sobrarem (cliente passou a ter contato, ou saiu do escopo).
+  try {
+    const limiteVencimento = addDias(hoje, -(DIAS_ESCOPO_CADASTRO - 1)); // atraso < 60 dias
+    type LinhaCadastro = {
+      contraparte_id: string; documento: string; parcela: string; vencimento: string; valor: number | string;
+      contrapartes: { nome: string; documento: string | null } | { nome: string; documento: string | null }[] | null;
+    };
+    const titulosCadastro = await lerTudo<LinhaCadastro>((de, ate) =>
+      banco.from("rec_titulos").select("id, contraparte_id, documento, parcela, vencimento, valor, contrapartes(nome, documento)")
+        .eq("empresa_id", empresa.id).eq("unidade", "matriz").not("estagio", "in", "(pago,renegociado,cancelado)")
+        .gte("vencimento", limiteVencimento).order("id").range(de, ate));
+    const clientesCadastro = new Map<string, ClienteParaCadastro>();
+    for (const t of titulosCadastro) {
+      const cp = Array.isArray(t.contrapartes) ? t.contrapartes[0] : t.contrapartes;
+      const c = clientesCadastro.get(t.contraparte_id) ?? { id: t.contraparte_id, nome: cp?.nome ?? "", documento: cp?.documento ?? null, titulos: [], temContato: false };
+      c.titulos.push({ documento: t.documento, parcela: t.parcela, vencimento: t.vencimento, valorCentavos: Math.round(Number(t.valor) * 100) });
+      clientesCadastro.set(t.contraparte_id, c);
+    }
+    const contatosPorCliente = new Map<string, ContatoEscolha[]>();
+    for (const lote of lotes([...clientesCadastro.keys()], 100)) {
+      const { data, error } = await banco.from("contatos").select("id, contraparte_id, nome, email, whatsapp, telefone, finalidades, ativo").in("contraparte_id", lote).eq("ativo", true);
+      if (error) throw new Error(`Falha ao ler os contatos: ${error.message}`);
+      for (const c of data ?? []) contatosPorCliente.set(c.contraparte_id as string, [...(contatosPorCliente.get(c.contraparte_id as string) ?? []), c as unknown as ContatoEscolha]);
+    }
+    for (const c of clientesCadastro.values()) c.temContato = temContatoUtil(contatosPorCliente.get(c.id) ?? []);
+    const plano = planejarCadastro([...clientesCadastro.values()]);
+
+    // Pendências que já existem (abertas ou concluídas não se repetem); as abertas de quem já não precisa são canceladas.
+    const existentes = await lerTudo<{ id: string; referencia_id: string; titulo: string; status: string }>((de, ate) =>
+      banco.from("pendencias").select("id, referencia_id, titulo, status").eq("modulo", MODULO).eq("referencia_tabela", "contrapartes")
+        .or(`titulo.like.${PREFIXO_CADASTRAR_CONTATO}:%,titulo.like.${PREFIXO_CONFERIR_CADASTRO}:%`).in("status", ["aberta", "em_andamento", "concluida"]).order("id").range(de, ate));
+    const ja = (prefixo: string) => new Set(existentes.filter((p) => p.titulo.startsWith(`${prefixo}:`)).map((p) => p.referencia_id));
+    const jaContato = ja(PREFIXO_CADASTRAR_CONTATO);
+    const jaCadastro = ja(PREFIXO_CONFERIR_CADASTRO);
+    const novasContato = plano.semContato.filter((c) => !jaContato.has(c.id));
+    const novasCadastro = plano.semDocumento.filter((c) => !jaCadastro.has(c.id));
+
+    if (novasContato.length + novasCadastro.length > TRAVA_PENDENCIAS_CADASTRO) {
+      resumo.cadastroContatos = `trava: ${novasContato.length + novasCadastro.length} pendências de uma vez (limite ${TRAVA_PENDENCIAS_CADASTRO})`;
+    } else {
+      const linhas = [
+        ...novasContato.map((c) => ({ c, titulo: tituloPendenciaContato(c.nome), descricao: descricaoPendenciaContato(c) })),
+        ...novasCadastro.map((c) => ({ c, titulo: tituloPendenciaCadastro(c.nome), descricao: descricaoPendenciaCadastro(c) })),
+      ].map(({ c, titulo, descricao }) => ({
+        modulo: MODULO, empresa_id: empresa.id, contraparte_id: c.id, titulo, descricao, prazo: hoje, criticidade: criticidadeCadastro(c, hoje),
+        referencia_tabela: "contrapartes", referencia_id: c.id, link: `/financeiro/recebiveis/clientes/${c.id}`,
+      }));
+      for (const lote of lotes(linhas)) {
+        const { error } = await banco.from("pendencias").insert(lote);
+        if (error) throw new Error(`Falha ao criar pendências de cadastro: ${error.message}`);
+      }
+      resumo.pendenciasCadastroContato = novasContato.length;
+      resumo.pendenciasConferirCadastro = novasCadastro.length;
+    }
+
+    const precisamContato = new Set(plano.semContato.map((c) => c.id));
+    const precisamCadastro = new Set(plano.semDocumento.map((c) => c.id));
+    const obsoletas = existentes.filter((p) => p.status !== "concluida" && (
+      (p.titulo.startsWith(`${PREFIXO_CADASTRAR_CONTATO}:`) && !precisamContato.has(p.referencia_id))
+      || (p.titulo.startsWith(`${PREFIXO_CONFERIR_CADASTRO}:`) && !precisamCadastro.has(p.referencia_id))
+    )).map((p) => p.id);
+    for (const lote of lotes(obsoletas)) {
+      const { error } = await banco.from("pendencias").update({ status: "cancelada" }).in("id", lote);
+      if (error) throw new Error(`Falha ao encerrar pendências de cadastro: ${error.message}`);
+    }
+    resumo.pendenciasCadastroCanceladas = obsoletas.length;
+  } catch (e) {
+    // O aviso de cadastro é um auxílio: se falhar, a sincronização dos títulos e das baixas (já gravada) segue.
+    resumo.avisoCadastro = e instanceof Error ? e.message.slice(0, 200) : "falha no cadastro de contatos";
+  }
+
   // 8) Registro da execução.
   const { error: erroLog } = await banco.from("importacoes").insert({
     modulo: MODULO,
@@ -726,7 +813,7 @@ async function sincronizarEmpresa(
     mapeamento: {
       origem: "api", empresa: empresa.codigo_erp, recusados: recusados.slice(0, 20), duplicadosApi: plano.duplicadosApi.slice(0, 20),
       notasConsultadas: notas.length, titulosLigadosANota: notaDoTitulo.size, entrada: resumo.entrada, pendenciasBoleto: pendenciasBoleto.length,
-      passaramParaVencido: resumo.passaramParaVencido ?? 0, pendenciasCobranca: resumo.pendenciasCobranca ?? 0, regua: resumo.regua ?? "ligada", avisoRegua: resumo.avisoRegua ?? null,
+      passaramParaVencido: resumo.passaramParaVencido ?? 0, pendenciasCobranca: resumo.pendenciasCobranca ?? 0, regua: resumo.regua ?? "ligada", avisoRegua: resumo.avisoRegua ?? null, cadastroContatos: resumo.cadastroContatos ?? null, pendenciasCadastroContato: resumo.pendenciasCadastroContato ?? 0, pendenciasConferirCadastro: resumo.pendenciasConferirCadastro ?? 0, avisoCadastro: resumo.avisoCadastro ?? null,
     },
     linhas_novas: plano.novos.length,
     linhas_alteradas: plano.alterados.length,

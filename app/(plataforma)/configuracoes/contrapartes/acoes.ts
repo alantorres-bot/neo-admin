@@ -7,9 +7,20 @@ import { normalizarDocumento, normalizarWhatsapp } from "@/lib/nucleo/documentos
 import { mensagemDeErroBanco } from "@/lib/nucleo/erros";
 import { temAcessoAlgumaArea } from "@/lib/nucleo/permissoes";
 import { TIPOS_CONTRAPARTE, CANAIS_DE_CONTATO } from "@/lib/nucleo/rotulos";
+import { PREFIXO_CADASTRAR_CONTATO, PREFIXO_CONFERIR_CADASTRO } from "@/supabase/functions/_shared/clientes";
 import { FINALIDADES, normalizarFinalidade } from "@/supabase/functions/_shared/contatos";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
+
+/**
+ * Conclui as pendências de cadastro do cliente ("Cadastrar contato" ou "Conferir cadastro") quando o que faltava foi salvo.
+ * É um favor à Fila do dia: se a RLS não deixar (a pendência é de outra pessoa), a sincronização cancela a pendência sozinha.
+ */
+async function concluirPendenciasDeCadastro(supabase: Awaited<ReturnType<typeof criarClienteServidor>>, contraparteId: string, prefixo: string) {
+  await supabase.from("pendencias").update({ status: "concluida" })
+    .eq("modulo", "financeiro.recebiveis").eq("referencia_tabela", "contrapartes").eq("referencia_id", contraparteId)
+    .like("titulo", `${prefixo}:%`).in("status", ["aberta", "em_andamento"]);
+}
 
 const vazioParaNulo = (v: FormDataEntryValue | null): string | null => {
   const t = String(v ?? "").trim();
@@ -49,9 +60,13 @@ export async function salvarContraparte(_anterior: EstadoForm, dados: FormData):
   if (r.error) return { erro: mensagemDeErroBanco(r.error, "Já existe uma contraparte com este CPF/CNPJ.") };
   if (!r.data?.length) return { erro: "Contraparte não encontrada ou sem permissão para alterá-la." };
 
+  // Documento corrigido: a pendência "Conferir cadastro" deste cliente acaba.
+  if (entrada.data.id && documento.valor) await concluirPendenciasDeCadastro(supabase, entrada.data.id, PREFIXO_CONFERIR_CADASTRO);
+
   revalidatePath("/configuracoes/contrapartes");
   revalidatePath("/financeiro/recebiveis", "layout");
   revalidatePath("/financeiro/akf");
+  revalidatePath("/inicio");
   return { ok: true, chave: Date.now() };
 }
 
@@ -112,8 +127,12 @@ export async function salvarContato(_anterior: EstadoForm, dados: FormData): Pro
   if (r.error) return { erro: mensagemDeErroBanco(r.error) };
   if (!r.data?.length) return { erro: "Contato não encontrado ou sem permissão para alterá-lo." };
 
+  // Contato ativo com algum meio de falar: a pendência "Cadastrar contato" deste cliente acaba.
+  if (registro.ativo && (registro.email || registro.whatsapp || registro.telefone)) await concluirPendenciasDeCadastro(supabase, entrada.data.contraparte_id, PREFIXO_CADASTRAR_CONTATO);
+
   revalidatePath(`/configuracoes/contrapartes/${entrada.data.contraparte_id}`);
   revalidatePath("/financeiro/recebiveis", "layout");
   revalidatePath("/financeiro/akf");
+  revalidatePath("/inicio");
   return { ok: true, chave: Date.now() };
 }

@@ -314,3 +314,16 @@ Os contatos são digitados aos poucos, na hora de usar (Configurações > Contra
 - **Atalhos:** o nome do cliente é link para a ficha na **Carteira**, na **Carteira AKF**, na lista de partes antecipadas e nos títulos das telas de boleto, cobrança e confirmação. Na Carteira, o selo **"Sem contato"** aparece nos títulos que estão no escopo do cadastro e cujo cliente não tem e-mail, WhatsApp nem telefone.
 - **Cadastrar contato no ponto de uso:** quando falta o contato (ou o canal) nas telas de boleto, cobrança (WhatsApp e e-mail) e confirmação, há o botão **Cadastrar contato** ali mesmo, já com a finalidade certa marcada; ao salvar, a tela se atualiza com o contato e a saudação da mensagem passa a levar o nome dele.
 - **Testado:** 3 testes do escopo e, na tela, com um cliente de teste sem contato: selo "Sem contato" na Carteira, aviso na ficha, cadastro do contato pela tela de confirmação (mensagem com o nome e "Para ligar" aparecem na hora).
+
+## 26. Aviso de cliente sem contato — Fase C (06/10/2026)
+
+A cada sincronização (de hora em hora, em dias úteis) o Neo Admin olha os clientes da **Matriz (Cuiabá)** com título em aberto **a vencer ou vencido há menos de 60 dias** (escopo combinado; os antigos e a Filial Contagem ficam para depois) e abre, na Fila do dia:
+
+- **"Cadastrar contato: <Cliente>"**: o cliente não tem nenhum contato ativo com e-mail, WhatsApp ou telefone. A descrição lista os títulos em aberto (até 5, com valor e vencimento) e o total; **criticidade alta** se algum título está vencido ou vence em até 7 dias, normal nos demais; prazo hoje; o link abre a ficha do cliente.
+- **"Conferir cadastro: <Cliente>"**: o cliente (dentro do mesmo escopo) está sem CPF/CNPJ (ausente, inválido ou repetido em outro cadastro, que é como a sincronização grava um cliente novo de documento duvidoso). Evita o cadastro duplicado silencioso.
+
+**Fecham sozinhas:** salvar um contato ativo com algum meio de contato (pela ficha do cliente, pelas telas de boleto/cobrança/confirmação ou por Configurações) conclui "Cadastrar contato"; corrigir o CPF/CNPJ conclui "Conferir cadastro"; e a sincronização **cancela** as que sobrarem (cliente passou a ter contato, ou saiu do escopo). Não se repetem para o mesmo cliente (nem depois de concluídas) e há trava de segurança de 80 pendências novas de uma vez. Falha neste passo não derruba a sincronização (fica em `importacoes.mapeamento.avisoCadastro`).
+
+- **Regras puras** em `supabase/functions/_shared/clientes.ts` (escopo, plano, textos, criticidade), testadas em `lib/modulos/financeiro/recebiveis/clientes-pendencias.test.ts`; passo `7c` da Edge Function `rec-sincronizar-consistem`.
+- **Hoje (06/10/2026):** 21 clientes da Matriz no escopo, todos sem contato: 21 pendências "Cadastrar contato" (11 com criticidade alta e 10 normais). Segunda rodada não duplicou.
+- **Testado ao vivo** com clientes de teste: "Conferir cadastro" concluída ao corrigir o CNPJ; "Cadastrar contato" aberta (criticidade normal, título a 12 dias) e concluída ao cadastrar o contato pela ficha do cliente.
