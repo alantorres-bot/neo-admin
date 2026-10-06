@@ -112,7 +112,9 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
     });
   }
 
-  const todas = linhas.length > 0 && marcadas.size === linhas.length;
+  // Em "marcar", só dá para marcar o que ainda não está na AKF (a busca de títulos traz também os que já estão).
+  const selecionaveis = acao === "retirar" ? linhas : linhas.filter((l) => !l.naAkf);
+  const todas = selecionaveis.length > 0 && marcadas.size === selecionaveis.length;
   return (
     <div className="space-y-3">
       {podeOperar && (
@@ -132,7 +134,7 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
             <TableRow>
               {podeOperar && (
                 <TableHead className="w-8">
-                  <input type="checkbox" className="size-4" aria-label="Marcar todos" checked={todas} onChange={() => setMarcadas(todas ? new Set() : new Set(linhas.map((l) => l.id)))} />
+                  <input type="checkbox" className="size-4" aria-label="Marcar todos" checked={todas} onChange={() => setMarcadas(todas ? new Set() : new Set(selecionaveis.map((l) => l.id)))} />
                 </TableHead>
               )}
               <TableHead>Documento</TableHead>
@@ -150,7 +152,7 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
               <TableRow key={l.id}>
                 {podeOperar && (
                   <TableCell>
-                    <input type="checkbox" className="size-4" aria-label={`Marcar ${l.documento}`} checked={marcadas.has(l.id)} onChange={() => alternar(l.id)} />
+                    {(acao === "retirar" || !l.naAkf) && <input type="checkbox" className="size-4" aria-label={`Marcar ${l.documento}`} checked={marcadas.has(l.id)} onChange={() => alternar(l.id)} />}
                   </TableCell>
                 )}
                 <TableCell className="font-medium tabular-nums">
@@ -166,11 +168,11 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
                 </TableCell>
                 <TableCell className="tabular-nums text-muted-foreground">{l.portador}</TableCell>
                 <TableCell className="space-x-1">
-                  <Badge className={l.naAkf ? "bg-sky-100 text-sky-900" : "bg-emerald-100 text-emerald-900"}>{l.naAkf ? "Na AKF" : "Disponível"}</Badge>
+                  <Badge className={l.naAkf ? "bg-sky-100 text-sky-900" : l.vencido ? "bg-red-100 text-red-800" : "bg-emerald-100 text-emerald-900"}>{l.naAkf ? "Na AKF" : l.vencido ? "Vencido" : "Disponível"}</Badge>
                   {l.semBoleto && <Badge variant="outline" title="Operar 1 dia após o vencimento, sem emitir boleto">Sem boleto</Badge>}
                   {l.restante && <Badge className="bg-sky-100 text-sky-900" title="Parte do título já antecipada na AKF">Parcial na AKF</Badge>}
                 </TableCell>
-                {podeOperar && acao === "marcar" && <TableCell className="align-top"><AnteciparParte linha={l} /></TableCell>}
+                {podeOperar && acao === "marcar" && <TableCell className="align-top">{!l.naAkf && <AnteciparParte linha={l} />}</TableCell>}
               </TableRow>
             ))}
           </TableBody>

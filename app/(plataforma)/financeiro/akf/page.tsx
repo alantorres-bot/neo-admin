@@ -54,6 +54,7 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
   const unidadePedida = primeiro(parametros.unidade);
   const unidade: Unidade | null = unidadePedida === "matriz" || unidadePedida === "contagem" ? unidadePedida : null;
   const busca = sanitizarBusca(primeiro(parametros.q));
+  const localizar = sanitizarBusca(primeiro(parametros.localizar));
   const pagina = Math.max(1, Number.parseInt(primeiro(parametros.pagina), 10) || 1);
 
   const supabase = await criarClienteServidor();
@@ -152,9 +153,7 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
   }
 
   const partesDaPagina = visao === "disponiveis" ? await lerPartes(supabase, titulos.map((t) => t.id)) : new Map();
-  const linhas: LinhaAkf[] = titulos.map((t) => {
-    const cliente = nomes.get(t.contraparte_id) ?? "—";
-    const parte = partesDaPagina.get(t.id);
+  const paraLinha = (t: LinhaTitulo, cliente: string, parte: Awaited<ReturnType<typeof lerPartes>> extends Map<string, infer P> ? P | undefined : never, comSemBoleto: boolean): LinhaAkf => {
     return {
       id: t.id,
       documento: `${t.documento}${t.parcela !== "1" ? `/${t.parcela}` : ""}`,
@@ -166,13 +165,38 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
       valor: formatarValor(t.valor),
       portador: t.cod_portador ?? "—",
       naAkf: t.cedido || t.cod_portador === PORTADOR_AKF,
-      semBoleto: visao === "disponiveis" && clienteSemBoleto(cliente, termosSemBoleto),
+      semBoleto: comSemBoleto && clienteSemBoleto(cliente, termosSemBoleto),
       valorReais: Number(t.valor),
       vencimentoIso: t.vencimento,
       restante: parte ? formatarMoeda(parte.restanteCentavos) : null,
       naAkfParcial: parte ? formatarMoeda(parte.akfCentavos) : null,
     };
-  });
+  };
+  const linhas: LinhaAkf[] = titulos.map((t) => paraLinha(t, nomes.get(t.contraparte_id) ?? "—", partesDaPagina.get(t.id), visao === "disponiveis"));
+
+  // Busca de QUALQUER título em aberto (inclusive vencido e antigo) para antecipar uma parte ou marcá-lo inteiro na AKF.
+  let linhasLocalizadas: LinhaAkf[] = [];
+  if (localizar) {
+    const { data: clientesLoc } = await supabase.from("contrapartes").select("id")
+      .or(`nome.ilike.%${localizar}%,codigo_erp.ilike.%${localizar}%,documento.ilike.%${localizar}%`).limit(200);
+    const idsLoc = (clientesLoc ?? []).map((c) => c.id as string);
+    let consultaLoc = supabase.from("rec_vw_titulos")
+      .select("id, contraparte_id, documento, parcela, vencimento, valor, dias_atraso, faixa, cedido, cod_portador, unidade")
+      .neq("faixa", "encerrado").order("vencimento", { ascending: false }).limit(30);
+    if (unidade) consultaLoc = consultaLoc.eq("unidade", unidade);
+    consultaLoc = idsLoc.length > 0 ? consultaLoc.or(`documento.ilike.%${localizar}%,contraparte_id.in.(${idsLoc.join(",")})`) : consultaLoc.ilike("documento", `%${localizar}%`);
+    const { data: locBrutos, error: erroLoc } = await consultaLoc;
+    if (erroLoc) throw new Error(`Falha ao buscar títulos: ${erroLoc.message}`);
+    const loc = (locBrutos ?? []) as LinhaTitulo[];
+    const nomesLoc = new Map<string, string>();
+    const idsClLoc = [...new Set(loc.map((t) => t.contraparte_id))];
+    if (idsClLoc.length > 0) {
+      const { data } = await supabase.from("contrapartes").select("id, nome").in("id", idsClLoc);
+      for (const c of data ?? []) nomesLoc.set(c.id as string, c.nome as string);
+    }
+    const partesLoc = await lerPartes(supabase, loc.map((t) => t.id));
+    linhasLocalizadas = loc.map((t) => paraLinha(t, nomesLoc.get(t.contraparte_id) ?? "—", partesLoc.get(t.id), false));
+  }
 
   // Antecipações parciais ativas, com o título e o cliente (para a lista).
   const idsPartes = [...new Set(partesAtivas.map((d) => d.titulo_id as string))];
@@ -259,6 +283,32 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
           <CardContent className="text-xs text-muted-foreground">{totais.disponiveis.quantidade} títulos a vencer, ainda com a Neo</CardContent>
         </Card>
       </div>
+
+      <section className="space-y-3">
+        <div>
+          <h2 className="text-base font-bold">Antecipar um título (parcial ou inteiro)</h2>
+          <p className="text-xs text-muted-foreground">
+            Procure qualquer título em aberto, inclusive vencido e antigo, pelo documento, código ou nome do cliente. Em cada resultado: <strong>Antecipar parte</strong> (valor e vencimento da parte na AKF) ou marque e use <strong>Marcar como na AKF</strong> para o título inteiro.
+          </p>
+        </div>
+        <form method="get" className="flex flex-wrap items-center gap-2" role="search">
+          {unidade && <input type="hidden" name="unidade" value={unidade} />}
+          {visao !== "na_akf" && <input type="hidden" name="visao" value={visao} />}
+          <Input name="localizar" defaultValue={localizar} placeholder="Documento, código ou cliente" aria-label="Localizar título para antecipar" className="w-72" />
+          <Button type="submit">Localizar</Button>
+          {localizar && <Button variant="ghost" render={<Link href={href({ pagina: 1 })} />}>Limpar</Button>}
+        </form>
+        {localizar && (
+          linhasLocalizadas.length === 0
+            ? <p className="rounded-[3px] border border-dashed p-6 text-center text-sm text-muted-foreground">Nenhum título em aberto encontrado para &quot;{localizar}&quot;.</p>
+            : (
+              <>
+                <TabelaAkf key={`loc-${localizar}-${linhasLocalizadas.map((l) => l.id + l.restante).join(",")}`} linhas={linhasLocalizadas} podeOperar={podeOperar} acao="marcar" />
+                {linhasLocalizadas.length === 30 && <p className="text-xs text-muted-foreground">Mostrando os 30 mais recentes: refine a busca para ver outros.</p>}
+              </>
+            )
+        )}
+      </section>
 
       {linhasPartes.length > 0 && (
         <section className="space-y-2">
