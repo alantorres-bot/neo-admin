@@ -82,7 +82,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   // Aba da consulta: uma situação por vez (o endereço antigo ?situacao=aguardando_boleto continua valendo).
   const abaPedida = primeiro(parametros.aba) || primeiro(parametros.situacao);
   const aba = ehGrupo(abaPedida) ? abaPedida : null;
-  // Unidade: Matriz ou Filial Contagem (documento que começa com 4). Sem escolha, mostra as duas.
+  // Unidade: Matriz ou Filial Contagem (documento que começa com 400). Sem escolha, mostra as duas.
   const unidadePedida = primeiro(parametros.unidade);
   const unidade: Unidade | null = unidadePedida === "matriz" || unidadePedida === "contagem" ? unidadePedida : null;
 

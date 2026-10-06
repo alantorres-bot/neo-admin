@@ -44,7 +44,7 @@ export type LinhaResumo = {
   estagio?: string;
   cedido?: boolean | null;
   contestado?: boolean | null;
-  /** 'matriz' ou 'contagem' (documento que começa com 4). */
+  /** 'matriz' ou 'contagem' (documento que começa com 400). */
   unidade?: string;
 };
 

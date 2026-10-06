@@ -33,15 +33,16 @@ beforeAll(async () => {
 });
 
 describe("unidade do título", () => {
-  it("documento que começa com 4 é da Filial Contagem; os demais, da Matriz (SQL e TypeScript iguais)", async () => {
+  it("documento que começa com 400 é da Filial Contagem; os demais, da Matriz (SQL e TypeScript iguais)", async () => {
     const cp = await cliente();
-    for (const doc of ["4002323U", "4", "40", "004471U", "1001266E", "Z00018E", "TESTE-1", "34000", " 4001"]) {
+    for (const doc of ["4002323U", "400", "4001", "453", "4", "40", "4100001A", "004471U", "1001266E", "Z00018E", "TESTE-1", "34000", " 4001"]) {
       const id = await titulo(cp, doc);
       const r = (await q(`select unidade from rec_vw_titulos where id = $1`, [id])).rows[0].unidade;
       expect(r, doc).toBe(unidadeDoDocumento(doc) === "contagem" ? "contagem" : "matriz");
     }
     expect(unidadeDoDocumento("4002323U")).toBe("contagem");
     expect(unidadeDoDocumento("004471U")).toBe("matriz");
+    expect(unidadeDoDocumento("453")).toBe("matriz"); // começa com 4, mas não com 400: é da Matriz
   });
 
   it("a unidade acompanha o documento e não pode ser gravada à mão", async () => {

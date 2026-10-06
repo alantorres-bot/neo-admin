@@ -7,10 +7,10 @@
 //
 // A régua só vale para vencimentos a partir de uma data de corte (configuração), para não cobrar a carteira antiga em massa.
 
-/** Unidades do grupo: o documento que começa com 4 é da Filial Contagem; os demais, da Matriz (mesma regra da coluna `rec_titulos.unidade`). */
+/** Unidades do grupo: o documento que começa com 400 é da Filial Contagem; os demais, da Matriz (mesma regra da coluna `rec_titulos.unidade`). */
 export type Unidade = "matriz" | "contagem";
 export const ROTULO_UNIDADE: Record<Unidade, string> = { matriz: "Matriz", contagem: "Filial Contagem" };
-export const unidadeDoDocumento = (documento: string): Unidade => (documento.startsWith("4") ? "contagem" : "matriz");
+export const unidadeDoDocumento = (documento: string): Unidade => (documento.startsWith("400") ? "contagem" : "matriz");
 /** Sufixo do título das pendências da Filial Contagem (a Matriz não leva sufixo, para não mudar o que já existe). */
 export const sufixoUnidade = (u: Unidade | undefined): string => (u === "contagem" ? ` (${ROTULO_UNIDADE.contagem})` : "");
 /** A unidade a que uma pendência de cobrança ou confirmação pertence, lida do título dela. */
