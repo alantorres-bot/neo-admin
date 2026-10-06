@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { destinoSeguro } from "@/lib/nucleo/redirecionamento";
 import { FormLogin } from "./form-login";
 
@@ -10,16 +9,16 @@ export default async function PaginaLogin({ searchParams }: PageProps<"/login">)
   const destino = destinoSeguro(Array.isArray(proximo) ? proximo[0] : proximo);
 
   return (
-    <main className="flex min-h-svh items-center justify-center bg-muted/40 p-4">
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle className="text-xl">Neo Admin</CardTitle>
-          <CardDescription>Plataforma do Administrativo · Neo Formas</CardDescription>
-        </CardHeader>
-        <CardContent>
+    <main className="flex min-h-svh items-center justify-center bg-cabecalho p-4">
+      <div className="w-full max-w-sm overflow-hidden rounded-[3px] border border-grade bg-white shadow">
+        <div className="bg-marca px-5 py-3 text-white">
+          <h1 className="font-condensada text-lg font-bold leading-tight">Neo Admin</h1>
+          <p className="text-xs text-white/85">Plataforma do Administrativo — Neo Formas</p>
+        </div>
+        <div className="p-5">
           <FormLogin proximo={destino} />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </main>
   );
 }
