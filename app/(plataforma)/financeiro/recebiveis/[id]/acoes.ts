@@ -90,7 +90,7 @@ export type ResultadoRascunho = { ok: true; url: string; anexos: number; aviso?:
 
 /**
  * Cria o rascunho do e-mail do boleto no Gmail, com os boletos em anexo. O texto é o mesmo que a ficha mostra.
- * 1) valida (parcelas aguardando, todas com boleto, contato com e-mail); 2) grava a mensagem como `rascunho` com a sessão
+ * 1) valida (parcelas da mensagem, todas com boleto, contato com e-mail); 2) grava a mensagem como `rascunho` com a sessão
  * do usuário (a RLS e o gatilho carimbam o autor); 3) a Edge Function `rec-rascunho-gmail` cria o rascunho (nunca envia).
  * Se o Gmail falhar, a mensagem é descartada para não ficar rascunho fantasma no Neo Admin.
  */
@@ -103,8 +103,9 @@ export async function criarRascunhoGmail(tituloId: string, contatoId: string | n
   const supabase = await criarClienteServidor();
   const ficha = await carregarFicha(supabase, tituloId, contatoId ?? "", { assinarLinks: false });
   if (!ficha) return { ok: false, erro: "Título não encontrado." };
-  if (ficha.aguardando.length === 0) return { ok: false, erro: "Nenhuma parcela aguardando envio." };
-  if (ficha.aguardando.some((p) => !ficha.boletoDaParcela.has(p.id))) return { ok: false, erro: "Anexe o boleto de todas as parcelas que aguardam envio." };
+  // Vale também depois do envio registrado (reenvio): a mensagem usa as parcelas que aguardam envio ou, se não há, as demais em aberto.
+  if (ficha.paraMensagem.length === 0) return { ok: false, erro: "Todas as parcelas estão encerradas (pagas ou canceladas)." };
+  if (ficha.paraMensagem.some((p) => !ficha.boletoDaParcela.has(p.id))) return { ok: false, erro: "Anexe o boleto de todas as parcelas da mensagem." };
   if (!ficha.contato?.email) return { ok: false, erro: "O contato escolhido não tem e-mail cadastrado." };
   if (!ficha.email || !ficha.modeloEmailId) return { ok: false, erro: "O modelo de e-mail do boleto está desativado." };
 
@@ -122,7 +123,7 @@ export async function criarRascunhoGmail(tituloId: string, contatoId: string | n
   if (erroMensagem || !mensagem) return { ok: false, erro: erroMensagem ? mensagemDeErro(erroMensagem) : "Não foi possível preparar a mensagem." };
 
   const { data, error } = await supabase.functions.invoke("rec-rascunho-gmail", {
-    body: { mensagem_id: mensagem.id, titulo_ids: ficha.aguardando.map((p) => p.id) },
+    body: { mensagem_id: mensagem.id, titulo_ids: ficha.paraMensagem.map((p) => p.id) },
   });
   if (error || (data && typeof data === "object" && "erro" in data)) {
     let erro = "Não foi possível criar o rascunho no Gmail.";

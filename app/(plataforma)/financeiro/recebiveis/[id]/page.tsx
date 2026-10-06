@@ -57,10 +57,11 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
     rotulo: `${p.documento}${p.parcela !== "1" ? `/${p.parcela}` : ""} — vence ${formatarData(p.vencimento)} — ${formatarMoeda(centavos(p.valor))}`,
     temBoleto: boletoDaParcela.has(p.id),
   }));
-  const faltaBoleto = aguardando.some((p) => !boletoDaParcela.has(p.id));
+  // O rascunho vale para as parcelas da mensagem: as que aguardam envio; se não há, as demais em aberto (para reenviar o boleto).
+  const faltaBoleto = f.paraMensagem.some((p) => !boletoDaParcela.has(p.id));
   let motivoSemRascunho: string | null = null;
-  if (aguardando.length === 0) motivoSemRascunho = "Nenhuma parcela aguardando envio.";
-  else if (faltaBoleto) motivoSemRascunho = "Anexe o boleto de todas as parcelas que aguardam envio.";
+  if (f.paraMensagem.length === 0) motivoSemRascunho = "Todas as parcelas estão encerradas (pagas ou canceladas).";
+  else if (faltaBoleto) motivoSemRascunho = "Anexe o boleto de todas as parcelas da mensagem.";
   else if (!contato?.email) motivoSemRascunho = "O contato escolhido não tem e-mail cadastrado.";
   else if (!email) motivoSemRascunho = "O modelo de e-mail do boleto está desativado.";
 
