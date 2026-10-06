@@ -50,6 +50,8 @@ export async function salvarContraparte(_anterior: EstadoForm, dados: FormData):
   if (!r.data?.length) return { erro: "Contraparte não encontrada ou sem permissão para alterá-la." };
 
   revalidatePath("/configuracoes/contrapartes");
+  revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/akf");
   return { ok: true, chave: Date.now() };
 }
 
@@ -111,5 +113,7 @@ export async function salvarContato(_anterior: EstadoForm, dados: FormData): Pro
   if (!r.data?.length) return { erro: "Contato não encontrado ou sem permissão para alterá-lo." };
 
   revalidatePath(`/configuracoes/contrapartes/${entrada.data.contraparte_id}`);
+  revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/akf");
   return { ok: true, chave: Date.now() };
 }

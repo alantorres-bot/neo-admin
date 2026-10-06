@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Check, ExternalLink } from "lucide-react";
+import { DialogoContato } from "@/app/(plataforma)/configuracoes/contrapartes/dialogos";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -68,7 +69,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
       <Button variant="ghost" size="sm" render={<Link href="/financeiro/recebiveis" />}><ArrowLeft /> Voltar à carteira</Button>
 
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{f.notaNumero ? `NF ${f.notaNumero}` : f.base.documento} <span className="font-normal text-muted-foreground">— {f.nomeCliente || "cliente"}</span></h1>
+        <h1 className="text-2xl font-semibold tracking-tight">{f.notaNumero ? `NF ${f.notaNumero}` : f.base.documento} <span className="font-normal text-muted-foreground">— <Link href={`/financeiro/recebiveis/clientes/${f.base.contraparte_id}`} className="hover:underline">{f.nomeCliente || "cliente"}</Link></span></h1>
         <p className="text-sm text-muted-foreground">
           {parcelas.length} {parcelas.length === 1 ? "parcela" : "parcelas"} · {formatarMoeda(f.totalCentavos)}
           {f.pedidos.length > 0 && <> · Pedido{f.pedidos.length > 1 ? "s" : ""} {f.pedidos.join(", ")}</>}
@@ -215,6 +216,9 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
               </select>
               <Button type="submit" variant="secondary" size="sm">Usar este contato</Button>
             </form>
+          )}
+          {podeOperar && !contato && (
+            <div className="pt-1"><DialogoContato contraparteId={f.base.contraparte_id} finalidadesIniciais={["boleto"]} rotuloBotao="Cadastrar contato" /></div>
           )}
           {podeOperar && (
             <div className="pt-1">

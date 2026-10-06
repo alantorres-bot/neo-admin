@@ -12,6 +12,7 @@ import { desdobrarTitulo, encerrarParte, marcarNaAkf } from "./acoes";
 
 export type LinhaAkf = {
   id: string;
+  clienteId?: string;
   documento: string;
   cliente: string;
   unidade: "matriz" | "contagem";
@@ -197,7 +198,9 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
                   <Link href={`/financeiro/recebiveis/${l.tituloId ?? l.id}`} className="hover:underline">{l.documento}</Link>
                   {l.unidade === "contagem" && <Badge variant="outline" className="ml-1.5 align-middle">Contagem</Badge>}
                 </TableCell>
-                <TableCell className="max-w-72 truncate" title={l.cliente}>{l.cliente}</TableCell>
+                <TableCell className="max-w-72 truncate" title={l.cliente}>
+                  {l.clienteId ? <Link href={`/financeiro/recebiveis/clientes/${l.clienteId}`} className="hover:underline">{l.cliente}</Link> : l.cliente}
+                </TableCell>
                 <TableCell className="tabular-nums">{l.vencimento}</TableCell>
                 <TableCell className={l.vencido ? "font-medium text-red-700" : "text-muted-foreground"}>{l.atraso}</TableCell>
                 <TableCell className="text-right tabular-nums">
@@ -224,6 +227,7 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
 
 export type LinhaParte = {
   id: string;
+  clienteId?: string;
   tituloId: string;
   documento: string;
   cliente: string;
@@ -279,7 +283,9 @@ export function ListaPartes({ partes, podeOperar }: { partes: LinhaParte[]; pode
                 <Link href={`/financeiro/recebiveis/${p.tituloId}`} className="hover:underline">{p.documento}</Link>
                 {p.unidade === "contagem" && <Badge variant="outline" className="ml-1.5 align-middle">Contagem</Badge>}
               </TableCell>
-              <TableCell className="max-w-64 truncate" title={p.cliente}>{p.cliente}</TableCell>
+              <TableCell className="max-w-64 truncate" title={p.cliente}>
+                {p.clienteId ? <Link href={`/financeiro/recebiveis/clientes/${p.clienteId}`} className="hover:underline">{p.cliente}</Link> : p.cliente}
+              </TableCell>
               <TableCell className="text-right tabular-nums">{p.valor}</TableCell>
               <TableCell className={`tabular-nums ${p.vencida ? "font-medium text-red-700" : ""}`}>{p.vencimento}{p.vencida ? " (vencida)" : ""}</TableCell>
               <TableCell className="tabular-nums text-muted-foreground">{p.dataOperacao}</TableCell>

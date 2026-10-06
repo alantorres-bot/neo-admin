@@ -19,6 +19,8 @@ import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { marcoDoAtraso, nomeDoMarco, ROTULO_UNIDADE, unidadeDaPendencia, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import { ESTAGIOS_CONFIRMAVEIS } from "@/supabase/functions/_shared/confirmacao";
 import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
+import { titulaNoEscopoDeCadastro } from "@/lib/modulos/financeiro/recebiveis/clientes";
+import { temContatoUtil, type ContatoEscolha } from "@/supabase/functions/_shared/contatos";
 import { PREFERENCIAS, lerPreferenciaBooleana } from "@/lib/nucleo/preferencias";
 import { CaixaOcultar } from "./caixa-ocultar";
 import { BotoesSincronizacao } from "./sincronizar";
@@ -171,6 +173,15 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     const { data } = await supabase.from("contrapartes").select("id, nome").in("id", idsDaPagina);
     for (const c of data ?? []) nomes.set(c.id as string, c.nome as string);
   }
+
+  // Clientes sem nenhum meio de contato (e-mail, WhatsApp ou telefone): o selo "Sem contato" aparece nos títulos que estão no
+  // escopo do cadastro combinado (Matriz, a vencer ou vencido há menos de 60 dias).
+  const contatosPorCliente = new Map<string, ContatoEscolha[]>();
+  if (idsDaPagina.length > 0) {
+    const { data } = await supabase.from("contatos").select("id, contraparte_id, nome, email, whatsapp, telefone, finalidades, ativo").in("contraparte_id", idsDaPagina).eq("ativo", true);
+    for (const c of data ?? []) contatosPorCliente.set(c.contraparte_id as string, [...(contatosPorCliente.get(c.contraparte_id as string) ?? []), c as unknown as ContatoEscolha]);
+  }
+  const semContato = (t: LinhaTitulo) => titulaNoEscopoDeCadastro(t) && !temContatoUtil(contatosPorCliente.get(t.contraparte_id) ?? []);
 
   // Antecipação parcial na AKF (migration 0113): quanto do título já está na AKF e quanto resta com a Neo.
   const partes = await lerPartes(supabase, titulos.map((t) => t.id));
@@ -446,7 +457,10 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
                       {t.nota_fiscal ? <span className="block">NF {t.nota_fiscal}</span> : <span className="block">—</span>}
                       {(t.nota_saida_id && pedidosDaNota.get(t.nota_saida_id)?.length) ? <span className="block">Pedido {pedidosDaNota.get(t.nota_saida_id)!.join(", ")}</span> : null}
                     </TableCell>
-                    <TableCell className="max-w-72 truncate" title={nomes.get(t.contraparte_id)}>{nomes.get(t.contraparte_id) ?? "—"}</TableCell>
+                    <TableCell className="max-w-72 truncate" title={nomes.get(t.contraparte_id)}>
+                      <Link href={`/financeiro/recebiveis/clientes/${t.contraparte_id}`} className="hover:underline">{nomes.get(t.contraparte_id) ?? "—"}</Link>
+                      {semContato(t) && <Badge variant="outline" className="ml-1.5 border-marca align-middle text-marca" title="Cliente sem e-mail, WhatsApp nem telefone cadastrado">Sem contato</Badge>}
+                    </TableCell>
                     <TableCell className="tabular-nums">{formatarData(t.emissao) || "—"}</TableCell>
                     <TableCell className="tabular-nums">{formatarData(t.vencimento)}</TableCell>
                     <TableCell className={t.dias_atraso > 0 ? "font-medium text-red-700" : "text-muted-foreground"}>{descreverAtraso(t.dias_atraso)}</TableCell>

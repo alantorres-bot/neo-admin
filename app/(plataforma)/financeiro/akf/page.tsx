@@ -160,6 +160,7 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
   const paraLinha = (t: LinhaTitulo, cliente: string, parte: Awaited<ReturnType<typeof lerPartes>> extends Map<string, infer P> ? P | undefined : never, comSemBoleto: boolean): LinhaAkf => {
     return {
       id: t.id,
+      clienteId: t.contraparte_id,
       documento: `${t.documento}${t.parcela !== "1" ? `/${t.parcela}` : ""}`,
       cliente,
       unidade: t.unidade === "contagem" ? "contagem" : "matriz",
@@ -221,6 +222,7 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
     return {
       id: d.id as string,
       tituloId: d.titulo_id as string,
+      clienteId: t?.contraparte_id,
       documento: t?.documento ?? "—",
       cliente: t ? (nomesPartes.get(t.contraparte_id) ?? "—") : "—",
       unidade: t?.unidade === "contagem" ? "contagem" : "matriz",
@@ -253,6 +255,7 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
         id: d.id as string,
         parteId: d.id as string,
         tituloId: d.titulo_id as string,
+        clienteId: t.contraparte_id,
         documento: t.documento,
         cliente: nomesPartes.get(t.contraparte_id) ?? "—",
         unidade: t.unidade === "contagem" ? "contagem" : "matriz",

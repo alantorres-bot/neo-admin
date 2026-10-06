@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { DialogoContato } from "@/app/(plataforma)/configuracoes/contrapartes/dialogos";
 import { Badge } from "@/components/ui/badge";
 import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
 import { formatarWhatsapp } from "@/lib/nucleo/documentos";
@@ -77,7 +78,7 @@ export default async function PaginaConfirmacao({ params, searchParams }: PagePr
       <Button variant="ghost" size="sm" render={<Link href="/financeiro/recebiveis" />}><ArrowLeft /> Voltar à carteira</Button>
 
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Confirmar pagamento <span className="font-normal text-muted-foreground">— {nomeCliente}</span> <Badge variant={unidade === "contagem" ? "default" : "secondary"} className="align-middle">{ROTULO_UNIDADE[unidade]}</Badge></h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Confirmar pagamento <span className="font-normal text-muted-foreground">— <Link href={`/financeiro/recebiveis/clientes/${id}`} className="hover:underline">{nomeCliente}</Link></span> <Badge variant={unidade === "contagem" ? "default" : "secondary"} className="align-middle">{ROTULO_UNIDADE[unidade]}</Badge></h1>
         <p className="text-sm text-muted-foreground">
           {grupo
             ? <>{grupo.titulos.length} {grupo.titulos.length === 1 ? "parcela" : "parcelas"} vencendo nos próximos 7 dias, total {formatarMoeda(grupo.totalCentavos)}. {prazoContato === hoje ? "Contate o cliente hoje" : `Contate o cliente até ${formatarData(prazoContato)}`} (o ideal é 4 dias antes do vencimento).</>
@@ -92,7 +93,7 @@ export default async function PaginaConfirmacao({ params, searchParams }: PagePr
             <CardTitle>Mensagem pronta (WhatsApp)</CardTitle>
             <CardDescription>
               Copie e envie pelo seu WhatsApp (o sistema não envia).{" "}
-              {contato ? <>Para <strong>{contato.nome}</strong>{contato.funcao ? ` (${contato.funcao})` : ""}{contato.whatsapp ? ` · ${formatarWhatsapp(contato.whatsapp)}` : ""}.</> : contatos.length > 0 ? "Nenhum contato deste cliente tem WhatsApp cadastrado: complete em Configurações > Contrapartes e contatos." : "Este cliente ainda não tem contato cadastrado: cadastre em Configurações > Contrapartes e contatos."}
+              {contato ? <>Para <strong>{contato.nome}</strong>{contato.funcao ? ` (${contato.funcao})` : ""}{contato.whatsapp ? ` · ${formatarWhatsapp(contato.whatsapp)}` : ""}.</> : <>{contatos.length > 0 ? "Nenhum contato deste cliente tem WhatsApp." : "Este cliente ainda não tem contato cadastrado."} {podeOperar && <DialogoContato contraparteId={id} finalidadesIniciais={["confirmacao"]} rotuloBotao="Cadastrar contato" />}</>}
               {contatoLigar && <> Para ligar: <strong>{contatoLigar.nome}</strong> · {formatarWhatsapp(contatoLigar.telefone ?? contatoLigar.whatsapp)}.</>}
             </CardDescription>
           </CardHeader>

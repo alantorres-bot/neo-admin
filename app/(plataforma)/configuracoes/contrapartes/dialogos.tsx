@@ -5,7 +5,7 @@ import { Campo, DialogoFormulario } from "@/components/formularios/dialogo-formu
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { formatarWhatsapp } from "@/lib/nucleo/documentos";
-import { FINALIDADES, finalidadesDesconhecidas, normalizarFinalidade, ROTULO_FINALIDADE } from "@/supabase/functions/_shared/contatos";
+import { FINALIDADES, finalidadesDesconhecidas, normalizarFinalidade, ROTULO_FINALIDADE, type Finalidade } from "@/supabase/functions/_shared/contatos";
 import { CANAIS_DE_CONTATO, ROTULO_CANAL, ROTULO_TIPO_CONTRAPARTE, TIPOS_CONTRAPARTE } from "@/lib/nucleo/rotulos";
 import type { Contato, Contraparte } from "@/lib/nucleo/tipos";
 import { salvarContato, salvarContraparte } from "./acoes";
@@ -57,11 +57,11 @@ export function DialogoContraparte({ contraparte, podeColaborador }: { contrapar
   );
 }
 
-export function DialogoContato({ contraparteId, contato }: { contraparteId: string; contato?: Contato }) {
+export function DialogoContato({ contraparteId, contato, finalidadesIniciais = [], rotuloBotao }: { contraparteId: string; contato?: Contato; finalidadesIniciais?: Finalidade[]; rotuloBotao?: string }) {
   return (
     <DialogoFormulario
       titulo={contato ? "Editar contato" : "Novo contato"}
-      botao={contato ? <><Pencil /> Editar</> : <><Plus /> Novo contato</>}
+      botao={contato ? <><Pencil /> Editar</> : <><Plus /> {rotuloBotao ?? "Novo contato"}</>}
       variante={contato ? "ghost" : "default"}
       tamanho={contato ? "sm" : "default"}
       mensagemSucesso={contato ? "Contato atualizado." : "Contato criado."}
@@ -100,7 +100,7 @@ export function DialogoContato({ contraparteId, contato }: { contraparteId: stri
         <div className="grid gap-2 sm:grid-cols-2">
           {FINALIDADES.map((f) => (
             <label key={f} className="flex items-center gap-2 text-sm">
-              <input type="checkbox" name="finalidades" value={f} defaultChecked={contato?.finalidades.some((x) => normalizarFinalidade(x) === f) ?? false} className="size-4" />
+              <input type="checkbox" name="finalidades" value={f} defaultChecked={contato ? contato.finalidades.some((x) => normalizarFinalidade(x) === f) : finalidadesIniciais.includes(f)} className="size-4" />
               {ROTULO_FINALIDADE[f]}
             </label>
           ))}

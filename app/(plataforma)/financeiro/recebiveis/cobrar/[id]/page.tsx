@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { DialogoContato } from "@/app/(plataforma)/configuracoes/contrapartes/dialogos";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,7 +50,7 @@ export default async function PaginaCobranca({ params }: PageProps<"/financeiro/
       <Button variant="ghost" size="sm" render={<Link href="/financeiro/recebiveis" />}><ArrowLeft /> Voltar à carteira</Button>
 
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Cobrança <span className="font-normal text-muted-foreground">— {dados.nomeCliente}</span></h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Cobrança <span className="font-normal text-muted-foreground">— <Link href={`/financeiro/recebiveis/clientes/${id}`} className="hover:underline">{dados.nomeCliente}</Link></span></h1>
         <p className="text-sm text-muted-foreground">
           {grupos.length > 0
             ? <>{totalTitulos} {totalTitulos === 1 ? "título vencido" : "títulos vencidos"} na régua, total {formatarMoeda(totalEmAberto)}.</>
@@ -89,7 +90,7 @@ export default async function PaginaCobranca({ params }: PageProps<"/financeiro/
                     <BotaoCopiar texto={whats} rotulo="WhatsApp" />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {contatoWhatsapp ? <>Para <strong>{contatoWhatsapp.nome}</strong>{contatoWhatsapp.funcao ? ` (${contatoWhatsapp.funcao})` : ""}{contatoWhatsapp.whatsapp ? ` · ${contatoWhatsapp.whatsapp}` : ""}.</> : "Este cliente ainda não tem contato cadastrado: cadastre em Configurações > Contrapartes e contatos."}
+                    {contatoWhatsapp ? <>Para <strong>{contatoWhatsapp.nome}</strong>{contatoWhatsapp.funcao ? ` (${contatoWhatsapp.funcao})` : ""}{contatoWhatsapp.whatsapp ? ` · ${contatoWhatsapp.whatsapp}` : ""}.</> : <>{dados.contatos.length > 0 ? "Nenhum contato deste cliente tem WhatsApp." : "Este cliente ainda não tem contato cadastrado."} {podeOperar && <DialogoContato contraparteId={id} finalidadesIniciais={["cobranca"]} rotuloBotao="Cadastrar contato" />}</>}
                   </p>
                   <pre className="whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 font-sans text-sm">{whats}</pre>
                 </div>
@@ -105,7 +106,7 @@ export default async function PaginaCobranca({ params }: PageProps<"/financeiro/
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    {contatoEmail ? <>Para <strong>{contatoEmail.nome}</strong>{contatoEmail.email ? ` · ${contatoEmail.email}` : ""}.</> : "Nenhum contato com e-mail cadastrado."}{" "}
+                    {contatoEmail ? <>Para <strong>{contatoEmail.nome}</strong>{contatoEmail.email ? ` · ${contatoEmail.email}` : ""}.</> : <>Nenhum contato com e-mail cadastrado. {podeOperar && <DialogoContato contraparteId={id} finalidadesIniciais={["cobranca"]} rotuloBotao="Cadastrar contato" />}</>}{" "}
                     Assunto: {email.assunto}
                   </p>
                   <pre className="whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 font-sans text-sm">{email.corpo}</pre>
