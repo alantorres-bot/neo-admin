@@ -18,6 +18,7 @@ uma rotina que hoje é feita em planilha, e-mail, ERP ou skill avulsa.
 | **Contratos** | Contratos de venda/locação | Proposta → dados → minuta; aditivos; vencimentos contratuais | 3 |
 | Contratos | Remessas e retornos (locação) | Controle REM x RET de equipamentos locados, pendências de devolução | 4 |
 | Contratos | Cessões de crédito | Títulos cedidos (ex.: AKF), cartas de cessão — alimenta Recebíveis | 2 |
+| Financeiro | AKF | Títulos cedidos/antecipados na AKF Securitizadora: carteira, antecipação, borderôs, passivo "por fora", prorrogação (ver `modulos/financeiro-akf.md`; Fase 1 entregue) | em construção |
 | **Jurídico** | Processos e prazos | Processos (execuções, reclamatórias, ações), prazos, advogados, custos | 2 |
 | Jurídico | Notificações extrajudiciais | Emitidas e recebidas, prazos e respostas | 3 |
 | **RH/SST** | Rotinas de folha | Checklist mensal, conferência de folha, FGTS, rescisões | 4 |

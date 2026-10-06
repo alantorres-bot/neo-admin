@@ -116,7 +116,7 @@ export const ROTULO_GRUPO: Record<GrupoSituacao, string> = {
   sem_acao: "A vencer, sem ação",
   vencido: "Vencidos",
   promessa: "Promessa de pagamento",
-  especial: "Contestados e outros",
+  especial: "Cedidos e contestados",
 };
 
 /** Texto curto do selo de cada situação (na lista). */
