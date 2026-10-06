@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Check } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -19,6 +18,8 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { marcoDoAtraso, nomeDoMarco, ROTULO_UNIDADE, unidadeDaPendencia, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import { ESTAGIOS_CONFIRMAVEIS } from "@/supabase/functions/_shared/confirmacao";
+import { PREFERENCIAS, lerPreferenciaBooleana } from "@/lib/nucleo/preferencias";
+import { CaixaOcultar } from "./caixa-ocultar";
 import { BotoesSincronizacao } from "./sincronizar";
 
 export const metadata: Metadata = { title: "Recebíveis" };
@@ -85,12 +86,18 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   const abaPedida = primeiro(parametros.aba) || primeiro(parametros.situacao);
   const aba = ehGrupo(abaPedida) ? abaPedida : null;
   // Unidade: Matriz ou Filial Contagem (documento que começa com 400). Sem escolha, mostra as duas.
-  // "Ocultar vencidos há mais de 90 dias": vale para a tela toda (cartões, aging, abas e lista), para os números baterem.
-  const ocultar = primeiro(parametros.ocultar90) === "1";
   const unidadePedida = primeiro(parametros.unidade);
   const unidade: Unidade | null = unidadePedida === "matriz" || unidadePedida === "contagem" ? unidadePedida : null;
 
   const supabase = await criarClienteServidor();
+
+  // "Ocultar vencidos há mais de 90 dias": vale para a tela toda (cartões, aging, abas e lista), para os números baterem.
+  // Sem nada no endereço, vale a preferência salva da pessoa; ?ocultar90=1 ou =0 vale só para aquela visita e é repassado
+  // pelos links enquanto for diferente do que está salvo.
+  const salvoOcultar = await lerPreferenciaBooleana(supabase, PREFERENCIAS.recebiveisOcultarVencidos90);
+  const pedidoOcultar = primeiro(parametros.ocultar90);
+  const ocultar = pedidoOcultar === "1" ? true : pedidoOcultar === "0" ? false : salvoOcultar;
+  const paramOcultar = ocultar !== salvoOcultar ? (ocultar ? "1" : "0") : null;
 
   // 1) Resumo de TODA a carteira em aberto (independe do filtro da lista). PostgREST devolve até 1000 por vez.
   const todasLinhas: LinhaResumo[] = [];
@@ -230,7 +237,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     if (faixa) qs.set("faixa", faixa);
     if (aba) qs.set("aba", aba);
     if (unidade) qs.set("unidade", unidade);
-    if (ocultar) qs.set("ocultar90", "1");
+    if (paramOcultar) qs.set("ocultar90", paramOcultar);
     if (p > 1) qs.set("pagina", String(p));
     const texto = qs.toString();
     return `/financeiro/recebiveis${texto ? `?${texto}` : ""}`;
@@ -242,14 +249,14 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     if (faixa) qs.set("faixa", faixa);
     if (g) qs.set("aba", g);
     if (unidade) qs.set("unidade", unidade);
-    if (ocultar) qs.set("ocultar90", "1");
+    if (paramOcultar) qs.set("ocultar90", paramOcultar);
     const texto = qs.toString();
     return `/financeiro/recebiveis${texto ? `?${texto}` : ""}`;
   };
   const hrefUnidade = (u: Unidade | null) => {
     const qs = new URLSearchParams();
     if (u) qs.set("unidade", u);
-    if (ocultar) qs.set("ocultar90", "1");
+    if (paramOcultar) qs.set("ocultar90", paramOcultar);
     const texto = qs.toString();
     return `/financeiro/recebiveis${texto ? `?${texto}` : ""}`;
   };
@@ -260,7 +267,6 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     if (faixa) qs.set("faixa", faixa);
     if (aba) qs.set("aba", aba);
     if (unidade) qs.set("unidade", unidade);
-    if (!ocultar) qs.set("ocultar90", "1");
     const texto = qs.toString();
     return `/financeiro/recebiveis${texto ? `?${texto}` : ""}`;
   })();
@@ -308,22 +314,14 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
           );
         })}
       </nav>
-      <Link
-        href={hrefOcultar}
-        role="checkbox"
-        aria-checked={ocultar}
-        className="flex items-center gap-2 rounded-[3px] px-1 py-1 text-[13px] hover:bg-cabecalho"
-      >
-        <span className={`flex size-4 items-center justify-center rounded-[3px] border ${ocultar ? "border-botao bg-botao text-white" : "border-grade bg-white"}`} aria-hidden>
-          {ocultar && <Check className="size-3" />}
-        </span>
-        Ocultar vencidos há mais de {DIAS_OCULTAR} dias
-        {ocultar && ocultos.length > 0 && (
-          <span className="text-[12px] text-muted-foreground">
-            ({ocultos.length} {ocultos.length === 1 ? "título oculto" : "títulos ocultos"} · {formatarMoeda(ocultos.reduce((x, l) => x + emCentavos(l.valor), 0))})
-          </span>
-        )}
-      </Link>
+      <CaixaOcultar
+        ligado={ocultar}
+        destino={hrefOcultar}
+        rotulo={`Ocultar vencidos há mais de ${DIAS_OCULTAR} dias`}
+        detalhe={ocultar && ocultos.length > 0
+          ? `(${ocultos.length} ${ocultos.length === 1 ? "título oculto" : "títulos ocultos"} · ${formatarMoeda(ocultos.reduce((x, l) => x + emCentavos(l.valor), 0))})`
+          : undefined}
+      />
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -351,7 +349,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
         <CardHeader><CardTitle>Atraso (aging)</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           {resumo.porFaixa.map((f) => (
-            <Link key={f.faixa} href={`/financeiro/recebiveis?faixa=${f.faixa}${unidade ? `&unidade=${unidade}` : ""}${ocultar ? "&ocultar90=1" : ""}`} className="grid grid-cols-[8rem_1fr_auto] items-center gap-3 rounded-md px-1 py-0.5 text-sm hover:bg-muted/50 sm:grid-cols-[9rem_1fr_16rem]">
+            <Link key={f.faixa} href={`/financeiro/recebiveis?faixa=${f.faixa}${unidade ? `&unidade=${unidade}` : ""}${paramOcultar ? `&ocultar90=${paramOcultar}` : ""}`} className="grid grid-cols-[8rem_1fr_auto] items-center gap-3 rounded-md px-1 py-0.5 text-sm hover:bg-muted/50 sm:grid-cols-[9rem_1fr_16rem]">
               <span>{ROTULO_FAIXA[f.faixa]}</span>
               <span className="h-2.5 rounded-full bg-muted" aria-hidden>
                 <span className={`block h-2.5 rounded-full ${COR_FAIXA[f.faixa]}`} style={{ width: `${f.percentual}%` }} />
@@ -395,7 +393,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
         <form method="get" className="flex flex-wrap items-center gap-2" role="search">
           {aba && <input type="hidden" name="aba" value={aba} />}
           {unidade && <input type="hidden" name="unidade" value={unidade} />}
-          {ocultar && <input type="hidden" name="ocultar90" value="1" />}
+          {paramOcultar && <input type="hidden" name="ocultar90" value={paramOcultar} />}
           <Input name="q" defaultValue={busca} placeholder="Cliente, código ou documento" aria-label="Buscar" className="w-64" />
           <select name="faixa" defaultValue={faixa ?? ""} aria-label="Faixa de atraso" className="h-8 rounded-[3px] border border-input bg-white px-2 text-[13px]">
             <option value="">Todas as faixas</option>
