@@ -41,6 +41,9 @@ export type LinhaResumo = {
   valor: number | string;
   valor_atualizado: number | string;
   contraparte_id: string;
+  estagio?: string;
+  cedido?: boolean | null;
+  contestado?: boolean | null;
 };
 
 export type TotalFaixa = { faixa: Faixa; quantidade: number; centavos: number; percentual: number };
@@ -92,6 +95,78 @@ export function resumirCarteira(linhas: readonly LinhaResumo[]): ResumoCarteira 
     porFaixa: lista,
   };
 }
+
+// ---------------------------------------------------------------- situação do título (abas da Carteira)
+
+/**
+ * Em que situação cada título aberto está, num só rótulo (como as abas de uma consulta do ERP). A ordem de precedência é:
+ * contestado/cedido/jurídico/em renegociação > promessa > aguardando boleto > vencido > boleto enviado > confirmado > a vencer sem ação.
+ */
+export const GRUPOS_SITUACAO = ["aguardando_boleto", "boleto_enviado", "confirmado", "sem_acao", "vencido", "promessa", "especial"] as const;
+export type GrupoSituacao = (typeof GRUPOS_SITUACAO)[number];
+
+export const ROTULO_GRUPO: Record<GrupoSituacao, string> = {
+  aguardando_boleto: "Aguardando boleto",
+  boleto_enviado: "Boleto enviado",
+  confirmado: "Confirmados",
+  sem_acao: "A vencer, sem ação",
+  vencido: "Vencidos",
+  promessa: "Promessa de pagamento",
+  especial: "Contestados e outros",
+};
+
+/** Texto curto do selo de cada situação (na lista). */
+export const ROTULO_GRUPO_SELO: Record<GrupoSituacao, string> = {
+  aguardando_boleto: "Aguardando boleto",
+  boleto_enviado: "Boleto enviado",
+  confirmado: "Confirmado",
+  sem_acao: "A vencer",
+  vencido: "Vencido",
+  promessa: "Promessa",
+  especial: "Especial",
+};
+
+export const ehGrupo = (v: string): v is GrupoSituacao => (GRUPOS_SITUACAO as readonly string[]).includes(v);
+
+/** Estágios cobertos pelo grupo "vencido" (título passado do vencimento, ainda sem pagamento, acordo nem pausa). */
+export const ESTAGIOS_DO_GRUPO_VENCIDO = ["importado", "boleto_enviado", "confirmado_cliente", "vencido"] as const;
+
+export type DadosSituacao = { estagio: string; faixa: string; cedido?: boolean | null; contestado?: boolean | null };
+
+export function grupoDaSituacao(t: DadosSituacao): GrupoSituacao {
+  if (t.cedido || t.contestado || t.estagio === "em_renegociacao" || t.estagio === "juridico") return "especial";
+  if (t.estagio === "promessa") return "promessa";
+  if (t.estagio === "aguardando_boleto") return "aguardando_boleto";
+  if (t.faixa !== "a_vencer") return "vencido";
+  if (t.estagio === "boleto_enviado") return "boleto_enviado";
+  if (t.estagio === "confirmado_cliente") return "confirmado";
+  return "sem_acao";
+}
+
+export type TotalGrupo = { grupo: GrupoSituacao; quantidade: number; centavos: number };
+
+/** Quantidade e valor de cada situação, sobre os títulos em aberto. */
+export function resumirPorGrupo(linhas: readonly (LinhaResumo & Partial<DadosSituacao>)[]): TotalGrupo[] {
+  const m = new Map<GrupoSituacao, { quantidade: number; centavos: number }>(GRUPOS_SITUACAO.map((g) => [g, { quantidade: 0, centavos: 0 }]));
+  for (const l of linhas) {
+    if (!ehFaixa(l.faixa) || !l.estagio) continue;
+    const g = m.get(grupoDaSituacao({ estagio: l.estagio, faixa: l.faixa, cedido: l.cedido, contestado: l.contestado }))!;
+    g.quantidade++;
+    g.centavos += emCentavos(l.valor);
+  }
+  return GRUPOS_SITUACAO.map((grupo) => ({ grupo, ...m.get(grupo)! }));
+}
+
+/** O que a última interação registrada diz sobre o título (coluna "Andamento"). */
+export const ROTULO_ANDAMENTO: Record<string, string> = {
+  boleto_enviado: "Boleto enviado",
+  rascunho_gmail: "Rascunho de e-mail criado",
+  confirmacao: "Cliente confirmou o pagamento",
+  sem_resposta_confirmacao: "Sem resposta à confirmação",
+  cobranca: "Cobrança enviada",
+  promessa: "Cliente prometeu pagar",
+  contestacao: "Cliente contestou",
+};
 
 const MOEDA = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
 

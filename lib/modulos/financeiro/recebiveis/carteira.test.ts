@@ -6,7 +6,9 @@ import {
   emCentavos,
   formatarMoeda,
   formatarValor,
+  grupoDaSituacao,
   resumirCarteira,
+  resumirPorGrupo,
   type LinhaResumo,
   type ResumoSincronizacao,
 } from "./carteira";
@@ -109,5 +111,49 @@ describe("descreverSincronizacao", () => {
     expect(t).toContain("3 títulos encerrados aqui");
     expect(t).toContain("1 título repetido");
     expect(t).toContain("1 pendência de baixa cancelada");
+  });
+});
+
+describe("grupoDaSituacao", () => {
+  const g = (estagio: string, faixa: string, extra: { cedido?: boolean; contestado?: boolean } = {}) => grupoDaSituacao({ estagio, faixa, ...extra });
+  it("a vencer: cada estágio no seu grupo", () => {
+    expect(g("aguardando_boleto", "a_vencer")).toBe("aguardando_boleto");
+    expect(g("boleto_enviado", "a_vencer")).toBe("boleto_enviado");
+    expect(g("confirmado_cliente", "a_vencer")).toBe("confirmado");
+    expect(g("importado", "a_vencer")).toBe("sem_acao");
+  });
+  it("passou do vencimento: vencido, qualquer que seja o estágio de envio ou confirmação", () => {
+    for (const e of ["importado", "boleto_enviado", "confirmado_cliente", "vencido"]) expect(g(e, "01_15")).toBe("vencido");
+    expect(g("vencido", "60_mais")).toBe("vencido");
+  });
+  it("aguardando boleto fica na própria aba mesmo vencido (a ação é anexar o boleto)", () => {
+    expect(g("aguardando_boleto", "16_30")).toBe("aguardando_boleto");
+  });
+  it("promessa e especiais têm precedência", () => {
+    expect(g("promessa", "01_15")).toBe("promessa");
+    expect(g("vencido", "01_15", { contestado: true })).toBe("especial");
+    expect(g("boleto_enviado", "a_vencer", { cedido: true })).toBe("especial");
+    expect(g("em_renegociacao", "31_60")).toBe("especial");
+    expect(g("juridico", "60_mais")).toBe("especial");
+    expect(g("promessa", "01_15", { contestado: true })).toBe("especial");
+  });
+});
+
+describe("resumirPorGrupo", () => {
+  it("soma quantidade e valor por situação e ignora o que não é aberto", () => {
+    const r = resumirPorGrupo([
+      l("a_vencer", 1000, { estagio: "boleto_enviado" }),
+      l("a_vencer", 500, { estagio: "boleto_enviado" }),
+      l("01_15", 200, { estagio: "vencido" }),
+      l("a_vencer", 50, { estagio: "importado", cedido: true }),
+      l("encerrado", 99, { estagio: "pago" }),
+      l("a_vencer", 7), // sem estágio: ignorado
+    ]);
+    const por = Object.fromEntries(r.map((x) => [x.grupo, [x.quantidade, x.centavos]]));
+    expect(por.boleto_enviado).toEqual([2, 150_000]);
+    expect(por.vencido).toEqual([1, 20_000]);
+    expect(por.especial).toEqual([1, 5_000]);
+    expect(por.confirmado).toEqual([0, 0]);
+    expect(r.reduce((s, x) => s + x.quantidade, 0)).toBe(4);
   });
 });
