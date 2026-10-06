@@ -16,6 +16,8 @@ import { FUSO, formatarData } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
+import { marcoDoAtraso, nomeDoMarco } from "@/supabase/functions/_shared/cobranca";
+import { ESTAGIOS_CONFIRMAVEIS } from "@/supabase/functions/_shared/confirmacao";
 import { BotoesSincronizacao } from "./sincronizar";
 
 export const metadata: Metadata = { title: "Recebíveis" };
@@ -143,6 +145,33 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     const { data } = await supabase.from("contrapartes").select("id, nome").in("id", idsDaPagina);
     for (const c of data ?? []) nomes.set(c.id as string, c.nome as string);
   }
+
+  // Próxima ação: o passo da sequência que está na vez, a partir das pendências abertas do cliente e do estágio do título.
+  const pendenciasDoCliente = new Map<string, string[]>();
+  let corteRegua: string | null = null;
+  if (idsDaPagina.length > 0) {
+    const [{ data: pendencias }, { data: cfgRegua }] = await Promise.all([
+      supabase.from("pendencias").select("referencia_id, titulo").eq("modulo", MODULO).eq("referencia_tabela", "contrapartes")
+        .in("referencia_id", idsDaPagina).in("status", ["aberta", "em_andamento"]).limit(1000),
+      supabase.from("configuracoes").select("valor").eq("chave", "financeiro.recebiveis.regua_a_partir_de").maybeSingle(),
+    ]);
+    for (const p of pendencias ?? []) pendenciasDoCliente.set(p.referencia_id as string, [...(pendenciasDoCliente.get(p.referencia_id as string) ?? []), p.titulo as string]);
+    corteRegua = typeof cfgRegua?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfgRegua.valor) ? cfgRegua.valor : null;
+  }
+  const acaoDoTitulo = (t: LinhaTitulo): { rotulo: string; href: string; destaque: boolean } => {
+    const ficha = `/financeiro/recebiveis/${t.id}`;
+    const pendencias = pendenciasDoCliente.get(t.contraparte_id) ?? [];
+    if (t.estagio === "aguardando_boleto") return { rotulo: "Anexar boleto", href: ficha, destaque: true };
+    const marco = marcoDoAtraso(t.dias_atraso);
+    if (marco && corteRegua && t.vencimento >= corteRegua && !t.cedido && !t.contestado && t.estagio !== "promessa" && pendencias.some((x) => x.startsWith("Cobrar D+"))) {
+      return { rotulo: `Cobrar ${nomeDoMarco(marco)}`, href: `/financeiro/recebiveis/cobrar/${t.contraparte_id}`, destaque: true };
+    }
+    if (t.dias_atraso === 0 && ((ESTAGIOS_CONFIRMAVEIS as readonly string[]).includes(t.estagio))) {
+      const ligar = pendencias.some((x) => x.startsWith("Ligar para confirmar"));
+      if (ligar || pendencias.some((x) => x.startsWith("Confirmar pagamento:"))) return { rotulo: ligar ? "Ligar" : "Confirmar", href: `/financeiro/recebiveis/confirmar/${t.contraparte_id}`, destaque: true };
+    }
+    return { rotulo: "Abrir", href: ficha, destaque: false };
+  };
 
   // Andamento: o último registro de cada título desta página (boleto enviado, confirmação, cobrança...).
   const andamento = new Map<string, { texto: string; quando: string }>();
@@ -313,6 +342,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
                   <TableHead className="text-right">Valor atualizado*</TableHead>
                   <TableHead>Situação</TableHead>
                   <TableHead>Andamento</TableHead>
+                  <TableHead>Próxima ação</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -342,6 +372,12 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
                       {andamento.get(t.id)
                         ? <><span className="block">{andamento.get(t.id)!.texto}</span><span className="block text-muted-foreground">{andamento.get(t.id)!.quando}</span></>
                         : <span className="text-muted-foreground">—</span>}
+                    </TableCell>
+                    <TableCell>
+                      {(() => {
+                        const a = acaoDoTitulo(t);
+                        return <Button variant={a.destaque ? "default" : "outline"} size="sm" render={<Link href={a.href} />}>{a.rotulo}</Button>;
+                      })()}
                     </TableCell>
                   </TableRow>
                 ))}

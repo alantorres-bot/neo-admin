@@ -70,7 +70,7 @@ export function BaixaComEvidencia({ linhas, podeOperar }: { linhas: LinhaEvidenc
 export type LinhaManual = { id: string; rotulo: string; detalhe: string; valorTitulo: number; emissao: string | null };
 
 /** Um título sem evidência: a pessoa confere no Consistem e informa pago (data e valor) ou cancelado (motivo). */
-export function BaixaManual({ linha, hoje }: { linha: LinhaManual; hoje: string }) {
+export function BaixaManual({ linha, hoje, rotuloBotao = "Resolver" }: { linha: LinhaManual; hoje: string; rotuloBotao?: string }) {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
   const [resultado, setResultado] = useState<"pago" | "cancelado">("pago");
@@ -100,7 +100,7 @@ export function BaixaManual({ linha, hoje }: { linha: LinhaManual; hoje: string 
         <span className="min-w-60 font-medium">{linha.rotulo}</span>
         <span className="text-muted-foreground">{linha.detalhe}</span>
         <Button type="button" variant="outline" size="sm" className="ml-auto" onClick={() => setAberto(!aberto)}>
-          {aberto ? "Fechar" : "Resolver"}
+          {aberto ? "Fechar" : rotuloBotao}
         </Button>
       </div>
       {aberto && (

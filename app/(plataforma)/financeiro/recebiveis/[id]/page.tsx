@@ -1,25 +1,38 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, ExternalLink } from "lucide-react";
+import { ArrowLeft, Check, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MODULO_RECEBIVEIS } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { descreverAtraso, ROTULO_ESTAGIO } from "@/lib/modulos/financeiro/recebiveis/carteira";
+import { montarEsteira, type Etapa } from "@/lib/modulos/financeiro/recebiveis/esteira";
+import { marcoDoAtraso, nomeDoMarco } from "@/supabase/functions/_shared/cobranca";
+import { ESTAGIOS_CONFIRMAVEIS } from "@/supabase/functions/_shared/confirmacao";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { FUSO } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
+import { BaixaManual } from "../baixas/componentes";
 import { AnexarBoleto, BotaoCopiar, CriarRascunhoGmail, LinhaDigitavel, MarcarEnviado } from "./componentes";
 import { carregarFicha, centavos, ENCERRADOS } from "./dados";
 
-export const metadata: Metadata = { title: "Boleto e envio" };
+export const metadata: Metadata = { title: "Ficha do título" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const primeiro = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 const quando = (iso: string) => new Intl.DateTimeFormat("pt-BR", { timeZone: FUSO, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
+
+/** Estilo de cada passo da esteira: o que já foi feito, o que está na vez e o que vem depois. */
+const ESTILO_ETAPA: Record<Etapa["estado"], string> = {
+  feita: "border-emerald-300 bg-emerald-50 text-emerald-950",
+  atual: "border-marca bg-marca-clara font-bold text-texto",
+  pendente: "border-grade bg-cabecalho text-muted-foreground",
+  fora: "border-dashed border-grade bg-white text-muted-foreground opacity-70",
+};
+const dataDaEtapa = (iso: string | null) => (iso ? formatarData(iso.slice(0, 10)) : "");
 
 export default async function PaginaBoleto({ params, searchParams }: PageProps<"/financeiro/recebiveis/[id]">) {
   const { id } = await params;
@@ -61,6 +74,86 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
       </div>
 
       <Card size="sm">
+        <CardHeader>
+          <CardTitle>Esteira de cobrança</CardTitle>
+          <CardDescription>
+            O caminho de cada parcela, do boleto ao pagamento: o que já foi <span className="font-medium text-emerald-800">feito</span>, o que está <span className="font-medium text-marca">na vez</span> e o que vem depois. Os botões levam ao próximo passo.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {parcelas.map((p) => {
+            const aberta = !ENCERRADOS.includes(p.estagio);
+            const reguaAplica = !!f.corteRegua && p.vencimento >= f.corteRegua && !p.cedido && !p.contestado;
+            const etapas = montarEsteira({
+              estagio: p.estagio, vencimento: p.vencimento, boletoAnexado: boletoDaParcela.has(p.id), boletoEnviadoEm: p.boleto_enviado_em,
+              dataPagamento: p.data_pagamento, reguaPausadaAte: p.regua_pausada_ate, reguaAplica,
+            }, f.interacoes.filter((i) => i.referencia_id === p.id), f.hoje);
+            const naVez = etapas.find((e) => e.estado === "atual");
+            const marco = marcoDoAtraso(p.dias_atraso);
+            const confirmavel = (ESTAGIOS_CONFIRMAVEIS as readonly string[]).includes(p.estagio) || p.estagio === "confirmado_cliente";
+            const diasParaVencer = Math.round((Date.parse(`${p.vencimento}T00:00:00Z`) - Date.parse(`${f.hoje}T00:00:00Z`)) / 86_400_000);
+            const naJanela = diasParaVencer >= 0 && diasParaVencer <= 7;
+            const ehCobravel = p.dias_atraso > 0 && !["pago", "cancelado", "renegociado", "juridico", "em_renegociacao"].includes(p.estagio) && !p.cedido && !p.contestado;
+            const nomeParcela = `${p.documento}${p.parcela !== "1" ? `/${p.parcela}` : ""}`;
+            return (
+              <div key={p.id} className="space-y-2 rounded-[3px] border border-grade p-3">
+                <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                  <span className="font-bold tabular-nums">{nomeParcela}</span>
+                  <span className="text-xs text-muted-foreground">vence {formatarData(p.vencimento)} · {formatarMoeda(centavos(p.valor))}</span>
+                  <Badge variant="secondary">{ROTULO_ESTAGIO[p.estagio] ?? p.estagio}</Badge>
+                  {p.cedido && <Badge variant="outline">Cedido</Badge>}
+                  {p.contestado && <Badge variant="outline">Contestado</Badge>}
+                  {naVez && <span className="text-xs text-marca">Na vez: {naVez.rotulo.toLowerCase()}{naVez.detalhe ? ` (${naVez.detalhe})` : ""}</span>}
+                </div>
+                <ol className="flex flex-wrap gap-1.5" aria-label={`Passos da parcela ${nomeParcela}`}>
+                  {etapas.map((e) => (
+                    <li key={e.chave} className={`min-w-28 rounded-[3px] border px-2 py-1 text-[12px] leading-tight ${ESTILO_ETAPA[e.estado]}`}>
+                      <span className="flex items-center gap-1">
+                        {e.estado === "feita" ? <Check className="size-3 shrink-0" aria-label="feito" /> : e.estado === "atual" ? <span className="size-2 shrink-0 rounded-full bg-marca" aria-label="na vez" /> : null}
+                        {e.rotulo}
+                      </span>
+                      {(e.quando || e.detalhe) && (
+                        <span className="block text-[11px] font-normal text-muted-foreground">{[dataDaEtapa(e.quando), e.detalhe].filter(Boolean).join(" · ")}</span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+                {aberta && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1">
+                    {p.estagio === "aguardando_boleto" && (
+                      <>
+                        <Button variant="outline" size="sm" render={<a href="#boleto" />}>Anexar boleto</Button>
+                        <Button variant="outline" size="sm" render={<a href="#envio" />}>Registrar envio</Button>
+                      </>
+                    )}
+                    {confirmavel && p.vencimento >= f.hoje && (
+                      naJanela
+                        ? <Button variant="outline" size="sm" render={<Link href={`/financeiro/recebiveis/confirmar/${p.contraparte_id}`} />}>Confirmar pagamento</Button>
+                        : <Button variant="outline" size="sm" disabled title="A confirmação abre 7 dias antes do vencimento">Confirmar pagamento</Button>
+                    )}
+                    {ehCobravel && (
+                      reguaAplica && marco
+                        ? <Button variant="outline" size="sm" render={<Link href={`/financeiro/recebiveis/cobrar/${p.contraparte_id}`} />}>Cobrar ({nomeDoMarco(marco)})</Button>
+                        : <Button variant="outline" size="sm" disabled title={`Vencimento anterior à data de corte da régua${f.corteRegua ? ` (${formatarData(f.corteRegua)})` : ""}`}>Cobrar (fora da régua)</Button>
+                    )}
+                    {podeOperar && (
+                      <ul className="min-w-60 flex-1">
+                        <BaixaManual
+                          linha={{ id: p.id, rotulo: "Registrar pagamento ou cancelamento", detalhe: "", valorTitulo: Number(p.valor), emissao: p.emissao }}
+                          hoje={f.hoje}
+                          rotuloBotao="Registrar baixa"
+                        />
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </CardContent>
+      </Card>
+
+      <Card size="sm" id="boleto">
         <CardHeader>
           <CardTitle>Boleto de cada parcela</CardTitle>
           <CardDescription>O boleto é gerado no Consistem ou no banco; anexe aqui o PDF de cada parcela. Anexo não se apaga: para trocar, envie outro (vale o mais recente).</CardDescription>
@@ -138,7 +231,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
       </Card>
 
       {podeOperar && (
-        <Card size="sm">
+        <Card size="sm" id="envio">
           <CardHeader>
             <CardTitle>Registrar o envio</CardTitle>
             <CardDescription>Depois de enviar ao cliente, marque aqui. A parcela passa para “Boleto enviado”, o envio fica no histórico e, quando a NF não tem mais parcela aguardando, a pendência “Anexar boleto” é concluída.</CardDescription>

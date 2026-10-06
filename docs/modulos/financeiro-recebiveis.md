@@ -274,3 +274,12 @@ A lista da Carteira deixou de ser uma só: ficou como a consulta de títulos em 
 - **Lista:** o **selo colorido** da situação (a mesma cor do ponto da aba) e a coluna **Andamento**, com o último registro do título (boleto enviado, rascunho de e-mail, cliente confirmou, sem resposta, cobrança enviada, prometeu pagar, contestou) e a data. Promessa mostra "até dd/mm".
 - Busca e faixa de atraso valem dentro da aba. Os totais das abas não consideram a busca nem a faixa.
 - Hoje os 78 títulos a vencer estão em "A vencer, sem ação" (anteriores à esteira de 06/10/2026) e 61 em "Vencidos"; as abas de boleto e confirmação enchem a partir dos vencimentos novos.
+
+## 21. Esteira no título: o que foi feito e o botão do próximo passo (06/10/2026)
+
+Antes, os passos da sequência (confirmar, cobrar) só apareciam por meio das pendências da Fila do dia. Agora cada título mostra o caminho inteiro e leva ao próximo passo.
+
+- **Ficha do título** (`/financeiro/recebiveis/<id>`, clique no documento na Carteira), card **Esteira de cobrança**, uma linha por parcela: *Boleto anexado › Boleto enviado › Confirmação do pagamento › Vencimento › Cobrança D+1 › D+5 › D+10 › (Promessa) › Pago*. Cada passo aparece como **feito** (verde, com a data e o resultado), **na vez** (vermelho), **a vir** (cinza, com a data em que abre) ou **fora** (tracejado: não registrado no sistema, fora da régua). Regras puras e testadas em `lib/modulos/financeiro/recebiveis/esteira.ts` (12 testes); os dados vêm do histórico de interações do título.
+- **Botões na própria ficha:** *Anexar boleto* e *Registrar envio* (títulos aguardando boleto), *Confirmar pagamento* (aberto na janela de 7 dias antes do vencimento), *Cobrar (D+n)* (título vencido dentro da régua; fora dela o botão aparece desabilitado com o motivo) e *Registrar baixa* (pagamento com data e valor, ou cancelamento com motivo), sem passar pela Fila do dia.
+- **Carteira:** nova coluna **Próxima ação**, com o botão do passo que está na vez para o título (*Anexar boleto*, *Confirmar*, *Ligar*, *Cobrar D+n*) e *Abrir* quando não há passo na vez. Junto da coluna **Andamento** (último registro) e do selo de situação, dá para saber o que já foi feito sem abrir o título.
+- A ficha e o histórico mostram até 60 registros dos títulos da NF (antes, 20).
