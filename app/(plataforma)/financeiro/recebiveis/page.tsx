@@ -66,6 +66,8 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     if (!data || data.length < 1000) break;
   }
   const resumo = resumirCarteira(resumoLinhas);
+  const { count: qtdBaixasAConferir } = await supabase.from("pendencias").select("id", { count: "exact", head: true })
+    .eq("modulo", MODULO).eq("referencia_tabela", "rec_titulos").like("titulo", "Possível baixa:%").in("status", ["aberta", "em_andamento"]);
   const { count: qtdAguardandoBoleto } = await supabase.from("rec_vw_titulos").select("id", { count: "exact", head: true }).eq("estagio", "aguardando_boleto");
   const vencidoAtualizado = resumo.atualizadoCentavos - resumo.aVencer.centavos; // a vencer não tem encargos
 
@@ -140,7 +142,12 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
             {quando ? `Última sincronização: ${quando}.` : "Ainda não foi sincronizada."}
           </p>
         </div>
-        {ehGestor && <BotoesSincronizacao />}
+        <div className="flex flex-wrap items-start gap-2">
+          <Button variant="outline" render={<Link href="/financeiro/recebiveis/baixas" />}>
+            Baixas a conferir{qtdBaixasAConferir ? ` (${qtdBaixasAConferir})` : ""}
+          </Button>
+          {ehGestor && <BotoesSincronizacao />}
+        </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

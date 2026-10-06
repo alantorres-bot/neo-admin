@@ -477,6 +477,59 @@ export function descricaoPendenciaBoleto(g: GrupoBoleto): string {
   return `Anexe o boleto e envie ao cliente até o prazo da pendência (o envio da régua é 7 dias antes do vencimento).\n${linhas.join("\n")}${pedidos}`;
 }
 
+// ---------------------------------------------------------------- evidência de pagamento (títulos pagos do Consistem)
+// A lista de abertos (`tipoTitulo=0`) não traz o que foi pago; a de pagos (`tipoTitulo=1`, hoje ~700 títulos, lida inteira
+// em ~1 s) traz `dataPagamento`, `tipoBaixa`, `valorTitulo`, `valorJuros` e `valorDesconto`. É só EVIDÊNCIA para a pessoa
+// conferir: o Neo Admin nunca dá a baixa sozinho.
+
+export type EvidenciaPagamento = {
+  /** aaaa-mm-dd */
+  pagoEm: string;
+  /** valor do título + juros − desconto, como o Consistem informa (conferir antes de confirmar). */
+  valorCentavos: number;
+  /** Código do tipo de baixa; o significado é do Consistem (o Neo Admin não interpreta). */
+  tipoBaixa: string;
+};
+
+/** Registro de título PAGO da API. Sem data de pagamento válida (vazia, "0", "0001-01-01") não é evidência. */
+export function evidenciaDePago(r: Record<string, unknown>): EvidenciaPagamento | null {
+  const pagoEm = paraDataIso(r.dataPagamento);
+  if (!pagoEm) return null;
+  const titulo = paraCentavos(r.valorTitulo) ?? 0;
+  const juros = paraCentavos(r.valorJuros) ?? 0;
+  const desconto = paraCentavos(r.valorDesconto) ?? 0;
+  const total = titulo + juros - desconto;
+  return { pagoEm, valorCentavos: total > 0 ? total : titulo, tipoBaixa: texto(r.tipoBaixa) };
+}
+
+/** `codTitulo` -> evidência. Se o mesmo título aparece mais de uma vez (baixas parciais), vale a pagamento mais recente. */
+export function indexarPagos(registros: readonly Record<string, unknown>[]): Map<string, EvidenciaPagamento> {
+  const mapa = new Map<string, EvidenciaPagamento>();
+  for (const r of registros) {
+    const doc = texto(r.codTitulo);
+    const ev = evidenciaDePago(r);
+    if (!doc || !ev) continue;
+    const atual = mapa.get(doc);
+    if (!atual || ev.pagoEm > atual.pagoEm) mapa.set(doc, ev);
+  }
+  return mapa;
+}
+
+const dataBrasil = (iso: string) => iso.split("-").reverse().join("/");
+const moedaBrasil = (centavos: number) => {
+  const [inteiro, frac] = (Math.abs(centavos) / 100).toFixed(2).split(".");
+  return `R$ ${inteiro.replace(/\B(?=(\d{3})+(?!\d))/g, ".")},${frac}`;
+};
+
+/** Texto da pendência "Possível baixa", com a evidência do Consistem quando houver. */
+export function descricaoPossivelBaixa(ev: EvidenciaPagamento | null, valorTituloCentavos: number): string {
+  if (!ev) {
+    return "O título saiu da lista de contas a receber em aberto do Consistem e NÃO consta na lista de pagos. Pode ter sido cancelado ou renegociado: confira no Consistem e resolva em Baixas a conferir (dar baixa com data e valor, ou cancelar).";
+  }
+  const dif = ev.valorCentavos === valorTituloCentavos ? "" : ` (o título é de ${moedaBrasil(valorTituloCentavos)}; a diferença é juros ou desconto, confira)`;
+  return `O Consistem informa pagamento em ${dataBrasil(ev.pagoEm)}, no valor de ${moedaBrasil(ev.valorCentavos)}${dif}${ev.tipoBaixa ? `, tipo de baixa ${ev.tipoBaixa}` : ""}. Confirme em Baixas a conferir: nada é baixado sozinho.`;
+}
+
 // ---------------------------------------------------------------- vínculo NF de saída <-> título (Etapa 0)
 // O título (contasReceber) não traz o pedido, mas traz a nota (notaFiscal, chaveNfeNotaFiscal). A NF de saída
 // (comercial/v10/notaFiscalSaida) traz codPedido. A análise abaixo mede, com dados reais, quanto dessa ligação

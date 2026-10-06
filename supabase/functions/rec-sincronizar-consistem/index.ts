@@ -35,8 +35,11 @@ import {
   criticidadeBoleto,
   decidirEntrada,
   descricaoPendenciaBoleto,
+  descricaoPossivelBaixa,
   documentoFormatado,
   indexarNotas,
+  indexarPagos,
+  limparToken,
   ligarTituloNota,
   normalizarClienteApi,
   normalizarNotaSaida,
@@ -48,6 +51,7 @@ import {
   tituloPendenciaBoleto,
   type ClienteApi,
   type ConfigConsistem,
+  type EvidenciaPagamento,
   type NotaEsteira,
   type NotaSaida,
   type TituloApi,
@@ -212,10 +216,11 @@ async function sincronizarEmpresa(
     id: string; contraparte_id: string; documento: string; parcela: string; emissao: string | null;
     vencimento: string; valor: number | string; estagio: string; origem: string;
     nota_fiscal: string | null; chave_nfe: string | null; cod_portador: string | null; tipo_cobranca: string | null; nota_saida_id: string | null;
+    consistem_pago_em: string | null;
   };
   const linhas = await lerTudo<LinhaTitulo>((de, ate) =>
     banco.from("rec_titulos")
-      .select("id, contraparte_id, documento, parcela, emissao, vencimento, valor, estagio, origem, nota_fiscal, chave_nfe, cod_portador, tipo_cobranca, nota_saida_id")
+      .select("id, contraparte_id, documento, parcela, emissao, vencimento, valor, estagio, origem, nota_fiscal, chave_nfe, cod_portador, tipo_cobranca, nota_saida_id, consistem_pago_em")
       .eq("empresa_id", empresa.id).order("id").range(de, ate));
   const titulosBanco: TituloBanco[] = linhas.map((l) => ({
     id: l.id, documento: l.documento, parcela: l.parcela, emissao: l.emissao, vencimento: l.vencimento,
@@ -498,30 +503,74 @@ async function sincronizarEmpresa(
   resumo.pendenciasConfirmacao = pendenciasConfirmacao;
   resumo.clientesNaJanelaDeConfirmacao = gruposConfirmacao.length;
 
-  // 6) Possíveis baixas viram pendência (uma por título, sem repetir).
+  // 6) Possíveis baixas: o título saiu da lista de abertos. Procura na lista de PAGOS do Consistem (lida inteira em ~1 s) e
+  // guarda o que o ERP informa (data, valor, tipo de baixa) como EVIDÊNCIA. Nunca baixa sozinho.
+  const linhaPorId = new Map(linhas.map((l) => [l.id, l]));
+  const precisamEvidencia = plano.possiveisBaixas.filter((t) => !linhaPorId.get(t.id)?.consistem_pago_em);
+  const evidenciaDoTitulo = new Map<string, EvidenciaPagamento | null>();
+  let evidenciasNovas = 0;
+  if (precisamEvidencia.length > 0) {
+    try {
+      const pagos = indexarPagos(await buscarTodasPaginas(buscar, cfg, "financeiro/v10/contasReceber", { tipoTitulo: 1, paginacao: PAGINACAO }));
+      for (const t of precisamEvidencia) evidenciaDoTitulo.set(t.id, pagos.get(t.documento) ?? null);
+      const agoraIso = new Date().toISOString();
+      for (const lote of lotes(precisamEvidencia, 10)) {
+        const resultados = await Promise.all(lote.map((t) => {
+          const ev = evidenciaDoTitulo.get(t.id);
+          return banco.from("rec_titulos").update(ev
+            ? { consistem_pago_em: ev.pagoEm, consistem_valor_pago: ev.valorCentavos / 100, consistem_tipo_baixa: ev.tipoBaixa || null, consistem_verificado_em: agoraIso }
+            : { consistem_verificado_em: agoraIso }).eq("id", t.id);
+        }));
+        const falha = resultados.find((r) => r.error);
+        if (falha?.error) throw new Error(`Falha ao gravar a evidência de pagamento: ${falha.error.message}`);
+      }
+      evidenciasNovas = [...evidenciaDoTitulo.values()].filter((e) => e !== null).length;
+    } catch (e) {
+      // A evidência é um auxílio: se a lista de pagos falhar, a sincronização segue (a pessoa confere sem ela).
+      resumo.avisoEvidencia = e instanceof Error ? e.message.slice(0, 160) : "falha ao ler os títulos pagos";
+    }
+  }
+  resumo.evidenciasEncontradas = evidenciasNovas;
+
   const jaPendentes = new Set(
     (await lerTudo<{ referencia_id: string }>((de, ate) =>
       banco.from("pendencias").select("referencia_id").eq("modulo", MODULO).eq("referencia_tabela", "rec_titulos")
         .like("titulo", `${PREFIXO_BAIXA}%`).in("status", ["aberta", "em_andamento"]).order("id").range(de, ate)))
       .map((p) => p.referencia_id),
   );
+  const evidenciaPara = (t: TituloBanco): EvidenciaPagamento | null => {
+    const nova = evidenciaDoTitulo.get(t.id);
+    if (nova) return nova;
+    const l = linhaPorId.get(t.id);
+    return l?.consistem_pago_em ? { pagoEm: l.consistem_pago_em, valorCentavos: t.valorCentavos, tipoBaixa: "" } : null;
+  };
   const pendenciasNovas = plano.possiveisBaixas.filter((t) => !jaPendentes.has(t.id)).map((t) => ({
     modulo: MODULO,
     empresa_id: empresa.id,
     contraparte_id: contraparteDoTitulo.get(t.id) ?? null,
     titulo: `${PREFIXO_BAIXA}${t.documento}${t.parcela !== "1" ? `/${t.parcela}` : ""}`,
-    descricao: "O título saiu da lista de contas a receber em aberto do Consistem. Confirme o pagamento, informe a data e o valor e dê a baixa, ou verifique se foi cancelado ou renegociado.",
+    descricao: descricaoPossivelBaixa(evidenciaPara(t), t.valorCentavos),
     prazo: hoje,
     criticidade: "normal",
     referencia_tabela: "rec_titulos",
     referencia_id: t.id,
-    link: "/financeiro/recebiveis",
+    link: "/financeiro/recebiveis/baixas",
   }));
   for (const lote of lotes(pendenciasNovas)) {
     const { error } = await banco.from("pendencias").insert(lote);
     if (error) throw new Error(`Falha ao criar pendências de baixa: ${error.message}`);
   }
   resumo.pendenciasCriadas = pendenciasNovas.length;
+
+  // Pendências "Possível baixa" que já existiam passam a mostrar a evidência e a apontar para a tela de baixas.
+  const jaExistiam = precisamEvidencia.filter((t) => jaPendentes.has(t.id));
+  for (const lote of lotes(jaExistiam, 10)) {
+    const resultados = await Promise.all(lote.map((t) => banco.from("pendencias")
+      .update({ descricao: descricaoPossivelBaixa(evidenciaPara(t), t.valorCentavos), link: "/financeiro/recebiveis/baixas" })
+      .eq("modulo", MODULO).eq("referencia_tabela", "rec_titulos").eq("referencia_id", t.id).like("titulo", `${PREFIXO_BAIXA}%`).in("status", ["aberta", "em_andamento"])));
+    const falha = resultados.find((r) => r.error);
+    if (falha?.error) throw new Error(`Falha ao atualizar pendências de baixa: ${falha.error.message}`);
+  }
 
   // 7) Voltou para a lista em aberto: a pendência de "possível baixa" antiga perde o sentido.
   let canceladas = 0;
