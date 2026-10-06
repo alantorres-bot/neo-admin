@@ -170,3 +170,26 @@ Feito em 06/10/2026 (migration `0102`). Todo dia às **07:00 de Cuiabá** (cron 
 3. No SQL do banco: `select vault.create_secret('<url da função>', 'rec_sincronizar_url');` e `select vault.create_secret('<mesmo valor do passo 2>', 'rec_sincronizar_segredo');`.
 4. Publicar a função: `npx supabase functions deploy rec-sincronizar-consistem`.
 5. Conferir: `select jobname, schedule, active from cron.job;` e disparar uma vez com `select public.rec_chamar_sincronizacao();` (ver `net._http_response` e `importacoes`).
+
+## 13. Entrada por pedido/NF — Etapa 0 (vínculo provado com dados reais, 06/10/2026)
+
+Ação `amostra_notas` da Edge Function `rec-sincronizar-consistem` (só leitura; devolve contagens, formatos e nomes de campos, nunca dados de cliente). Janela de 30 dias, Neo Formas:
+
+| Medida | Resultado |
+| --- | --- |
+| NFs de saída emitidas (situação 2) | 68; 35 com chave NF-e; 37 ligam a títulos em aberto |
+| Títulos em aberto | 157; 134 com `notaFiscal`; 60 com chave NF-e; 45 emitidos na janela |
+| **Título ↔ NF na janela** | **88,9% (40 de 45)**: 8 por chave NF-e, 32 por nº da nota + cliente; 0 ambíguos |
+| Sem casamento (5) | títulos da série `Z…` sem `notaFiscal` (23 no total): lançamentos que não vêm de NF |
+| `codTitulo` | = nº da nota + sufixo de parcela (letra; `U` = única). 40 de 40 casados contêm o nº da nota |
+| `numeroDuplicatas` | sempre vazio: não serve como vínculo |
+| Valor do título | ≤ valor total da NF em 40 de 40 (parcelas somam a NF) |
+
+**Pedido.** O cabeçalho da NF (`codPedido`) só vem preenchido em 28 das 68 NFs, e 32 das 37 NFs que geram título são do tipo 12 (sem pedido no cabeçalho). Mas **as 40 NFs sem pedido no cabeçalho trazem o pedido nos itens**: `itensNotaFiscalSaida[].itemPedidoAgrupado[]` com `codPedido`, `itemPedido` e `qtdFaturadaItemPedido` (faturamento agrupado: uma NF pode juntar vários pedidos). Cadeia final:
+
+`pedidoVenda.codPedido` → (cabeçalho `codPedido` **ou** itens `itemPedidoAgrupado[].codPedido`) → `notaFiscalSaida` (`codNumNota`, `chaveAcesso`) → `contasReceber` (`chaveNfeNotaFiscal`; senão `notaFiscal` + `codCliente`; senão prefixo numérico de `codTitulo`).
+
+Consequências para o desenho:
+- O gatilho da esteira é a **NF emitida / título novo**, não o pedido; o pedido entra como informação ligada à NF (**lista de pedidos por NF**, não um só).
+- Vínculo título → NF em três degraus (chave, nota + cliente, prefixo de `codTitulo`); títulos sem NF (série `Z…`) entram na esteira sem pedido e sem alerta de NF.
+- Tipos de nota que geram duplicata: 7 de 22 (`possuiDuplicata`); nem toda NF vira título.

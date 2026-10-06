@@ -275,3 +275,208 @@ export function planejarSincronizacao(titulosApi: TituloApi[], titulosBanco: Tit
   }
   return plano;
 }
+
+// ---------------------------------------------------------------- vínculo NF de saída <-> título (Etapa 0)
+// O título (contasReceber) não traz o pedido, mas traz a nota (notaFiscal, chaveNfeNotaFiscal). A NF de saída
+// (comercial/v10/notaFiscalSaida) traz codPedido. A análise abaixo mede, com dados reais, quanto dessa ligação
+// funciona, devolvendo SÓ agregados (contagens e "padrões" de formato), nunca nomes, valores ou documentos.
+
+export const soDigitos = (v: unknown): string => texto(v).replace(/\D/g, "");
+
+/** Chave de acesso da NF-e: 44 dígitos, senão vazio. */
+export const chaveNfe = (v: unknown): string => {
+  const d = soDigitos(v);
+  return d.length === 44 ? d : "";
+};
+
+/** Número da nota sem zeros à esquerda e sem pontuação ("000123" -> "123"). */
+export const numeroNota = (v: unknown): string => soDigitos(v).replace(/^0+/, "");
+
+/** Formato de um texto sem expor o conteúdo: letras viram A, dígitos viram 9 ("1182025-4" -> "9999999-9"). */
+export function padraoDe(v: unknown): string {
+  const t = texto(v);
+  if (t === "") return "(vazio)";
+  return t.replace(/[A-Za-zÀ-ÿ]/g, "A").replace(/\d/g, "9").slice(0, 24);
+}
+
+function contarPadroes(valores: unknown[], limite = 8): { padrao: string; qtd: number }[] {
+  const m = new Map<string, number>();
+  for (const v of valores) {
+    const p = padraoDe(v);
+    m.set(p, (m.get(p) ?? 0) + 1);
+  }
+  return [...m.entries()].map(([padrao, qtd]) => ({ padrao, qtd })).sort((a, b) => b.qtd - a.qtd).slice(0, limite);
+}
+
+export type RelatorioVinculo = {
+  janela: { desde: string; ate: string };
+  notas: {
+    total: number; comPedido: number; comChave: number; pedidosDistintos: number; camposDisponiveis: string[];
+    /** NFs que ligam a pelo menos um título em aberto (com ou sem pedido). */
+    ligadasATitulos: number;
+    ligadasComPedido: number;
+    /** Por tipo de nota (código do tipo, sem dados de cliente): quantas NFs, quantas com pedido, quantas ligadas a título. */
+    porTipo: { tipo: string; total: number; comPedido: number; ligadas: number }[];
+  };
+  titulos: { total: number; comNotaFiscal: number; comChave: number; naJanela: number };
+  casamento: {
+    /** Títulos da janela cuja chave NF-e casa com uma NF. */
+    porChave: number;
+    /** Títulos da janela sem casamento por chave mas com nº da nota + cliente iguais. */
+    porNotaECliente: number;
+    /** Títulos da janela casados por nota+cliente que têm mais de uma NF candidata (ambíguo). */
+    ambiguos: number;
+    semCasamento: number;
+    taxaNaJanela: number;
+    /** NFs com pedido que ligam a pelo menos um título em aberto. */
+    notasComTitulo: number;
+  };
+  relacoes: {
+    /** codTitulo contém o número da nota. */
+    codTituloContemNota: number;
+    /** numeroDuplicatas contém o número da nota. */
+    duplicatasContemNota: number;
+    /** O valor do título é ≤ valor total da NF (parcelas de uma NF somam o total). */
+    valorMenorOuIgualNota: number;
+  };
+  padroes: {
+    notaFiscal: { padrao: string; qtd: number }[];
+    numeroDuplicatas: { padrao: string; qtd: number }[];
+    codTitulo: { padrao: string; qtd: number }[];
+  };
+};
+
+export const addDias = (iso: string, dias: number): string => new Date(Date.parse(`${iso}T00:00:00Z`) + dias * 86_400_000).toISOString().slice(0, 10);
+
+export function analisarVinculo(
+  notasBrutas: Record<string, unknown>[],
+  titulosBrutos: Record<string, unknown>[],
+  hoje: string,
+  diasJanela: number,
+): RelatorioVinculo {
+  const desde = addDias(hoje, -diasJanela);
+  const notas = notasBrutas.map((n) => ({
+    nota: numeroNota(n.codNumNota),
+    chave: chaveNfe(n.chaveAcesso),
+    pedido: texto(n.codPedido),
+    cliente: texto(n.codCliente),
+    valor: paraCentavos(n.valorTotal),
+  }));
+  const porChave = new Map<string, number>();
+  const porNotaCliente = new Map<string, number[]>();
+  notas.forEach((n, i) => {
+    if (n.chave) porChave.set(n.chave, i);
+    if (n.nota) {
+      const k = `${n.nota}\u0000${n.cliente}`;
+      porNotaCliente.set(k, [...(porNotaCliente.get(k) ?? []), i]);
+    }
+  });
+
+  const rel: RelatorioVinculo = {
+    janela: { desde, ate: hoje },
+    notas: {
+      total: notas.length,
+      comPedido: notas.filter((n) => n.pedido !== "").length,
+      comChave: notas.filter((n) => n.chave !== "").length,
+      pedidosDistintos: new Set(notas.map((n) => n.pedido).filter(Boolean)).size,
+      camposDisponiveis: [...new Set(notasBrutas.slice(0, 50).flatMap((n) => Object.keys(n)))].sort(),
+      ligadasATitulos: 0,
+      ligadasComPedido: 0,
+      porTipo: [],
+    },
+    titulos: { total: titulosBrutos.length, comNotaFiscal: 0, comChave: 0, naJanela: 0 },
+    casamento: { porChave: 0, porNotaECliente: 0, ambiguos: 0, semCasamento: 0, taxaNaJanela: 0, notasComTitulo: 0 },
+    relacoes: { codTituloContemNota: 0, duplicatasContemNota: 0, valorMenorOuIgualNota: 0 },
+    padroes: {
+      notaFiscal: contarPadroes(titulosBrutos.map((t) => t.notaFiscal)),
+      numeroDuplicatas: contarPadroes(titulosBrutos.map((t) => t.numeroDuplicatas)),
+      codTitulo: contarPadroes(titulosBrutos.map((t) => t.codTitulo)),
+    },
+  };
+
+  const notasLigadas = new Set<number>();
+  for (const t of titulosBrutos) {
+    const nota = numeroNota(t.notaFiscal);
+    const chave = chaveNfe(t.chaveNfeNotaFiscal);
+    if (nota) rel.titulos.comNotaFiscal++;
+    if (chave) rel.titulos.comChave++;
+    const emissao = paraDataIso(t.dataEmissao);
+    const naJanela = emissao !== null && emissao >= desde;
+    if (naJanela) rel.titulos.naJanela++;
+
+    let achada: number | undefined = chave ? porChave.get(chave) : undefined;
+    let tipo: "chave" | "nota" | null = achada !== undefined ? "chave" : null;
+    let ambiguo = false;
+    if (achada === undefined && nota) {
+      const candidatas = porNotaCliente.get(`${nota}\u0000${texto(t.codCliente)}`) ?? [];
+      if (candidatas.length >= 1) {
+        achada = candidatas[0];
+        tipo = "nota";
+        ambiguo = candidatas.length > 1;
+      }
+    }
+    if (achada !== undefined) {
+      notasLigadas.add(achada);
+      const n = notas[achada];
+      const cents = paraCentavos(t.valorTitulo);
+      if (cents !== null && n.valor !== null && cents <= n.valor) rel.relacoes.valorMenorOuIgualNota++;
+      if (nota && soDigitos(t.codTitulo).includes(nota)) rel.relacoes.codTituloContemNota++;
+      if (nota && soDigitos(t.numeroDuplicatas).includes(nota)) rel.relacoes.duplicatasContemNota++;
+    }
+    if (naJanela) {
+      if (tipo === "chave") rel.casamento.porChave++;
+      else if (tipo === "nota") {
+        rel.casamento.porNotaECliente++;
+        if (ambiguo) rel.casamento.ambiguos++;
+      } else rel.casamento.semCasamento++;
+    }
+  }
+  rel.casamento.notasComTitulo = [...notasLigadas].filter((i) => notas[i].pedido !== "").length;
+  rel.notas.ligadasATitulos = notasLigadas.size;
+  rel.notas.ligadasComPedido = rel.casamento.notasComTitulo;
+  const tipos = new Map<string, { total: number; comPedido: number; ligadas: number }>();
+  notasBrutas.forEach((n, i) => {
+    const tipo = texto(n.codTipoDeNota) || "(sem tipo)";
+    const t = tipos.get(tipo) ?? { total: 0, comPedido: 0, ligadas: 0 };
+    t.total++;
+    if (notas[i].pedido !== "") t.comPedido++;
+    if (notasLigadas.has(i)) t.ligadas++;
+    tipos.set(tipo, t);
+  });
+  rel.notas.porTipo = [...tipos.entries()].map(([tipo, v]) => ({ tipo, ...v })).sort((a, b) => b.total - a.total);
+  rel.casamento.taxaNaJanela = rel.titulos.naJanela > 0
+    ? Math.round(((rel.casamento.porChave + rel.casamento.porNotaECliente) / rel.titulos.naJanela) * 1000) / 10
+    : 0;
+  return rel;
+}
+
+/** GET de um único objeto (ex.: pedidoVenda/{cod}); mesma autenticação e retry de 429 da leitura paginada. */
+export async function buscarObjeto(
+  buscar: Buscar,
+  cfg: ConfigConsistem,
+  rota: string,
+  opcoes: { esperar?: (ms: number) => Promise<void> } = {},
+): Promise<Record<string, unknown>> {
+  const token = limparToken(cfg.token);
+  if (!token) throw new ConsistemErro("O segredo CONSISTEM_API_KEY não parece um token válido (esperado: token JWT do CSMEN050, sem espaços nem quebras de linha).");
+  const aguardar = opcoes.esperar ?? esperar;
+  const url = `${cfg.baseUrl.replace(/\/+$/, "")}/${rota.replace(/^\/+/, "")}`;
+  const headers = { Authorization: token, empresa: cfg.empresa, Accept: "application/json" };
+  const chamar = async () => {
+    try {
+      return await buscar(url, { headers });
+    } catch {
+      throw new ConsistemErro("Falha de rede ao chamar a API do Consistem.");
+    }
+  };
+  let resp = await chamar();
+  for (let tentativa = 1; resp.status === 429 && tentativa < MAX_TENTATIVAS_429; tentativa++) {
+    await aguardar(2 ** (tentativa - 1) * 1000);
+    resp = await chamar();
+  }
+  const corpo = await resp.text();
+  if (resp.status === 401 || resp.status === 403) throw new ConsistemErro(`Acesso negado (HTTP ${resp.status}).`, resp.status);
+  if (!resp.ok) throw new ConsistemErro(`Consistem HTTP ${resp.status}: ${corpo.slice(0, 200)}`, resp.status);
+  const json: unknown = corpo ? JSON.parse(corpo) : {};
+  return (Array.isArray(json) ? (json[0] ?? {}) : (json as Record<string, unknown>)) ?? {};
+}

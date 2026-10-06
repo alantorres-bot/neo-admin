@@ -24,7 +24,10 @@
 // Deploy: npx supabase functions deploy rec-sincronizar-consistem
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import {
+  addDias,
+  analisarVinculo,
   BASE_URL_PADRAO,
+  buscarObjeto,
   buscarTodasPaginas,
   ConsistemErro,
   documentoFormatado,
@@ -397,6 +400,65 @@ Deno.serve(async (req) => {
         const buscar = (u: string, init: { headers: Record<string, string> }) => fetch(u, init);
         const titulos = await buscarTodasPaginas(buscar, cfg, "financeiro/v10/contasReceber", { tipoTitulo: 0, paginacao: 20 });
         return responder({ ok: true, empresa: e.nome_curto, titulos: titulos.length, campos: descreverCampos(titulos) });
+      }
+      case "amostra_notas": {
+        // Etapa 0 (só leitura): mede quanto a ligação NF de saída <-> título funciona com dados reais.
+        // Devolve apenas contagens, formatos e nomes de campos: nada de clientes, valores ou documentos.
+        const e = empresas[0];
+        const cfg: ConfigConsistem = { ...cfgBase, empresa: e.codigo_erp as string };
+        const buscar = (u: string, init: { headers: Record<string, string> }) => fetch(u, init);
+        const dias = Math.min(120, Math.max(1, Math.round(Number(corpo.dias) || 30)));
+        const hoje = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Cuiaba", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
+        const desde = addDias(hoje, -dias);
+
+        const notas = await buscarTodasPaginas(buscar, cfg, "comercial/v10/notaFiscalSaida", {
+          situacao: 2, dataEmissaoInicio: desde, dataEmissaoFim: hoje, paginacao: PAGINACAO,
+        });
+        const titulos = await buscarTodasPaginas(buscar, cfg, "financeiro/v10/contasReceber", { tipoTitulo: 0, paginacao: PAGINACAO });
+        const relatorio = analisarVinculo(notas, titulos, hoje, dias);
+
+        // Quais tipos de nota geram duplicata (título)? Só os nomes dos campos e a contagem.
+        let tiposNota: Record<string, unknown> = { erro: "não consultado" };
+        try {
+          const tipos = await buscarTodasPaginas(buscar, cfg, "cadastrosgerais/v10/tipoNota", { paginacao: PAGINACAO });
+          tiposNota = {
+            total: tipos.length,
+            campos: descreverCampos(tipos),
+            comDuplicata: tipos.filter((t) => t.possuiDuplicata === true || t.possuiDuplicata === "S" || t.possuiDuplicata === 1 || t.possuiDuplicata === "1").length,
+          };
+        } catch (erro) {
+          tiposNota = { erro: erro instanceof Error ? erro.message : "falha" };
+        }
+
+        // O pedido de uma NF recente: só nomes e tipos dos campos.
+        let pedido: Record<string, unknown> = { erro: "nenhuma NF com pedido na janela" };
+        const comPedido = notas.find((n) => n.codPedido !== null && n.codPedido !== undefined && String(n.codPedido).trim() !== "");
+        if (comPedido) {
+          try {
+            const p = await buscarObjeto(buscar, cfg, `comercial/v10/pedidoVenda/${encodeURIComponent(String(comPedido.codPedido).trim())}`);
+            pedido = { campos: descreverCampos([p]), itens: Array.isArray(p.itensPedido) ? p.itensPedido.length : null };
+          } catch (erro) {
+            pedido = { erro: erro instanceof Error ? erro.message : "falha" };
+          }
+        }
+        // Os itens da NF trazem o pedido? Só nomes e tipos dos campos do primeiro item.
+        const primeiraComItens = notas.find((n) => Array.isArray(n.itensNotaFiscalSaida) && (n.itensNotaFiscalSaida as unknown[]).length > 0);
+        const camposItemNota = primeiraComItens ? descreverCampos([(primeiraComItens.itensNotaFiscalSaida as Record<string, unknown>[])[0]]) : {};
+        // NFs SEM pedido no cabeçalho: os itens trazem o pedido (codItemPedido / itemPedidoAgrupado)? Só contagens.
+        const itensDe = (n: Record<string, unknown>) => (Array.isArray(n.itensNotaFiscalSaida) ? (n.itensNotaFiscalSaida as Record<string, unknown>[]) : []);
+        const semPedidoNoCabecalho = notas.filter((n) => String(n.codPedido ?? "").trim() === "");
+        const primeiroAgrupado = semPedidoNoCabecalho.flatMap(itensDe).map((i) => (Array.isArray(i.itemPedidoAgrupado) ? (i.itemPedidoAgrupado as Record<string, unknown>[])[0] : undefined)).find(Boolean);
+        const pedidoNosItens = {
+          nfsSemPedidoNoCabecalho: semPedidoNoCabecalho.length,
+          comCodItemPedido: semPedidoNoCabecalho.filter((n) => itensDe(n).some((i) => String(i.codItemPedido ?? "").trim() !== "")).length,
+          comItemPedidoAgrupado: semPedidoNoCabecalho.filter((n) => itensDe(n).some((i) => Array.isArray(i.itemPedidoAgrupado) && i.itemPedidoAgrupado.length > 0)).length,
+          comNumeroPedidoCompra: semPedidoNoCabecalho.filter((n) => itensDe(n).some((i) => String(i.numeroPedidoCompra ?? "").trim() !== "")).length,
+          camposDoAgrupado: primeiroAgrupado ? descreverCampos([primeiroAgrupado]) : {},
+        };
+        // Sem a lista enorme de campos da NF no retorno (já conhecida): só nomes que citam pedido.
+        const camposNotaComPedido = relatorio.notas.camposDisponiveis.filter((c) => /pedid/i.test(c));
+        relatorio.notas.camposDisponiveis = camposNotaComPedido;
+        return responder({ ok: true, empresa: e.nome_curto, dias, ...relatorio, camposItemNota: undefined, pedidoNosItens, tiposNota: { ...tiposNota, campos: undefined }, pedido: { itens: (pedido as { itens?: unknown }).itens ?? null, erro: (pedido as { erro?: unknown }).erro } });
       }
       case "sincronizar": {
         const resultados: ResumoEmpresa[] = [];
