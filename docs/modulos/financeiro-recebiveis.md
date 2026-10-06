@@ -115,7 +115,7 @@ Decisão do usuário (06/10/2026): usar a API REST do Consistem, a mesma já em 
 - **Endpoints:** `GET /financeiro/v10/contasReceber?tipoTitulo=0` (0 = em aberto: `codTitulo, codCliente, codPortador, dataEmissao, dataVenc, valorTitulo`) e `GET /cadastrosgerais/v10/cliente?situacao=1` (nome e CPF/CNPJ; a API de títulos só traz o código do cliente).
 - **Segredo:** `CONSISTEM_API_KEY` em *Supabase > Edge Functions > Secrets* (nunca em arquivo versionado nem no chat). Opcional: `CONSISTEM_BASE_URL`.
 - **Empresa:** `empresas.codigo_erp` (migration 0101) liga a empresa do Neo Admin ao código dela no Consistem. Sem código, não sincroniza.
-- **Função:** `supabase/functions/rec-sincronizar-consistem` (lógica pura e testada em `supabase/functions/_shared/consistem-receber.ts`). Chamável por gestor do Financeiro ou por agendamento. Ações: `sincronizar` (com `simular: true` só mostra o que faria) e `amostra` (nomes e tipos dos campos da API, sem valores).
+- **Função:** `supabase/functions/rec-sincronizar-consistem` (lógica pura e testada em `supabase/functions/_shared/consistem-receber.ts`). Chamável por gestor do Financeiro ou pelo agendamento diário (seção 12). Ações: `sincronizar` (com `simular: true` só mostra o que faria) e `amostra` (nomes e tipos dos campos da API, sem valores).
 - **Regras:**
   - Chave de conciliação: empresa + `codTitulo` (+ parcela, hoje sempre `1`). Título novo entra como `importado`; título existente só tem emissão, vencimento e valor atualizados.
   - Cliente: casa por `contrapartes.codigo_erp`; senão por CPF/CNPJ (e passa a ter o código); senão cria como `cliente`. Documento inválido ou repetido entra sem documento.
@@ -128,7 +128,7 @@ Decisão do usuário (06/10/2026): usar a API REST do Consistem, a mesma já em 
 ## 10. Fases internas do módulo
 
 1. **Fase 1 — Base do módulo:** migration 0100, configuração de clientes no módulo, contratos (encargos, cedido), menu Financeiro > Recebíveis. (Login, empresas e contrapartes já vêm do núcleo.)
-2. **Fase 2 — Carteira:** sincronização pela API (Edge Function `rec-sincronizar-consistem`, **feita**), tela Carteira e botão "Sincronizar agora" (**feitos**, `app/(plataforma)/financeiro/recebiveis`), agendamento diário (pg_cron), importação de títulos pagos, contratos (percentuais de multa e juros por cliente) e testes de encargos.
+2. **Fase 2 — Carteira:** sincronização pela API (Edge Function `rec-sincronizar-consistem`, **feita**), tela Carteira e botão "Sincronizar agora" (**feitos**, `app/(plataforma)/financeiro/recebiveis`), agendamento diário (pg_cron, **feito**), importação de títulos pagos, contratos (percentuais de multa e juros por cliente) e testes de encargos.
 3. **Fase 3 — Boletos:** upload, leitura do PDF, vínculo com títulos.
 4. **Fase 4 — Régua e e-mail:** modelos, motor da régua, Fila do dia, rascunhos no Gmail.
 5. **Fase 5 — Painel e ficha do cliente.**
@@ -155,3 +155,18 @@ Feita em 06/10/2026. Rota `/financeiro/recebiveis`; lê a view `rec_vw_titulos` 
 - **Lista:** 50 por página, ordenada por vencimento (mais antigos primeiro); busca por cliente, código do Consistem ou documento, e filtro por faixa. Mostra estágio, "Cedido" e "Contestado".
 - **Valor atualizado:** usa multa 2% + juros 2% a.m. pro rata dia quando não há contrato cadastrado (padrão da view). Fica sinalizado na tela com asterisco até os contratos serem cadastrados.
 - **Pendente:** a transição automática do estágio `importado` para `vencido` é da régua (fase 4); hoje os vencidos continuam como "Importado".
+
+## 12. Agendamento diário da sincronização
+
+Feito em 06/10/2026 (migration `0102`). Todo dia às **07:00 de Cuiabá** (cron `0 11 * * *`, UTC-4, sem horário de verão) o `pg_cron` executa `rec_chamar_sincronizacao()`, que faz um POST (`pg_net`) na Edge Function. Para trocar o horário ou pausar: `select cron.schedule('rec-sincronizar-consistem-diario', '<cron em UTC>', 'select public.rec_chamar_sincronizacao()')` ou `select cron.unschedule('rec-sincronizar-consistem-diario')`.
+
+- **Autenticação do agendamento:** cabeçalho `x-sincronizacao-segredo`, valor aleatório (64 hex) guardado em dois lugares: Vault do banco (`rec_sincronizar_segredo`) e segredo de Edge Functions `SINCRONIZACAO_SEGREDO`. A service role NÃO fica no banco. A função tem `verify_jwt = false` (em `supabase/config.toml`) e faz toda a conferência sozinha (segredo do agendamento, service role ou gestor logado).
+- **Falha:** sincronização real que falha (API fora, token inválido, empresa recusada) cria a pendência **"Falha na sincronização com o Consistem"** (criticidade alta, módulo Recebíveis, sem responsável), uma só por vez; a próxima sincronização bem-sucedida a cancela sozinha. Os dados nunca são alterados quando a API falha ou devolve lista vazia.
+- **Registro:** cada execução grava em `importacoes` (`arquivo = 'api:consistem'`, sem usuário quando agendada). O retorno HTTP do último disparo fica em `net._http_response`.
+
+**Configurar em um projeto novo (produção)** — uma vez, depois de `supabase db push` (0101 e 0102):
+1. Segredo `CONSISTEM_API_KEY` (token do CSMEN050) em Edge Functions > Secrets, e `empresas.codigo_erp` preenchido.
+2. Gerar um segredo aleatório e gravá-lo como `SINCRONIZACAO_SEGREDO` (`npx supabase secrets set SINCRONIZACAO_SEGREDO=<valor>`).
+3. No SQL do banco: `select vault.create_secret('<url da função>', 'rec_sincronizar_url');` e `select vault.create_secret('<mesmo valor do passo 2>', 'rec_sincronizar_segredo');`.
+4. Publicar a função: `npx supabase functions deploy rec-sincronizar-consistem`.
+5. Conferir: `select jobname, schedule, active from cron.job;` e disparar uma vez com `select public.rec_chamar_sincronizacao();` (ver `net._http_response` e `importacoes`).

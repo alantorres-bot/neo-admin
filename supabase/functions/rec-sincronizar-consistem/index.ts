@@ -3,7 +3,10 @@
 //
 // Quem pode chamar:
 //   - usuário logado com nível de gestor (ou acima) na área do Financeiro; ou
-//   - agendamento (pg_cron) com a service role no Authorization.
+//   - agendamento diário do banco (pg_cron + pg_net, migration 0102), com o cabeçalho `x-sincronizacao-segredo`
+//     igual ao segredo SINCRONIZACAO_SEGREDO (o mesmo valor fica no Vault do banco); ou
+//   - service role no Authorization.
+// Falha de sincronização real vira a pendência "Falha na sincronização com o Consistem" na Fila do dia.
 //
 // Corpo (JSON), campo `acao`:
 //   sincronizar { simular?: boolean }   busca a API e grava; com simular=true só devolve o que faria
@@ -15,8 +18,8 @@
 //   - Se a API devolver lista vazia mas existem títulos abertos no banco, nada é alterado (provável falha).
 //   - Títulos pagos/renegociados/cancelados e de origem manual/acordo nunca são alterados por aqui.
 //
-// Segredos (Supabase > Edge Functions > Secrets): CONSISTEM_API_KEY (obrigatório),
-// CONSISTEM_BASE_URL (opcional). O código da empresa vem de empresas.codigo_erp.
+// Segredos (Supabase > Edge Functions > Secrets): CONSISTEM_API_KEY (obrigatório), SINCRONIZACAO_SEGREDO
+// (agendamento), CONSISTEM_BASE_URL (opcional). O código da empresa vem de empresas.codigo_erp.
 //
 // Deploy: npx supabase functions deploy rec-sincronizar-consistem
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
@@ -302,6 +305,28 @@ async function sincronizarEmpresa(
   return resumo;
 }
 
+const TITULO_FALHA = "Falha na sincronização com o Consistem";
+
+/** Abre (uma só) pendência de falha. Mensagens vêm da própria função e nunca contêm segredos. */
+async function registrarFalha(banco: Banco, mensagem: string, agendado: boolean): Promise<void> {
+  const { data: abertas } = await banco.from("pendencias").select("id").eq("modulo", MODULO).eq("titulo", TITULO_FALHA)
+    .in("status", ["aberta", "em_andamento"]).limit(1);
+  if (abertas && abertas.length > 0) return;
+  await banco.from("pendencias").insert({
+    modulo: MODULO,
+    titulo: TITULO_FALHA,
+    descricao: `${agendado ? "A sincronização agendada" : "A sincronização manual"} falhou: ${mensagem.slice(0, 300)} Os dados da carteira podem estar desatualizados. Tente "Sincronizar agora" em Financeiro > Recebíveis; se persistir, verifique o token do Consistem (CSMEN050).`,
+    prazo: new Date().toISOString().slice(0, 10),
+    criticidade: "alta",
+    link: "/financeiro/recebiveis",
+  });
+}
+
+/** Sincronização que deu certo encerra o aviso de falha anterior. */
+async function encerrarFalhas(banco: Banco): Promise<void> {
+  await banco.from("pendencias").update({ status: "cancelada" }).eq("modulo", MODULO).eq("titulo", TITULO_FALHA).in("status", ["aberta", "em_andamento"]);
+}
+
 /** Nomes e tipos dos campos que a API devolve (sem valores): para conferir o mapeamento com segurança. */
 function descreverCampos(registros: Record<string, unknown>[]): Record<string, string> {
   const campos: Record<string, string> = {};
@@ -317,26 +342,37 @@ function descreverCampos(registros: Record<string, unknown>[]): Record<string, s
 Deno.serve(async (req) => {
   if (req.method !== "POST") return responder({ erro: "Método não permitido." }, 405);
   const autorizacao = req.headers.get("Authorization") ?? "";
-  if (!autorizacao) return responder({ erro: "Não autenticado." }, 401);
+  const segredoRecebido = req.headers.get("x-sincronizacao-segredo") ?? "";
+  if (!autorizacao && !segredoRecebido) return responder({ erro: "Não autenticado." }, 401);
 
   const url = Deno.env.get("SUPABASE_URL");
   const chaveAnonima = Deno.env.get("SUPABASE_ANON_KEY");
   const chaveServico = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const token = Deno.env.get("CONSISTEM_API_KEY") ?? "";
   if (!url || !chaveAnonima || !chaveServico) return responder({ erro: "Função mal configurada." }, 500);
-  if (token.trim().length < 50) return responder({ erro: "O segredo CONSISTEM_API_KEY não está configurado neste projeto." }, 500);
 
-  // Quem chama: o agendamento (service role) ou um gestor do Financeiro logado.
-  const portador = autorizacao.replace(/^Bearer\s+/i, "");
+  // Quem chama: (1) o agendamento do banco (pg_cron), com o segredo próprio guardado no Vault; (2) a service role;
+  // ou (3) um gestor do Financeiro logado. O gateway não confere JWT aqui (verify_jwt = false em config.toml): a
+  // conferência é toda desta função.
   let usuarioId: string | null = null;
-  if (!(await ehServiceRole(url, portador, chaveServico))) {
-    const comoUsuario = createClient(url, chaveAnonima, { global: { headers: { Authorization: autorizacao } } });
-    const { data: quem, error: erroUsuario } = await comoUsuario.auth.getUser();
-    if (erroUsuario || !quem.user) return responder({ erro: "Sessão inválida." }, 401);
-    const { data: permitido, error: erroPermissao } = await comoUsuario.rpc("tem_acesso_modulo", { p_modulo: MODULO, p_minimo: "gestor" });
-    if (erroPermissao || permitido !== true) return responder({ erro: "Somente o gestor do Financeiro pode sincronizar com o Consistem." }, 403);
-    usuarioId = quem.user.id;
+  let agendado = false;
+  if (segredoRecebido) {
+    const segredoEsperado = Deno.env.get("SINCRONIZACAO_SEGREDO") ?? "";
+    if (segredoEsperado.length < 32 || !iguaisSeguro(segredoRecebido, segredoEsperado)) return responder({ erro: "Não autorizado." }, 401);
+    agendado = true;
+  } else {
+    const portador = autorizacao.replace(/^Bearer\s+/i, "");
+    if (!(await ehServiceRole(url, portador, chaveServico))) {
+      const comoUsuario = createClient(url, chaveAnonima, { global: { headers: { Authorization: autorizacao } } });
+      const { data: quem, error: erroUsuario } = await comoUsuario.auth.getUser();
+      if (erroUsuario || !quem.user) return responder({ erro: "Sessão inválida." }, 401);
+      const { data: permitido, error: erroPermissao } = await comoUsuario.rpc("tem_acesso_modulo", { p_modulo: MODULO, p_minimo: "gestor" });
+      if (erroPermissao || permitido !== true) return responder({ erro: "Somente o gestor do Financeiro pode sincronizar com o Consistem." }, 403);
+      usuarioId = quem.user.id;
+    }
   }
+
+  if (token.trim().length < 50) return responder({ erro: "O segredo CONSISTEM_API_KEY não está configurado neste projeto." }, 500);
 
   let corpo: Record<string, unknown>;
   try {
@@ -367,13 +403,17 @@ Deno.serve(async (req) => {
         for (const e of empresas) {
           resultados.push(await sincronizarEmpresa(banco, e as { id: string; nome_curto: string; codigo_erp: string }, cfgBase, corpo.simular === true, usuarioId));
         }
-        return responder({ ok: true, resultados });
+        if (corpo.simular !== true) await encerrarFalhas(banco);
+        return responder({ ok: true, agendado, resultados });
       }
       default:
         return responder({ erro: "Ação desconhecida." }, 400);
     }
   } catch (e) {
+    const mensagem = e instanceof Error ? e.message : "Falha inesperada.";
+    // Sincronização real que falhou (agendada ou manual): deixa um aviso na Fila do dia, para não passar batido.
+    if (corpo.acao === "sincronizar" && corpo.simular !== true) await registrarFalha(banco, mensagem, agendado).catch(() => {});
     if (e instanceof ConsistemErro) return responder({ erro: e.message }, e.status === 401 || e.status === 403 ? 502 : 500);
-    return responder({ erro: e instanceof Error ? e.message : "Falha inesperada." }, 500);
+    return responder({ erro: mensagem }, 500);
   }
 });
