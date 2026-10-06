@@ -64,6 +64,7 @@ import {
   DIAS_JANELA_CONFIRMACAO,
   ESTAGIOS_CONFIRMAVEIS,
   MINIMO_PADRAO_CENTAVOS,
+  pendenciasConfirmacaoObsoletas,
   planejarConfirmacoes,
   prazoConfirmacao,
   tituloPendenciaConfirmacao,
@@ -484,8 +485,8 @@ async function sincronizarEmpresa(
     if (error) throw new Error(`Falha ao ler as NFs da esteira: ${error.message}`);
     for (const n of data ?? []) notasEsteira.push({ id: n.id as string, nota: n.nota as string, pedidos: (n.pedidos as string[]) ?? [] });
   }
-  const abertasBoletoLinhas = await lerTudo<{ id: string; referencia_id: string }>((de, ate) =>
-    banco.from("pendencias").select("id, referencia_id").eq("modulo", MODULO).like("titulo", `${PREFIXO_BOLETO}%`)
+  const abertasBoletoLinhas = await lerTudo<{ id: string; referencia_id: string; titulo: string; descricao: string | null }>((de, ate) =>
+    banco.from("pendencias").select("id, referencia_id, titulo, descricao").eq("modulo", MODULO).like("titulo", `${PREFIXO_BOLETO}%`)
       .in("status", ["aberta", "em_andamento"]).order("id").range(de, ate));
   const abertasBoleto = new Set(abertasBoletoLinhas.map((p) => p.referencia_id));
   // Só entra na lista de tarefas quem vence em 30 dias ou menos; as abertas que ficaram fora da janela são canceladas.
@@ -497,6 +498,20 @@ async function sincronizarEmpresa(
     if (error) throw new Error(`Falha ao encerrar pendências de boleto fora da janela: ${error.message}`);
   }
   resumo.pendenciasBoletoCanceladas = boletoObsoletas.length;
+  // O texto da pendência acompanha o que ainda falta (parcela que saiu do grupo ou entrou na janela); prazo e responsável não mudam.
+  const porReferencia = new Map<string, { id: string; titulo: string; descricao: string | null }>();
+  for (const p of abertasBoletoLinhas) if (!porReferencia.has(p.referencia_id)) porReferencia.set(p.referencia_id, p);
+  let boletoAtualizadas = 0;
+  for (const g of planoBoleto.atualizar) {
+    const atual = porReferencia.get(g.referenciaId);
+    const titulo = tituloPendenciaBoleto(g);
+    const descricao = descricaoPendenciaBoleto(g);
+    if (!atual || (atual.titulo === titulo && atual.descricao === descricao)) continue;
+    const { error } = await banco.from("pendencias").update({ titulo, descricao }).eq("id", atual.id);
+    if (error) throw new Error(`Falha ao atualizar o texto da pendência de boleto: ${error.message}`);
+    boletoAtualizadas++;
+  }
+  resumo.pendenciasBoletoAtualizadas = boletoAtualizadas;
   const pendenciasBoleto = planoBoleto.novas.map((g) => ({
     modulo: MODULO,
     empresa_id: empresa.id,
@@ -568,6 +583,17 @@ async function sincronizarEmpresa(
     }
   }
   resumo.pendenciasConfirmacao = pendenciasConfirmacao;
+
+  // Confirmação e ligação abertas que perderam o sentido (parcela paga, vencida, confirmada ou abaixo do corte) são canceladas.
+  const abertasConfirmacao = await lerTudo<{ id: string; referencia_id: string; titulo: string }>((de, ate) =>
+    banco.from("pendencias").select("id, referencia_id, titulo").eq("modulo", MODULO).eq("referencia_tabela", "contrapartes")
+      .or("titulo.like.Confirmar pagamento:%,titulo.like.Ligar para confirmar pagamento:%").in("status", ["aberta", "em_andamento"]).order("id").range(de, ate));
+  const confirmacaoObsoleta = pendenciasConfirmacaoObsoletas(abertasConfirmacao, gruposConfirmacao);
+  for (const lote of lotes(confirmacaoObsoleta)) {
+    const { error } = await banco.from("pendencias").update({ status: "cancelada" }).in("id", lote);
+    if (error) throw new Error(`Falha ao encerrar pendências de confirmação obsoletas: ${error.message}`);
+  }
+  resumo.pendenciasConfirmacaoCanceladas = confirmacaoObsoleta.length;
   resumo.clientesNaJanelaDeConfirmacao = gruposConfirmacao.length;
 
   // 6) Possíveis baixas: o título saiu da lista de abertos. Procura na lista de PAGOS do Consistem (lida inteira em ~1 s) e

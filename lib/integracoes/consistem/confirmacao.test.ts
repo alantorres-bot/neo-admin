@@ -6,6 +6,7 @@ import {
   elegiveis,
   mensagemWhatsAppConfirmacao,
   observacaoDemaisParcelas,
+  pendenciasConfirmacaoObsoletas,
   planejarConfirmacoes,
   prazoConfirmacao,
   PREFIXO_CONFIRMACAO,
@@ -17,6 +18,43 @@ import {
 const HOJE = "2026-10-06";
 const t = (id: string, extra: Partial<TituloConfirmacao> = {}): TituloConfirmacao => ({
   id, contraparteId: "c1", nomeCliente: "ACME LTDA", documento: `D${id}`, parcela: "1", vencimento: "2026-10-10", valorCentavos: 10_000_00, estagio: "boleto_enviado", ...extra,
+});
+
+describe("pendenciasConfirmacaoObsoletas", () => {
+  const grupo = (id: string, extra: Partial<TituloConfirmacao> = {}) =>
+    planejarConfirmacoes([t(id, { valorCentavos: 30_000_00, ...extra })], HOJE)[0];
+  const abertaConfirmar = (id: string, cliente: string, titulo: string) => ({ id, referencia_id: cliente, titulo });
+
+  it("cliente que saiu da janela (paga, vencida, abaixo do corte): Confirmar e Ligar abertas são canceladas", () => {
+    const abertas = [
+      abertaConfirmar("p1", "c1", "Confirmar pagamento: ACME LTDA — vence 10/10"),
+      abertaConfirmar("p2", "c1", "Ligar para confirmar pagamento: ACME LTDA — vence 10/10"),
+    ];
+    expect(pendenciasConfirmacaoObsoletas(abertas, [])).toEqual(["p1", "p2"]);
+  });
+
+  it("grupo vivo mantém Confirmar (mesmo vencimento) e Ligar; outro vencimento mais próximo cancela só a Confirmar antiga", () => {
+    const g = grupo("1"); // vence 10/10
+    const abertas = [
+      abertaConfirmar("p1", "c1", tituloPendenciaConfirmacao(g)),
+      abertaConfirmar("p2", "c1", "Ligar para confirmar pagamento: ACME LTDA — vence 10/10"),
+    ];
+    expect(pendenciasConfirmacaoObsoletas(abertas, [g])).toEqual([]);
+    const outra = [abertaConfirmar("p3", "c1", "Confirmar pagamento: ACME LTDA — vence 08/10")];
+    expect(pendenciasConfirmacaoObsoletas(outra, [g])).toEqual(["p3"]);
+  });
+
+  it("a unidade conta: a pendência da Filial Contagem não é mantida pelo grupo da Matriz (e vice-versa)", () => {
+    const matriz = grupo("1");
+    const abertas = [abertaConfirmar("p1", "c1", "Ligar para confirmar pagamento: ACME LTDA (Filial Contagem) — vence 10/10")];
+    expect(pendenciasConfirmacaoObsoletas(abertas, [matriz])).toEqual(["p1"]);
+    const filial = grupo("2", { unidade: "contagem" });
+    expect(pendenciasConfirmacaoObsoletas(abertas, [filial])).toEqual([]);
+  });
+
+  it("ignora pendências que não são de confirmação", () => {
+    expect(pendenciasConfirmacaoObsoletas([abertaConfirmar("p1", "c1", "Cobrar D+1: ACME — venc. 01/10")], [])).toEqual([]);
+  });
 });
 
 describe("elegiveis", () => {

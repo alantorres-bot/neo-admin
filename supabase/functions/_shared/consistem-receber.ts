@@ -467,11 +467,13 @@ export function dentroDaJanelaDoBoleto(vencimento: string, hoje: string): boolea
  */
 export function planejarPendenciasBoleto(
   titulos: readonly TituloEsteira[], notas: readonly NotaEsteira[], hoje: string, abertas: ReadonlySet<string>,
-): { novas: GrupoBoleto[]; fora: string[] } {
+): { novas: GrupoBoleto[]; fora: string[]; atualizar: GrupoBoleto[] } {
   const naJanela = agruparBoletosPendentes(titulos.filter((t) => dentroDaJanelaDoBoleto(t.vencimento, hoje)), notas);
   const comJanela = new Set(naJanela.map((g) => g.referenciaId));
   return {
     novas: naJanela.filter((g) => !abertas.has(g.referenciaId)),
+    // já têm pendência aberta: o título ("(N parcelas)") e a descrição podem ter mudado desde que foi criada
+    atualizar: naJanela.filter((g) => abertas.has(g.referenciaId)),
     fora: agruparBoletosPendentes(titulos, notas).filter((g) => !comJanela.has(g.referenciaId)).map((g) => g.referenciaId),
   };
 }

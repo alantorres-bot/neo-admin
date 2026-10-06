@@ -90,6 +90,27 @@ export function planejarConfirmacoes(titulos: readonly TituloConfirmacao[], hoje
   return agruparPorCliente(titulos, hoje, janela).filter((g) => g.totalCentavos >= minimoCentavos);
 }
 
+/**
+ * Pendências de confirmação ("Confirmar pagamento" e "Ligar para confirmar pagamento") ABERTAS que perderam o sentido: o cliente
+ * (naquela unidade) já não tem parcela na janela acima do corte (paga, vencida, confirmada, fora do corte) ou, no caso de "Confirmar",
+ * o vencimento mais próximo mudou (a pendência do novo vencimento já foi aberta). Devolve os ids a cancelar.
+ */
+export function pendenciasConfirmacaoObsoletas(
+  abertas: readonly { id: string; referencia_id: string; titulo: string }[],
+  grupos: readonly (Pick<GrupoConfirmacao, "contraparteId" | "unidade" | "vencimentoMaisProximo" | "nomeCliente">)[],
+): string[] {
+  const unidadeDoTitulo = (titulo: string): "matriz" | "contagem" => (titulo.includes("(Filial Contagem)") ? "contagem" : "matriz");
+  const porChave = new Map(grupos.map((g) => [`${g.contraparteId}|${g.unidade}`, g]));
+  return abertas.filter((p) => {
+    const ehConfirmar = p.titulo.startsWith(`${PREFIXO_CONFIRMACAO}:`);
+    const ehLigar = p.titulo.startsWith(`${PREFIXO_LIGAR}:`);
+    if (!ehConfirmar && !ehLigar) return false;
+    const g = porChave.get(`${p.referencia_id}|${unidadeDoTitulo(p.titulo)}`);
+    if (!g) return true;
+    return ehConfirmar && p.titulo !== tituloPendenciaConfirmacao(g);
+  }).map((p) => p.id);
+}
+
 /** Prazo do contato: vencimento menos 4 dias; se já passou, hoje. */
 export function prazoConfirmacao(vencimento: string, hoje: string): string {
   const alvo = adicionarDias(vencimento, -DIAS_CONTATO_ANTES);

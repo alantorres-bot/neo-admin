@@ -119,10 +119,20 @@ describe("janela de 30 dias para anexar boleto", () => {
     expect(plano.fora.sort()).toEqual(["4", "n2"]);
   });
 
-  it("quem já tem pendência aberta dentro da janela não abre outra", () => {
+  it("quem já tem pendência aberta dentro da janela não abre outra, mas o texto é atualizado com o que falta", () => {
     const plano = planejarPendenciasBoleto([te("1", { vencimento: "2026-10-20" })], [], HOJE, new Set(["1"]));
     expect(plano.novas).toEqual([]);
     expect(plano.fora).toEqual([]);
+    expect(plano.atualizar.map((g) => g.referenciaId)).toEqual(["1"]);
+  });
+
+  it("NF que tinha 4 parcelas e ficou com 1 aguardando: o título novo deixa de dizer 4 parcelas", () => {
+    const antes = planejarPendenciasBoleto(
+      [1, 2, 3, 4].map((i) => te(String(i), { notaSaidaId: "n1", vencimento: "2026-10-2" + i })), [ne("n1")], HOJE, new Set(),
+    ).novas[0];
+    const depois = planejarPendenciasBoleto([te("4", { notaSaidaId: "n1", vencimento: "2026-10-24" })], [ne("n1")], HOJE, new Set(["n1"])).atualizar[0];
+    expect(tituloPendenciaBoleto(antes)).toContain("(4 parcelas)");
+    expect(tituloPendenciaBoleto(depois)).not.toContain("parcelas");
   });
 });
 

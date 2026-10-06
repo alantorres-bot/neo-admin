@@ -126,7 +126,11 @@ describe("rec_registrar_confirmacao: sem resposta", () => {
   it("depois de sem resposta, ainda dá para registrar que o cliente confirmou", async () => {
     const c = await preparar();
     await registrar(finOperador, [c.a], "sem_resposta");
-    expect((await registrar(finOperador, [c.a], "confirmou", "telefone")).rows[0].r.parcelas).toBe(1);
+    const r = await registrar(finOperador, [c.a], "confirmou", "telefone");
+    expect(r.rows[0].r.parcelas).toBe(1);
     expect((await q(`select estagio from rec_titulos where id = $1`, [c.a])).rows[0].estagio).toBe("confirmado_cliente");
+    // a ligação (aberta pelo "sem resposta") acaba junto: não fica órfã na Fila do dia
+    expect(r.rows[0].r.pendencias_concluidas).toBe(1);
+    expect((await pendencias(c.cliente)).map((x) => `${x.titulo.split(":")[0]}|${x.status}`)).toEqual(["Confirmar pagamento|concluida", "Ligar para confirmar pagamento|concluida"]);
   });
 });

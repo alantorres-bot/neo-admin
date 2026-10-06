@@ -371,3 +371,11 @@ Antes de faltarem 30 dias para o vencimento ainda não é hora de anexar o bolet
 - **Tela Tarefas, fila "Boletos a anexar":** só a parcela de boleto, aguardando, sem PDF, que vence em 30 dias ou menos (vencida também).
 - **Sincronização, passo 5b:** `planejarPendenciasBoleto` abre a pendência "Anexar boleto" só para NF/título com parcela dentro da janela (a pendência lista só essas parcelas) e **cancela** a pendência aberta de quem ficou só com parcelas além da janela. Quando uma parcela entra na janela (o tempo passa), a próxima sincronização abre a pendência de novo.
 - Não mudam: "Boletos a enviar" (o PDF já existe) e "Enviar dados de pagamento" (transferência não tem boleto).
+
+### 28.2 Fila do dia e Tarefas coerentes (06/10/2026)
+A Fila do dia (pendências da sincronização) e a tela Tarefas (calculada na hora) passaram a concordar nestes pontos:
+- **"Ligar para confirmar pagamento"** (aberta por um "sem resposta") **acaba quando o cliente confirma** (migration 0117; antes ficava aberta para sempre).
+- **A sincronização cancela** (passo 5c, `pendenciasConfirmacaoObsoletas`) as pendências "Confirmar pagamento" e "Ligar" abertas cujo cliente+unidade já não tem parcela na janela de 7 dias acima do corte (parcela paga, vencida, confirmada ou abaixo do corte), e a "Confirmar" cujo vencimento mais próximo mudou (a do novo vencimento já foi aberta).
+- **O texto de "Anexar boleto" é reescrito** (passo 5b, `planejarPendenciasBoleto().atualizar`) quando o grupo muda: o título deixa de dizer "(4 parcelas)" quando sobra uma e a descrição lista só o que falta. Prazo e responsável não mudam.
+- A **Fila do dia** ganhou um link para **Contas a receber > Tarefas** (para quem é operador do módulo).
+- **Decisão mantida:** a pendência "Anexar boleto" da Fila só conclui ao **marcar enviado** (ela cobre anexar + enviar); a tela Tarefas separa as duas etapas em "Boletos a anexar" e "Boletos a enviar".
