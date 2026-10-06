@@ -419,7 +419,7 @@ async function sincronizarEmpresa(
     criticidade: criticidadeBoleto(g.vencimentoMaisProximo, hoje),
     referencia_tabela: g.referenciaTabela,
     referencia_id: g.referenciaId,
-    link: "/financeiro/recebiveis?situacao=aguardando_boleto",
+    link: `/financeiro/recebiveis/${g.titulos[0].id}`, // ficha da NF: boleto, mensagem e registro do envio
   }));
   for (const lote of lotes(pendenciasBoleto)) {
     const { error } = await banco.from("pendencias").insert(lote);

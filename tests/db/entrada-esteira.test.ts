@@ -10,6 +10,7 @@ const q = (sql: string, p: unknown[] = []) => db.query<Linha>(sql, p);
 
 beforeAll(async () => {
   db = await criarBanco();
+  await novoUsuario(db, "admin@neo.com"); // o primeiro usuário vira admin_geral (migration 0003): não pode ser um dos de teste
   finConsulta = await novoUsuario(db, "fin.consulta@neo.com", { financeiro: "consulta" });
   finOperador = await novoUsuario(db, "fin.operador@neo.com", { financeiro: "operador" });
   fiscalConsulta = await novoUsuario(db, "fiscal.consulta@neo.com", { fiscal: "consulta" });

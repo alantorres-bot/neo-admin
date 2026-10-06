@@ -164,7 +164,8 @@ describe("modelos de mensagem: escrita só para gestor", () => {
 
     for (const quem of [finOperador, finConsulta]) {
       await como(db, quem, async () => {
-        expect((await q(`select id from modelos_mensagem`)).rows).toHaveLength(2);
+        // só os criados aqui (as migrations semeiam outros modelos, como os do envio de boleto)
+        expect((await q(`select id from modelos_mensagem where nome = 'D+1'`)).rows).toHaveLength(2);
         expect((await q(`update modelos_mensagem set corpo = 'trocado'`)).affectedRows).toBe(0);
       });
     }

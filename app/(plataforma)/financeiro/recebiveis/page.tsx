@@ -219,7 +219,9 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
               <TableBody>
                 {titulos.map((t) => (
                   <TableRow key={t.id}>
-                    <TableCell className="font-medium tabular-nums">{t.documento}{t.parcela !== "1" ? `/${t.parcela}` : ""}</TableCell>
+                    <TableCell className="font-medium tabular-nums">
+                      <Link href={`/financeiro/recebiveis/${t.id}`} className="hover:underline">{t.documento}{t.parcela !== "1" ? `/${t.parcela}` : ""}</Link>
+                    </TableCell>
                     <TableCell className="text-xs leading-tight text-muted-foreground">
                       {t.nota_fiscal ? <span className="block">NF {t.nota_fiscal}</span> : <span className="block">—</span>}
                       {(t.nota_saida_id && pedidosDaNota.get(t.nota_saida_id)?.length) ? <span className="block">Pedido {pedidosDaNota.get(t.nota_saida_id)!.join(", ")}</span> : null}

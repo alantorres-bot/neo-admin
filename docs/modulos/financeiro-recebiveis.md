@@ -128,7 +128,7 @@ Decisão do usuário (06/10/2026): usar a API REST do Consistem, a mesma já em 
 ## 10. Fases internas do módulo
 
 1. **Fase 1 — Base do módulo:** migration 0100, configuração de clientes no módulo, contratos (encargos, cedido), menu Financeiro > Recebíveis. (Login, empresas e contrapartes já vêm do núcleo.)
-2. **Fase 2 — Carteira:** sincronização pela API (Edge Function `rec-sincronizar-consistem`, **feita**), tela Carteira e botão "Sincronizar agora" (**feitos**, `app/(plataforma)/financeiro/recebiveis`), agendamento (pg_cron, **feito**; de hora em hora em dias úteis desde a etapa 1a), entrada do título pela NF e pendência "Anexar boleto" (**feitas**, seção 14), importação de títulos pagos, contratos (percentuais de multa e juros por cliente) e testes de encargos.
+2. **Fase 2 — Carteira:** sincronização pela API (Edge Function `rec-sincronizar-consistem`, **feita**), tela Carteira e botão "Sincronizar agora" (**feitos**, `app/(plataforma)/financeiro/recebiveis`), agendamento (pg_cron, **feito**; de hora em hora em dias úteis desde a etapa 1a), entrada do título pela NF e pendência "Anexar boleto" (**feitas**, seção 14), anexo do boleto, mensagem pronta e registro do envio (**feitos**, seção 15), importação de títulos pagos, contratos (percentuais de multa e juros por cliente) e testes de encargos.
 3. **Fase 3 — Boletos:** upload, leitura do PDF, vínculo com títulos.
 4. **Fase 4 — Régua e e-mail:** modelos, motor da régua, Fila do dia, rascunhos no Gmail.
 5. **Fase 5 — Painel e ficha do cliente.**
@@ -203,3 +203,13 @@ Consequências para o desenho:
 - **Tela:** coluna "Pedido / NF" e filtro "Aguardando boleto (n)" em Financeiro > Recebíveis.
 - **Testado com a API real:** os 156 títulos em aberto foram completados (60 ligados a NFs na janela de 60 dias; os 74 mais antigos não têm a NF na janela e ficam sem vínculo); NF 1395 (4 parcelas) apagada e recriada pela sincronização entrou em `aguardando_boleto` com uma pendência (alta, prazo D-8, pedido 199), e a 2ª rodada não duplicou nada.
 - **Produção:** ajustar `esteira_a_partir_de` para o dia da virada antes de ligar o job horário (o job só roda onde há `pg_cron`; os segredos do agendamento estão na seção 12).
+
+## 15. Boleto, mensagem pronta e registro do envio — Etapa 1b (feita em 06/10/2026)
+
+Ficha da NF em `/financeiro/recebiveis/<id de uma parcela>` (a pendência "Anexar boleto" e a coluna Documento da Carteira levam até ela). Mostra as parcelas da mesma NF juntas.
+
+- **Anexar boleto** (operador ou acima): um PDF ou imagem por parcela, enviado ao bucket privado `anexos` (caminho `financeiro.recebiveis/rec_titulos/<id>/…`, tipo `boleto`) e registrado em `anexos`. Anexo não se apaga: "Substituir" envia outro e vale o mais recente. Link de abertura assinado (15 min). **Linha digitável** opcional, validada só pelo tamanho (47 dígitos, ou 48 em convênio); não confere dígito verificador.
+- **Mensagem pronta:** modelos `Envio de boleto — e-mail` (assunto + corpo, termina em "Atenciosamente," sem assinatura) e `Envio de boleto — WhatsApp`, semeados na migration 0105 em `modelos_mensagem` (editáveis). Variáveis: `{contato} {cliente} {referencia} {parcelas} {linhas_digitaveis} {total} {qtd_parcelas}`. O contato é o que tem a finalidade `boleto` (ou o primeiro ativo; com vários, há seletor). Botões "Copiar E-mail" / "Copiar WhatsApp". **O sistema não envia nada**; o rascunho no Gmail entra quando as credenciais OAuth existirem (etapa 1b-2).
+- **Registrar o envio** ("Marcar como enviado"): função de banco `rec_marcar_boleto_enviado` (migration 0105, SECURITY INVOKER, numa transação, com a RLS de quem chama). Exige parcelas em `aguardando_boleto` **e com boleto anexado**; passa para `boleto_enviado` (+ `boleto_enviado_em`), grava uma `interacoes` (canal, descrição com contato e observação, usuário) por parcela e **conclui a pendência "Anexar boleto"** da NF quando nenhuma parcela dela continua aguardando. Pendência que está com outra pessoa não é concluída por operador (o envio fica registrado); gestor conclui. Pode-se enviar parcelas em momentos diferentes.
+- **Fora desta etapa:** rascunho no Gmail (`mensagens` + Edge Function, depende das credenciais), leitura da linha digitável a partir do PDF, confirmação de pagamento (etapa 1c).
+- **Testado:** 10 testes de banco da função (permissões, transação, pendências), 27 de lógica pura, e na interface com a API real: 4 boletos anexados, linha digitável inválida recusada, envio parcial (pendência segue aberta) e envio do restante (pendência concluída com data e autor).
