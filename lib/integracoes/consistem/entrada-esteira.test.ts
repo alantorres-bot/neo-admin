@@ -5,10 +5,12 @@ import {
   criticidadeBoleto,
   decidirEntrada,
   indexarNotas,
+  dentroDaJanelaDoBoleto,
   LIMITE_ENTRADA_LOTE,
   ligarTituloNota,
   normalizarNotaSaida,
   normalizarTituloApi,
+  planejarPendenciasBoleto,
   planejarSincronizacao,
   prazoBoleto,
   PREFIXO_BOLETO,
@@ -91,6 +93,38 @@ const te = (id: string, extra: Partial<TituloEsteira> = {}): TituloEsteira => ({
   contraparteId: "c1", codCliente: "156", nomeCliente: "ACME LTDA", ...extra,
 });
 const ne = (id: string, nota = "1371", pedidos: string[] = ["187"]): NotaEsteira => ({ id, nota, pedidos });
+
+describe("janela de 30 dias para anexar boleto", () => {
+  const HOJE = "2026-10-06";
+  it("vence em 30 dias ou menos (inclusive vencido) entra; além de 30 dias não", () => {
+    expect(dentroDaJanelaDoBoleto("2026-11-05", HOJE)).toBe(true); // 30 dias
+    expect(dentroDaJanelaDoBoleto("2026-11-06", HOJE)).toBe(false); // 31 dias
+    expect(dentroDaJanelaDoBoleto("2026-10-01", HOJE)).toBe(true); // vencido
+  });
+
+  it("NF com parcelas em datas diferentes: só as da janela aparecem na pendência; NF toda fora vira `fora`", () => {
+    const plano = planejarPendenciasBoleto(
+      [
+        te("1", { notaSaidaId: "n1", vencimento: "2026-10-30" }),
+        te("2", { notaSaidaId: "n1", vencimento: "2026-12-30" }),
+        te("3", { notaSaidaId: "n2", vencimento: "2027-01-15" }),
+        te("4", { vencimento: "2026-12-01" }),
+      ],
+      [ne("n1"), ne("n2", "1400")],
+      HOJE,
+      new Set(["n2", "4"]), // já têm pendência aberta, mas estão fora da janela
+    );
+    expect(plano.novas.map((g) => g.referenciaId)).toEqual(["n1"]);
+    expect(plano.novas[0].titulos.map((t) => t.id)).toEqual(["1"]); // a parcela de 30/12 não entra
+    expect(plano.fora.sort()).toEqual(["4", "n2"]);
+  });
+
+  it("quem já tem pendência aberta dentro da janela não abre outra", () => {
+    const plano = planejarPendenciasBoleto([te("1", { vencimento: "2026-10-20" })], [], HOJE, new Set(["1"]));
+    expect(plano.novas).toEqual([]);
+    expect(plano.fora).toEqual([]);
+  });
+});
 
 describe("agruparBoletosPendentes", () => {
   it("parcelas da mesma NF viram um grupo; título sem NF é um grupo por título", () => {

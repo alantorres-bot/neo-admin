@@ -25,7 +25,6 @@
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import {
   addDias,
-  agruparBoletosPendentes,
   analisarVinculo,
   BASE_URL_PADRAO,
   buscarObjeto,
@@ -48,6 +47,7 @@ import {
   planejarSincronizacao,
   prazoBoleto,
   PREFIXO_BOLETO,
+  planejarPendenciasBoleto,
   tituloPendenciaBoleto,
   type ClienteApi,
   type ConfigConsistem,
@@ -484,12 +484,20 @@ async function sincronizarEmpresa(
     if (error) throw new Error(`Falha ao ler as NFs da esteira: ${error.message}`);
     for (const n of data ?? []) notasEsteira.push({ id: n.id as string, nota: n.nota as string, pedidos: (n.pedidos as string[]) ?? [] });
   }
-  const abertasBoleto = new Set(
-    (await lerTudo<{ referencia_id: string }>((de, ate) =>
-      banco.from("pendencias").select("referencia_id").eq("modulo", MODULO).like("titulo", `${PREFIXO_BOLETO}%`)
-        .in("status", ["aberta", "em_andamento"]).order("id").range(de, ate))).map((p) => p.referencia_id),
-  );
-  const pendenciasBoleto = agruparBoletosPendentes(titulosEsteira, notasEsteira).filter((g) => !abertasBoleto.has(g.referenciaId)).map((g) => ({
+  const abertasBoletoLinhas = await lerTudo<{ id: string; referencia_id: string }>((de, ate) =>
+    banco.from("pendencias").select("id, referencia_id").eq("modulo", MODULO).like("titulo", `${PREFIXO_BOLETO}%`)
+      .in("status", ["aberta", "em_andamento"]).order("id").range(de, ate));
+  const abertasBoleto = new Set(abertasBoletoLinhas.map((p) => p.referencia_id));
+  // Só entra na lista de tarefas quem vence em 30 dias ou menos; as abertas que ficaram fora da janela são canceladas.
+  const planoBoleto = planejarPendenciasBoleto(titulosEsteira, notasEsteira, hoje, abertasBoleto);
+  const foraDaJanela = new Set(planoBoleto.fora);
+  const boletoObsoletas = abertasBoletoLinhas.filter((p) => foraDaJanela.has(p.referencia_id)).map((p) => p.id);
+  for (const lote of lotes(boletoObsoletas)) {
+    const { error } = await banco.from("pendencias").update({ status: "cancelada" }).in("id", lote);
+    if (error) throw new Error(`Falha ao encerrar pendências de boleto fora da janela: ${error.message}`);
+  }
+  resumo.pendenciasBoletoCanceladas = boletoObsoletas.length;
+  const pendenciasBoleto = planoBoleto.novas.map((g) => ({
     modulo: MODULO,
     empresa_id: empresa.id,
     contraparte_id: g.contraparteId,

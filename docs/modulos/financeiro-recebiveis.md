@@ -365,3 +365,9 @@ Visão em separado da ficha do título, no estilo das listas do ClickUp: `/finan
 - **Navegação:** barra **Carteira · Tarefas · Clientes e contatos · Baixas a conferir** (`RecebiveisAbas`) no topo dessas quatro telas e botão **Tarefas (N)** na Carteira; N = soma das filas (o mesmo cálculo da tela).
 - **Marcar enviado** na lista é o mesmo "Já enviei" da ficha: o sistema nunca envia nada, só registra que a pessoa enviou.
 - **Testado ao vivo** com títulos de teste: transferência tira a parcela da fila de boleto e a põe em dados de pagamento; "Marcar enviado" nas duas filas faz o item sair e o contador cair; confirmação mostra o contato; números do botão (26), de "Clientes e contatos" (19) e de "Baixas a conferir" (1) batem com as telas de origem. A fila Cobrar ficou coberta só por testes unitários, porque a régua começa em 06/10/2026 e ainda não há vencido dentro dela.
+
+### 28.1 "Anexar boleto" só a 30 dias do vencimento (06/10/2026)
+Antes de faltarem 30 dias para o vencimento ainda não é hora de anexar o boleto, então **não há tarefa nem pendência**. A regra (`DIAS_JANELA_ANEXAR_BOLETO = 30`, `dentroDaJanelaDoBoleto`, em `_shared/consistem-receber.ts`) vale nos dois lugares, que nunca discordam:
+- **Tela Tarefas, fila "Boletos a anexar":** só a parcela de boleto, aguardando, sem PDF, que vence em 30 dias ou menos (vencida também).
+- **Sincronização, passo 5b:** `planejarPendenciasBoleto` abre a pendência "Anexar boleto" só para NF/título com parcela dentro da janela (a pendência lista só essas parcelas) e **cancela** a pendência aberta de quem ficou só com parcelas além da janela. Quando uma parcela entra na janela (o tempo passa), a próxima sincronização abre a pendência de novo.
+- Não mudam: "Boletos a enviar" (o PDF já existe) e "Enviar dados de pagamento" (transferência não tem boleto).

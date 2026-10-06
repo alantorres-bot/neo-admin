@@ -158,7 +158,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
   });
   const filas = { anexar: [] as ItemParcela[], enviar: [] as ItemParcela[], dados: [] as ItemParcela[] };
   for (const t of aguardando) {
-    const fila = filaDaParcela({ estagio: t.estagio, forma: t.forma_pagamento, temBoleto: comBoleto.has(t.id) });
+    const fila = filaDaParcela({ estagio: t.estagio, forma: t.forma_pagamento, temBoleto: comBoleto.has(t.id), vencimento: t.vencimento, hoje });
     if (fila) filas[fila].push(itemParcela(t));
   }
 

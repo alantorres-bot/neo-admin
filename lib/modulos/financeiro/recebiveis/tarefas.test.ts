@@ -22,6 +22,15 @@ describe("filaDaParcela", () => {
     expect(filaDaParcela({ estagio: "importado", forma: "boleto", temBoleto: false })).toBeNull();
   });
 
+  it("anexar só entra a 30 dias ou menos do vencimento; enviar e dados não dependem da janela", () => {
+    const base = { estagio: "aguardando_boleto", forma: "boleto", hoje: "2026-10-06" };
+    expect(filaDaParcela({ ...base, temBoleto: false, vencimento: "2026-11-05" })).toBe("anexar");
+    expect(filaDaParcela({ ...base, temBoleto: false, vencimento: "2026-11-06" })).toBeNull();
+    expect(filaDaParcela({ ...base, temBoleto: false, vencimento: "2026-09-20" })).toBe("anexar"); // vencido
+    expect(filaDaParcela({ ...base, temBoleto: true, vencimento: "2027-03-01" })).toBe("enviar");
+    expect(filaDaParcela({ ...base, forma: "transferencia", temBoleto: false, vencimento: "2027-03-01" })).toBe("dados");
+  });
+
   it("transferência sai das filas de boleto e vai para os dados de pagamento, com ou sem PDF", () => {
     expect(filaDaParcela({ estagio: "aguardando_boleto", forma: "transferencia", temBoleto: false })).toBe("dados");
     expect(filaDaParcela({ estagio: "aguardando_boleto", forma: "transferencia", temBoleto: true })).toBe("dados");

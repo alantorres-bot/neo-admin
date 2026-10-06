@@ -453,6 +453,29 @@ export function agruparBoletosPendentes(titulos: readonly TituloEsteira[], notas
   return [...grupos.values()].sort((a, b) => a.vencimentoMaisProximo.localeCompare(b.vencimentoMaisProximo) || a.referenciaId.localeCompare(b.referenciaId));
 }
 
+/** A tarefa "anexar boleto" só existe quando faltam 30 dias ou menos para o vencimento (vencido também): antes disso não há pendência. */
+export const DIAS_JANELA_ANEXAR_BOLETO = 30;
+
+export function dentroDaJanelaDoBoleto(vencimento: string, hoje: string): boolean {
+  return diasEntre(vencimento, hoje) <= DIAS_JANELA_ANEXAR_BOLETO;
+}
+
+/**
+ * O que fazer com as pendências "Anexar boleto": abre as dos grupos que têm parcela dentro da janela e ainda não têm pendência
+ * aberta; devolve em `fora` as NFs/títulos que continuam aguardando boleto mas só têm parcelas além da janela (a pendência
+ * aberta delas perde o sentido e é cancelada; volta a abrir quando uma parcela entrar na janela).
+ */
+export function planejarPendenciasBoleto(
+  titulos: readonly TituloEsteira[], notas: readonly NotaEsteira[], hoje: string, abertas: ReadonlySet<string>,
+): { novas: GrupoBoleto[]; fora: string[] } {
+  const naJanela = agruparBoletosPendentes(titulos.filter((t) => dentroDaJanelaDoBoleto(t.vencimento, hoje)), notas);
+  const comJanela = new Set(naJanela.map((g) => g.referenciaId));
+  return {
+    novas: naJanela.filter((g) => !abertas.has(g.referenciaId)),
+    fora: agruparBoletosPendentes(titulos, notas).filter((g) => !comJanela.has(g.referenciaId)).map((g) => g.referenciaId),
+  };
+}
+
 /** Título da pendência. Começa sempre por PREFIXO_BOLETO (a função consulta as abertas por esse prefixo). */
 export function tituloPendenciaBoleto(g: GrupoBoleto): string {
   const qtd = g.titulos.length;

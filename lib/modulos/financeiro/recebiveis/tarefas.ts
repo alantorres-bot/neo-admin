@@ -2,7 +2,7 @@
 // Regras puras: o carregador (`app/.../tarefas/dados.ts`) lê o banco e monta os itens; aqui ficam a classificação, o corte das
 // cobranças já feitas, os filtros e as contagens. As filas são CALCULADAS do estado dos títulos, nunca gravadas (uma só verdade).
 import type { GrupoCobranca, MarcoCobranca, Unidade } from "../../../../supabase/functions/_shared/cobranca";
-import { prazoBoleto } from "../../../../supabase/functions/_shared/consistem-receber";
+import { dentroDaJanelaDoBoleto, prazoBoleto } from "../../../../supabase/functions/_shared/consistem-receber";
 
 export const FILAS = ["anexar", "enviar", "dados", "confirmar", "cobrar", "baixa", "contato"] as const;
 export type Fila = (typeof FILAS)[number];
@@ -19,7 +19,7 @@ export const ROTULO_FILA: Record<Fila, string> = {
 };
 
 export const EXPLICACAO_FILA: Record<Fila, string> = {
-  anexar: "Parcelas pagas por boleto que ainda não têm o PDF do boleto. Anexe aqui mesmo; se o cliente paga por transferência, use “Pago por transferência”.",
+  anexar: "Parcelas pagas por boleto, sem o PDF, que vencem em 30 dias ou menos (antes disso ainda não é hora de anexar). Anexe aqui mesmo; se o cliente paga por transferência, use “Pago por transferência”.",
   enviar: "O boleto já está anexado, mas ainda não foi enviado ao cliente. Abra a ficha para criar o rascunho no Gmail ou copiar a mensagem; depois marque como enviado.",
   dados: "Parcelas pagas por transferência (PIX/TED): falta enviar ao cliente os dados bancários da Neo. Abra a ficha para a mensagem pronta.",
   confirmar: "Clientes com parcelas vencendo nos próximos 7 dias e soma a partir do valor mínimo: contatar para confirmar a programação do pagamento. “Ligar” = o cliente não respondeu à mensagem.",
@@ -73,10 +73,13 @@ export const montarTextoBusca = (cliente: string, codigo: string | null, documen
  * Em qual fila de boleto/dados a parcela está? Só parcela aguardando boleto entra: com PDF vai para "enviar", sem PDF para "anexar";
  * quem paga por transferência não tem boleto e vai para "dados de pagamento".
  */
-export function filaDaParcela(t: { estagio: string; forma: string; temBoleto: boolean }): "anexar" | "enviar" | "dados" | null {
+export function filaDaParcela(t: { estagio: string; forma: string; temBoleto: boolean; vencimento?: string; hoje?: string }): "anexar" | "enviar" | "dados" | null {
   if (t.estagio !== "aguardando_boleto") return null;
   if (t.forma === "transferencia") return "dados";
-  return t.temBoleto ? "enviar" : "anexar";
+  if (t.temBoleto) return "enviar";
+  // "Anexar boleto" só vira tarefa a 30 dias ou menos do vencimento (a mesma regra da pendência da sincronização).
+  if (t.vencimento && t.hoje && !dentroDaJanelaDoBoleto(t.vencimento, t.hoje)) return null;
+  return "anexar";
 }
 
 /** Prazo da parcela na fila: vencimento menos 8 dias (o mesmo da pendência "Anexar boleto"); se já passou, hoje. */
