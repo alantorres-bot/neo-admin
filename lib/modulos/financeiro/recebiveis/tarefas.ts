@@ -42,12 +42,19 @@ export type ContatoSugerido = { id: string; nome: string; email: string | null; 
 export type ParcelaItem = { id: string; documento: string; parcela: string; vencimento: string; valorCentavos: number };
 
 /** Uma parcela nas filas de boleto (anexar, enviar) e de dados de pagamento. */
-export type ItemParcela = ItemBase & ParcelaItem & { estagio: string; prazo: string; contato: ContatoSugerido; andamento: Andamento; diasAtraso: number };
+export type ItemParcela = ItemBase & ParcelaItem & {
+  estagio: string; prazo: string; contato: ContatoSugerido; andamento: Andamento; diasAtraso: number;
+  /** NF da parcela (vazio = título avulso): parcelas da mesma NF aparecem juntas na lista. */
+  notaSaidaId: string | null; nota: string | null;
+};
 export type ItemConfirmar = ItemBase & {
   parcelas: ParcelaItem[]; totalCentavos: number; vencimentoMaisProximo: string; prazo: string; ligar: boolean; contato: ContatoSugerido; andamento: Andamento;
+  /** Mensagem pronta (WhatsApp) e o link `wa.me` já com o texto, quando o contato tem WhatsApp. O sistema nunca envia. */
+  mensagem: string | null; linkWhatsApp: string | null;
 };
 export type ItemCobrar = ItemBase & {
   marco: MarcoCobranca; parcelas: ParcelaItem[]; totalCentavos: number; vencimentoMaisAntigo: string; diasAtraso: number; contato: ContatoSugerido; andamento: Andamento;
+  mensagem: string | null; linkWhatsApp: string | null;
 };
 export type ItemBaixa = ItemBase & ParcelaItem & { diasAtraso: number; pagoEm: string | null; valorPagoCentavos: number | null };
 export type ItemContato = ItemBase & { titulos: number; totalCentavos: number; menorVencimento: string; maiorAtraso: number };
@@ -140,4 +147,75 @@ export const totalDeTarefas = (t: Tarefas): number => Object.values(contarFilas(
 /** A aba que abre sem escolha: a primeira com itens (na ordem das abas); se todas vazias, a primeira. */
 export function abaInicial(contagens: Record<Fila, number>): Fila {
   return FILAS.find((f) => contagens[f] > 0) ?? FILAS[0];
+}
+
+// ---------------------------------------------------------------------------------------------------------------------------
+// Lista: paginação, parcelas da mesma NF juntas, totais e atalho de WhatsApp.
+
+export const POR_PAGINA_TAREFAS = 50;
+
+/** Fatia a lista na página pedida (1 em diante; fora do intervalo, a mais próxima). */
+export function paginar<T>(lista: readonly T[], pagina: number, porPagina = POR_PAGINA_TAREFAS): { itens: T[]; pagina: number; totalPaginas: number; total: number } {
+  const totalPaginas = Math.max(1, Math.ceil(lista.length / porPagina));
+  const atual = Math.min(Math.max(1, Math.trunc(pagina) || 1), totalPaginas);
+  return { itens: lista.slice((atual - 1) * porPagina, atual * porPagina), pagina: atual, totalPaginas, total: lista.length };
+}
+
+/** Parcelas do mesmo cliente e da mesma NF (ou uma parcela avulsa, sem NF) numa linha só. */
+export type GrupoNota = ItemBase & {
+  chave: string;
+  notaSaidaId: string | null;
+  nota: string | null;
+  parcelas: ItemParcela[];
+  totalCentavos: number;
+  vencimentoMaisProximo: string;
+  prazo: string;
+};
+
+/** Agrupa as parcelas por NF (mais urgente primeiro). Parcela sem NF vira um grupo de uma parcela. */
+export function agruparPorNota(itens: readonly ItemParcela[]): GrupoNota[] {
+  const grupos = new Map<string, GrupoNota>();
+  for (const i of itens) {
+    const chave = i.notaSaidaId ? `${i.clienteId}|${i.notaSaidaId}` : `avulso|${i.id}`;
+    const g = grupos.get(chave);
+    if (!g) {
+      grupos.set(chave, {
+        clienteId: i.clienteId, cliente: i.cliente, codigo: i.codigo, unidade: i.unidade, textoBusca: i.textoBusca,
+        chave, notaSaidaId: i.notaSaidaId, nota: i.nota, parcelas: [i], totalCentavos: i.valorCentavos, vencimentoMaisProximo: i.vencimento, prazo: i.prazo,
+      });
+      continue;
+    }
+    g.parcelas.push(i);
+    g.totalCentavos += i.valorCentavos;
+    if (i.vencimento < g.vencimentoMaisProximo) g.vencimentoMaisProximo = i.vencimento;
+    if (i.prazo < g.prazo) g.prazo = i.prazo;
+  }
+  return [...grupos.values()]
+    .map((g) => ({ ...g, parcelas: ordenarParcelas(g.parcelas) }))
+    .sort((a, b) => a.vencimentoMaisProximo.localeCompare(b.vencimentoMaisProximo) || a.cliente.localeCompare(b.cliente, "pt-BR") || a.chave.localeCompare(b.chave));
+}
+
+/** Soma em centavos do que a fila representa (valor das parcelas, ou o total dos grupos). */
+export function totalDaFila(t: Tarefas, fila: Fila): number {
+  const soma = (lista: readonly { valorCentavos: number }[]) => lista.reduce((s, i) => s + i.valorCentavos, 0);
+  const somaTotal = (lista: readonly { totalCentavos: number }[]) => lista.reduce((s, i) => s + i.totalCentavos, 0);
+  switch (fila) {
+    case "anexar": return soma(t.anexar);
+    case "enviar": return soma(t.enviar);
+    case "dados": return soma(t.dados);
+    case "baixa": return soma(t.baixa);
+    case "confirmar": return somaTotal(t.confirmar);
+    case "cobrar": return somaTotal(t.cobrar);
+    case "contato": return somaTotal(t.contato);
+  }
+}
+
+/** Link `wa.me` com a mensagem já preenchida (abre o WhatsApp da pessoa; o sistema nunca envia). Aceita +5565..., (65) 9..., etc. */
+export function linkWhatsApp(numero: string | null | undefined, texto: string): string | null {
+  const digitos = (numero ?? "").replace(/\D/g, "");
+  // Com "+" o código do país já vem no número (e só o do Brasil serve); sem "+", DDD + número ganha o 55.
+  const comCodigoDoPais = /^\s*\+/.test(numero ?? "");
+  const completo = !comCodigoDoPais && (digitos.length === 10 || digitos.length === 11) ? `55${digitos}` : digitos;
+  if (!/^55\d{10,11}$/.test(completo)) return null;
+  return `https://wa.me/${completo}?text=${encodeURIComponent(texto)}`;
 }

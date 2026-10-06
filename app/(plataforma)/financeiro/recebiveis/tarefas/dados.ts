@@ -2,15 +2,15 @@ import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
 import { MODULO_RECEBIVEIS, TIPO_ANEXO_BOLETO } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { ROTULO_ANDAMENTO } from "@/lib/modulos/financeiro/recebiveis/carteira";
 import {
-  filaDaParcela, marcoDaDescricao, montarTextoBusca, ordenarContatos, ordenarParcelas, prazoDaParcela, removerCobrancasFeitas,
+  filaDaParcela, linkWhatsApp, marcoDaDescricao, montarTextoBusca, ordenarContatos, ordenarParcelas, prazoDaParcela, removerCobrancasFeitas,
   type Andamento, type ContatoSugerido, type ItemBase, type ItemBaixa, type ItemCobrar, type ItemConfirmar, type ItemContato, type ItemParcela, type ParcelaItem, type Tarefas,
 } from "@/lib/modulos/financeiro/recebiveis/tarefas";
 import { titulaNoEscopoDeCadastro } from "@/lib/modulos/financeiro/recebiveis/clientes";
 import { FUSO, hojeEmCuiaba } from "@/lib/nucleo/fila";
 import type { criarClienteServidor } from "@/lib/supabase/servidor";
-import { ESTAGIOS_COBRAVEIS, planejarCobrancas, unidadeDaPendencia, type TituloCobranca, type Unidade } from "@/supabase/functions/_shared/cobranca";
+import { ESTAGIOS_COBRAVEIS, mensagemWhatsAppCobranca, planejarCobrancas, unidadeDaPendencia, type TituloCobranca, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import {
-  ESTAGIOS_CONFIRMAVEIS, MINIMO_PADRAO_CENTAVOS, planejarConfirmacoes, prazoConfirmacao, type TituloConfirmacao,
+  ESTAGIOS_CONFIRMAVEIS, mensagemWhatsAppConfirmacao, MINIMO_PADRAO_CENTAVOS, planejarConfirmacoes, prazoConfirmacao, type TituloConfirmacao,
 } from "@/supabase/functions/_shared/confirmacao";
 import { escolherContato, temContatoUtil, type ContatoEscolha } from "@/supabase/functions/_shared/contatos";
 
@@ -29,6 +29,7 @@ type LinhaTitulo = {
   id: string; contraparte_id: string; documento: string; parcela: string; vencimento: string; valor: number | string; estagio: string; dias_atraso: number;
   faixa: string; cedido: boolean; contestado: boolean; unidade: string; forma_pagamento: string; regua_pausada_ate: string | null;
   consistem_pago_em: string | null; consistem_valor_pago: number | string | null;
+  nota_saida_id: string | null; nota_fiscal: string | null;
 };
 type ContatoLinha = ContatoEscolha & { contraparte_id: string; funcao?: string | null };
 
@@ -43,7 +44,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
   const abertos: LinhaTitulo[] = [];
   for (let de = 0; ; de += 1000) {
     const { data, error } = await supabase.from("rec_vw_titulos")
-      .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, dias_atraso, faixa, cedido, contestado, unidade, forma_pagamento, regua_pausada_ate, consistem_pago_em, consistem_valor_pago")
+      .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, dias_atraso, faixa, cedido, contestado, unidade, forma_pagamento, regua_pausada_ate, consistem_pago_em, consistem_valor_pago, nota_saida_id, nota_fiscal")
       .neq("faixa", "encerrado").order("id").range(de, de + 999);
     if (error) throw new Error(`Falha ao ler a carteira: ${error.message}`);
     abertos.push(...((data ?? []) as unknown as LinhaTitulo[]));
@@ -126,6 +127,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     const lista = contatosPorCliente.get(id) ?? [];
     return sugerido(escolherContato(lista, "boleto", "email") ?? escolherContato(lista, "boleto", "whatsapp"));
   };
+  const contatoWhatsapp = (id: string) => escolherContato(contatosPorCliente.get(id) ?? [], ["confirmacao", "cobranca"], "whatsapp");
   const contatoMensagem = (id: string) => {
     const lista = contatosPorCliente.get(id) ?? [];
     return sugerido(escolherContato(lista, ["confirmacao", "cobranca"], "whatsapp") ?? escolherContato(lista, ["confirmacao", "cobranca"], "telefone"));
@@ -155,6 +157,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     ...base(t.contraparte_id, unidadeDe(t), [t.documento]),
     id: t.id, documento: t.documento, parcela: t.parcela, vencimento: t.vencimento, valorCentavos: valorRestante(t), estagio: t.estagio,
     prazo: prazoDaParcela(t.vencimento, hoje), contato: contatoBoleto(t.contraparte_id), andamento: ultimo.get(t.id) ?? null, diasAtraso: Math.max(t.dias_atraso, 0),
+    notaSaidaId: t.nota_saida_id, nota: t.nota_fiscal,
   });
   const filas = { anexar: [] as ItemParcela[], enviar: [] as ItemParcela[], dados: [] as ItemParcela[] };
   for (const t of aguardando) {
@@ -165,19 +168,30 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
   const parcelaDe = (t: { id: string; documento: string; parcela: string; vencimento: string; valorCentavos: number }): ParcelaItem => ({
     id: t.id, documento: t.documento, parcela: t.parcela, vencimento: t.vencimento, valorCentavos: t.valorCentavos,
   });
-  const confirmar: ItemConfirmar[] = gruposConfirmacao.map((g) => ({
-    ...base(g.contraparteId, g.unidade, g.titulos.map((t) => t.documento)),
-    parcelas: g.titulos.map(parcelaDe), totalCentavos: g.totalCentavos, vencimentoMaisProximo: g.vencimentoMaisProximo,
-    prazo: prazoConfirmacao(g.vencimentoMaisProximo, hoje), ligar: ligar.has(`${g.contraparteId}|${g.unidade}`), contato: contatoMensagem(g.contraparteId),
-    andamento: g.titulos.map((t) => ultimo.get(t.id)).find((a) => a) ?? null,
-  }));
+  const confirmar: ItemConfirmar[] = gruposConfirmacao.map((g) => {
+    const zap = contatoWhatsapp(g.contraparteId);
+    const mensagem = mensagemWhatsAppConfirmacao(g, zap?.nome ?? "");
+    return {
+      ...base(g.contraparteId, g.unidade, g.titulos.map((t) => t.documento)),
+      parcelas: g.titulos.map(parcelaDe), totalCentavos: g.totalCentavos, vencimentoMaisProximo: g.vencimentoMaisProximo,
+      prazo: prazoConfirmacao(g.vencimentoMaisProximo, hoje), ligar: ligar.has(`${g.contraparteId}|${g.unidade}`), contato: contatoMensagem(g.contraparteId),
+      andamento: g.titulos.map((t) => ultimo.get(t.id)).find((a) => a) ?? null,
+      mensagem, linkWhatsApp: linkWhatsApp(zap?.whatsapp, mensagem),
+    };
+  });
 
-  const cobrar: ItemCobrar[] = removerCobrancasFeitas(gruposCobranca, (id, marco) => cobrancasFeitas.has(`${id}|${marco}`)).map((g) => ({
-    ...base(g.contraparteId, g.unidade, g.titulos.map((t) => t.documento)),
-    marco: g.marco, parcelas: g.titulos.map(parcelaDe), totalCentavos: g.totalCentavos, vencimentoMaisAntigo: g.vencimentoMaisAntigo,
-    diasAtraso: diasEntre(hoje, g.vencimentoMaisAntigo), contato: contatoMensagem(g.contraparteId),
-    andamento: g.titulos.map((t) => ultimo.get(t.id)).find((a) => a) ?? null,
-  }));
+  const cobrar: ItemCobrar[] = removerCobrancasFeitas(gruposCobranca, (id, marco) => cobrancasFeitas.has(`${id}|${marco}`)).map((g) => {
+    const zap = contatoWhatsapp(g.contraparteId);
+    // D+10 é por e-mail: sem mensagem de WhatsApp.
+    const mensagem = mensagemWhatsAppCobranca(g, zap?.nome ?? "");
+    return {
+      ...base(g.contraparteId, g.unidade, g.titulos.map((t) => t.documento)),
+      marco: g.marco, parcelas: g.titulos.map(parcelaDe), totalCentavos: g.totalCentavos, vencimentoMaisAntigo: g.vencimentoMaisAntigo,
+      diasAtraso: diasEntre(hoje, g.vencimentoMaisAntigo), contato: contatoMensagem(g.contraparteId),
+      andamento: g.titulos.map((t) => ultimo.get(t.id)).find((a) => a) ?? null,
+      mensagem, linkWhatsApp: mensagem ? linkWhatsApp(zap?.whatsapp, mensagem) : null,
+    };
+  });
 
   const baixa: ItemBaixa[] = ordenarParcelas(
     emAberto.filter((t) => idsPossivelBaixa.has(t.id)).map((t): ItemBaixa => ({

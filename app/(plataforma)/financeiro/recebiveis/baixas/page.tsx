@@ -7,7 +7,8 @@ import { RecebiveisAbas } from "../abas-recebiveis";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MODULO_RECEBIVEIS } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import { diferencaDias, hojeEmCuiaba } from "@/lib/nucleo/fila";
+import { avisoDaBaixa } from "@/lib/modulos/financeiro/recebiveis/baixa";
+import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
@@ -20,8 +21,6 @@ type Titulo = {
   estagio: string; dias_atraso: number; consistem_pago_em: string | null; consistem_valor_pago: number | string | null; consistem_tipo_baixa: string | null;
 };
 
-/** Pagamento até 7 dias atrás vem marcado; mais antigo vem desmarcado, com aviso. */
-const DIAS_PAGAMENTO_RECENTE = 7;
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
 const nomeTitulo = (t: Pick<Titulo, "documento" | "parcela">) => `${t.documento}${t.parcela !== "1" ? `/${t.parcela}` : ""}`;
 
@@ -60,15 +59,12 @@ export default async function PaginaBaixas() {
 
   const hoje = hojeEmCuiaba();
   const linhasEvidencia: LinhaEvidencia[] = comEvidencia.map((t) => {
-    const avisos: string[] = [];
-    if (centavos(t.consistem_valor_pago!) !== centavos(t.valor)) avisos.push("valor difere do título (juros ou desconto)");
-    const dias = diferencaDias(hoje, t.consistem_pago_em!);
-    if (dias > DIAS_PAGAMENTO_RECENTE) avisos.push(`pagamento de há ${dias} dias (baixa lançada com atraso no Consistem, ou código de título reutilizado)`);
+    const aviso = avisoDaBaixa({ valorCentavos: centavos(t.valor), valorPagoCentavos: centavos(t.consistem_valor_pago!), pagoEm: t.consistem_pago_em! }, hoje);
     return {
       id: t.id,
       rotulo: rotulo(t),
       detalhe: `venceu em ${formatarData(t.vencimento)} · título ${formatarMoeda(centavos(t.valor))} · Consistem: pago em ${formatarData(t.consistem_pago_em)}, ${formatarMoeda(centavos(t.consistem_valor_pago!))}${t.consistem_tipo_baixa ? ` (tipo de baixa ${t.consistem_tipo_baixa})` : ""}`,
-      aviso: avisos.length > 0 ? `${avisos.join('; ')}: confira antes de marcar` : null,
+      aviso,
     };
   });
   const linhasManuais: LinhaManual[] = semEvidencia.map((t) => ({

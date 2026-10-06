@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { GrupoCobranca, TituloCobranca } from "../../../../supabase/functions/_shared/cobranca";
 import {
-  abaInicial, aplicarFiltros, contarFilas, filaDaParcela, marcoDaDescricao, montarTextoBusca, nomeParcela, ordenarContatos, ordenarParcelas,
-  prazoDaParcela, removerCobrancasFeitas, totalDeTarefas, type ItemBase, type ItemContato, type ItemParcela, type Tarefas,
+  abaInicial, agruparPorNota, aplicarFiltros, contarFilas, filaDaParcela, linkWhatsApp, marcoDaDescricao, montarTextoBusca, nomeParcela, ordenarContatos,
+  ordenarParcelas, paginar, prazoDaParcela, removerCobrancasFeitas, totalDaFila, totalDeTarefas, type ItemBase, type ItemContato, type ItemParcela, type Tarefas,
 } from "./tarefas";
 
 const base = (cliente: string, unidade: "matriz" | "contagem" = "matriz", documentos: string[] = []): ItemBase => ({
   clienteId: `id-${cliente}`, cliente, codigo: null, unidade, textoBusca: montarTextoBusca(cliente, null, documentos),
 });
-const parcela = (cliente: string, documento: string, vencimento: string, unidade: "matriz" | "contagem" = "matriz"): ItemParcela => ({
+const parcela = (cliente: string, documento: string, vencimento: string, unidade: "matriz" | "contagem" = "matriz", extra: Partial<ItemParcela> = {}): ItemParcela => ({
   ...base(cliente, unidade, [documento]), id: `p-${documento}`, documento, parcela: "1", vencimento, valorCentavos: 100_00, estagio: "aguardando_boleto",
-  prazo: vencimento, contato: null, andamento: null, diasAtraso: 0,
+  prazo: vencimento, contato: null, andamento: null, diasAtraso: 0, notaSaidaId: null, nota: null, ...extra,
 });
 const vazio = (): Tarefas => ({ hoje: "2026-10-20", anexar: [], enviar: [], dados: [], confirmar: [], cobrar: [], baixa: [], contato: [] });
 
@@ -114,5 +114,70 @@ describe("filtros e contagens", () => {
     expect(abaInicial(contarFilas(tarefas()))).toBe("anexar");
     expect(abaInicial(contarFilas({ ...vazio(), cobrar: [{} as never] }))).toBe("cobrar");
     expect(abaInicial(contarFilas(vazio()))).toBe("anexar");
+  });
+});
+
+describe("paginar", () => {
+  const lista = Array.from({ length: 120 }, (_, i) => i + 1);
+  it("50 por página; a última leva o resto", () => {
+    expect(paginar(lista, 1).itens).toHaveLength(50);
+    expect(paginar(lista, 3)).toMatchObject({ pagina: 3, totalPaginas: 3, total: 120 });
+    expect(paginar(lista, 3).itens).toEqual(lista.slice(100));
+  });
+  it("página fora do intervalo ou inválida cai na mais próxima; lista vazia tem uma página", () => {
+    expect(paginar(lista, 99).pagina).toBe(3);
+    expect(paginar(lista, 0).pagina).toBe(1);
+    expect(paginar(lista, Number.NaN).pagina).toBe(1);
+    expect(paginar([], 2)).toMatchObject({ itens: [], pagina: 1, totalPaginas: 1, total: 0 });
+  });
+});
+
+describe("agruparPorNota", () => {
+  it("parcelas da mesma NF e cliente viram um grupo, com total, vencimento e prazo mais próximos; título avulso fica sozinho", () => {
+    const grupos = agruparPorNota([
+      parcela("Alfa", "1397B", "2026-11-15", "matriz", { notaSaidaId: "n1", nota: "1397", prazo: "2026-11-07" }),
+      parcela("Alfa", "1397A", "2026-10-15", "matriz", { notaSaidaId: "n1", nota: "1397", prazo: "2026-10-07" }),
+      parcela("Beta", "900", "2026-10-10"),
+      parcela("Alfa", "777", "2026-10-30"),
+    ]);
+    expect(grupos.map((g) => g.chave)).toEqual(["avulso|p-900", "Alfa|n1".replace("Alfa", "id-Alfa"), "avulso|p-777"]);
+    const nf = grupos.find((g) => g.nota === "1397")!;
+    expect(nf.parcelas.map((p) => p.documento)).toEqual(["1397A", "1397B"]); // dentro do grupo, a mais urgente primeiro
+    expect(nf).toMatchObject({ totalCentavos: 200_00, vencimentoMaisProximo: "2026-10-15", prazo: "2026-10-07" });
+  });
+
+  it("a mesma NF de clientes diferentes não se mistura", () => {
+    const g = agruparPorNota([
+      parcela("Alfa", "1", "2026-10-15", "matriz", { notaSaidaId: "n1", nota: "1" }),
+      parcela("Beta", "2", "2026-10-16", "matriz", { notaSaidaId: "n1", nota: "1" }),
+    ]);
+    expect(g).toHaveLength(2);
+  });
+});
+
+describe("totalDaFila", () => {
+  it("soma o valor das parcelas e o total dos grupos", () => {
+    const t: Tarefas = {
+      ...vazio(),
+      anexar: [parcela("A", "1", "2026-10-20"), parcela("B", "2", "2026-10-21")],
+      confirmar: [{ ...base("C"), parcelas: [], totalCentavos: 500_00, vencimentoMaisProximo: "2026-10-20", prazo: "2026-10-16", ligar: false, contato: null, andamento: null, mensagem: null, linkWhatsApp: null }],
+    };
+    expect(totalDaFila(t, "anexar")).toBe(200_00);
+    expect(totalDaFila(t, "confirmar")).toBe(500_00);
+    expect(totalDaFila(t, "cobrar")).toBe(0);
+  });
+});
+
+describe("linkWhatsApp", () => {
+  it("monta o link wa.me com o texto codificado, aceitando +55, DDD+número e máscara", () => {
+    expect(linkWhatsApp("+5544991741030", "Olá, tudo bem?")).toBe("https://wa.me/5544991741030?text=Ol%C3%A1%2C%20tudo%20bem%3F");
+    expect(linkWhatsApp("(44) 99174-1030", "x")).toBe("https://wa.me/5544991741030?text=x");
+    expect(linkWhatsApp("65 3624-6365", "x")).toBe("https://wa.me/556536246365?text=x");
+  });
+  it("número ausente ou inválido não gera link", () => {
+    expect(linkWhatsApp(null, "x")).toBeNull();
+    expect(linkWhatsApp("", "x")).toBeNull();
+    expect(linkWhatsApp("12345", "x")).toBeNull();
+    expect(linkWhatsApp("+1 415 555 0100", "x")).toBeNull();
   });
 });
