@@ -128,7 +128,7 @@ Decisão do usuário (06/10/2026): usar a API REST do Consistem, a mesma já em 
 ## 10. Fases internas do módulo
 
 1. **Fase 1 — Base do módulo:** migration 0100, configuração de clientes no módulo, contratos (encargos, cedido), menu Financeiro > Recebíveis. (Login, empresas e contrapartes já vêm do núcleo.)
-2. **Fase 2 — Carteira:** sincronização pela API (Edge Function `rec-sincronizar-consistem`, feita), importação de títulos pagos, tela Carteira, view de valor atualizado, testes de encargos.
+2. **Fase 2 — Carteira:** sincronização pela API (Edge Function `rec-sincronizar-consistem`, **feita**), tela Carteira e botão "Sincronizar agora" (**feitos**, `app/(plataforma)/financeiro/recebiveis`), agendamento diário (pg_cron), importação de títulos pagos, contratos (percentuais de multa e juros por cliente) e testes de encargos.
 3. **Fase 3 — Boletos:** upload, leitura do PDF, vínculo com títulos.
 4. **Fase 4 — Régua e e-mail:** modelos, motor da régua, Fila do dia, rascunhos no Gmail.
 5. **Fase 5 — Painel e ficha do cliente.**
@@ -144,3 +144,14 @@ Decisão do usuário (06/10/2026): usar a API REST do Consistem, a mesma já em 
 - Quem aprova mensagens no dia a dia.
 - Empresas do grupo incluídas no início.
 - Títulos de locação mensal no MVP ou depois.
+
+## 11. Tela Carteira (Financeiro > Recebíveis)
+
+Feita em 06/10/2026. Rota `/financeiro/recebiveis`; lê a view `rec_vw_titulos` (dias de atraso, faixa e valor atualizado) pela RLS do usuário.
+
+- **Quem vê:** qualquer nível na área Financeiro. **Quem sincroniza:** gestor ou acima (botões "Simular" e "Sincronizar agora"; a ação de servidor e a Edge Function conferem de novo).
+- **Cartões:** carteira em aberto, a vencer, vencido e vencido atualizado (multa + juros até hoje). Somados em centavos, sobre TODA a carteira em aberto, independente do filtro da lista.
+- **Aging:** a vencer, 1–15, 16–30, 31–60 e mais de 60 dias (faixas da view); clicar numa faixa filtra a lista.
+- **Lista:** 50 por página, ordenada por vencimento (mais antigos primeiro); busca por cliente, código do Consistem ou documento, e filtro por faixa. Mostra estágio, "Cedido" e "Contestado".
+- **Valor atualizado:** usa multa 2% + juros 2% a.m. pro rata dia quando não há contrato cadastrado (padrão da view). Fica sinalizado na tela com asterisco até os contratos serem cadastrados.
+- **Pendente:** a transição automática do estágio `importado` para `vencido` é da régua (fase 4); hoje os vencidos continuam como "Importado".
