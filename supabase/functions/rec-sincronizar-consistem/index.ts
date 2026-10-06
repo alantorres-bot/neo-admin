@@ -70,7 +70,20 @@ import {
   type TituloConfirmacao,
 } from "../_shared/confirmacao.ts";
 
+import {
+  criticidadeCobranca,
+  descricaoPendenciaCobranca,
+  ESTAGIOS_COBRAVEIS,
+  ESTAGIOS_QUE_VENCEM,
+  planejarCobrancas,
+  PREFIXO_COBRANCA,
+  TRAVA_PENDENCIAS_COBRANCA,
+  tituloPendenciaCobranca,
+  type TituloCobranca,
+} from "../_shared/cobranca.ts";
+
 const MODULO = "financeiro.recebiveis";
+const CONFIG_INICIO_REGUA = "financeiro.recebiveis.regua_a_partir_de";
 const PREFIXO_BAIXA = "Possível baixa: ";
 const LOTE = 200;
 const CONFIG_INICIO_ESTEIRA = "financeiro.recebiveis.esteira_a_partir_de";
@@ -583,6 +596,100 @@ async function sincronizarEmpresa(
   }
   resumo.pendenciasCanceladas = canceladas;
 
+  // 7b) Régua de cobrança (D+1, D+5, D+10): só vencimentos a partir da data de corte; nunca envia, só abre a pendência
+  // "Cobrar D+n" com o texto pronto. Antes, o que passou do vencimento sem pagamento vira `vencido`.
+  const { data: cfgRegua } = await banco.from("configuracoes").select("valor").eq("chave", CONFIG_INICIO_REGUA).maybeSingle();
+  const corteRegua = typeof cfgRegua?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfgRegua.valor) ? cfgRegua.valor : null;
+  const { data: novosVencidos, error: erroVencidos } = await banco.from("rec_titulos").update({ estagio: "vencido" })
+    .eq("empresa_id", empresa.id).in("estagio", [...ESTAGIOS_QUE_VENCEM]).lt("vencimento", hoje).select("id");
+  if (erroVencidos) throw new Error(`Falha ao marcar títulos vencidos: ${erroVencidos.message}`);
+  resumo.passaramParaVencido = novosVencidos?.length ?? 0;
+
+  if (corteRegua === null) {
+    resumo.regua = "desligada (sem data de corte)";
+  } else try {
+    type LinhaCobranca = {
+      id: string; contraparte_id: string; documento: string; parcela: string; vencimento: string; valor: number | string; estagio: string;
+      cedido: boolean; contestado: boolean; regua_pausada_ate: string | null;
+      contrapartes: { nome: string } | { nome: string }[] | null;
+      rec_contratos: { multa_pct: number | string; juros_mes_pct: number | string } | { multa_pct: number | string; juros_mes_pct: number | string }[] | null;
+    };
+    const candidatasCobranca = await lerTudo<LinhaCobranca>((de, ate) =>
+      banco.from("rec_titulos")
+        .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, cedido, contestado, regua_pausada_ate, contrapartes(nome), rec_contratos(multa_pct, juros_mes_pct)")
+        .eq("empresa_id", empresa.id).in("estagio", [...ESTAGIOS_COBRAVEIS]).gte("vencimento", corteRegua).lt("vencimento", hoje).order("id").range(de, ate));
+    // Quem saiu da lista de abertos do Consistem provavelmente pagou: não se cobra (a pessoa confere em "Baixas a conferir").
+    const naoCobrar = new Set<string>([...plano.possiveisBaixas.map((t) => t.id), ...jaPendentes]);
+    const gruposCobranca = planejarCobrancas(
+      candidatasCobranca.map((l): TituloCobranca => {
+        const contrato = Array.isArray(l.rec_contratos) ? l.rec_contratos[0] : l.rec_contratos;
+        return {
+          id: l.id, contraparteId: l.contraparte_id, nomeCliente: (Array.isArray(l.contrapartes) ? l.contrapartes[0] : l.contrapartes)?.nome ?? "",
+          documento: l.documento, parcela: l.parcela, vencimento: l.vencimento, valorCentavos: Math.round(Number(l.valor) * 100), estagio: l.estagio,
+          cedido: l.cedido, contestado: l.contestado, reguaPausadaAte: l.regua_pausada_ate,
+          multaPct: contrato ? Number(contrato.multa_pct) : undefined, jurosMesPct: contrato ? Number(contrato.juros_mes_pct) : undefined,
+        };
+      }),
+      hoje, corteRegua, naoCobrar,
+    );
+
+    // Pendências já criadas (abertas ou concluídas) não se repetem; as canceladas podem voltar a abrir.
+    const titulosCalculados = gruposCobranca.map(tituloPendenciaCobranca);
+    const existentes = new Set<string>();
+    for (const lote of lotes(titulosCalculados, 100)) {
+      const { data: jaCriadas } = await banco.from("pendencias").select("titulo").eq("modulo", MODULO).eq("referencia_tabela", "contrapartes")
+        .in("status", ["aberta", "em_andamento", "concluida"]).in("titulo", lote);
+      for (const p of jaCriadas ?? []) existentes.add(p.titulo as string);
+    }
+    const novasCobrancas = gruposCobranca.filter((g) => !existentes.has(tituloPendenciaCobranca(g)));
+    resumo.clientesNaRegua = new Set(gruposCobranca.map((g) => g.contraparteId)).size;
+    if (novasCobrancas.length > TRAVA_PENDENCIAS_COBRANCA) {
+      // Passou da trava: provável erro de configuração (data de corte antiga). Ninguém é cobrado.
+      resumo.regua = `trava: ${novasCobrancas.length} pendências de uma vez (limite ${TRAVA_PENDENCIAS_COBRANCA}); confira a data de corte`;
+      resumo.pendenciasCobranca = 0;
+    } else {
+      const { data: contatos } = novasCobrancas.length === 0 ? { data: [] } : await banco.from("contatos").select("contraparte_id, nome, finalidades")
+        .in("contraparte_id", [...new Set(novasCobrancas.map((g) => g.contraparteId))]).eq("ativo", true).order("nome");
+      const contatoDoCliente = new Map<string, string>();
+      for (const c of contatos ?? []) {
+        const fin = (c.finalidades as string[]) ?? [];
+        if ((fin.includes("cobranca") || fin.includes("confirmacao")) && !contatoDoCliente.has(c.contraparte_id as string)) contatoDoCliente.set(c.contraparte_id as string, c.nome as string);
+      }
+      const linhasCobranca = novasCobrancas.map((g) => ({
+        modulo: MODULO,
+        empresa_id: empresa.id,
+        contraparte_id: g.contraparteId,
+        titulo: tituloPendenciaCobranca(g),
+        descricao: descricaoPendenciaCobranca(g, hoje, contatoDoCliente.get(g.contraparteId) ?? ""),
+        prazo: hoje,
+        criticidade: criticidadeCobranca(g.marco),
+        referencia_tabela: "contrapartes",
+        referencia_id: g.contraparteId,
+        link: `/financeiro/recebiveis/cobrar/${g.contraparteId}`,
+      }));
+      for (const lote of lotes(linhasCobranca)) {
+        const { error } = await banco.from("pendencias").insert(lote);
+        if (error) throw new Error(`Falha ao criar pendências de cobrança: ${error.message}`);
+      }
+      resumo.pendenciasCobranca = linhasCobranca.length;
+    }
+
+    // Cliente que não tem mais nada a cobrar (pagou, contestou, prometeu): as pendências "Cobrar" abertas perdem o sentido.
+    const clientesNaRegua = new Set(gruposCobranca.map((g) => g.contraparteId));
+    const abertasCobranca = await lerTudo<{ id: string; referencia_id: string }>((de, ate) =>
+      banco.from("pendencias").select("id, referencia_id").eq("modulo", MODULO).eq("referencia_tabela", "contrapartes")
+        .like("titulo", `${PREFIXO_COBRANCA} D+%`).in("status", ["aberta", "em_andamento"]).order("id").range(de, ate));
+    const semMotivo = abertasCobranca.filter((p) => !clientesNaRegua.has(p.referencia_id)).map((p) => p.id);
+    for (const lote of lotes(semMotivo)) {
+      const { error } = await banco.from("pendencias").update({ status: "cancelada" }).in("id", lote);
+      if (error) throw new Error(`Falha ao encerrar pendências de cobrança: ${error.message}`);
+    }
+    resumo.pendenciasCobrancaCanceladas = semMotivo.length;
+  } catch (e) {
+    // A régua é um auxílio: se falhar, a sincronização dos títulos e das baixas (já gravada) segue e o aviso fica no resumo.
+    resumo.avisoRegua = e instanceof Error ? e.message.slice(0, 200) : "falha na régua de cobrança";
+  }
+
   // 8) Registro da execução.
   const { error: erroLog } = await banco.from("importacoes").insert({
     modulo: MODULO,
@@ -591,6 +698,7 @@ async function sincronizarEmpresa(
     mapeamento: {
       origem: "api", empresa: empresa.codigo_erp, recusados: recusados.slice(0, 20), duplicadosApi: plano.duplicadosApi.slice(0, 20),
       notasConsultadas: notas.length, titulosLigadosANota: notaDoTitulo.size, entrada: resumo.entrada, pendenciasBoleto: pendenciasBoleto.length,
+      passaramParaVencido: resumo.passaramParaVencido ?? 0, pendenciasCobranca: resumo.pendenciasCobranca ?? 0, regua: resumo.regua ?? "ligada", avisoRegua: resumo.avisoRegua ?? null,
     },
     linhas_novas: plano.novos.length,
     linhas_alteradas: plano.alterados.length,
