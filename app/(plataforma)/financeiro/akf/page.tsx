@@ -294,7 +294,10 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">AKF</h1>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight">AKF</h1>
+          <Button variant="outline" size="sm" render={<Link href="/financeiro/recebiveis/clientes" />}>Clientes e contatos</Button>
+        </div>
         <p className="text-sm text-muted-foreground">
           Títulos da Neo Formas cedidos à AKF Securitizadora (portador {PORTADOR_AKF} no Consistem) e títulos que ainda podem ser antecipados.
           A Carteira vem de Recebíveis: aqui só se separa o que está com a AKF.

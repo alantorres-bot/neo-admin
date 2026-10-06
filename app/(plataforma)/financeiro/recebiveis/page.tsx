@@ -128,6 +128,18 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   const { count: qtdBaixasAConferir } = await supabase.from("pendencias").select("id", { count: "exact", head: true })
     .eq("modulo", MODULO).eq("referencia_tabela", "rec_titulos").like("titulo", "Possível baixa:%").in("status", ["aberta", "em_andamento"]);
   const porGrupo = resumirPorGrupo(linhasDaUnidade);
+
+  // Clientes para cadastrar contato agora (Matriz, a vencer ou vencido há menos de 60 dias, sem nenhum contato): número do botão
+  // "Clientes e contatos".
+  const idsNoEscopo = [...new Set(todasLinhas.filter((l) => titulaNoEscopoDeCadastro({ unidade: l.unidade ?? "", faixa: l.faixa, dias_atraso: l.dias_atraso ?? 0 })).map((l) => l.contraparte_id))];
+  const comContatoUtil = new Set<string>();
+  for (let i = 0; i < idsNoEscopo.length; i += 100) {
+    const { data } = await supabase.from("contatos").select("id, contraparte_id, nome, email, whatsapp, telefone, finalidades, ativo").in("contraparte_id", idsNoEscopo.slice(i, i + 100)).eq("ativo", true);
+    const porCliente = new Map<string, ContatoEscolha[]>();
+    for (const c of data ?? []) porCliente.set(c.contraparte_id as string, [...(porCliente.get(c.contraparte_id as string) ?? []), c as unknown as ContatoEscolha]);
+    for (const [cliente, lista] of porCliente) if (temContatoUtil(lista)) comContatoUtil.add(cliente);
+  }
+  const qtdParaCadastrar = idsNoEscopo.filter((id) => !comContatoUtil.has(id)).length;
   const vencidoAtualizado = resumo.atualizadoCentavos - resumo.aVencer.centavos; // a vencer não tem encargos
 
   // 2) Lista filtrada e paginada.
@@ -298,6 +310,9 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
+          <Button variant="outline" render={<Link href="/financeiro/recebiveis/clientes" />}>
+            Clientes e contatos{qtdParaCadastrar ? ` (${qtdParaCadastrar} para cadastrar)` : ""}
+          </Button>
           <Button variant="outline" render={<Link href="/financeiro/recebiveis/baixas" />}>
             Baixas a conferir{qtdBaixasAConferir ? ` (${qtdBaixasAConferir})` : ""}
           </Button>
