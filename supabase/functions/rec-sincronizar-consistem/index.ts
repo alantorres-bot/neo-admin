@@ -54,11 +54,23 @@ import {
   type TituloBanco,
   type TituloEsteira,
 } from "../_shared/consistem-receber.ts";
+import {
+  criticidadeConfirmacao,
+  descricaoPendenciaConfirmacao,
+  DIAS_JANELA_CONFIRMACAO,
+  ESTAGIOS_CONFIRMAVEIS,
+  MINIMO_PADRAO_CENTAVOS,
+  planejarConfirmacoes,
+  prazoConfirmacao,
+  tituloPendenciaConfirmacao,
+  type TituloConfirmacao,
+} from "../_shared/confirmacao.ts";
 
 const MODULO = "financeiro.recebiveis";
 const PREFIXO_BAIXA = "Possível baixa: ";
 const LOTE = 200;
 const CONFIG_INICIO_ESTEIRA = "financeiro.recebiveis.esteira_a_partir_de";
+const CONFIG_MINIMO_CONFIRMACAO = "financeiro.recebiveis.confirmacao_valor_minimo";
 
 /** Data de hoje no fuso de Cuiabá, 'aaaa-mm-dd'. */
 const hojeCuiaba = (): string =>
@@ -426,6 +438,65 @@ async function sincronizarEmpresa(
     if (error) throw new Error(`Falha ao criar pendências de boleto: ${error.message}`);
   }
   resumo.pendenciasBoleto = pendenciasBoleto.length;
+
+  // 5c) Confirmação de pagamento: clientes acima do corte, com parcelas vencendo nos próximos 7 dias, ganham UMA pendência
+  // "Confirmar pagamento" (por cliente e vencimento mais próximo; nunca repete, nem depois de concluída).
+  const { data: cfgMinimo } = await banco.from("configuracoes").select("valor").eq("chave", CONFIG_MINIMO_CONFIRMACAO).maybeSingle();
+  const minimoReais = typeof cfgMinimo?.valor === "number" ? cfgMinimo.valor : Number(cfgMinimo?.valor);
+  const minimoCentavos = Number.isFinite(minimoReais) && minimoReais > 0 ? Math.round(minimoReais * 100) : MINIMO_PADRAO_CENTAVOS;
+  type LinhaConfirmacao = {
+    id: string; contraparte_id: string; documento: string; parcela: string; vencimento: string; valor: number | string; estagio: string;
+    cedido: boolean; contestado: boolean; contrapartes: { nome: string } | { nome: string }[] | null;
+  };
+  const candidatas = await lerTudo<LinhaConfirmacao>((de, ate) =>
+    banco.from("rec_titulos")
+      .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, cedido, contestado, contrapartes(nome)")
+      .eq("empresa_id", empresa.id).in("estagio", [...ESTAGIOS_CONFIRMAVEIS])
+      .gte("vencimento", hoje).lte("vencimento", addDias(hoje, DIAS_JANELA_CONFIRMACAO)).order("id").range(de, ate));
+  const gruposConfirmacao = planejarConfirmacoes(
+    candidatas.map((l): TituloConfirmacao => ({
+      id: l.id, contraparteId: l.contraparte_id, nomeCliente: (Array.isArray(l.contrapartes) ? l.contrapartes[0] : l.contrapartes)?.nome ?? "",
+      documento: l.documento, parcela: l.parcela, vencimento: l.vencimento, valorCentavos: Math.round(Number(l.valor) * 100),
+      estagio: l.estagio, cedido: l.cedido, contestado: l.contestado,
+    })),
+    hoje,
+    minimoCentavos,
+  );
+  let pendenciasConfirmacao = 0;
+  if (gruposConfirmacao.length > 0) {
+    const titulosCalculados = gruposConfirmacao.map(tituloPendenciaConfirmacao);
+    const { data: jaCriadas } = await banco.from("pendencias").select("titulo").eq("modulo", MODULO).eq("referencia_tabela", "contrapartes").in("titulo", titulosCalculados);
+    const existentes = new Set((jaCriadas ?? []).map((p) => p.titulo as string));
+    const novas = gruposConfirmacao.filter((g) => !existentes.has(tituloPendenciaConfirmacao(g)));
+    if (novas.length > 0) {
+      // Contato conhecido (finalidade confirmação ou cobrança) personaliza a saudação da mensagem.
+      const { data: contatos } = await banco.from("contatos").select("contraparte_id, nome, finalidades").in("contraparte_id", novas.map((g) => g.contraparteId)).eq("ativo", true).order("nome");
+      const contatoDoCliente = new Map<string, string>();
+      for (const c of contatos ?? []) {
+        const fin = (c.finalidades as string[]) ?? [];
+        if ((fin.includes("confirmacao") || fin.includes("cobranca")) && !contatoDoCliente.has(c.contraparte_id as string)) contatoDoCliente.set(c.contraparte_id as string, c.nome as string);
+      }
+      const linhasNovas = novas.map((g) => ({
+        modulo: MODULO,
+        empresa_id: empresa.id,
+        contraparte_id: g.contraparteId,
+        titulo: tituloPendenciaConfirmacao(g),
+        descricao: descricaoPendenciaConfirmacao(g, contatoDoCliente.get(g.contraparteId) ?? ""),
+        prazo: prazoConfirmacao(g.vencimentoMaisProximo, hoje),
+        criticidade: criticidadeConfirmacao(g.vencimentoMaisProximo, hoje),
+        referencia_tabela: "contrapartes",
+        referencia_id: g.contraparteId,
+        link: `/financeiro/recebiveis/confirmar/${g.contraparteId}`,
+      }));
+      for (const lote of lotes(linhasNovas)) {
+        const { error } = await banco.from("pendencias").insert(lote);
+        if (error) throw new Error(`Falha ao criar pendências de confirmação: ${error.message}`);
+      }
+      pendenciasConfirmacao = linhasNovas.length;
+    }
+  }
+  resumo.pendenciasConfirmacao = pendenciasConfirmacao;
+  resumo.clientesNaJanelaDeConfirmacao = gruposConfirmacao.length;
 
   // 6) Possíveis baixas viram pendência (uma por título, sem repetir).
   const jaPendentes = new Set(
