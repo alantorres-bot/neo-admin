@@ -135,3 +135,19 @@ describe("descricaoPendenciaConfirmacao", () => {
     expect(d).toContain("Mensagem para o cliente (WhatsApp):\n\nOlá, Ana!");
   });
 });
+
+describe("unidades (Matriz e Filial Contagem)", () => {
+  const tit = (extra: Record<string, unknown> = {}) => ({
+    id: "a", contraparteId: "c1", nomeCliente: "Cliente", documento: "1001", parcela: "1", vencimento: "2026-10-12", valorCentavos: 3_000_000, estagio: "boleto_enviado", ...extra,
+  });
+  it("agrupa por cliente e unidade, e o corte de valor vale por grupo", () => {
+    const grupos = planejarConfirmacoes([tit(), tit({ id: "b", documento: "4001", unidade: "contagem", valorCentavos: 1_000_000 })], "2026-10-08");
+    expect(grupos).toHaveLength(1); // só a Matriz passa de R$ 25.000
+    expect(grupos[0].unidade).toBe("matriz");
+  });
+  it("o título da pendência da Filial leva o sufixo", () => {
+    const [g] = planejarConfirmacoes([tit({ unidade: "contagem" })], "2026-10-08");
+    expect(tituloPendenciaConfirmacao(g)).toBe("Confirmar pagamento: Cliente (Filial Contagem) — vence 12/10");
+    expect(tituloPendenciaLigar(g)).toBe("Ligar para confirmar pagamento: Cliente (Filial Contagem) — vence 12/10");
+  });
+});

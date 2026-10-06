@@ -160,3 +160,23 @@ describe("mensagens", () => {
     expect(d10).not.toContain("Mensagem para o cliente (WhatsApp)");
   });
 });
+
+describe("unidades (Matriz e Filial Contagem)", () => {
+  it("o mesmo cliente com títulos nas duas unidades gera um grupo por unidade", () => {
+    const g = planejarCobrancas([
+      t({ id: "m", documento: "1001" }),
+      t({ id: "f", documento: "4001", unidade: "contagem" }),
+    ], HOJE, CORTE);
+    expect(g).toHaveLength(2);
+    expect(g.map((x) => [x.unidade, x.titulos.map((y) => y.id)]).sort()).toEqual([["contagem", ["f"]], ["matriz", ["m"]]]);
+  });
+  it("o título da pendência da Filial Contagem leva o sufixo; o da Matriz não muda", () => {
+    const [m, f] = [t(), t({ unidade: "contagem" })].map((x) => planejarCobrancas([x], HOJE, CORTE)[0]);
+    expect(tituloPendenciaCobranca(m)).toBe("Cobrar D+1: Cliente Alfa — venc. 19/10");
+    expect(tituloPendenciaCobranca(f)).toBe("Cobrar D+1: Cliente Alfa (Filial Contagem) — venc. 19/10");
+  });
+  it("a descrição da pendência da Filial avisa a unidade", () => {
+    const [f] = planejarCobrancas([t({ unidade: "contagem" })], HOJE, CORTE);
+    expect(descricaoPendenciaCobranca(f, HOJE)).toContain("Unidade: Filial Contagem");
+  });
+});

@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  descreverAtraso, ehFaixa, ehGrupo, ESTAGIOS_DO_GRUPO_VENCIDO, FAIXAS_ABERTAS, formatarMoeda, formatarValor, grupoDaSituacao, GRUPOS_SITUACAO,
+  descreverAtraso, ehFaixa, ehGrupo, emCentavos, ESTAGIOS_DO_GRUPO_VENCIDO, FAIXAS_ABERTAS, formatarMoeda, formatarValor, grupoDaSituacao, GRUPOS_SITUACAO,
   resumirCarteira, resumirPorGrupo, ROTULO_ANDAMENTO, ROTULO_FAIXA, ROTULO_GRUPO, ROTULO_GRUPO_SELO,
   type Faixa, type GrupoSituacao, type LinhaResumo,
 } from "@/lib/modulos/financeiro/recebiveis/carteira";
@@ -16,7 +16,7 @@ import { FUSO, formatarData } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { marcoDoAtraso, nomeDoMarco } from "@/supabase/functions/_shared/cobranca";
+import { marcoDoAtraso, nomeDoMarco, ROTULO_UNIDADE, unidadeDaPendencia, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import { ESTAGIOS_CONFIRMAVEIS } from "@/supabase/functions/_shared/confirmacao";
 import { BotoesSincronizacao } from "./sincronizar";
 
@@ -65,7 +65,7 @@ const primeiro = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] 
 type LinhaTitulo = {
   id: string; contraparte_id: string; documento: string; parcela: string; emissao: string | null; vencimento: string;
   valor: number | string; valor_atualizado: number | string; estagio: string; dias_atraso: number; faixa: string; cedido: boolean; contestado: boolean; regua_pausada_ate: string | null;
-  nota_fiscal: string | null; nota_saida_id: string | null;
+  nota_fiscal: string | null; nota_saida_id: string | null; unidade: string;
 };
 
 export default async function PaginaRecebiveis({ searchParams }: PageProps<"/financeiro/recebiveis">) {
@@ -82,6 +82,9 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   // Aba da consulta: uma situação por vez (o endereço antigo ?situacao=aguardando_boleto continua valendo).
   const abaPedida = primeiro(parametros.aba) || primeiro(parametros.situacao);
   const aba = ehGrupo(abaPedida) ? abaPedida : null;
+  // Unidade: Matriz ou Filial Contagem (documento que começa com 4). Sem escolha, mostra as duas.
+  const unidadePedida = primeiro(parametros.unidade);
+  const unidade: Unidade | null = unidadePedida === "matriz" || unidadePedida === "contagem" ? unidadePedida : null;
 
   const supabase = await criarClienteServidor();
 
@@ -90,7 +93,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   for (let de = 0; ; de += 1000) {
     const { data, error } = await supabase
       .from("rec_vw_titulos")
-      .select("faixa, valor, valor_atualizado, contraparte_id, estagio, cedido, contestado")
+      .select("faixa, valor, valor_atualizado, contraparte_id, estagio, cedido, contestado, unidade")
       .neq("faixa", "encerrado")
       .order("id")
       .range(de, de + 999);
@@ -98,10 +101,17 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     resumoLinhas.push(...((data ?? []) as LinhaResumo[]));
     if (!data || data.length < 1000) break;
   }
-  const resumo = resumirCarteira(resumoLinhas);
+  // Totais por unidade (para o seletor) e a carteira da unidade escolhida (para o resto da tela).
+  const porUnidade = (u: Unidade) => {
+    const linhas = resumoLinhas.filter((l) => l.unidade === u);
+    return { quantidade: linhas.length, centavos: linhas.reduce((x, l) => x + emCentavos(l.valor), 0) };
+  };
+  const totaisUnidade = { matriz: porUnidade("matriz"), contagem: porUnidade("contagem") };
+  const linhasDaUnidade = unidade ? resumoLinhas.filter((l) => l.unidade === unidade) : resumoLinhas;
+  const resumo = resumirCarteira(linhasDaUnidade);
   const { count: qtdBaixasAConferir } = await supabase.from("pendencias").select("id", { count: "exact", head: true })
     .eq("modulo", MODULO).eq("referencia_tabela", "rec_titulos").like("titulo", "Possível baixa:%").in("status", ["aberta", "em_andamento"]);
-  const porGrupo = resumirPorGrupo(resumoLinhas);
+  const porGrupo = resumirPorGrupo(linhasDaUnidade);
   const vencidoAtualizado = resumo.atualizadoCentavos - resumo.aVencer.centavos; // a vencer não tem encargos
 
   // 2) Lista filtrada e paginada.
@@ -113,12 +123,13 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   }
   let consulta = supabase
     .from("rec_vw_titulos")
-    .select("id, contraparte_id, documento, parcela, emissao, vencimento, valor, valor_atualizado, estagio, dias_atraso, faixa, cedido, contestado, regua_pausada_ate, nota_fiscal, nota_saida_id", { count: "exact" })
+    .select("id, contraparte_id, documento, parcela, emissao, vencimento, valor, valor_atualizado, estagio, dias_atraso, faixa, cedido, contestado, regua_pausada_ate, nota_fiscal, nota_saida_id, unidade", { count: "exact" })
     .neq("faixa", "encerrado")
     .order("vencimento")
     .order("documento")
     .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
   if (faixa) consulta = consulta.eq("faixa", faixa);
+  if (unidade) consulta = consulta.eq("unidade", unidade);
   // Cada aba é a regra de `grupoDaSituacao` escrita como filtro (precedência: especial > promessa > aguardando boleto > vencido > ...).
   if (aba === "especial") consulta = consulta.or("cedido.eq.true,contestado.eq.true,estagio.in.(em_renegociacao,juridico)");
   else if (aba) {
@@ -155,12 +166,16 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
         .in("referencia_id", idsDaPagina).in("status", ["aberta", "em_andamento"]).limit(1000),
       supabase.from("configuracoes").select("valor").eq("chave", "financeiro.recebiveis.regua_a_partir_de").maybeSingle(),
     ]);
-    for (const p of pendencias ?? []) pendenciasDoCliente.set(p.referencia_id as string, [...(pendenciasDoCliente.get(p.referencia_id as string) ?? []), p.titulo as string]);
+    // A chave é cliente + unidade: a pendência da Filial Contagem não aparece como ação de um título da Matriz.
+    for (const p of pendencias ?? []) {
+      const chave = `${p.referencia_id as string}|${unidadeDaPendencia(p.titulo as string)}`;
+      pendenciasDoCliente.set(chave, [...(pendenciasDoCliente.get(chave) ?? []), p.titulo as string]);
+    }
     corteRegua = typeof cfgRegua?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfgRegua.valor) ? cfgRegua.valor : null;
   }
   const acaoDoTitulo = (t: LinhaTitulo): { rotulo: string; href: string; destaque: boolean } => {
     const ficha = `/financeiro/recebiveis/${t.id}`;
-    const pendencias = pendenciasDoCliente.get(t.contraparte_id) ?? [];
+    const pendencias = pendenciasDoCliente.get(`${t.contraparte_id}|${t.unidade}`) ?? [];
     if (t.estagio === "aguardando_boleto") return { rotulo: "Anexar boleto", href: ficha, destaque: true };
     const marco = marcoDoAtraso(t.dias_atraso);
     if (marco && corteRegua && t.vencimento >= corteRegua && !t.cedido && !t.contestado && t.estagio !== "promessa" && pendencias.some((x) => x.startsWith("Cobrar D+"))) {
@@ -168,7 +183,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     }
     if (t.dias_atraso === 0 && ((ESTAGIOS_CONFIRMAVEIS as readonly string[]).includes(t.estagio))) {
       const ligar = pendencias.some((x) => x.startsWith("Ligar para confirmar"));
-      if (ligar || pendencias.some((x) => x.startsWith("Confirmar pagamento:"))) return { rotulo: ligar ? "Ligar" : "Confirmar", href: `/financeiro/recebiveis/confirmar/${t.contraparte_id}`, destaque: true };
+      if (ligar || pendencias.some((x) => x.startsWith("Confirmar pagamento:"))) return { rotulo: ligar ? "Ligar" : "Confirmar", href: `/financeiro/recebiveis/confirmar/${t.contraparte_id}${t.unidade === "contagem" ? "?unidade=contagem" : ""}`, destaque: true };
     }
     return { rotulo: "Abrir", href: ficha, destaque: false };
   };
@@ -207,6 +222,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     if (busca) qs.set("q", busca);
     if (faixa) qs.set("faixa", faixa);
     if (aba) qs.set("aba", aba);
+    if (unidade) qs.set("unidade", unidade);
     if (p > 1) qs.set("pagina", String(p));
     const texto = qs.toString();
     return `/financeiro/recebiveis${texto ? `?${texto}` : ""}`;
@@ -217,6 +233,13 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     if (busca) qs.set("q", busca);
     if (faixa) qs.set("faixa", faixa);
     if (g) qs.set("aba", g);
+    if (unidade) qs.set("unidade", unidade);
+    const texto = qs.toString();
+    return `/financeiro/recebiveis${texto ? `?${texto}` : ""}`;
+  };
+  const hrefUnidade = (u: Unidade | null) => {
+    const qs = new URLSearchParams();
+    if (u) qs.set("unidade", u);
     const texto = qs.toString();
     return `/financeiro/recebiveis${texto ? `?${texto}` : ""}`;
   };
@@ -240,9 +263,33 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
         </div>
       </div>
 
+      <nav aria-label="Unidade" className="flex flex-wrap gap-px overflow-hidden rounded-[3px] border border-grade bg-grade sm:w-fit">
+        {([
+          { u: null as Unidade | null, rotulo: "Todas as unidades", ...{ quantidade: totaisUnidade.matriz.quantidade + totaisUnidade.contagem.quantidade, centavos: totaisUnidade.matriz.centavos + totaisUnidade.contagem.centavos } },
+          { u: "matriz" as Unidade | null, rotulo: ROTULO_UNIDADE.matriz, ...totaisUnidade.matriz },
+          { u: "contagem" as Unidade | null, rotulo: ROTULO_UNIDADE.contagem, ...totaisUnidade.contagem },
+        ]).map((o) => {
+          const ativa = o.u === unidade;
+          return (
+            <Link
+              key={o.u ?? "todas"}
+              href={hrefUnidade(o.u)}
+              aria-current={ativa ? "page" : undefined}
+              className={`min-w-44 px-4 py-2 ${ativa ? "border-b-2 border-marca bg-white" : "bg-cabecalho hover:bg-white"}`}
+            >
+              <span className={`flex items-center justify-between gap-3 text-[13px] ${ativa ? "font-bold" : ""}`}>
+                {o.rotulo}
+                <span className="rounded-[3px] bg-white px-1.5 text-[11px] font-bold tabular-nums ring-1 ring-grade">{o.quantidade}</span>
+              </span>
+              <span className="block text-[11px] tabular-nums text-muted-foreground">{formatarMoeda(o.centavos)}</span>
+            </Link>
+          );
+        })}
+      </nav>
+
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card size="sm">
-          <CardHeader><CardDescription>Carteira em aberto</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(resumo.totalCentavos)}</CardTitle></CardHeader>
+          <CardHeader><CardDescription>Carteira em aberto{unidade ? ` — ${ROTULO_UNIDADE[unidade]}` : ""}</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(resumo.totalCentavos)}</CardTitle></CardHeader>
           <CardContent className="text-xs text-muted-foreground">{resumo.quantidade} títulos · {resumo.clientes} clientes</CardContent>
         </Card>
         <Card size="sm">
@@ -265,7 +312,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
         <CardHeader><CardTitle>Atraso (aging)</CardTitle></CardHeader>
         <CardContent className="space-y-2">
           {resumo.porFaixa.map((f) => (
-            <Link key={f.faixa} href={`/financeiro/recebiveis?faixa=${f.faixa}`} className="grid grid-cols-[8rem_1fr_auto] items-center gap-3 rounded-md px-1 py-0.5 text-sm hover:bg-muted/50 sm:grid-cols-[9rem_1fr_16rem]">
+            <Link key={f.faixa} href={`/financeiro/recebiveis?faixa=${f.faixa}${unidade ? `&unidade=${unidade}` : ""}`} className="grid grid-cols-[8rem_1fr_auto] items-center gap-3 rounded-md px-1 py-0.5 text-sm hover:bg-muted/50 sm:grid-cols-[9rem_1fr_16rem]">
               <span>{ROTULO_FAIXA[f.faixa]}</span>
               <span className="h-2.5 rounded-full bg-muted" aria-hidden>
                 <span className={`block h-2.5 rounded-full ${COR_FAIXA[f.faixa]}`} style={{ width: `${f.percentual}%` }} />
@@ -308,13 +355,14 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
 
         <form method="get" className="flex flex-wrap items-center gap-2" role="search">
           {aba && <input type="hidden" name="aba" value={aba} />}
+          {unidade && <input type="hidden" name="unidade" value={unidade} />}
           <Input name="q" defaultValue={busca} placeholder="Cliente, código ou documento" aria-label="Buscar" className="w-64" />
           <select name="faixa" defaultValue={faixa ?? ""} aria-label="Faixa de atraso" className="h-8 rounded-[3px] border border-input bg-white px-2 text-[13px]">
             <option value="">Todas as faixas</option>
             {FAIXAS_ABERTAS.map((f) => <option key={f} value={f}>{ROTULO_FAIXA[f]}</option>)}
           </select>
           <Button type="submit" variant="secondary">Filtrar</Button>
-          {(busca || faixa || aba) && <Button variant="ghost" render={<Link href="/financeiro/recebiveis" />}>Limpar</Button>}
+          {(busca || faixa || aba) && <Button variant="ghost" render={<Link href={hrefUnidade(unidade)} />}>Limpar</Button>}
         </form>
 
         {totalDaAba && (
@@ -350,6 +398,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
                   <TableRow key={t.id}>
                     <TableCell className="font-medium tabular-nums">
                       <Link href={`/financeiro/recebiveis/${t.id}`} className="hover:underline">{t.documento}{t.parcela !== "1" ? `/${t.parcela}` : ""}</Link>
+                      {t.unidade === "contagem" && !unidade && <Badge variant="outline" className="ml-1.5 align-middle">Contagem</Badge>}
                     </TableCell>
                     <TableCell className="text-xs leading-tight text-muted-foreground">
                       {t.nota_fiscal ? <span className="block">NF {t.nota_fiscal}</span> : <span className="block">—</span>}
@@ -387,7 +436,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-          <span>{total} {total === 1 ? "título" : "títulos"}{(busca || faixa || aba) ? " no filtro" : ""}</span>
+          <span>{total} {total === 1 ? "título" : "títulos"}{(busca || faixa || aba || unidade) ? " no filtro" : ""}</span>
           {totalPaginas > 1 && (
             <span className="flex items-center gap-2">
               {pagina > 1 && <Button variant="outline" size="sm" render={<Link href={link(pagina - 1)} />}>Anterior</Button>}

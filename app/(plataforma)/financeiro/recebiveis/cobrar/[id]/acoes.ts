@@ -56,7 +56,7 @@ export async function registrarCobranca(entrada: z.input<typeof esquema>): Promi
  * Cria o rascunho do e-mail de cobrança no Gmail (D+1 e D+10). O texto é recalculado aqui, do banco, com as mesmas regras da
  * tela; o boleto de cada parcela, quando existe, vai em anexo. Nunca envia: quem confere e envia é uma pessoa, no Gmail.
  */
-export async function criarRascunhoCobranca(clienteId: string, marco: number): Promise<ResultadoRascunho> {
+export async function criarRascunhoCobranca(clienteId: string, marco: number, unidade: "matriz" | "contagem"): Promise<ResultadoRascunho> {
   const sessao = await exigirSessao();
   if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro ou acima cria rascunhos de e-mail." };
   if (!z.string().uuid().safeParse(clienteId).success) return { ok: false, erro: "Cliente inválido." };
@@ -64,7 +64,7 @@ export async function criarRascunhoCobranca(clienteId: string, marco: number): P
   const supabase = await criarClienteServidor();
   const dados = await carregarCobranca(supabase, clienteId);
   if (!dados) return { ok: false, erro: "Cliente não encontrado." };
-  const grupo = dados.grupos.find((g) => g.marco === marco);
+  const grupo = dados.grupos.find((g) => g.marco === marco && g.unidade === unidade);
   if (!grupo) return { ok: false, erro: "Este marco não tem títulos a cobrar agora." };
   const email = emailCobranca(grupo, dados.hoje, dados.contatoEmail?.nome ?? "");
   if (!email) return { ok: false, erro: "Este marco da régua não tem e-mail." };

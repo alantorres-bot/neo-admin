@@ -15,7 +15,7 @@ export const centavos = (v: number | string) => Math.round(Number(v) * 100);
 export type Parcela = {
   id: string; documento: string; parcela: string; emissao: string | null; vencimento: string; valor: number | string; valor_atualizado: number | string;
   dias_atraso: number; estagio: string; linha_digitavel: string | null; boleto_enviado_em: string | null; nota_fiscal: string | null;
-  nota_saida_id: string | null; contraparte_id: string; data_pagamento: string | null; regua_pausada_ate: string | null; cedido: boolean; contestado: boolean;
+  nota_saida_id: string | null; contraparte_id: string; data_pagamento: string | null; regua_pausada_ate: string | null; cedido: boolean; contestado: boolean; unidade: string;
 };
 export type Contato = {
   id: string; nome: string; funcao: string | null; email: string | null; whatsapp: string | null; finalidades: string[];
@@ -49,7 +49,7 @@ export type Ficha = {
   hoje: string;
 };
 
-const COLUNAS = "id, documento, parcela, emissao, vencimento, valor, valor_atualizado, dias_atraso, estagio, linha_digitavel, boleto_enviado_em, nota_fiscal, nota_saida_id, contraparte_id, data_pagamento, regua_pausada_ate, cedido, contestado";
+const COLUNAS = "id, documento, parcela, emissao, vencimento, valor, valor_atualizado, dias_atraso, estagio, linha_digitavel, boleto_enviado_em, nota_fiscal, nota_saida_id, contraparte_id, data_pagamento, regua_pausada_ate, cedido, contestado, unidade";
 
 export async function carregarFicha(supabase: SupabaseClient, id: string, contatoPedido: string, opcoes: { assinarLinks: boolean }): Promise<Ficha | null> {
   const { data: alvo } = await supabase.from("rec_vw_titulos").select(COLUNAS).eq("id", id).maybeSingle();

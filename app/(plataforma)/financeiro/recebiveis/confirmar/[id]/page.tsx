@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -12,6 +13,7 @@ import { criarClienteServidor } from "@/lib/supabase/servidor";
 import {
   agruparPorCliente, mensagemWhatsAppConfirmacao, observacaoDemaisParcelas, prazoConfirmacao, type TituloConfirmacao,
 } from "@/supabase/functions/_shared/confirmacao";
+import { ROTULO_UNIDADE } from "@/supabase/functions/_shared/cobranca";
 import { BotaoCopiar } from "../../[id]/componentes";
 import { RegistrarConfirmacao } from "./componentes";
 
@@ -25,8 +27,10 @@ const quando = (iso: string) => new Intl.DateTimeFormat("pt-BR", { timeZone: FUS
 type Linha = { id: string; documento: string; parcela: string; vencimento: string; valor: number | string; estagio: string; cedido: boolean; contestado: boolean };
 type Contato = { id: string; nome: string; funcao: string | null; whatsapp: string | null; email: string | null; finalidades: string[] };
 
-export default async function PaginaConfirmacao({ params }: PageProps<"/financeiro/recebiveis/confirmar/[id]">) {
+export default async function PaginaConfirmacao({ params, searchParams }: PageProps<"/financeiro/recebiveis/confirmar/[id]">) {
   const { id } = await params;
+  const pedida = (await searchParams).unidade;
+  const unidade = (Array.isArray(pedida) ? pedida[0] : pedida) === "contagem" ? "contagem" : "matriz";
   if (!UUID.test(id)) notFound();
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO);
@@ -40,7 +44,7 @@ export default async function PaginaConfirmacao({ params }: PageProps<"/financei
 
   const hoje = hojeEmCuiaba();
   const [{ data: linhasBrutas }, { data: contatosBrutos }, { data: interacoesBrutas }] = await Promise.all([
-    supabase.from("rec_titulos").select("id, documento, parcela, vencimento, valor, estagio, cedido, contestado").eq("contraparte_id", id)
+    supabase.from("rec_titulos").select("id, documento, parcela, vencimento, valor, estagio, cedido, contestado").eq("contraparte_id", id).eq("unidade", unidade)
       .in("estagio", ["importado", "aguardando_boleto", "boleto_enviado", "confirmado_cliente"]).gte("vencimento", hoje).order("vencimento").limit(200),
     supabase.from("contatos").select("id, nome, funcao, whatsapp, email, finalidades").eq("contraparte_id", id).eq("ativo", true).order("nome"),
     supabase.from("interacoes").select("id, referencia_id, canal, tipo, descricao, criado_em, usuario_id").eq("contraparte_id", id).eq("modulo", MODULO)
@@ -52,7 +56,7 @@ export default async function PaginaConfirmacao({ params }: PageProps<"/financei
 
   const titulos: TituloConfirmacao[] = linhas.map((l) => ({
     id: l.id, contraparteId: id, nomeCliente, documento: l.documento, parcela: l.parcela, vencimento: l.vencimento,
-    valorCentavos: Math.round(Number(l.valor) * 100), estagio: l.estagio, cedido: l.cedido, contestado: l.contestado,
+    valorCentavos: Math.round(Number(l.valor) * 100), estagio: l.estagio, cedido: l.cedido, contestado: l.contestado, unidade,
   }));
   const [grupo] = agruparPorCliente(titulos, hoje);
   const jaConfirmadas = linhas.filter((l) => l.estagio === "confirmado_cliente" && l.vencimento <= new Date(Date.parse(`${hoje}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10));
@@ -66,7 +70,7 @@ export default async function PaginaConfirmacao({ params }: PageProps<"/financei
       <Button variant="ghost" size="sm" render={<Link href="/financeiro/recebiveis" />}><ArrowLeft /> Voltar à carteira</Button>
 
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Confirmar pagamento <span className="font-normal text-muted-foreground">— {nomeCliente}</span></h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Confirmar pagamento <span className="font-normal text-muted-foreground">— {nomeCliente}</span> <Badge variant={unidade === "contagem" ? "default" : "secondary"} className="align-middle">{ROTULO_UNIDADE[unidade]}</Badge></h1>
         <p className="text-sm text-muted-foreground">
           {grupo
             ? <>{grupo.titulos.length} {grupo.titulos.length === 1 ? "parcela" : "parcelas"} vencendo nos próximos 7 dias, total {formatarMoeda(grupo.totalCentavos)}. {prazoContato === hoje ? "Contate o cliente hoje" : `Contate o cliente até ${formatarData(prazoContato)}`} (o ideal é 4 dias antes do vencimento).</>

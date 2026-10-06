@@ -11,7 +11,7 @@ const MODULO = "financeiro.recebiveis";
 
 type Linha = {
   id: string; documento: string; parcela: string; vencimento: string; valor: number | string; estagio: string; cedido: boolean; contestado: boolean;
-  regua_pausada_ate: string | null; rec_contratos: { multa_pct: number | string; juros_mes_pct: number | string } | { multa_pct: number | string; juros_mes_pct: number | string }[] | null;
+  unidade: string; regua_pausada_ate: string | null; rec_contratos: { multa_pct: number | string; juros_mes_pct: number | string } | { multa_pct: number | string; juros_mes_pct: number | string }[] | null;
 };
 
 export type DadosCobranca = {
@@ -41,7 +41,7 @@ export async function carregarCobranca(supabase: Cliente, clienteId: string): Pr
   const [{ data: cfg }, { data: linhasBrutas }, { data: contatosBrutos }, { data: baixas }] = await Promise.all([
     supabase.from("configuracoes").select("valor").eq("chave", CONFIG_INICIO_REGUA).maybeSingle(),
     supabase.from("rec_titulos")
-      .select("id, documento, parcela, vencimento, valor, estagio, cedido, contestado, regua_pausada_ate, rec_contratos(multa_pct, juros_mes_pct)")
+      .select("id, documento, parcela, vencimento, valor, estagio, cedido, contestado, unidade, regua_pausada_ate, rec_contratos(multa_pct, juros_mes_pct)")
       .eq("contraparte_id", clienteId).in("estagio", [...ESTAGIOS_COBRAVEIS]).lt("vencimento", hoje).order("vencimento").limit(500),
     supabase.from("contatos").select("id, nome, funcao, whatsapp, email, finalidades").eq("contraparte_id", clienteId).eq("ativo", true).order("nome"),
     supabase.from("pendencias").select("referencia_id").eq("modulo", MODULO).eq("referencia_tabela", "rec_titulos").like("titulo", "Possível baixa:%").in("status", ["aberta", "em_andamento"]).limit(500),
@@ -55,7 +55,7 @@ export async function carregarCobranca(supabase: Cliente, clienteId: string): Pr
     const contrato = Array.isArray(l.rec_contratos) ? l.rec_contratos[0] : l.rec_contratos;
     return {
       id: l.id, contraparteId: clienteId, nomeCliente: cliente.nome as string, documento: l.documento, parcela: l.parcela, vencimento: l.vencimento,
-      valorCentavos: Math.round(Number(l.valor) * 100), estagio: l.estagio, cedido: l.cedido, contestado: l.contestado, reguaPausadaAte: l.regua_pausada_ate,
+      valorCentavos: Math.round(Number(l.valor) * 100), estagio: l.estagio, cedido: l.cedido, contestado: l.contestado, unidade: l.unidade === "contagem" ? "contagem" : "matriz", reguaPausadaAte: l.regua_pausada_ate,
       multaPct: contrato ? Number(contrato.multa_pct) : undefined, jurosMesPct: contrato ? Number(contrato.juros_mes_pct) : undefined,
     };
   });

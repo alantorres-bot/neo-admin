@@ -77,6 +77,7 @@ import {
   ESTAGIOS_QUE_VENCEM,
   planejarCobrancas,
   PREFIXO_COBRANCA,
+  unidadeDaPendencia,
   TRAVA_PENDENCIAS_COBRANCA,
   tituloPendenciaCobranca,
   type TituloCobranca,
@@ -464,18 +465,18 @@ async function sincronizarEmpresa(
   const minimoCentavos = Number.isFinite(minimoReais) && minimoReais > 0 ? Math.round(minimoReais * 100) : MINIMO_PADRAO_CENTAVOS;
   type LinhaConfirmacao = {
     id: string; contraparte_id: string; documento: string; parcela: string; vencimento: string; valor: number | string; estagio: string;
-    cedido: boolean; contestado: boolean; contrapartes: { nome: string } | { nome: string }[] | null;
+    cedido: boolean; contestado: boolean; unidade: string; contrapartes: { nome: string } | { nome: string }[] | null;
   };
   const candidatas = await lerTudo<LinhaConfirmacao>((de, ate) =>
     banco.from("rec_titulos")
-      .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, cedido, contestado, contrapartes(nome)")
+      .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, cedido, contestado, unidade, contrapartes(nome)")
       .eq("empresa_id", empresa.id).in("estagio", [...ESTAGIOS_CONFIRMAVEIS])
       .gte("vencimento", hoje).lte("vencimento", addDias(hoje, DIAS_JANELA_CONFIRMACAO)).order("id").range(de, ate));
   const gruposConfirmacao = planejarConfirmacoes(
     candidatas.map((l): TituloConfirmacao => ({
       id: l.id, contraparteId: l.contraparte_id, nomeCliente: (Array.isArray(l.contrapartes) ? l.contrapartes[0] : l.contrapartes)?.nome ?? "",
       documento: l.documento, parcela: l.parcela, vencimento: l.vencimento, valorCentavos: Math.round(Number(l.valor) * 100),
-      estagio: l.estagio, cedido: l.cedido, contestado: l.contestado,
+      estagio: l.estagio, cedido: l.cedido, contestado: l.contestado, unidade: l.unidade === "contagem" ? "contagem" : "matriz",
     })),
     hoje,
     minimoCentavos,
@@ -504,7 +505,7 @@ async function sincronizarEmpresa(
         criticidade: criticidadeConfirmacao(g.vencimentoMaisProximo, hoje),
         referencia_tabela: "contrapartes",
         referencia_id: g.contraparteId,
-        link: `/financeiro/recebiveis/confirmar/${g.contraparteId}`,
+        link: `/financeiro/recebiveis/confirmar/${g.contraparteId}${g.unidade === "contagem" ? "?unidade=contagem" : ""}`,
       }));
       for (const lote of lotes(linhasNovas)) {
         const { error } = await banco.from("pendencias").insert(lote);
@@ -610,13 +611,13 @@ async function sincronizarEmpresa(
   } else try {
     type LinhaCobranca = {
       id: string; contraparte_id: string; documento: string; parcela: string; vencimento: string; valor: number | string; estagio: string;
-      cedido: boolean; contestado: boolean; regua_pausada_ate: string | null;
+      cedido: boolean; contestado: boolean; regua_pausada_ate: string | null; unidade: string;
       contrapartes: { nome: string } | { nome: string }[] | null;
       rec_contratos: { multa_pct: number | string; juros_mes_pct: number | string } | { multa_pct: number | string; juros_mes_pct: number | string }[] | null;
     };
     const candidatasCobranca = await lerTudo<LinhaCobranca>((de, ate) =>
       banco.from("rec_titulos")
-        .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, cedido, contestado, regua_pausada_ate, contrapartes(nome), rec_contratos(multa_pct, juros_mes_pct)")
+        .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, cedido, contestado, regua_pausada_ate, unidade, contrapartes(nome), rec_contratos(multa_pct, juros_mes_pct)")
         .eq("empresa_id", empresa.id).in("estagio", [...ESTAGIOS_COBRAVEIS]).gte("vencimento", corteRegua).lt("vencimento", hoje).order("id").range(de, ate));
     // Quem saiu da lista de abertos do Consistem provavelmente pagou: não se cobra (a pessoa confere em "Baixas a conferir").
     const naoCobrar = new Set<string>([...plano.possiveisBaixas.map((t) => t.id), ...jaPendentes]);
@@ -626,7 +627,7 @@ async function sincronizarEmpresa(
         return {
           id: l.id, contraparteId: l.contraparte_id, nomeCliente: (Array.isArray(l.contrapartes) ? l.contrapartes[0] : l.contrapartes)?.nome ?? "",
           documento: l.documento, parcela: l.parcela, vencimento: l.vencimento, valorCentavos: Math.round(Number(l.valor) * 100), estagio: l.estagio,
-          cedido: l.cedido, contestado: l.contestado, reguaPausadaAte: l.regua_pausada_ate,
+          cedido: l.cedido, contestado: l.contestado, reguaPausadaAte: l.regua_pausada_ate, unidade: l.unidade === "contagem" ? "contagem" : "matriz",
           multaPct: contrato ? Number(contrato.multa_pct) : undefined, jurosMesPct: contrato ? Number(contrato.juros_mes_pct) : undefined,
         };
       }),
@@ -642,7 +643,7 @@ async function sincronizarEmpresa(
       for (const p of jaCriadas ?? []) existentes.add(p.titulo as string);
     }
     const novasCobrancas = gruposCobranca.filter((g) => !existentes.has(tituloPendenciaCobranca(g)));
-    resumo.clientesNaRegua = new Set(gruposCobranca.map((g) => g.contraparteId)).size;
+    resumo.clientesNaRegua = new Set(gruposCobranca.map((g) => `${g.contraparteId}|${g.unidade}`)).size;
     if (novasCobrancas.length > TRAVA_PENDENCIAS_COBRANCA) {
       // Passou da trava: provável erro de configuração (data de corte antiga). Ninguém é cobrado.
       resumo.regua = `trava: ${novasCobrancas.length} pendências de uma vez (limite ${TRAVA_PENDENCIAS_COBRANCA}); confira a data de corte`;
@@ -675,11 +676,11 @@ async function sincronizarEmpresa(
     }
 
     // Cliente que não tem mais nada a cobrar (pagou, contestou, prometeu): as pendências "Cobrar" abertas perdem o sentido.
-    const clientesNaRegua = new Set(gruposCobranca.map((g) => g.contraparteId));
-    const abertasCobranca = await lerTudo<{ id: string; referencia_id: string }>((de, ate) =>
-      banco.from("pendencias").select("id, referencia_id").eq("modulo", MODULO).eq("referencia_tabela", "contrapartes")
+    const clientesNaRegua = new Set(gruposCobranca.map((g) => `${g.contraparteId}|${g.unidade}`));
+    const abertasCobranca = await lerTudo<{ id: string; referencia_id: string; titulo: string }>((de, ate) =>
+      banco.from("pendencias").select("id, referencia_id, titulo").eq("modulo", MODULO).eq("referencia_tabela", "contrapartes")
         .like("titulo", `${PREFIXO_COBRANCA} D+%`).in("status", ["aberta", "em_andamento"]).order("id").range(de, ate));
-    const semMotivo = abertasCobranca.filter((p) => !clientesNaRegua.has(p.referencia_id)).map((p) => p.id);
+    const semMotivo = abertasCobranca.filter((p) => !clientesNaRegua.has(`${p.referencia_id}|${unidadeDaPendencia(p.titulo)}`)).map((p) => p.id);
     for (const lote of lotes(semMotivo)) {
       const { error } = await banco.from("pendencias").update({ status: "cancelada" }).in("id", lote);
       if (error) throw new Error(`Falha ao encerrar pendências de cobrança: ${error.message}`);

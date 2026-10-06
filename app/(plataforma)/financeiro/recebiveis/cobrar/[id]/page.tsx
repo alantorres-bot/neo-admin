@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -10,7 +11,7 @@ import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import {
-  emailCobranca, linhaDemonstrativo, MARCOS_COBRANCA, mensagemWhatsAppCobranca, totalAtualizadoCentavos,
+  emailCobranca, linhaDemonstrativo, MARCOS_COBRANCA, mensagemWhatsAppCobranca, ROTULO_UNIDADE, totalAtualizadoCentavos,
 } from "@/supabase/functions/_shared/cobranca";
 import { BotaoCopiar } from "../../[id]/componentes";
 import { carregarCobranca } from "./dados";
@@ -73,9 +74,9 @@ export default async function PaginaCobranca({ params }: PageProps<"/financeiro/
         const parcelas = g.titulos.map((t) => ({ id: t.id, rotulo: `${nomeParcela(t)} — venceu ${formatarData(t.vencimento)} — ${formatarMoeda(t.valorCentavos)}` }));
         const canalSugerido = def.canais.includes("whatsapp") ? "whatsapp" : "email";
         return (
-          <Card key={g.marco}>
+          <Card key={`${g.unidade}-${g.marco}`}>
             <CardHeader>
-              <CardTitle>{def.nome} — {def.descricao}</CardTitle>
+              <CardTitle className="flex flex-wrap items-center gap-2">{def.nome} — {def.descricao} <Badge variant={g.unidade === "contagem" ? "default" : "secondary"}>{ROTULO_UNIDADE[g.unidade]}</Badge></CardTitle>
               <CardDescription>
                 {g.titulos.length} {g.titulos.length === 1 ? "parcela" : "parcelas"}, total {formatarMoeda(g.totalCentavos)} (atualizado hoje com multa e juros: {formatarMoeda(totalAtualizadoCentavos(g, hoje))}*).
               </CardDescription>
@@ -109,7 +110,7 @@ export default async function PaginaCobranca({ params }: PageProps<"/financeiro/
                   </p>
                   <pre className="whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 font-sans text-sm">{email.corpo}</pre>
                   {podeOperar && (
-                    <CriarRascunhoCobranca clienteId={id} marco={g.marco} desabilitadoPor={contatoEmail?.email ? null : "O cliente não tem contato com e-mail cadastrado."} />
+                    <CriarRascunhoCobranca clienteId={id} marco={g.marco} unidade={g.unidade} desabilitadoPor={contatoEmail?.email ? null : "O cliente não tem contato com e-mail cadastrado."} />
                   )}
                   {g.marco === 10 && (
                     <p className="text-xs text-muted-foreground">

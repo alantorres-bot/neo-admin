@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { MODULO_RECEBIVEIS } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { descreverAtraso, ROTULO_ESTAGIO } from "@/lib/modulos/financeiro/recebiveis/carteira";
 import { montarEsteira, type Etapa } from "@/lib/modulos/financeiro/recebiveis/esteira";
-import { marcoDoAtraso, nomeDoMarco } from "@/supabase/functions/_shared/cobranca";
+import { marcoDoAtraso, nomeDoMarco, ROTULO_UNIDADE } from "@/supabase/functions/_shared/cobranca";
 import { ESTAGIOS_CONFIRMAVEIS } from "@/supabase/functions/_shared/confirmacao";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { FUSO } from "@/lib/nucleo/fila";
@@ -101,6 +101,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
                   <span className="font-bold tabular-nums">{nomeParcela}</span>
                   <span className="text-xs text-muted-foreground">vence {formatarData(p.vencimento)} · {formatarMoeda(centavos(p.valor))}</span>
                   <Badge variant="secondary">{ROTULO_ESTAGIO[p.estagio] ?? p.estagio}</Badge>
+                  <Badge variant={p.unidade === "contagem" ? "default" : "outline"}>{ROTULO_UNIDADE[p.unidade === "contagem" ? "contagem" : "matriz"]}</Badge>
                   {p.cedido && <Badge variant="outline">Cedido</Badge>}
                   {p.contestado && <Badge variant="outline">Contestado</Badge>}
                   {naVez && <span className="text-xs text-marca">Na vez: {naVez.rotulo.toLowerCase()}{naVez.detalhe ? ` (${naVez.detalhe})` : ""}</span>}
@@ -128,7 +129,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
                     )}
                     {confirmavel && p.vencimento >= f.hoje && (
                       naJanela
-                        ? <Button variant="outline" size="sm" render={<Link href={`/financeiro/recebiveis/confirmar/${p.contraparte_id}`} />}>Confirmar pagamento</Button>
+                        ? <Button variant="outline" size="sm" render={<Link href={`/financeiro/recebiveis/confirmar/${p.contraparte_id}${p.unidade === "contagem" ? "?unidade=contagem" : ""}`} />}>Confirmar pagamento</Button>
                         : <Button variant="outline" size="sm" disabled title="A confirmação abre 7 dias antes do vencimento">Confirmar pagamento</Button>
                     )}
                     {ehCobravel && (

@@ -94,13 +94,13 @@ export function RegistrarCobranca({ marco, parcelas, hoje, canalSugerido }: { ma
 }
 
 /** "Criar rascunho no Gmail" do e-mail de cobrança: nunca envia; uma pessoa confere e envia no Gmail. */
-export function CriarRascunhoCobranca({ clienteId, marco, desabilitadoPor }: { clienteId: string; marco: number; desabilitadoPor: string | null }) {
+export function CriarRascunhoCobranca({ clienteId, marco, unidade, desabilitadoPor }: { clienteId: string; marco: number; unidade: "matriz" | "contagem"; desabilitadoPor: string | null }) {
   const [pendente, iniciar] = useTransition();
   const [link, setLink] = useState<string>();
 
   function criar() {
     iniciar(async () => {
-      const r = await criarRascunhoCobranca(clienteId, marco);
+      const r = await criarRascunhoCobranca(clienteId, marco, unidade);
       if (r.ok) {
         setLink(r.url);
         toast.success(r.aviso ?? (r.anexos > 0 ? `Rascunho criado no Gmail, com ${r.anexos} ${r.anexos === 1 ? "boleto" : "boletos"} em anexo.` : "Rascunho criado no Gmail."));

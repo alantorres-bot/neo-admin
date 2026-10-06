@@ -7,6 +7,15 @@
 //
 // A régua só vale para vencimentos a partir de uma data de corte (configuração), para não cobrar a carteira antiga em massa.
 
+/** Unidades do grupo: o documento que começa com 4 é da Filial Contagem; os demais, da Matriz (mesma regra da coluna `rec_titulos.unidade`). */
+export type Unidade = "matriz" | "contagem";
+export const ROTULO_UNIDADE: Record<Unidade, string> = { matriz: "Matriz", contagem: "Filial Contagem" };
+export const unidadeDoDocumento = (documento: string): Unidade => (documento.startsWith("4") ? "contagem" : "matriz");
+/** Sufixo do título das pendências da Filial Contagem (a Matriz não leva sufixo, para não mudar o que já existe). */
+export const sufixoUnidade = (u: Unidade | undefined): string => (u === "contagem" ? ` (${ROTULO_UNIDADE.contagem})` : "");
+/** A unidade a que uma pendência de cobrança ou confirmação pertence, lida do título dela. */
+export const unidadeDaPendencia = (titulo: string): Unidade => (titulo.includes(`(${ROTULO_UNIDADE.contagem})`) ? "contagem" : "matriz");
+
 export type MarcoCobranca = 1 | 5 | 10;
 export type CanalCobranca = "email" | "whatsapp";
 
@@ -38,6 +47,7 @@ export type TituloCobranca = {
   estagio: string;
   cedido?: boolean;
   contestado?: boolean;
+  unidade?: Unidade;
   /** A régua está pausada até esta data (promessa de pagamento). */
   reguaPausadaAte?: string | null;
   multaPct?: number;
@@ -47,6 +57,7 @@ export type TituloCobranca = {
 export type GrupoCobranca = {
   contraparteId: string;
   nomeCliente: string;
+  unidade: Unidade;
   marco: MarcoCobranca;
   titulos: TituloCobranca[];
   totalCentavos: number;
@@ -104,7 +115,7 @@ export function planejarCobrancas(titulos: readonly TituloCobranca[], hoje: stri
     if (!cobravel(t, hoje, corte, excluidos)) continue;
     const marco = marcoDoAtraso(diasEntre(hoje, t.vencimento));
     if (marco === null) continue;
-    const chave = `${t.contraparteId}|${marco}`;
+    const chave = `${t.contraparteId}|${t.unidade ?? "matriz"}|${marco}`;
     grupos.set(chave, [...(grupos.get(chave) ?? []), t]);
     marcos.set(chave, marco);
   }
@@ -113,17 +124,18 @@ export function planejarCobrancas(titulos: readonly TituloCobranca[], hoje: stri
     return {
       contraparteId: ordenados[0].contraparteId,
       nomeCliente: ordenados[0].nomeCliente,
+      unidade: ordenados[0].unidade ?? "matriz",
       marco: marcos.get(chave)!,
       titulos: ordenados,
       totalCentavos: ordenados.reduce((s, t) => s + t.valorCentavos, 0),
       vencimentoMaisAntigo: ordenados[0].vencimento,
     };
-  }).sort((a, b) => b.marco - a.marco || a.vencimentoMaisAntigo.localeCompare(b.vencimentoMaisAntigo) || a.nomeCliente.localeCompare(b.nomeCliente));
+  }).sort((a, b) => b.marco - a.marco || a.vencimentoMaisAntigo.localeCompare(b.vencimentoMaisAntigo) || a.nomeCliente.localeCompare(b.nomeCliente) || a.unidade.localeCompare(b.unidade));
 }
 
 /** Título único por cliente, marco e vencimento mais antigo (a pendência não se repete). */
-export function tituloPendenciaCobranca(g: Pick<GrupoCobranca, "nomeCliente" | "marco" | "vencimentoMaisAntigo">): string {
-  return `${PREFIXO_COBRANCA} ${nomeDoMarco(g.marco)}: ${g.nomeCliente.trim() || "cliente"} — venc. ${dataCurta(g.vencimentoMaisAntigo)}`;
+export function tituloPendenciaCobranca(g: Pick<GrupoCobranca, "nomeCliente" | "marco" | "vencimentoMaisAntigo"> & { unidade?: Unidade }): string {
+  return `${PREFIXO_COBRANCA} ${nomeDoMarco(g.marco)}: ${g.nomeCliente.trim() || "cliente"}${sufixoUnidade(g.unidade)} — venc. ${dataCurta(g.vencimentoMaisAntigo)}`;
 }
 
 /** D+10 e acima, alta; antes, normal. */
@@ -207,6 +219,7 @@ export function emailCobranca(g: Pick<GrupoCobranca, "marco" | "titulos" | "nome
 /** Descrição da pendência: o que fazer, a observação sobre encargos (D+10) e as mensagens prontas. */
 export function descricaoPendenciaCobranca(g: GrupoCobranca, hoje: string, contato = ""): string {
   const partes: string[] = [
+    ...(g.unidade === "contagem" ? [`Unidade: ${ROTULO_UNIDADE.contagem}. A cobrança desta unidade é tratada à parte da Matriz.`] : []),
     `${nomeDoMarco(g.marco)}: ${MARCOS_COBRANCA.find((m) => m.dias === g.marco)?.descricao ?? "cobrança"}. Total em aberto ${moedaBr(g.totalCentavos)}. Envie a mensagem e registre o resultado na tela do cliente.`,
     listaParcelas(g),
   ];

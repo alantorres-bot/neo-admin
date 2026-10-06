@@ -6,6 +6,9 @@
 // somando as parcelas do mesmo cliente; tarefa com prazo = vencimento menos ~4 dias; mensagem de WhatsApp com o modelo
 // abaixo (sem emojis; saudação com o nome do contato quando conhecido).
 
+/** Sufixo do título das pendências da Filial Contagem (mesma regra de `cobranca.ts`; os arquivos compartilhados não importam uns aos outros). */
+const sufixoUnidade = (u: "matriz" | "contagem" | undefined): string => (u === "contagem" ? " (Filial Contagem)" : "");
+
 export const DIAS_JANELA_CONFIRMACAO = 7; // a pendência aparece quando faltam até 7 dias para o vencimento
 export const DIAS_CONTATO_ANTES = 4; // prazo do contato = vencimento menos 4 dias
 export const MINIMO_PADRAO_CENTAVOS = 25_000_00;
@@ -25,11 +28,13 @@ export type TituloConfirmacao = {
   estagio: string;
   cedido?: boolean;
   contestado?: boolean;
+  unidade?: "matriz" | "contagem";
 };
 
 export type GrupoConfirmacao = {
   contraparteId: string;
   nomeCliente: string;
+  unidade: "matriz" | "contagem";
   /** Todas as parcelas do cliente na janela, da mais próxima para a mais distante. */
   titulos: TituloConfirmacao[];
   totalCentavos: number;
@@ -64,6 +69,7 @@ function montarGrupo(lista: TituloConfirmacao[]): GrupoConfirmacao {
   return {
     contraparteId: titulos[0].contraparteId,
     nomeCliente: titulos[0].nomeCliente,
+    unidade: titulos[0].unidade ?? "matriz",
     titulos,
     totalCentavos: titulos.reduce((s, t) => s + t.valorCentavos, 0),
     vencimentoMaisProximo,
@@ -75,7 +81,7 @@ function montarGrupo(lista: TituloConfirmacao[]): GrupoConfirmacao {
 /** Agrupa as parcelas elegíveis por cliente (sem corte de valor). Usada pela tela do cliente. */
 export function agruparPorCliente(titulos: readonly TituloConfirmacao[], hoje: string, janela = DIAS_JANELA_CONFIRMACAO): GrupoConfirmacao[] {
   const porCliente = new Map<string, TituloConfirmacao[]>();
-  for (const t of elegiveis(titulos, hoje, janela)) porCliente.set(t.contraparteId, [...(porCliente.get(t.contraparteId) ?? []), t]);
+  for (const t of elegiveis(titulos, hoje, janela)) porCliente.set(`${t.contraparteId}|${t.unidade ?? "matriz"}`, [...(porCliente.get(`${t.contraparteId}|${t.unidade ?? "matriz"}`) ?? []), t]);
   return [...porCliente.values()].map(montarGrupo).sort((a, b) => a.vencimentoMaisProximo.localeCompare(b.vencimentoMaisProximo) || b.totalCentavos - a.totalCentavos);
 }
 
@@ -96,12 +102,12 @@ export function criticidadeConfirmacao(vencimento: string, hoje: string): "alta"
 }
 
 /** Título único por cliente e vencimento mais próximo (a pendência não se repete para o mesmo vencimento). */
-export function tituloPendenciaConfirmacao(g: Pick<GrupoConfirmacao, "nomeCliente" | "vencimentoMaisProximo">): string {
-  return `${PREFIXO_CONFIRMACAO}: ${g.nomeCliente.trim() || "cliente"} — vence ${dataCurta(g.vencimentoMaisProximo)}`;
+export function tituloPendenciaConfirmacao(g: Pick<GrupoConfirmacao, "nomeCliente" | "vencimentoMaisProximo"> & { unidade?: "matriz" | "contagem" }): string {
+  return `${PREFIXO_CONFIRMACAO}: ${g.nomeCliente.trim() || "cliente"}${sufixoUnidade(g.unidade)} — vence ${dataCurta(g.vencimentoMaisProximo)}`;
 }
 
-export function tituloPendenciaLigar(g: Pick<GrupoConfirmacao, "nomeCliente" | "vencimentoMaisProximo">): string {
-  return `${PREFIXO_LIGAR}: ${g.nomeCliente.trim() || "cliente"} — vence ${dataCurta(g.vencimentoMaisProximo)}`;
+export function tituloPendenciaLigar(g: Pick<GrupoConfirmacao, "nomeCliente" | "vencimentoMaisProximo"> & { unidade?: "matriz" | "contagem" }): string {
+  return `${PREFIXO_LIGAR}: ${g.nomeCliente.trim() || "cliente"}${sufixoUnidade(g.unidade)} — vence ${dataCurta(g.vencimentoMaisProximo)}`;
 }
 
 /**
@@ -135,6 +141,7 @@ export function descricaoPendenciaConfirmacao(g: GrupoConfirmacao, contato = "")
   const linhas = g.titulos.map((t) => `• ${nomeTitulo(t)} — vence ${dataBr(t.vencimento)} — ${moedaBr(t.valorCentavos)}`);
   const obs = observacaoDemaisParcelas(g);
   return [
+    g.unidade === "contagem" ? "Unidade: Filial Contagem. A cobrança desta unidade é tratada à parte da Matriz." : "",
     `Contate o cliente até o prazo para confirmar a programação do pagamento (total ${moedaBr(g.totalCentavos)}).`,
     linhas.join("\n"),
     obs,

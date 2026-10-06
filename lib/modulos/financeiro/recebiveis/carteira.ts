@@ -44,6 +44,8 @@ export type LinhaResumo = {
   estagio?: string;
   cedido?: boolean | null;
   contestado?: boolean | null;
+  /** 'matriz' ou 'contagem' (documento que começa com 4). */
+  unidade?: string;
 };
 
 export type TotalFaixa = { faixa: Faixa; quantidade: number; centavos: number; percentual: number };
