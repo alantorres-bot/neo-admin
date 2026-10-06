@@ -346,3 +346,22 @@ Nem todo título é pago por boleto: alguns clientes pagam por **transferência 
 - **Mensagem pronta:** modelos "Dados para pagamento — e-mail" e "— WhatsApp" (variável `{dados_pagamento}`), editáveis em Mensagens. O botão **Criar rascunho no Gmail** usa `rec-rascunho-gmail` com `modo: "dados"` (sem anexo, não exige boleto; só `drafts.create`, o sistema nunca envia).
 - **Registrar o envio:** `rec_marcar_dados_enviados` (só parcelas de transferência; `aguardando_boleto`/`importado` → `boleto_enviado`, reenvio nos demais; interação `dados_enviados`) e o botão **Já enviei: marcar dados como enviados**. Na Carteira, a "Próxima ação" mostra "Enviar dados" e o selo "Dados enviados".
 - **Testes:** `tests/db/forma-pagamento.test.ts` (forma, recusas, tudo ou nada, envio sem boleto) e esteira de transferência em `esteira.test.ts`. Testado ao vivo com título de teste (mensagens, rascunho no Gmail e "Já enviei").
+
+## 28. Tela Tarefas — Fase B da lista de tarefas (06/10/2026)
+Visão em separado da ficha do título, no estilo das listas do ClickUp: `/financeiro/recebiveis/tarefas`, com **uma aba por fila e contador**. Nada é gravado: as filas são **calculadas na hora** a partir do estado dos títulos (`app/(plataforma)/financeiro/recebiveis/tarefas/dados.ts`), com as mesmas regras puras da sincronização; ao fazer a tarefa, o item sai da lista sozinho. A lógica pura (classificação, corte das cobranças já feitas, filtros e contagens) está em `lib/modulos/financeiro/recebiveis/tarefas.ts` (com testes).
+
+| Fila | Entra quando | Botões na linha |
+|---|---|---|
+| **Boletos a anexar** | forma `boleto`, `aguardando_boleto`, sem PDF | Anexar boleto (upload ali mesmo) · Pago por transferência · Abrir |
+| **Boletos a enviar** | forma `boleto`, `aguardando_boleto`, com PDF | canal + Marcar enviado · Mensagem e rascunho (ficha, seção do boleto) |
+| **Enviar dados de pagamento** | forma `transferencia`, `aguardando_boleto` | canal + Marcar enviado · Mensagem e rascunho (ficha, seção dos dados) |
+| **Confirmar pagamento** | parcelas a vencer em 7 dias, soma por cliente e unidade ≥ valor mínimo (R$ 25.000 por padrão), restante das antecipações parciais; "Ligar" quando há pendência de ligação aberta | Confirmar / Ligar (tela de confirmação) |
+| **Cobrar** | régua (D+1, D+5, D+10; vencimento ≥ corte de 06/10/2026), por cliente, unidade e marco; some o que já tem registro de cobrança/promessa/contestação **daquele marco**; fora quem tem "Possível baixa" | Cobrar (tela de cobrança) |
+| **Registrar baixa** | títulos com pendência "Possível baixa" aberta, com a evidência do Consistem | Conferir baixa (Baixas a conferir) |
+| **Cadastrar contato** | clientes da Matriz com título a vencer ou vencido há menos de 60 dias e sem contato útil | Cadastrar contato (ficha do cliente) |
+
+- **Filtros:** unidade (Todas | Matriz | Filial Contagem) e busca por cliente, código ou documento (sem acento). Valem para todas as abas, e os contadores saem das mesmas listas mostradas. Sem aba escolhida, abre a primeira com itens. Mais urgente primeiro (vencimento mais próximo).
+- **Cada linha mostra "Já feito":** o último registro do histórico da parcela (boleto enviado, cobrança enviada etc.).
+- **Navegação:** barra **Carteira · Tarefas · Clientes e contatos · Baixas a conferir** (`RecebiveisAbas`) no topo dessas quatro telas e botão **Tarefas (N)** na Carteira; N = soma das filas (o mesmo cálculo da tela).
+- **Marcar enviado** na lista é o mesmo "Já enviei" da ficha: o sistema nunca envia nada, só registra que a pessoa enviou.
+- **Testado ao vivo** com títulos de teste: transferência tira a parcela da fila de boleto e a põe em dados de pagamento; "Marcar enviado" nas duas filas faz o item sair e o contador cair; confirmação mostra o contato; números do botão (26), de "Clientes e contatos" (19) e de "Baixas a conferir" (1) batem com as telas de origem. A fila Cobrar ficou coberta só por testes unitários, porque a régua começa em 06/10/2026 e ainda não há vencido dentro dela.

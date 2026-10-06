@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { RecebiveisAbas } from "../abas-recebiveis";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -126,6 +127,8 @@ export default async function PaginaClientes({ searchParams }: PageProps<"/finan
           {" "}ou abra a ficha dele. Os contatos também podem ser cadastrados direto nas telas de boleto, cobrança e confirmação.
         </p>
       </div>
+
+      <RecebiveisAbas ativa="clientes" contagens={{ clientes: contagens.cadastrar }} />
 
       <nav aria-label="Lista" className="flex flex-wrap gap-px overflow-hidden rounded-[3px] border border-grade bg-grade">
         {ABAS.map((a) => {

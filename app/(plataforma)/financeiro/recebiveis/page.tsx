@@ -22,7 +22,10 @@ import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
 import { titulaNoEscopoDeCadastro } from "@/lib/modulos/financeiro/recebiveis/clientes";
 import { temContatoUtil, type ContatoEscolha } from "@/supabase/functions/_shared/contatos";
 import { PREFERENCIAS, lerPreferenciaBooleana } from "@/lib/nucleo/preferencias";
+import { totalDeTarefas } from "@/lib/modulos/financeiro/recebiveis/tarefas";
+import { RecebiveisAbas } from "./abas-recebiveis";
 import { CaixaOcultar } from "./caixa-ocultar";
+import { carregarTarefas } from "./tarefas/dados";
 import { BotoesSincronizacao } from "./sincronizar";
 
 export const metadata: Metadata = { title: "Recebíveis" };
@@ -140,6 +143,8 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     for (const [cliente, lista] of porCliente) if (temContatoUtil(lista)) comContatoUtil.add(cliente);
   }
   const qtdParaCadastrar = idsNoEscopo.filter((id) => !comContatoUtil.has(id)).length;
+  // Tarefas de todas as filas (mesmo cálculo da tela Tarefas): o número do botão e da aba.
+  const qtdTarefas = totalDeTarefas(await carregarTarefas(supabase));
   const vencidoAtualizado = resumo.atualizadoCentavos - resumo.aVencer.centavos; // a vencer não tem encargos
 
   // 2) Lista filtrada e paginada.
@@ -310,6 +315,9 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
+          <Button render={<Link href="/financeiro/recebiveis/tarefas" />}>
+            Tarefas{qtdTarefas ? ` (${qtdTarefas})` : ""}
+          </Button>
           <Button variant="outline" render={<Link href="/financeiro/recebiveis/clientes" />}>
             Clientes e contatos{qtdParaCadastrar ? ` (${qtdParaCadastrar} para cadastrar)` : ""}
           </Button>
@@ -319,6 +327,8 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
           {ehGestor && <BotoesSincronizacao />}
         </div>
       </div>
+
+      <RecebiveisAbas ativa="carteira" contagens={{ tarefas: qtdTarefas, clientes: qtdParaCadastrar, baixas: qtdBaixasAConferir ?? 0 }} />
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
       <nav aria-label="Unidade" className="flex flex-wrap gap-px overflow-hidden rounded-[3px] border border-grade bg-grade sm:w-fit">

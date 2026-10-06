@@ -3,6 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RecebiveisAbas } from "../abas-recebiveis";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { MODULO_RECEBIVEIS } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -92,6 +93,8 @@ export default async function PaginaBaixas() {
           O sistema só mostra o que o Consistem informa: <strong>quem dá a baixa é você</strong>.
         </p>
       </div>
+
+      <RecebiveisAbas ativa="baixas" contagens={{ baixas: abertos.length }} />
 
       {abertos.length === 0 && (
         <p className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">Nada para conferir. Quando um título sair da lista do Consistem, ele aparece aqui.</p>
