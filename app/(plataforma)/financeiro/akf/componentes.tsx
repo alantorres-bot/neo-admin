@@ -28,7 +28,43 @@ export type LinhaAkf = {
   /** Se o título tem parte antecipada: o que resta com a Neo (já formatado) e o que está na AKF. */
   restante: string | null;
   naAkfParcial: string | null;
+  /** Linha que é uma PARTE antecipada de um título (antecipação parcial): o id da parte e o do título. */
+  parteId?: string;
+  tituloId?: string;
 };
+
+/** Botão "Encerrar parte" de uma linha da lista (motivo obrigatório, fica no histórico do título). */
+function EncerrarParteLinha({ parteId }: { parteId: string }) {
+  const router = useRouter();
+  const [aberto, setAberto] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [pendente, iniciar] = useTransition();
+
+  function encerrar() {
+    iniciar(async () => {
+      const r = await encerrarParte({ id: parteId, motivo });
+      if (r.ok) {
+        toast.success(r.aviso);
+        setAberto(false);
+        setMotivo("");
+        router.refresh();
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
+
+  if (!aberto) return <Button type="button" variant="outline" size="sm" onClick={() => setAberto(true)}>Encerrar parte</Button>;
+  return (
+    <div className="flex min-w-60 flex-col gap-2">
+      <Input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Motivo (recompra, liquidação, erro…)" aria-label="Motivo do encerramento" maxLength={300} className="h-8" />
+      <div className="flex gap-2">
+        <Button type="button" size="sm" disabled={pendente} onClick={encerrar}>{pendente ? "Salvando…" : "Encerrar"}</Button>
+        <Button type="button" variant="ghost" size="sm" onClick={() => { setAberto(false); setMotivo(""); }}>Cancelar</Button>
+      </div>
+    </div>
+  );
+}
 
 /** "Antecipar parte": o título continua inteiro no Consistem; a parte antecipada (valor e vencimento próprios) fica só aqui. */
 function AnteciparParte({ linha }: { linha: LinhaAkf }) {
@@ -113,7 +149,8 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
   }
 
   // Em "marcar", só dá para marcar o que ainda não está na AKF (a busca de títulos traz também os que já estão).
-  const selecionaveis = acao === "retirar" ? linhas : linhas.filter((l) => !l.naAkf);
+  const selecionaveis = (acao === "retirar" ? linhas : linhas.filter((l) => !l.naAkf)).filter((l) => !l.parteId);
+  const temPartes = linhas.some((l) => l.parteId);
   const todas = selecionaveis.length > 0 && marcadas.size === selecionaveis.length;
   return (
     <div className="space-y-3">
@@ -145,6 +182,7 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
               <TableHead>Portador</TableHead>
               <TableHead>Situação</TableHead>
               {podeOperar && acao === "marcar" && <TableHead>Parcial</TableHead>}
+              {podeOperar && temPartes && <TableHead />}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -152,11 +190,11 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
               <TableRow key={l.id}>
                 {podeOperar && (
                   <TableCell>
-                    {(acao === "retirar" || !l.naAkf) && <input type="checkbox" className="size-4" aria-label={`Marcar ${l.documento}`} checked={marcadas.has(l.id)} onChange={() => alternar(l.id)} />}
+                    {!l.parteId && (acao === "retirar" || !l.naAkf) && <input type="checkbox" className="size-4" aria-label={`Marcar ${l.documento}`} checked={marcadas.has(l.id)} onChange={() => alternar(l.id)} />}
                   </TableCell>
                 )}
                 <TableCell className="font-medium tabular-nums">
-                  <Link href={`/financeiro/recebiveis/${l.id}`} className="hover:underline">{l.documento}</Link>
+                  <Link href={`/financeiro/recebiveis/${l.tituloId ?? l.id}`} className="hover:underline">{l.documento}</Link>
                   {l.unidade === "contagem" && <Badge variant="outline" className="ml-1.5 align-middle">Contagem</Badge>}
                 </TableCell>
                 <TableCell className="max-w-72 truncate" title={l.cliente}>{l.cliente}</TableCell>
@@ -171,8 +209,10 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
                   <Badge className={l.naAkf ? "bg-sky-100 text-sky-900" : l.vencido ? "bg-red-100 text-red-800" : "bg-emerald-100 text-emerald-900"}>{l.naAkf ? "Na AKF" : l.vencido ? "Vencido" : "Disponível"}</Badge>
                   {l.semBoleto && <Badge variant="outline" title="Operar 1 dia após o vencimento, sem emitir boleto">Sem boleto</Badge>}
                   {l.restante && <Badge className="bg-sky-100 text-sky-900" title="Parte do título já antecipada na AKF">Parcial na AKF</Badge>}
+                  {l.parteId && <Badge className="bg-sky-100 text-sky-900" title="Parte de um título antecipado só em parte; o restante fica com a Neo">Parcial</Badge>}
                 </TableCell>
                 {podeOperar && acao === "marcar" && <TableCell className="align-top">{!l.naAkf && <AnteciparParte linha={l} />}</TableCell>}
+                {podeOperar && temPartes && <TableCell className="align-top">{l.parteId && <EncerrarParteLinha parteId={l.parteId} />}</TableCell>}
               </TableRow>
             ))}
           </TableBody>

@@ -124,8 +124,10 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
     .select("id, contraparte_id, documento, parcela, vencimento, valor, dias_atraso, faixa, cedido, cod_portador, unidade", { count: "exact" })
     .neq("faixa", "encerrado")
     .order("vencimento")
-    .order("documento")
-    .range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
+    .order("documento");
+  // "Disponíveis" pagina no banco. "Na AKF" e "Vencidos" misturam títulos inteiros e partes antecipadas: leem tudo (poucos itens) e paginam aqui.
+  if (visao === "disponiveis") consulta = consulta.range((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA - 1);
+  else consulta = consulta.limit(1000);
   if (visao === "disponiveis") {
     consulta = consulta.eq("faixa", "a_vencer").eq("cedido", false).eq("contestado", false).in("estagio", [...ESTAGIOS_ANTECIPAVEIS])
       .or(`cod_portador.is.null,cod_portador.neq.${PORTADOR_AKF}`);
@@ -142,8 +144,7 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
   const { data: titulosBrutos, count, error: erroLista } = await consulta;
   if (erroLista) throw new Error(`Falha ao ler os títulos: ${erroLista.message}`);
   const titulos = (titulosBrutos ?? []) as LinhaTitulo[];
-  const total = count ?? 0;
-  const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+  let total = count ?? 0;
 
   const idsDaPagina = [...new Set(titulos.map((t) => t.contraparte_id))];
   const nomes = new Map<string, string>();
@@ -172,7 +173,7 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
       naAkfParcial: parte ? formatarMoeda(parte.akfCentavos) : null,
     };
   };
-  const linhas: LinhaAkf[] = titulos.map((t) => paraLinha(t, nomes.get(t.contraparte_id) ?? "—", partesDaPagina.get(t.id), visao === "disponiveis"));
+  let linhas: LinhaAkf[] = titulos.map((t) => paraLinha(t, nomes.get(t.contraparte_id) ?? "—", partesDaPagina.get(t.id), visao === "disponiveis"));
 
   // Busca de QUALQUER título em aberto (inclusive vencido e antigo) para antecipar uma parte ou marcá-lo inteiro na AKF.
   let linhasLocalizadas: LinhaAkf[] = [];
@@ -226,8 +227,51 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
       dataOperacao: formatarData(d.data_operacao as string),
       restante: resumoParte ? formatarMoeda(resumoParte.restanteCentavos) : "—",
       observacao: (d.observacao as string | null) ?? null,
+      vencimentoIso: d.vencimento as string,
+      valorReais: Number(d.valor),
     };
   });
+
+  // As partes antecipadas entram nas listas "Na AKF" e "Vencidos na AKF" como títulos normais (valor e vencimento da parte),
+  // contadas nos totais, nas quantidades e na paginação.
+  if (visao !== "disponiveis") {
+    const idsBusca = new Set(idsClientes);
+    const termo = busca.toLowerCase();
+    const diasEntre = (a: string, b: string) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000);
+    const linhasDasPartes: (LinhaAkf & { ordem: string })[] = [];
+    for (const d of partesAtivas) {
+      const t = tituloDaParte.get(d.titulo_id as string);
+      if (!t) continue;
+      if (visao === "vencidos" && (d.vencimento as string) >= hoje) continue;
+      if (busca && !(t.documento.toLowerCase().includes(termo) || idsBusca.has(t.contraparte_id))) continue;
+      const atraso = Math.max(diasEntre(hoje, d.vencimento as string), 0);
+      const resumoParte = partesDoTitulo.get(d.titulo_id as string);
+      linhasDasPartes.push({
+        id: d.id as string,
+        parteId: d.id as string,
+        tituloId: d.titulo_id as string,
+        documento: t.documento,
+        cliente: nomesPartes.get(t.contraparte_id) ?? "—",
+        unidade: t.unidade === "contagem" ? "contagem" : "matriz",
+        vencimento: formatarData(d.vencimento as string),
+        atraso: descreverAtraso(atraso),
+        vencido: atraso > 0,
+        valor: formatarValor(d.valor as number | string),
+        portador: "parte",
+        naAkf: true,
+        semBoleto: false,
+        valorReais: Number(d.valor),
+        vencimentoIso: d.vencimento as string,
+        restante: null,
+        naAkfParcial: resumoParte ? `resta ${formatarMoeda(resumoParte.restanteCentavos)} com a Neo` : null,
+        ordem: `${d.vencimento as string}|${t.documento}`,
+      });
+    }
+    const todas = [...linhas.map((l) => ({ ...l, ordem: `${l.vencimentoIso}|${l.documento}` })), ...linhasDasPartes].sort((a, b) => a.ordem.localeCompare(b.ordem));
+    total = todas.length;
+    linhas = todas.slice((pagina - 1) * POR_PAGINA, pagina * POR_PAGINA).map(({ ordem, ...resto }) => { void ordem; return resto; });
+  }
+  const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
 
   const href = (extra: { visao?: Visao; unidade?: Unidade | null; pagina?: number }) => {
     const qs = new URLSearchParams();
@@ -310,7 +354,7 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
         )}
       </section>
 
-      {linhasPartes.length > 0 && (
+      {visao === "disponiveis" && linhasPartes.length > 0 && (
         <section className="space-y-2">
           <div>
             <h2 className="text-base font-bold">Antecipações parciais na AKF ({linhasPartes.length})</h2>
