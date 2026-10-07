@@ -31,3 +31,6 @@ npm-debug.log*
 .vercel
 .supabase/
 supabase/.temp/
+
+# cópias de segurança do banco (dados financeiros e hashes de senha): nunca no Git
+backups/
