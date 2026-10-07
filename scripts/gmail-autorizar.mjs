@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Autoriza o Neo Admin a CRIAR RASCUNHOS no Gmail da caixa que fizer login, e grava os segredos no Supabase.
 //
-// Rode no terminal, na pasta do projeto:   node scripts/gmail-autorizar.mjs
+// Rode no terminal, na pasta do projeto:   node scripts/gmail-autorizar.mjs [--ref <ref do projeto Supabase>]
 // Antes: crie um "ID do cliente OAuth" do tipo "App para computador" no Google Cloud (docs/GMAIL_CREDENCIAIS.md).
 //
 // O que faz: pergunta o ID e o segredo do cliente (o segredo não aparece na tela), abre o login do Google com o escopo
@@ -201,7 +201,10 @@ async function main() {
   fs.writeFileSync(arquivo, `GMAIL_CLIENT_ID=${clientId}\nGMAIL_CLIENT_SECRET=${clientSecret}\nGMAIL_REFRESH_TOKEN=${corpo.refresh_token}\nGMAIL_REMETENTE=${remetente}\n`, { mode: 0o600 });
   try {
     console.log("Autorizado. Gravando os segredos no Supabase...");
-    const r = rodarNpx(["supabase", "secrets", "set", "--env-file", arquivo, "--agent", "no"]);
+    // `--ref <ref>` grava no projeto indicado (ex.: o banco novo em São Paulo); sem ele, vale o projeto ligado por `supabase link`.
+    const iRef = process.argv.indexOf("--ref");
+    const destino = iRef >= 0 && process.argv[iRef + 1] ? ["--project-ref", process.argv[iRef + 1]] : [];
+    const r = rodarNpx(["supabase", "secrets", "set", "--env-file", arquivo, ...destino, "--agent", "no"]);
     if (r.status !== 0) throw new Error("Não consegui gravar no Supabase. Confira `npx supabase login` e `npx supabase link`.");
   } finally {
     fs.rmSync(arquivo, { force: true });

@@ -5,9 +5,11 @@
 // Uso (na pasta do projeto, com a CLI logada):
 //   node scripts/banco-copia.mjs exportar  --ref <ref>  [--pasta <pasta>]      grava um .json por tabela + manifesto com contagens
 //   node scripts/banco-copia.mjs conferir  --ref <ref>  --pasta <pasta>        compara a contagem de cada tabela com a cópia
-//   node scripts/banco-copia.mjs importar  --ref <ref>  --pasta <pasta> --sim  APAGA as tabelas de public do destino e restaura
+//   node scripts/banco-copia.mjs importar  --ref <ref>  --pasta <pasta> --mesclar   só INSERE/ATUALIZA (nada é apagado): destino novo
+//   node scripts/banco-copia.mjs importar  --ref <ref>  --pasta <pasta> --sim       APAGA as tabelas de public do destino e restaura
 //
-// Segurança: o `importar` exige `--sim` e recusa rodar se o destino for o mesmo projeto da cópia. As cópias contêm dados
+// Segurança: o `importar` exige `--mesclar` (sem apagar nada) ou `--sim` (apaga o destino) e recusa rodar se o destino for o mesmo
+// projeto da cópia. As cópias contêm dados
 // financeiros e hashes de senha: guarde a pasta num lugar privado (nunca no Git; `backups/` já está no .gitignore).
 import { spawnSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -58,6 +60,24 @@ function descobrirTabelas(ref) {
   }));
 }
 
+/** Chaves primárias de public e auth (para o modo --mesclar: INSERT ... ON CONFLICT (chave) DO UPDATE). */
+function chavesPrimarias(ref) {
+  const linhas = consultar(ref, `select tc.table_schema as esquema, tc.table_name as tabela, kcu.column_name as coluna
+    from information_schema.table_constraints tc
+    join information_schema.key_column_usage kcu on kcu.constraint_name = tc.constraint_name and kcu.table_schema = tc.table_schema and kcu.table_name = tc.table_name
+    where tc.constraint_type = 'PRIMARY KEY' and tc.table_schema in ('public', 'auth') order by kcu.ordinal_position`);
+  const mapa = new Map();
+  for (const l of linhas) mapa.set(`${l.esquema}.${l.tabela}`, [...(mapa.get(`${l.esquema}.${l.tabela}`) ?? []), l.coluna]);
+  return mapa;
+}
+
+// Linhas que o PRÓPRIO projeto novo cria nas migrations com id aleatório. Em vez de apagá-las, trocamos o id pelo da cópia
+// (casando pela coluna natural abaixo) e as demais colunas são atualizadas no upsert.
+const SEMENTES_COM_ID_ALEATORIO = [
+  { tabela: "rec_reguas", natural: "nome" },
+  { tabela: "modelos_mensagem", natural: "nome" },
+];
+
 const arquivoDaTabela = (pasta, t) => join(pasta, `${t.esquema}.${t.tabela}.json`);
 
 function exportar() {
@@ -102,16 +122,31 @@ function importar() {
   const ref = argumento("ref");
   const pasta = argumento("pasta");
   if (!ref || !pasta) throw new Error("Informe --ref (DESTINO) e --pasta.");
-  if (!tem("sim")) throw new Error("O importar APAGA as tabelas de public do destino. Confirme com --sim.");
+  const mesclar = tem("mesclar");
+  if (!mesclar && !tem("sim")) throw new Error("Escolha --mesclar (só insere e atualiza) ou --sim (APAGA as tabelas de public do destino).");
   const manifesto = lerManifesto(pasta);
   if (manifesto.ref === ref) throw new Error("O destino é o mesmo projeto da cópia: nada a restaurar.");
 
   // Só as colunas que existem nos DOIS lados e podem ser inseridas (o destino pode ter colunas a mais, ex.: versão nova do Auth).
   const destino = descobrirTabelas(ref);
-  const publicas = destino.filter((t) => t.esquema === "public").map((t) => `${identificador(t.esquema)}.${identificador(t.tabela)}`);
-  console.log(`Apagando ${publicas.length} tabelas de public no destino ${ref}...`);
-  consultar(ref, `set session_replication_role = replica; truncate table ${publicas.join(", ")} restart identity cascade;`);
-  consultar(ref, `set session_replication_role = replica; delete from auth.identities; delete from auth.users;`);
+  const chaves = chavesPrimarias(ref);
+  if (mesclar) {
+    console.log(`Modo --mesclar no destino ${ref}: nada será apagado.`);
+    for (const sem of SEMENTES_COM_ID_ALEATORIO) {
+      const t = manifesto.tabelas.find((x) => x.esquema === "public" && x.tabela === sem.tabela);
+      if (!t) continue;
+      const linhas = JSON.parse(readFileSync(arquivoDaTabela(pasta, t), "utf8"));
+      if (linhas.length === 0) continue;
+      consultar(ref, `set session_replication_role = replica; update public.${identificador(sem.tabela)} d set id = s.id
+        from jsonb_populate_recordset(null::public.${identificador(sem.tabela)}, $neo$${JSON.stringify(linhas)}$neo$::jsonb) s
+        where d.${identificador(sem.natural)} = s.${identificador(sem.natural)} and d.id <> s.id;`);
+    }
+  } else {
+    const publicas = destino.filter((t) => t.esquema === "public").map((t) => `${identificador(t.esquema)}.${identificador(t.tabela)}`);
+    console.log(`Apagando ${publicas.length} tabelas de public no destino ${ref}...`);
+    consultar(ref, `set session_replication_role = replica; truncate table ${publicas.join(", ")} restart identity cascade;`);
+    consultar(ref, `set session_replication_role = replica; delete from auth.identities; delete from auth.users;`);
+  }
 
   for (const t of manifesto.tabelas) {
     const alvo = destino.find((d) => d.esquema === t.esquema && d.tabela === t.tabela);
@@ -124,7 +159,12 @@ function importar() {
       const lote = JSON.stringify(linhas.slice(i, i + TAMANHO_LOTE)).replaceAll("$neo$", "$ neo $");
       // jsonb_populate_recordset converte texto, datas, arrays e jsonb para os tipos da tabela; com triggers e chaves
       // estrangeiras desligados (replica) a ordem das tabelas não importa e o histórico (auditoria) não é duplicado.
-      consultar(ref, `set session_replication_role = replica; insert into ${nome} (${lista}) select ${lista} from jsonb_populate_recordset(null::${nome}, $neo$${lote}$neo$::jsonb);`);
+      const pk = (chaves.get(`${t.esquema}.${t.tabela}`) ?? []).filter((c) => colunas.includes(c));
+      const resto = colunas.filter((c) => !pk.includes(c));
+      const conflito = !mesclar || pk.length === 0 ? ""
+        : resto.length === 0 ? ` on conflict (${pk.map(identificador).join(", ")}) do nothing`
+          : ` on conflict (${pk.map(identificador).join(", ")}) do update set ${resto.map((c) => `${identificador(c)} = excluded.${identificador(c)}`).join(", ")}`;
+      consultar(ref, `set session_replication_role = replica; insert into ${nome} (${lista}) select ${lista} from jsonb_populate_recordset(null::${nome}, $neo$${lote}$neo$::jsonb)${conflito};`);
     }
     console.log(`${String(linhas.length).padStart(6)}  ${t.esquema}.${t.tabela}`);
   }
