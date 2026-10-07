@@ -17,13 +17,16 @@ export type Sessao = {
 
 export const obterSessao = cache(async (): Promise<Sessao | null> => {
   const supabase = await criarClienteServidor();
-  // getUser confirma o token no servidor de Auth (getSession só leria o cookie).
-  const { data: auth } = await supabase.auth.getUser();
-  if (!auth.user) return null;
+  // getClaims confere a assinatura e a validade do token LOCALMENTE (sem ida ao servidor de Auth: ~200 ms a menos por tela).
+  // Conta desativada ou removida continua barrada: o perfil abaixo vem do banco a cada requisição, com a RLS de quem chama.
+  // (Se o projeto usar chave de assinatura simétrica, a própria biblioteca volta a confirmar no servidor de Auth.)
+  const { data: auth } = await supabase.auth.getClaims();
+  const userId = auth?.claims.sub;
+  if (!userId) return null;
 
   const [perfil, permissoes, areas, modulos] = await Promise.all([
-    supabase.from("perfis").select("id, nome, email, admin_geral, ativo, deve_trocar_senha").eq("id", auth.user.id).maybeSingle(),
-    supabase.from("permissoes").select("area, nivel").eq("perfil_id", auth.user.id),
+    supabase.from("perfis").select("id, nome, email, admin_geral, ativo, deve_trocar_senha").eq("id", userId).maybeSingle(),
+    supabase.from("permissoes").select("area, nivel").eq("perfil_id", userId),
     supabase.from("areas").select("codigo, nome, sensivel, ordem").order("ordem"),
     supabase.from("modulos").select("codigo, area, nome, ativo").order("codigo"),
   ]);
@@ -41,7 +44,7 @@ export const obterSessao = cache(async (): Promise<Sessao | null> => {
   const liberado = perfil.data.ativo && !perfil.data.deve_trocar_senha;
 
   return {
-    userId: auth.user.id,
+    userId: userId,
     perfil: perfil.data as Perfil,
     acesso: { adminGeral: perfil.data.admin_geral && liberado, niveis: liberado ? niveis : {} },
     areas: (areas.data ?? []) as Area[],

@@ -59,20 +59,46 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
 
   const supabase = await criarClienteServidor();
 
-  // 1) Resumo de TODA a carteira em aberto (independe da busca e da página). PostgREST devolve até 1000 por vez.
-  const resumoLinhas: LinhaResumo[] = [];
-  for (let de = 0; ; de += 1000) {
-    const { data, error } = await supabase
-      .from("rec_vw_titulos")
-      .select("id, faixa, valor, contraparte_id, estagio, cedido, contestado, cod_portador, unidade")
-      .neq("faixa", "encerrado")
-      .order("id")
-      .range(de, de + 999);
-    if (error) throw new Error(`Falha ao ler a carteira: ${error.message}`);
-    resumoLinhas.push(...((data ?? []) as LinhaResumo[]));
-    if (!data || data.length < 1000) break;
-  }
-  const partesDoTitulo = await lerTodasAsPartes(supabase);
+  // Cada ida ao banco custa a latência da rede (~200 ms com o banco no Canadá): o que não depende de outra leitura sai junto, em
+  // 3 ondas. Onda 1: resumo de TODA a carteira em aberto (PostgREST devolve até 1000 por vez), partes antecipadas, configuração e
+  // os clientes achados pelas buscas.
+  const lerResumo = async () => {
+    const linhas: LinhaResumo[] = [];
+    for (let de = 0; ; de += 1000) {
+      const { data, error } = await supabase
+        .from("rec_vw_titulos")
+        .select("id, faixa, valor, contraparte_id, estagio, cedido, contestado, cod_portador, unidade")
+        .neq("faixa", "encerrado")
+        .order("id")
+        .range(de, de + 999);
+      if (error) throw new Error(`Falha ao ler a carteira: ${error.message}`);
+      linhas.push(...((data ?? []) as LinhaResumo[]));
+      if (!data || data.length < 1000) break;
+    }
+    return linhas;
+  };
+  const clientesDaBusca = async (termo: string) => {
+    if (!termo) return [] as string[];
+    const { data } = await supabase.from("contrapartes").select("id")
+      .or(`nome.ilike.%${termo}%,codigo_erp.ilike.%${termo}%,documento.ilike.%${termo}%`).limit(200);
+    return (data ?? []).map((c) => c.id as string);
+  };
+  const lerNomes = async (ids: string[]) => {
+    const nomes = new Map<string, string>();
+    await Promise.all(Array.from({ length: Math.ceil(ids.length / 100) }, (_, i) => ids.slice(i * 100, (i + 1) * 100)).map(async (lote) => {
+      const { data } = await supabase.from("contrapartes").select("id, nome").in("id", lote);
+      for (const c of data ?? []) nomes.set(c.id as string, c.nome as string);
+    }));
+    return nomes;
+  };
+  const [resumoLinhas, partesDoTitulo, { data: partesAtivasBrutas, error: erroPartes }, { data: cfgSemBoleto }, idsClientes, idsLoc] = await Promise.all([
+    lerResumo(),
+    lerTodasAsPartes(supabase),
+    supabase.from("akf_desdobramentos").select("id, titulo_id, valor, vencimento, data_operacao, observacao").eq("status", "ativo").order("vencimento"),
+    supabase.from("configuracoes").select("valor").eq("chave", "financeiro.akf.clientes_sem_boleto").maybeSingle(),
+    clientesDaBusca(busca),
+    clientesDaBusca(localizar),
+  ]);
   const dasUnidades = { matriz: 0, contagem: 0 };
   for (const l of resumoLinhas) if (abertoNaAkf(dados(l)) || disponivelParaAntecipar(dados(l))) dasUnidades[l.unidade === "contagem" ? "contagem" : "matriz"]++;
   for (const l of resumoLinhas) if (partesDoTitulo.has(l.id)) dasUnidades[l.unidade === "contagem" ? "contagem" : "matriz"]++;
@@ -90,8 +116,6 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
   // Antecipações parciais (migration 0113): a parte na AKF entra em "Na AKF" (e em "Vencidos" se a parte já venceu) e o que
   // resta com a Neo continua em "Disponíveis", só com o valor restante.
   const hoje = hojeEmCuiaba();
-  const { data: partesAtivasBrutas, error: erroPartes } = await supabase.from("akf_desdobramentos")
-    .select("id, titulo_id, valor, vencimento, data_operacao, observacao").eq("status", "ativo").order("vencimento");
   if (erroPartes) throw new Error(`Falha ao ler as antecipações parciais: ${erroPartes.message}`);
   const titulosAbertos = new Map(doRecorte.map((l) => [l.id, l]));
   const partesAtivas = (partesAtivasBrutas ?? []).filter((d) => titulosAbertos.has(d.titulo_id as string) && partesDoTitulo.has(d.titulo_id as string));
@@ -112,16 +136,9 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
   // A vencer na AKF = o que está na AKF (títulos inteiros e partes) menos o que já venceu.
   const aVencerNaAkf = { quantidade: totais.na_akf.quantidade - totais.vencidos.quantidade, centavos: totais.na_akf.centavos - totais.vencidos.centavos };
 
-  const { data: cfgSemBoleto } = await supabase.from("configuracoes").select("valor").eq("chave", "financeiro.akf.clientes_sem_boleto").maybeSingle();
   const termosSemBoleto = Array.isArray(cfgSemBoleto?.valor) ? (cfgSemBoleto.valor as unknown[]).filter((x): x is string => typeof x === "string") : [];
 
   // 2) Lista da visão escolhida (as regras de `akf.ts` escritas como filtro), paginada.
-  let idsClientes: string[] = [];
-  if (busca) {
-    const { data } = await supabase.from("contrapartes").select("id")
-      .or(`nome.ilike.%${busca}%,codigo_erp.ilike.%${busca}%,documento.ilike.%${busca}%`).limit(200);
-    idsClientes = (data ?? []).map((c) => c.id as string);
-  }
   let consulta = supabase
     .from("rec_vw_titulos")
     .select("id, contraparte_id, documento, parcela, vencimento, valor, dias_atraso, faixa, cedido, cod_portador, unidade", { count: "exact" })
@@ -144,19 +161,50 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
       ? consulta.or(`documento.ilike.%${busca}%,contraparte_id.in.(${idsClientes.join(",")})`)
       : consulta.ilike("documento", `%${busca}%`);
   }
-  const { data: titulosBrutos, count, error: erroLista } = await consulta;
+  // Busca de QUALQUER título em aberto (inclusive vencido e antigo) para antecipar uma parte ou marcá-lo inteiro na AKF.
+  const consultaLoc = !localizar ? null : (() => {
+    let c = supabase.from("rec_vw_titulos")
+      .select("id, contraparte_id, documento, parcela, vencimento, valor, dias_atraso, faixa, cedido, cod_portador, unidade")
+      .neq("faixa", "encerrado").order("vencimento", { ascending: false }).limit(30);
+    if (unidade) c = c.eq("unidade", unidade);
+    return idsLoc.length > 0 ? c.or(`documento.ilike.%${localizar}%,contraparte_id.in.(${idsLoc.join(",")})`) : c.ilike("documento", `%${localizar}%`);
+  })();
+  // Antecipações parciais ativas, com o título e o cliente (para a lista).
+  const idsPartes = [...new Set(partesAtivas.map((d) => d.titulo_id as string))];
+  const lerTitulosDasPartes = async () => {
+    const m = new Map<string, { documento: string; contraparte_id: string; unidade: string }>();
+    await Promise.all(Array.from({ length: Math.ceil(idsPartes.length / 100) }, (_, i) => idsPartes.slice(i * 100, (i + 1) * 100)).map(async (lote) => {
+      const { data } = await supabase.from("rec_titulos").select("id, documento, parcela, contraparte_id, unidade").in("id", lote);
+      for (const t of data ?? []) m.set(t.id as string, { documento: `${t.documento}${t.parcela !== "1" ? `/${t.parcela}` : ""}`, contraparte_id: t.contraparte_id as string, unidade: t.unidade as string });
+    }));
+    return m;
+  };
+
+  // Onda 2: a lista da visão, a busca de títulos e os títulos das partes antecipadas, ao mesmo tempo.
+  const [{ data: titulosBrutos, count, error: erroLista }, resultadoLoc, tituloDaParte] = await Promise.all([
+    consulta,
+    consultaLoc ?? Promise.resolve(null),
+    lerTitulosDasPartes(),
+  ]);
   if (erroLista) throw new Error(`Falha ao ler os títulos: ${erroLista.message}`);
+  if (resultadoLoc?.error) throw new Error(`Falha ao buscar títulos: ${resultadoLoc.error.message}`);
   const titulos = (titulosBrutos ?? []) as LinhaTitulo[];
   let total = count ?? 0;
 
   const idsDaPagina = [...new Set(titulos.map((t) => t.contraparte_id))];
-  const nomes = new Map<string, string>();
-  if (idsDaPagina.length > 0) {
-    const { data } = await supabase.from("contrapartes").select("id, nome").in("id", idsDaPagina);
-    for (const c of data ?? []) nomes.set(c.id as string, c.nome as string);
-  }
+  const loc = (resultadoLoc?.data ?? []) as LinhaTitulo[];
+  const idsClLoc = [...new Set(loc.map((t) => t.contraparte_id))];
+  const idsClientesPartes = [...new Set([...tituloDaParte.values()].map((t) => t.contraparte_id))];
 
-  const partesDaPagina = visao === "disponiveis" ? await lerPartes(supabase, titulos.map((t) => t.id)) : new Map();
+  // Onda 3: nomes dos clientes (da lista, da busca e das partes) e antecipações parciais dos títulos da página e da busca.
+  const [nomes, partesDaPagina, nomesLoc, partesLoc, nomesPartes] = await Promise.all([
+    lerNomes(idsDaPagina),
+    lerPartes(supabase, visao === "disponiveis" ? titulos.map((t) => t.id) : []),
+    lerNomes(idsClLoc),
+    lerPartes(supabase, loc.map((t) => t.id)),
+    lerNomes(idsClientesPartes),
+  ]);
+
   const paraLinha = (t: LinhaTitulo, cliente: string, parte: Awaited<ReturnType<typeof lerPartes>> extends Map<string, infer P> ? P | undefined : never, comSemBoleto: boolean): LinhaAkf => {
     return {
       id: t.id,
@@ -179,43 +227,8 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
   };
   let linhas: LinhaAkf[] = titulos.map((t) => paraLinha(t, nomes.get(t.contraparte_id) ?? "—", partesDaPagina.get(t.id), visao === "disponiveis"));
 
-  // Busca de QUALQUER título em aberto (inclusive vencido e antigo) para antecipar uma parte ou marcá-lo inteiro na AKF.
-  let linhasLocalizadas: LinhaAkf[] = [];
-  if (localizar) {
-    const { data: clientesLoc } = await supabase.from("contrapartes").select("id")
-      .or(`nome.ilike.%${localizar}%,codigo_erp.ilike.%${localizar}%,documento.ilike.%${localizar}%`).limit(200);
-    const idsLoc = (clientesLoc ?? []).map((c) => c.id as string);
-    let consultaLoc = supabase.from("rec_vw_titulos")
-      .select("id, contraparte_id, documento, parcela, vencimento, valor, dias_atraso, faixa, cedido, cod_portador, unidade")
-      .neq("faixa", "encerrado").order("vencimento", { ascending: false }).limit(30);
-    if (unidade) consultaLoc = consultaLoc.eq("unidade", unidade);
-    consultaLoc = idsLoc.length > 0 ? consultaLoc.or(`documento.ilike.%${localizar}%,contraparte_id.in.(${idsLoc.join(",")})`) : consultaLoc.ilike("documento", `%${localizar}%`);
-    const { data: locBrutos, error: erroLoc } = await consultaLoc;
-    if (erroLoc) throw new Error(`Falha ao buscar títulos: ${erroLoc.message}`);
-    const loc = (locBrutos ?? []) as LinhaTitulo[];
-    const nomesLoc = new Map<string, string>();
-    const idsClLoc = [...new Set(loc.map((t) => t.contraparte_id))];
-    if (idsClLoc.length > 0) {
-      const { data } = await supabase.from("contrapartes").select("id, nome").in("id", idsClLoc);
-      for (const c of data ?? []) nomesLoc.set(c.id as string, c.nome as string);
-    }
-    const partesLoc = await lerPartes(supabase, loc.map((t) => t.id));
-    linhasLocalizadas = loc.map((t) => paraLinha(t, nomesLoc.get(t.contraparte_id) ?? "—", partesLoc.get(t.id), false));
-  }
+  const linhasLocalizadas: LinhaAkf[] = loc.map((t) => paraLinha(t, nomesLoc.get(t.contraparte_id) ?? "—", partesLoc.get(t.id), false));
 
-  // Antecipações parciais ativas, com o título e o cliente (para a lista).
-  const idsPartes = [...new Set(partesAtivas.map((d) => d.titulo_id as string))];
-  const tituloDaParte = new Map<string, { documento: string; contraparte_id: string; unidade: string }>();
-  for (let i = 0; i < idsPartes.length; i += 100) {
-    const { data } = await supabase.from("rec_titulos").select("id, documento, parcela, contraparte_id, unidade").in("id", idsPartes.slice(i, i + 100));
-    for (const t of data ?? []) tituloDaParte.set(t.id as string, { documento: `${t.documento}${t.parcela !== "1" ? `/${t.parcela}` : ""}`, contraparte_id: t.contraparte_id as string, unidade: t.unidade as string });
-  }
-  const nomesPartes = new Map<string, string>();
-  const idsClientesPartes = [...new Set([...tituloDaParte.values()].map((t) => t.contraparte_id))];
-  for (let i = 0; i < idsClientesPartes.length; i += 100) {
-    const { data } = await supabase.from("contrapartes").select("id, nome").in("id", idsClientesPartes.slice(i, i + 100));
-    for (const c of data ?? []) nomesPartes.set(c.id as string, c.nome as string);
-  }
   const linhasPartes: LinhaParte[] = partesAtivas.map((d) => {
     const t = tituloDaParte.get(d.titulo_id as string);
     const resumoParte = partesDoTitulo.get(d.titulo_id as string);

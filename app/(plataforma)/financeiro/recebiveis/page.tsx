@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Suspense } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -22,10 +23,9 @@ import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
 import { titulaNoEscopoDeCadastro } from "@/lib/modulos/financeiro/recebiveis/clientes";
 import { temContatoUtil, type ContatoEscolha } from "@/supabase/functions/_shared/contatos";
 import { PREFERENCIAS, lerPreferenciaBooleana } from "@/lib/nucleo/preferencias";
-import { totalDeTarefas } from "@/lib/modulos/financeiro/recebiveis/tarefas";
-import { RecebiveisAbas } from "./abas-recebiveis";
+import { AbasComNumeros, AbasSemNumeros, BotoesComNumeros, BotoesSemNumeros } from "./atalhos";
 import { CaixaOcultar } from "./caixa-ocultar";
-import { carregarTarefas } from "./tarefas/dados";
+import { tarefasDaRequisicao } from "./tarefas/dados";
 import { BotoesSincronizacao } from "./sincronizar";
 
 export const metadata: Metadata = { title: "Recebíveis" };
@@ -95,29 +95,52 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   const unidadePedida = primeiro(parametros.unidade);
   const unidade: Unidade | null = unidadePedida === "matriz" || unidadePedida === "contagem" ? unidadePedida : null;
 
+  // Os números de Tarefas (botão e aba) começam a ser calculados já, ao mesmo tempo que o resto da tela; quem os mostra espera
+  // dentro de <Suspense> e reaproveita este mesmo cálculo (cache por requisição). O catch só evita aviso de erro não tratado aqui.
+  void tarefasDaRequisicao().catch(() => undefined);
+
   const supabase = await criarClienteServidor();
+
+  // Cada ida ao banco custa a latência da rede (~200 ms com o banco no Canadá): o que não depende de outra leitura sai junto.
+  // Onda 1: preferência do usuário, resumo de TODA a carteira em aberto (PostgREST devolve até 1000 por vez), clientes da busca
+  // e última sincronização.
+  const lerResumo = async () => {
+    const linhas: LinhaResumo[] = [];
+    for (let de = 0; ; de += 1000) {
+      const { data, error } = await supabase
+        .from("rec_vw_titulos")
+        .select("faixa, valor, valor_atualizado, contraparte_id, estagio, cedido, contestado, unidade, dias_atraso")
+        .neq("faixa", "encerrado")
+        .order("id")
+        .range(de, de + 999);
+      if (error) throw new Error(`Falha ao ler a carteira: ${error.message}`);
+      linhas.push(...((data ?? []) as LinhaResumo[]));
+      if (!data || data.length < 1000) break;
+    }
+    return linhas;
+  };
+  const buscarClientes = async () => {
+    if (!busca) return [] as string[];
+    const { data } = await supabase.from("contrapartes").select("id")
+      .or(`nome.ilike.%${busca}%,codigo_erp.ilike.%${busca}%,documento.ilike.%${busca}%`).limit(200);
+    return (data ?? []).map((c) => c.id as string);
+  };
+  const [salvoOcultar, todasLinhas, idsClientes, { data: ultimas }] = await Promise.all([
+    lerPreferenciaBooleana(supabase, PREFERENCIAS.recebiveisOcultarVencidos90),
+    lerResumo(),
+    buscarClientes(),
+    supabase.from("importacoes")
+      .select("criado_em, linhas_novas, linhas_alteradas, linhas_baixadas")
+      .eq("modulo", MODULO).eq("arquivo", "api:consistem").order("criado_em", { ascending: false }).limit(1),
+  ]);
 
   // "Ocultar vencidos há mais de 90 dias": vale para a tela toda (cartões, aging, abas e lista), para os números baterem.
   // Sem nada no endereço, vale a preferência salva da pessoa; ?ocultar90=1 ou =0 vale só para aquela visita e é repassado
   // pelos links enquanto for diferente do que está salvo.
-  const salvoOcultar = await lerPreferenciaBooleana(supabase, PREFERENCIAS.recebiveisOcultarVencidos90);
   const pedidoOcultar = primeiro(parametros.ocultar90);
   const ocultar = pedidoOcultar === "1" ? true : pedidoOcultar === "0" ? false : salvoOcultar;
   const paramOcultar = ocultar !== salvoOcultar ? (ocultar ? "1" : "0") : null;
 
-  // 1) Resumo de TODA a carteira em aberto (independe do filtro da lista). PostgREST devolve até 1000 por vez.
-  const todasLinhas: LinhaResumo[] = [];
-  for (let de = 0; ; de += 1000) {
-    const { data, error } = await supabase
-      .from("rec_vw_titulos")
-      .select("faixa, valor, valor_atualizado, contraparte_id, estagio, cedido, contestado, unidade, dias_atraso")
-      .neq("faixa", "encerrado")
-      .order("id")
-      .range(de, de + 999);
-    if (error) throw new Error(`Falha ao ler a carteira: ${error.message}`);
-    todasLinhas.push(...((data ?? []) as LinhaResumo[]));
-    if (!data || data.length < 1000) break;
-  }
   const resumoLinhas = ocultar ? todasLinhas.filter((l) => (l.dias_atraso ?? 0) <= DIAS_OCULTAR) : todasLinhas;
   const ocultos = todasLinhas.filter((l) => (l.dias_atraso ?? 0) > DIAS_OCULTAR && (!unidade || l.unidade === unidade));
   // Totais por unidade (para o seletor) e a carteira da unidade escolhida (para o resto da tela).
@@ -128,32 +151,10 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   const totaisUnidade = { matriz: porUnidade("matriz"), contagem: porUnidade("contagem") };
   const linhasDaUnidade = unidade ? resumoLinhas.filter((l) => l.unidade === unidade) : resumoLinhas;
   const resumo = resumirCarteira(linhasDaUnidade);
-  const { count: qtdBaixasAConferir } = await supabase.from("pendencias").select("id", { count: "exact", head: true })
-    .eq("modulo", MODULO).eq("referencia_tabela", "rec_titulos").like("titulo", "Possível baixa:%").in("status", ["aberta", "em_andamento"]);
   const porGrupo = resumirPorGrupo(linhasDaUnidade);
-
-  // Clientes para cadastrar contato agora (Matriz, a vencer ou vencido há menos de 60 dias, sem nenhum contato): número do botão
-  // "Clientes e contatos".
-  const idsNoEscopo = [...new Set(todasLinhas.filter((l) => titulaNoEscopoDeCadastro({ unidade: l.unidade ?? "", faixa: l.faixa, dias_atraso: l.dias_atraso ?? 0 })).map((l) => l.contraparte_id))];
-  const comContatoUtil = new Set<string>();
-  for (let i = 0; i < idsNoEscopo.length; i += 100) {
-    const { data } = await supabase.from("contatos").select("id, contraparte_id, nome, email, whatsapp, telefone, finalidades, ativo").in("contraparte_id", idsNoEscopo.slice(i, i + 100)).eq("ativo", true);
-    const porCliente = new Map<string, ContatoEscolha[]>();
-    for (const c of data ?? []) porCliente.set(c.contraparte_id as string, [...(porCliente.get(c.contraparte_id as string) ?? []), c as unknown as ContatoEscolha]);
-    for (const [cliente, lista] of porCliente) if (temContatoUtil(lista)) comContatoUtil.add(cliente);
-  }
-  const qtdParaCadastrar = idsNoEscopo.filter((id) => !comContatoUtil.has(id)).length;
-  // Tarefas de todas as filas (mesmo cálculo da tela Tarefas): o número do botão e da aba.
-  const qtdTarefas = totalDeTarefas(await carregarTarefas(supabase));
   const vencidoAtualizado = resumo.atualizadoCentavos - resumo.aVencer.centavos; // a vencer não tem encargos
 
-  // 2) Lista filtrada e paginada.
-  let idsClientes: string[] = [];
-  if (busca) {
-    const { data } = await supabase.from("contrapartes").select("id")
-      .or(`nome.ilike.%${busca}%,codigo_erp.ilike.%${busca}%,documento.ilike.%${busca}%`).limit(200);
-    idsClientes = (data ?? []).map((c) => c.id as string);
-  }
+  // Onda 2: a lista filtrada e paginada.
   let consulta = supabase
     .from("rec_vw_titulos")
     .select("id, contraparte_id, documento, parcela, emissao, vencimento, valor, valor_atualizado, estagio, dias_atraso, faixa, cedido, contestado, regua_pausada_ate, nota_fiscal, nota_saida_id, unidade, forma_pagamento", { count: "exact" })
@@ -185,40 +186,76 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
 
   const idsDaPagina = [...new Set(titulos.map((t) => t.contraparte_id))];
-  const nomes = new Map<string, string>();
-  if (idsDaPagina.length > 0) {
-    const { data } = await supabase.from("contrapartes").select("id, nome").in("id", idsDaPagina);
-    for (const c of data ?? []) nomes.set(c.id as string, c.nome as string);
-  }
+  const idsNotas = [...new Set(titulos.map((t) => t.nota_saida_id).filter((x): x is string => x !== null))];
 
-  // Clientes sem nenhum meio de contato (e-mail, WhatsApp ou telefone): o selo "Sem contato" aparece nos títulos que estão no
-  // escopo do cadastro combinado (Matriz, a vencer ou vencido há menos de 60 dias).
-  const contatosPorCliente = new Map<string, ContatoEscolha[]>();
-  if (idsDaPagina.length > 0) {
-    const { data } = await supabase.from("contatos").select("id, contraparte_id, nome, email, whatsapp, telefone, finalidades, ativo").in("contraparte_id", idsDaPagina).eq("ativo", true);
-    for (const c of data ?? []) contatosPorCliente.set(c.contraparte_id as string, [...(contatosPorCliente.get(c.contraparte_id as string) ?? []), c as unknown as ContatoEscolha]);
-  }
+  // Onda 3: tudo o que depende só dos títulos desta página sai junto.
+  const [nomes, contatosPorCliente, partes, { pendenciasDoCliente, corteRegua }, andamento, pedidosDaNota] = await Promise.all([
+    // nomes dos clientes
+    (async () => {
+      const m = new Map<string, string>();
+      if (idsDaPagina.length > 0) {
+        const { data } = await supabase.from("contrapartes").select("id, nome").in("id", idsDaPagina);
+        for (const c of data ?? []) m.set(c.id as string, c.nome as string);
+      }
+      return m;
+    })(),
+    // Clientes sem nenhum meio de contato (e-mail, WhatsApp ou telefone): o selo "Sem contato" aparece nos títulos que estão no
+    // escopo do cadastro combinado (Matriz, a vencer ou vencido há menos de 60 dias).
+    (async () => {
+      const m = new Map<string, ContatoEscolha[]>();
+      if (idsDaPagina.length > 0) {
+        const { data } = await supabase.from("contatos").select("id, contraparte_id, nome, email, whatsapp, telefone, finalidades, ativo").in("contraparte_id", idsDaPagina).eq("ativo", true);
+        for (const c of data ?? []) m.set(c.contraparte_id as string, [...(m.get(c.contraparte_id as string) ?? []), c as unknown as ContatoEscolha]);
+      }
+      return m;
+    })(),
+    // Antecipação parcial na AKF (migration 0113): quanto do título já está na AKF e quanto resta com a Neo.
+    lerPartes(supabase, titulos.map((t) => t.id)),
+    // Próxima ação: o passo da sequência que está na vez, a partir das pendências abertas do cliente e do estágio do título.
+    (async () => {
+      const pendenciasDoCliente = new Map<string, string[]>();
+      let corteRegua: string | null = null;
+      if (idsDaPagina.length > 0) {
+        const [{ data: pendencias }, { data: cfgRegua }] = await Promise.all([
+          supabase.from("pendencias").select("referencia_id, titulo").eq("modulo", MODULO).eq("referencia_tabela", "contrapartes")
+            .in("referencia_id", idsDaPagina).in("status", ["aberta", "em_andamento"]).limit(1000),
+          supabase.from("configuracoes").select("valor").eq("chave", "financeiro.recebiveis.regua_a_partir_de").maybeSingle(),
+        ]);
+        // A chave é cliente + unidade: a pendência da Filial Contagem não aparece como ação de um título da Matriz.
+        for (const p of pendencias ?? []) {
+          const chave = `${p.referencia_id as string}|${unidadeDaPendencia(p.titulo as string)}`;
+          pendenciasDoCliente.set(chave, [...(pendenciasDoCliente.get(chave) ?? []), p.titulo as string]);
+        }
+        corteRegua = typeof cfgRegua?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfgRegua.valor) ? cfgRegua.valor : null;
+      }
+      return { pendenciasDoCliente, corteRegua };
+    })(),
+    // Andamento: o último registro de cada título desta página (boleto enviado, confirmação, cobrança...).
+    (async () => {
+      const m = new Map<string, { texto: string; quando: string }>();
+      if (titulos.length > 0) {
+        const { data } = await supabase.from("interacoes").select("referencia_id, tipo, criado_em")
+          .eq("modulo", MODULO).eq("referencia_tabela", "rec_titulos").in("referencia_id", titulos.map((t) => t.id)).in("tipo", Object.keys(ROTULO_ANDAMENTO))
+          .order("criado_em", { ascending: false }).limit(1000);
+        for (const i of data ?? []) {
+          const id = i.referencia_id as string;
+          if (!m.has(id)) m.set(id, { texto: ROTULO_ANDAMENTO[i.tipo as string], quando: dataCurta(i.criado_em as string) });
+        }
+      }
+      return m;
+    })(),
+    // NF e pedidos dos títulos desta página.
+    (async () => {
+      const m = new Map<string, string[]>();
+      if (idsNotas.length > 0) {
+        const { data } = await supabase.from("rec_notas_saida").select("id, pedidos").in("id", idsNotas);
+        for (const n of data ?? []) m.set(n.id as string, (n.pedidos as string[]) ?? []);
+      }
+      return m;
+    })(),
+  ]);
   const semContato = (t: LinhaTitulo) => titulaNoEscopoDeCadastro(t) && !temContatoUtil(contatosPorCliente.get(t.contraparte_id) ?? []);
 
-  // Antecipação parcial na AKF (migration 0113): quanto do título já está na AKF e quanto resta com a Neo.
-  const partes = await lerPartes(supabase, titulos.map((t) => t.id));
-
-  // Próxima ação: o passo da sequência que está na vez, a partir das pendências abertas do cliente e do estágio do título.
-  const pendenciasDoCliente = new Map<string, string[]>();
-  let corteRegua: string | null = null;
-  if (idsDaPagina.length > 0) {
-    const [{ data: pendencias }, { data: cfgRegua }] = await Promise.all([
-      supabase.from("pendencias").select("referencia_id, titulo").eq("modulo", MODULO).eq("referencia_tabela", "contrapartes")
-        .in("referencia_id", idsDaPagina).in("status", ["aberta", "em_andamento"]).limit(1000),
-      supabase.from("configuracoes").select("valor").eq("chave", "financeiro.recebiveis.regua_a_partir_de").maybeSingle(),
-    ]);
-    // A chave é cliente + unidade: a pendência da Filial Contagem não aparece como ação de um título da Matriz.
-    for (const p of pendencias ?? []) {
-      const chave = `${p.referencia_id as string}|${unidadeDaPendencia(p.titulo as string)}`;
-      pendenciasDoCliente.set(chave, [...(pendenciasDoCliente.get(chave) ?? []), p.titulo as string]);
-    }
-    corteRegua = typeof cfgRegua?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfgRegua.valor) ? cfgRegua.valor : null;
-  }
   const acaoDoTitulo = (t: LinhaTitulo): { rotulo: string; href: string; destaque: boolean } => {
     const ficha = `/financeiro/recebiveis/${t.id}`;
     const pendencias = pendenciasDoCliente.get(`${t.contraparte_id}|${t.unidade}`) ?? [];
@@ -234,30 +271,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
     return { rotulo: "Abrir", href: ficha, destaque: false };
   };
 
-  // Andamento: o último registro de cada título desta página (boleto enviado, confirmação, cobrança...).
-  const andamento = new Map<string, { texto: string; quando: string }>();
-  if (titulos.length > 0) {
-    const { data } = await supabase.from("interacoes").select("referencia_id, tipo, criado_em")
-      .eq("modulo", MODULO).eq("referencia_tabela", "rec_titulos").in("referencia_id", titulos.map((t) => t.id)).in("tipo", Object.keys(ROTULO_ANDAMENTO))
-      .order("criado_em", { ascending: false }).limit(1000);
-    for (const i of data ?? []) {
-      const id = i.referencia_id as string;
-      if (!andamento.has(id)) andamento.set(id, { texto: ROTULO_ANDAMENTO[i.tipo as string], quando: dataCurta(i.criado_em as string) });
-    }
-  }
-
-  // NF e pedidos dos títulos desta página.
-  const idsNotas = [...new Set(titulos.map((t) => t.nota_saida_id).filter((x): x is string => x !== null))];
-  const pedidosDaNota = new Map<string, string[]>();
-  if (idsNotas.length > 0) {
-    const { data } = await supabase.from("rec_notas_saida").select("id, pedidos").in("id", idsNotas);
-    for (const n of data ?? []) pedidosDaNota.set(n.id as string, (n.pedidos as string[]) ?? []);
-  }
-
-  // 3) Última sincronização com o Consistem.
-  const { data: ultimas } = await supabase.from("importacoes")
-    .select("criado_em, linhas_novas, linhas_alteradas, linhas_baixadas")
-    .eq("modulo", MODULO).eq("arquivo", "api:consistem").order("criado_em", { ascending: false }).limit(1);
+  // Última sincronização com o Consistem (lida na onda 1).
   const ultima = ultimas?.[0] as { criado_em: string; linhas_novas: number | null; linhas_alteradas: number | null; linhas_baixadas: number | null } | undefined;
   const quando = ultima
     ? new Intl.DateTimeFormat("pt-BR", { timeZone: FUSO, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(ultima.criado_em))
@@ -315,20 +329,16 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
           </p>
         </div>
         <div className="flex flex-wrap items-start gap-2">
-          <Button render={<Link href="/financeiro/recebiveis/tarefas" />}>
-            Tarefas{qtdTarefas ? ` (${qtdTarefas})` : ""}
-          </Button>
-          <Button variant="outline" render={<Link href="/financeiro/recebiveis/clientes" />}>
-            Clientes e contatos{qtdParaCadastrar ? ` (${qtdParaCadastrar} para cadastrar)` : ""}
-          </Button>
-          <Button variant="outline" render={<Link href="/financeiro/recebiveis/baixas" />}>
-            Baixas a conferir{qtdBaixasAConferir ? ` (${qtdBaixasAConferir})` : ""}
-          </Button>
+          <Suspense fallback={<BotoesSemNumeros />}>
+            <BotoesComNumeros />
+          </Suspense>
           {ehGestor && <BotoesSincronizacao />}
         </div>
       </div>
 
-      <RecebiveisAbas ativa="carteira" contagens={{ tarefas: qtdTarefas, clientes: qtdParaCadastrar, baixas: qtdBaixasAConferir ?? 0 }} />
+      <Suspense fallback={<AbasSemNumeros />}>
+        <AbasComNumeros />
+      </Suspense>
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
       <nav aria-label="Unidade" className="flex flex-wrap gap-px overflow-hidden rounded-[3px] border border-grade bg-grade sm:w-fit">

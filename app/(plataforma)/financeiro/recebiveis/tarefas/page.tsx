@@ -17,13 +17,12 @@ import { sanitizarBusca } from "@/lib/nucleo/erros";
 import { descreverPrazo } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
-import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { nomeDoMarco, ROTULO_UNIDADE, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import { BotaoCopiar } from "../[id]/componentes";
 import { RecebiveisAbas } from "../abas-recebiveis";
 import { BaixaComEvidencia, type LinhaEvidencia } from "../baixas/componentes";
 import { TabelaParcelas } from "./tabela-parcelas";
-import { carregarTarefas } from "./dados";
+import { tarefasDaRequisicao } from "./dados";
 
 export const metadata: Metadata = { title: "Tarefas — Recebíveis" };
 
@@ -47,8 +46,7 @@ export default async function PaginaTarefas({ searchParams }: PageProps<"/financ
   const abaPedida = primeiro(parametros.aba);
   const paginaPedida = Number.parseInt(primeiro(parametros.pagina), 10) || 1;
 
-  const supabase = await criarClienteServidor();
-  const todas = await carregarTarefas(supabase);
+  const todas = await tarefasDaRequisicao();
   const tarefas = aplicarFiltros(todas, { unidade, busca });
   const contagens = contarFilas(tarefas);
   const aba: Fila = ehFila(abaPedida) ? abaPedida : abaInicial(contagens);

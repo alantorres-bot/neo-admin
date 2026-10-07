@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
 import { MODULO_RECEBIVEIS, TIPO_ANEXO_BOLETO } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { ROTULO_ANDAMENTO } from "@/lib/modulos/financeiro/recebiveis/carteira";
@@ -7,7 +8,7 @@ import {
 } from "@/lib/modulos/financeiro/recebiveis/tarefas";
 import { titulaNoEscopoDeCadastro } from "@/lib/modulos/financeiro/recebiveis/clientes";
 import { FUSO, hojeEmCuiaba } from "@/lib/nucleo/fila";
-import type { criarClienteServidor } from "@/lib/supabase/servidor";
+import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { ESTAGIOS_COBRAVEIS, mensagemWhatsAppCobranca, planejarCobrancas, unidadeDaPendencia, type TituloCobranca, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import {
   ESTAGIOS_CONFIRMAVEIS, mensagemWhatsAppConfirmacao, MINIMO_PADRAO_CENTAVOS, planejarConfirmacoes, prazoConfirmacao, type TituloConfirmacao,
@@ -34,54 +35,87 @@ type LinhaTitulo = {
 type ContatoLinha = ContatoEscolha & { contraparte_id: string; funcao?: string | null };
 
 /**
+ * As tarefas desta requisição, calculadas UMA vez: a tela Tarefas e os contadores da Carteira (botão e aba, que carregam à parte
+ * dentro de <Suspense>) usam o mesmo resultado, sem repetir as leituras.
+ */
+export const tarefasDaRequisicao = cache(async (): Promise<Tarefas> => carregarTarefas(await criarClienteServidor()));
+
+/**
  * Calcula todas as filas de tarefas do contas a receber, hoje, com a sessão de quem chama (a RLS vale). Usa as mesmas regras
  * puras da sincronização (confirmação, régua, escopo do cadastro) para a tela e as pendências nunca discordarem. Nada é gravado.
  */
 export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
   const hoje = hojeEmCuiaba();
 
-  // 1) Todos os títulos em aberto (PostgREST devolve até 1000 por vez).
-  const abertos: LinhaTitulo[] = [];
-  for (let de = 0; ; de += 1000) {
-    const { data, error } = await supabase.from("rec_vw_titulos")
-      .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, dias_atraso, faixa, cedido, contestado, unidade, forma_pagamento, regua_pausada_ate, consistem_pago_em, consistem_valor_pago, nota_saida_id, nota_fiscal")
-      .neq("faixa", "encerrado").order("id").range(de, de + 999);
-    if (error) throw new Error(`Falha ao ler a carteira: ${error.message}`);
-    abertos.push(...((data ?? []) as unknown as LinhaTitulo[]));
-    if (!data || data.length < 1000) break;
-  }
-  const emAberto = abertos.filter((t) => !ENCERRADOS.includes(t.estagio));
+  // Cada ida ao banco custa a latência da rede (~200 ms com o banco no Canadá), então as leituras que não dependem uma da outra
+  // saem juntas, em 3 ondas: (1) títulos, configurações e pendências; (2) boletos, antecipações e clientes já conhecidos;
+  // (3) clientes dos grupos formados e histórico.
 
-  // 2) Configurações e pendências que mudam a classificação.
-  const [{ data: cfgRegua }, { data: cfgMinimo }, { data: baixasPend }, { data: ligarPend }] = await Promise.all([
+  // Onda 1: todos os títulos em aberto (PostgREST devolve até 1000 por vez) + configurações e pendências que mudam a classificação.
+  const lerAbertos = async () => {
+    const todos: LinhaTitulo[] = [];
+    for (let de = 0; ; de += 1000) {
+      const { data, error } = await supabase.from("rec_vw_titulos")
+        .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, dias_atraso, faixa, cedido, contestado, unidade, forma_pagamento, regua_pausada_ate, consistem_pago_em, consistem_valor_pago, nota_saida_id, nota_fiscal")
+        .neq("faixa", "encerrado").order("id").range(de, de + 999);
+      if (error) throw new Error(`Falha ao ler a carteira: ${error.message}`);
+      todos.push(...((data ?? []) as unknown as LinhaTitulo[]));
+      if (!data || data.length < 1000) break;
+    }
+    return todos;
+  };
+  const [abertos, { data: cfgRegua }, { data: cfgMinimo }, { data: baixasPend }, { data: ligarPend }] = await Promise.all([
+    lerAbertos(),
     supabase.from("configuracoes").select("valor").eq("chave", CONFIG_INICIO_REGUA).maybeSingle(),
     supabase.from("configuracoes").select("valor").eq("chave", CONFIG_MINIMO_CONFIRMACAO).maybeSingle(),
     supabase.from("pendencias").select("referencia_id").eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "rec_titulos").like("titulo", "Possível baixa:%").in("status", ["aberta", "em_andamento"]).limit(1000),
     supabase.from("pendencias").select("referencia_id, titulo").eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "contrapartes").like("titulo", "Ligar para confirmar pagamento:%").in("status", ["aberta", "em_andamento"]).limit(1000),
   ]);
+  const emAberto = abertos.filter((t) => !ENCERRADOS.includes(t.estagio));
   const corte = typeof cfgRegua?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfgRegua.valor) ? cfgRegua.valor : null;
   const minimoReais = typeof cfgMinimo?.valor === "number" ? cfgMinimo.valor : Number(cfgMinimo?.valor);
   const minimoCentavos = Number.isFinite(minimoReais) && minimoReais > 0 ? Math.round(minimoReais * 100) : MINIMO_PADRAO_CENTAVOS;
   const idsPossivelBaixa = new Set((baixasPend ?? []).map((p) => p.referencia_id as string));
   const ligar = new Set((ligarPend ?? []).map((p) => `${p.referencia_id as string}|${unidadeDaPendencia(p.titulo as string)}`));
 
-  // 3) Parcelas aguardando boleto: quais já têm o PDF anexado.
   const aguardando = emAberto.filter((t) => t.estagio === "aguardando_boleto");
-  const comBoleto = new Set<string>();
-  for (const lote of lotes(aguardando.map((t) => t.id))) {
-    const { data, error } = await supabase.from("anexos").select("referencia_id").eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "rec_titulos").eq("tipo", TIPO_ANEXO_BOLETO).in("referencia_id", lote);
-    if (error) throw new Error(`Falha ao ler os boletos anexados: ${error.message}`);
-    for (const a of data ?? []) comBoleto.add(a.referencia_id as string);
-  }
-
-  // 4) Confirmação: parcelas que vencem nos próximos 7 dias (com o restante das antecipações parciais) e cobrança: régua.
+  // Confirmação: parcelas que vencem nos próximos 7 dias; cobrança: régua. Cadastro de contatos: Matriz, a vencer ou vencido há < 60 dias.
   const candidatasConfirmacao = emAberto.filter((t) => (ESTAGIOS_CONFIRMAVEIS as readonly string[]).includes(t.estagio) && t.vencimento >= hoje);
   const candidatasCobranca = corte
     ? emAberto.filter((t) => (ESTAGIOS_COBRAVEIS as readonly string[]).includes(t.estagio) && t.vencimento >= corte && t.vencimento < hoje)
     : [];
-  const partes = await lerPartes(supabase, [...candidatasConfirmacao.filter((t) => diasEntre(t.vencimento, hoje) <= 7), ...candidatasCobranca].map((t) => t.id));
-  const valorRestante = (t: LinhaTitulo) => partes.get(t.id)?.restanteCentavos ?? centavos(t.valor);
+  const noEscopo = emAberto.filter((t) => titulaNoEscopoDeCadastro({ unidade: t.unidade, faixa: t.faixa, dias_atraso: t.dias_atraso }));
+
+  // Clientes (nome e código) e contatos: cada cliente é lido uma única vez, em lotes que correm juntos.
   const nomesClientes = new Map<string, { nome: string; codigo: string | null }>();
+  const contatosPorCliente = new Map<string, ContatoLinha[]>();
+  const clientesLidos = new Set<string>();
+  const carregarClientes = async (ids: Iterable<string>) => {
+    const faltam = [...new Set(ids)].filter((id) => !clientesLidos.has(id));
+    for (const id of faltam) clientesLidos.add(id);
+    await Promise.all(lotes(faltam).map(async (lote) => {
+      const [{ data: clientes }, { data: contatos }] = await Promise.all([
+        supabase.from("contrapartes").select("id, nome, codigo_erp").in("id", lote),
+        supabase.from("contatos").select("id, contraparte_id, nome, funcao, email, whatsapp, telefone, finalidades, canal_preferido, ativo").in("contraparte_id", lote).eq("ativo", true),
+      ]);
+      for (const c of clientes ?? []) nomesClientes.set(c.id as string, { nome: c.nome as string, codigo: (c.codigo_erp as string | null) ?? null });
+      for (const c of (contatos ?? []) as unknown as ContatoLinha[]) contatosPorCliente.set(c.contraparte_id, [...(contatosPorCliente.get(c.contraparte_id) ?? []), c]);
+    }));
+  };
+
+  // Onda 2: boletos anexados, antecipações parciais (restante) e os clientes que já se sabe que aparecem.
+  const comBoleto = new Set<string>();
+  const lerBoletos = Promise.all(lotes(aguardando.map((t) => t.id)).map(async (lote) => {
+    const { data, error } = await supabase.from("anexos").select("referencia_id").eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "rec_titulos").eq("tipo", TIPO_ANEXO_BOLETO).in("referencia_id", lote);
+    if (error) throw new Error(`Falha ao ler os boletos anexados: ${error.message}`);
+    for (const a of data ?? []) comBoleto.add(a.referencia_id as string);
+  }));
+  const [partes] = await Promise.all([
+    lerPartes(supabase, [...candidatasConfirmacao.filter((t) => diasEntre(t.vencimento, hoje) <= 7), ...candidatasCobranca].map((t) => t.id)),
+    lerBoletos,
+    carregarClientes([...aguardando, ...emAberto.filter((t) => idsPossivelBaixa.has(t.id)), ...noEscopo].map((t) => t.contraparte_id)),
+  ]);
+  const valorRestante = (t: LinhaTitulo) => partes.get(t.id)?.restanteCentavos ?? centavos(t.valor);
 
   const unidadeDe = (t: Pick<LinhaTitulo, "unidade">): Unidade => (t.unidade === "contagem" ? "contagem" : "matriz");
   const gruposConfirmacao = planejarConfirmacoes(
@@ -101,23 +135,29 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     )
     : [];
 
-  // 5) Cadastro de contatos: clientes da Matriz no escopo (a vencer ou vencido há menos de 60 dias).
-  const noEscopo = emAberto.filter((t) => titulaNoEscopoDeCadastro({ unidade: t.unidade, faixa: t.faixa, dias_atraso: t.dias_atraso }));
-
-  // 6) Clientes (nome e código) e contatos de todos os que aparecem em alguma fila.
-  const idsClientes = new Set<string>([
-    ...aguardando.map((t) => t.contraparte_id), ...gruposConfirmacao.map((g) => g.contraparteId), ...gruposCobranca.map((g) => g.contraparteId),
-    ...emAberto.filter((t) => idsPossivelBaixa.has(t.id)).map((t) => t.contraparte_id), ...noEscopo.map((t) => t.contraparte_id),
+  // Onda 3: clientes dos grupos formados + último registro do histórico de cada parcela das filas ("o que já foi feito") e as
+  // cobranças já registradas por marco.
+  const idsHistorico = [...new Set([
+    ...aguardando.map((t) => t.id), ...gruposConfirmacao.flatMap((g) => g.titulos.map((t) => t.id)), ...gruposCobranca.flatMap((g) => g.titulos.map((t) => t.id)),
+  ])];
+  const ultimo = new Map<string, Andamento>();
+  const cobrancasFeitas = new Set<string>(); // "parcelaId|marco"
+  await Promise.all([
+    carregarClientes([...gruposConfirmacao, ...gruposCobranca].map((g) => g.contraparteId)),
+    ...lotes(idsHistorico).map(async (lote) => {
+      const { data, error } = await supabase.from("interacoes").select("referencia_id, tipo, descricao, criado_em")
+        .eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "rec_titulos").in("referencia_id", lote).in("tipo", Object.keys(ROTULO_ANDAMENTO))
+        .order("criado_em", { ascending: false }).limit(1000);
+      if (error) throw new Error(`Falha ao ler o histórico dos títulos: ${error.message}`);
+      for (const i of data ?? []) {
+        const id = i.referencia_id as string;
+        if (!ultimo.has(id)) ultimo.set(id, { texto: ROTULO_ANDAMENTO[i.tipo as string], quando: em(i.criado_em as string) });
+        const marco = marcoDaDescricao(i.descricao as string | null);
+        if (TIPOS_COBRANCA_FEITA.includes(i.tipo as string) && marco !== null) cobrancasFeitas.add(`${id}|${marco}`);
+      }
+    }),
   ]);
-  const contatosPorCliente = new Map<string, ContatoLinha[]>();
-  for (const lote of lotes([...idsClientes])) {
-    const [{ data: clientes }, { data: contatos }] = await Promise.all([
-      supabase.from("contrapartes").select("id, nome, codigo_erp").in("id", lote),
-      supabase.from("contatos").select("id, contraparte_id, nome, funcao, email, whatsapp, telefone, finalidades, canal_preferido, ativo").in("contraparte_id", lote).eq("ativo", true),
-    ]);
-    for (const c of clientes ?? []) nomesClientes.set(c.id as string, { nome: c.nome as string, codigo: (c.codigo_erp as string | null) ?? null });
-    for (const c of (contatos ?? []) as unknown as ContatoLinha[]) contatosPorCliente.set(c.contraparte_id, [...(contatosPorCliente.get(c.contraparte_id) ?? []), c]);
-  }
+
   const base = (clienteId: string, unidade: Unidade, documentos: string[]): ItemBase => {
     const c = nomesClientes.get(clienteId);
     return { clienteId, cliente: c?.nome ?? "(cliente sem nome)", codigo: c?.codigo ?? null, unidade, textoBusca: montarTextoBusca(c?.nome ?? "", c?.codigo ?? null, documentos) };
@@ -132,25 +172,6 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     const lista = contatosPorCliente.get(id) ?? [];
     return sugerido(escolherContato(lista, ["confirmacao", "cobranca"], "whatsapp") ?? escolherContato(lista, ["confirmacao", "cobranca"], "telefone"));
   };
-
-  // 7) Último registro do histórico de cada parcela das filas ("o que já foi feito") e as cobranças já registradas por marco.
-  const idsHistorico = [...new Set([
-    ...aguardando.map((t) => t.id), ...gruposConfirmacao.flatMap((g) => g.titulos.map((t) => t.id)), ...gruposCobranca.flatMap((g) => g.titulos.map((t) => t.id)),
-  ])];
-  const ultimo = new Map<string, Andamento>();
-  const cobrancasFeitas = new Set<string>(); // "parcelaId|marco"
-  for (const lote of lotes(idsHistorico)) {
-    const { data, error } = await supabase.from("interacoes").select("referencia_id, tipo, descricao, criado_em")
-      .eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "rec_titulos").in("referencia_id", lote).in("tipo", Object.keys(ROTULO_ANDAMENTO))
-      .order("criado_em", { ascending: false }).limit(1000);
-    if (error) throw new Error(`Falha ao ler o histórico dos títulos: ${error.message}`);
-    for (const i of data ?? []) {
-      const id = i.referencia_id as string;
-      if (!ultimo.has(id)) ultimo.set(id, { texto: ROTULO_ANDAMENTO[i.tipo as string], quando: em(i.criado_em as string) });
-      const marco = marcoDaDescricao(i.descricao as string | null);
-      if (TIPOS_COBRANCA_FEITA.includes(i.tipo as string) && marco !== null) cobrancasFeitas.add(`${id}|${marco}`);
-    }
-  }
 
   // ---- monta as filas ----
   const itemParcela = (t: LinhaTitulo): ItemParcela => ({
