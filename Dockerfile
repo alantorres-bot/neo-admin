@@ -12,8 +12,10 @@ FROM node:24-slim AS construcao
 WORKDIR /app
 COPY --from=dependencias /app/node_modules ./node_modules
 COPY . .
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
+# Padrões = projeto de São Paulo (valores PÚBLICOS: URL e chave anon, que o navegador já enxerga). Assim `gcloud run deploy --source`
+# funciona sem passar argumentos. Para apontar a outro projeto, use --build-arg.
+ARG NEXT_PUBLIC_SUPABASE_URL=https://chdszjpbtfpstjrqnmmm.supabase.co
+ARG NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNoZHN6anBidGZwc3RqcnFubW1tIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEzOTQxNjksImV4cCI6MjEwNjk3MDE2OX0.fOl83DN5B8MqlkKZoZLrB0IaNsMXXnvpmOuPp0kSB7o
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
     NEO_STANDALONE=1 \
