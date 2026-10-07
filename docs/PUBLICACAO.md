@@ -45,8 +45,7 @@ O plano gratuito do Supabase **não faz backup diário**. Rode `exportar` todo d
 
 **Agendamento diário (precisa de autorização do usuário):** o Claude tentou criar a tarefa do Windows e foi bloqueado pela proteção contra "persistência não autorizada"; por isso o comando fica aqui. Se quiser, rode no PowerShell (como você mesmo, uma vez):
 ```powershell
-$acao = New-ScheduledTaskAction -Execute "cmd.exe" -Argument '/c cd /d C:\dev
-eo-admin && node scriptsanco-copia.mjs exportar --ref chdszjpbtfpstjrqnmmm >> backupsackup.log 2>&1'
+$acao = New-ScheduledTaskAction -Execute "cmd.exe" -Argument '/c cd /d C:\dev\neo-admin && node scripts\banco-copia.mjs exportar --ref chdszjpbtfpstjrqnmmm >> backups\backup.log 2>&1'
 Register-ScheduledTask -TaskName "NeoAdmin-Backup-Diario" -Action $acao -Trigger (New-ScheduledTaskTrigger -Daily -At 7:30PM) -Settings (New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Minutes 30)) -Force
 ```
 A máquina precisa estar ligada e com a CLI do Supabase logada nesse horário. Alternativa sem agendar: rodar `node scripts/banco-copia.mjs exportar --ref chdszjpbtfpstjrqnmmm` à mão de vez em quando.
