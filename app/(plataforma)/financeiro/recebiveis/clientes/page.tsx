@@ -158,7 +158,7 @@ export default async function PaginaClientes({ searchParams }: PageProps<"/finan
         </p>
       ) : (
         <div className="overflow-x-auto rounded-[3px] border border-grade">
-          <Table>
+          <Table className="cartoes">
             <TableHeader>
               <TableRow>
                 <TableHead>Cliente</TableHead>

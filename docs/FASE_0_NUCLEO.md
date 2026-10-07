@@ -1,5 +1,7 @@
 # Fase 0 — Núcleo
 
+> **Atualização (07/10/2026):** este roteiro cobre só as migrations 0001–0005/0100 e uma função. Hoje são 23 migrations (até a 0117) e 3 Edge Functions (`nucleo-gerir-usuarios`, `rec-rascunho-gmail`, `rec-sincronizar-consistem`). O passo a passo atual de projeto novo, cópia de dados, hospedagem e virada está em `docs/PUBLICACAO.md`.
+
 Status: construída e verificada **sem Supabase real** (ver "O que ainda não foi testado") — aguardando aprovação para a Fase 1.
 
 ## 1. O que foi entregue

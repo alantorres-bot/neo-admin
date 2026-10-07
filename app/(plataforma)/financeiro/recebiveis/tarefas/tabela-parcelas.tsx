@@ -120,7 +120,7 @@ export function TabelaParcelas({ grupos, tipo, podeOperar, hoje, mostrarUnidade 
           {tipo !== "anexar" && <span className="text-xs text-muted-foreground">Uma chamada por cliente: se um cliente falhar, os outros continuam.</span>}
         </div>
       )}
-      <Table>
+      <Table className="cartoes">
         <TableHeader>
           <TableRow>
             {podeOperar && (

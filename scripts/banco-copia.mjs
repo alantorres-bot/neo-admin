@@ -12,7 +12,7 @@
 // projeto da cópia. As cópias contêm dados
 // financeiros e hashes de senha: guarde a pasta num lugar privado (nunca no Git; `backups/` já está no .gitignore).
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 

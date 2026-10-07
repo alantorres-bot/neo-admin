@@ -116,7 +116,7 @@ export default async function PaginaCliente({ params }: PageProps<"/financeiro/r
             <p className="text-sm text-muted-foreground">Nenhum contato cadastrado.</p>
           ) : (
             <div className="overflow-x-auto rounded-[3px] border border-grade">
-              <Table>
+              <Table className="cartoes">
                 <TableHeader>
                   <TableRow>
                     <TableHead>Nome</TableHead>
@@ -164,7 +164,7 @@ export default async function PaginaCliente({ params }: PageProps<"/financeiro/r
             <div key={u} className="space-y-1">
               {unidades.length > 1 && <p className="text-xs font-bold">{ROTULO_UNIDADE[u]}</p>}
               <div className="overflow-x-auto rounded-[3px] border border-grade">
-                <Table>
+                <Table className="cartoes">
                   <TableHeader>
                     <TableRow>
                       <TableHead>Documento</TableHead>

@@ -1,7 +1,9 @@
 "use client";
 
 // Moldura no visual do ERP Consistem (a mesma do Vigilância Fiscal): trilho escuro de ícones à esquerda, barra vermelha no
-// topo com a "aba" da tela atual e trilha de navegação em vermelho. O trilho tem 68 px e serve também no celular.
+// topo com a "aba" da tela atual e trilha de navegação em vermelho. O trilho tem 68 px no computador; abaixo de `md`
+// (celular) ele vira uma barra inferior que rola na horizontal.
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -23,7 +25,7 @@ const ICONE_DA_AREA: Record<string, LucideIcon> = {
 
 type Usuario = { nome: string; email: string; adminGeral: boolean };
 
-const CLASSE_ITEM = "flex w-full flex-col items-center gap-0.5 px-1 py-2 text-[10px] leading-tight transition-colors";
+const CLASSE_ITEM = "flex w-[72px] shrink-0 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[10px] leading-tight transition-colors md:w-full md:justify-start";
 
 function ItemTrilho({ href, icone: Icone, rotulo, titulo, ativo }: { href: string; icone: LucideIcon; rotulo: string; titulo?: string; ativo: boolean }) {
   return (
@@ -51,6 +53,33 @@ function descobrirAtual(caminho: string, menu: MenuArea[]): Atual {
   return { icone: House, rotulo: "Início", trilha: ["Início"] };
 }
 
+/**
+ * Tabelas em cartões no celular: nas telas com `<Table className="cartoes">`, cada linha vira um cartão "rótulo: valor"
+ * (CSS em globals.css). Os rótulos vêm do cabeçalho da própria tabela: este componente copia o texto de cada `<th>` para o
+ * `data-label` das células, na primeira pintura e sempre que a lista muda.
+ */
+function TabelasEmCartoes() {
+  useEffect(() => {
+    const rotular = () => {
+      document.querySelectorAll<HTMLTableElement>("table.cartoes").forEach((tabela) => {
+        const cabecalhos = [...tabela.querySelectorAll("thead th")].map((th) => (th.textContent ?? "").trim());
+        tabela.querySelectorAll("tbody tr").forEach((tr) => {
+          let coluna = 0;
+          for (const celula of tr.children) {
+            if (celula.getAttribute("data-label") === null) celula.setAttribute("data-label", cabecalhos[coluna] ?? "");
+            coluna += Number(celula.getAttribute("colspan") ?? 1);
+          }
+        });
+      });
+    };
+    rotular();
+    const observador = new MutationObserver(rotular);
+    observador.observe(document.body, { childList: true, subtree: true });
+    return () => observador.disconnect();
+  }, []);
+  return null;
+}
+
 export function Casca({
   menu, usuario, mostrarConfiguracoes, children,
 }: { menu: MenuArea[]; usuario: Usuario; mostrarConfiguracoes: boolean; children: React.ReactNode }) {
@@ -62,25 +91,26 @@ export function Casca({
   return (
     <div className="flex min-h-svh bg-white">
       {/* Trilho de ícones, como o do ERP */}
-      <aside className="sticky top-0 flex h-svh w-[68px] shrink-0 flex-col bg-trilho text-gray-200">
-        <Link href="/inicio" title="Neo Admin — Grupo Neo Formas" className="flex h-11 shrink-0 items-center justify-center border-b border-white/10 font-condensada text-[15px] font-bold text-white">
+      <TabelasEmCartoes />
+      <aside className="fixed inset-x-0 bottom-0 z-40 flex h-14 w-full flex-row border-t border-white/10 bg-trilho text-gray-200 md:sticky md:inset-x-auto md:bottom-auto md:top-0 md:h-svh md:w-[68px] md:shrink-0 md:flex-col md:border-t-0">
+        <Link href="/inicio" title="Neo Admin — Grupo Neo Formas" className="hidden h-11 shrink-0 items-center justify-center border-b border-white/10 font-condensada text-[15px] font-bold text-white md:flex">
           Neo
         </Link>
-        <nav aria-label="Principal" className="flex-1 overflow-y-auto py-1">
+        <nav aria-label="Principal" className="flex flex-1 flex-row overflow-x-auto [scrollbar-width:none] md:flex-col md:overflow-y-auto md:py-1 [&::-webkit-scrollbar]:hidden">
           <ItemTrilho href="/inicio" icone={House} rotulo="Início" ativo={ativo("/inicio")} />
           {menu.map(({ area, modulos }) => (
-            <div key={area.codigo} className="mt-1 border-t border-white/10 pt-1">
+            <div key={area.codigo} className="flex border-l border-white/10 md:mt-1 md:block md:border-l-0 md:border-t md:pt-1">
               {modulos.map((m) => (
                 <ItemTrilho key={m.codigo} href={m.rota} icone={ICONE_DA_AREA[area.codigo] ?? ClipboardList} rotulo={m.nome} titulo={`${area.nome} › ${m.nome}`} ativo={ativo(m.rota)} />
               ))}
             </div>
           ))}
         </nav>
-        <div className="shrink-0 border-t border-white/10">
+        <div className="flex shrink-0 border-l border-white/10 md:block md:border-l-0 md:border-t">
           {mostrarConfiguracoes && <ItemTrilho href="/configuracoes" icone={Settings} rotulo="Config." titulo="Configurações" ativo={ativo("/configuracoes")} />}
           <ItemTrilho href="/conta" icone={UserRound} rotulo="Conta" titulo="Minha conta" ativo={ativo("/conta")} />
-          <form action={sair}>
-            <button type="submit" title={`Sair (${usuario.email})`} className={cn(CLASSE_ITEM, "text-gray-300 hover:bg-trilho-claro hover:text-white")}>
+          <form action={sair} className="shrink-0 md:w-full">
+            <button type="submit" title={`Sair (${usuario.email})`} className={cn(CLASSE_ITEM, "w-[72px] text-gray-300 hover:bg-trilho-claro hover:text-white md:w-full")}>
               <LogOut className="size-5" />
               Sair
             </button>
@@ -107,7 +137,7 @@ export function Casca({
         </header>
 
         {/* Trilha de navegação, como a das rotinas do ERP */}
-        <div className="flex items-center gap-1 border-b border-grade-clara px-5 py-1.5 text-[12px] text-gray-500">
+        <div className="flex items-center gap-1 overflow-x-auto whitespace-nowrap border-b border-grade-clara px-3 py-1.5 text-[12px] text-gray-500 md:px-5">
           <span className="text-gray-400">…</span>
           {atual.trilha.map((parte, i) => {
             const ultimo = i === atual.trilha.length - 1;
@@ -120,7 +150,7 @@ export function Casca({
           })}
         </div>
 
-        <main className="min-w-0 flex-1 bg-white p-4 text-texto md:p-5">{children}</main>
+        <main className="min-w-0 flex-1 bg-white p-3 pb-20 text-texto sm:p-4 sm:pb-20 md:p-5 md:pb-5">{children}</main>
       </div>
     </div>
   );

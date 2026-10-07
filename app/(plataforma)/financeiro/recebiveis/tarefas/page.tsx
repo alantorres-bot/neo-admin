@@ -121,7 +121,7 @@ export default async function PaginaTarefas({ searchParams }: PageProps<"/financ
     const p = paginar(tarefas.confirmar, paginaPedida);
     tabela = p.total === 0 ? null : (
       <>
-        <Table>
+        <Table className="cartoes">
           <TableHeader><TableRow>
             <TableHead>Cliente</TableHead><TableHead>Parcelas</TableHead><TableHead>Vence</TableHead><TableHead className="text-right">Total</TableHead>
             <TableHead>Contatar</TableHead><TableHead>Contato</TableHead><TableHead>Já feito</TableHead><TableHead />
@@ -153,7 +153,7 @@ export default async function PaginaTarefas({ searchParams }: PageProps<"/financ
     const p = paginar(tarefas.cobrar, paginaPedida);
     tabela = p.total === 0 ? null : (
       <>
-        <Table>
+        <Table className="cartoes">
           <TableHeader><TableRow>
             <TableHead>Cliente</TableHead><TableHead>Marco</TableHead><TableHead>Parcelas</TableHead><TableHead>Vencido desde</TableHead><TableHead className="text-right">Total</TableHead>
             <TableHead>Contato</TableHead><TableHead>Já feito</TableHead><TableHead />
@@ -201,7 +201,7 @@ export default async function PaginaTarefas({ searchParams }: PageProps<"/financ
           </div>
         )}
         {semEvidencia.length > 0 && (
-          <Table>
+          <Table className="cartoes">
             <TableHeader><TableRow>
               <TableHead>Cliente</TableHead><TableHead>Título</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>O Consistem informa</TableHead><TableHead />
             </TableRow></TableHeader>
@@ -226,7 +226,7 @@ export default async function PaginaTarefas({ searchParams }: PageProps<"/financ
     const p = paginar(tarefas.contato, paginaPedida);
     tabela = p.total === 0 ? null : (
       <>
-        <Table>
+        <Table className="cartoes">
           <TableHeader><TableRow>
             <TableHead>Cliente</TableHead><TableHead>Código</TableHead><TableHead className="text-right">Títulos em aberto</TableHead><TableHead>Primeiro vencimento</TableHead><TableHead />
           </TableRow></TableHeader>

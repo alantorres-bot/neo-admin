@@ -167,7 +167,7 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
         </div>
       )}
       <div className="overflow-x-auto rounded-[3px] border border-grade">
-        <Table>
+        <Table className="cartoes">
           <TableHeader>
             <TableRow>
               {podeOperar && (
@@ -263,7 +263,7 @@ export function ListaPartes({ partes, podeOperar }: { partes: LinhaParte[]; pode
 
   return (
     <div className="overflow-x-auto rounded-[3px] border border-grade">
-      <Table>
+      <Table className="cartoes">
         <TableHeader>
           <TableRow>
             <TableHead>Documento</TableHead>

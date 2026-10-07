@@ -465,7 +465,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
           </p>
         ) : (
           <div className="overflow-x-auto rounded-[3px] border border-grade">
-            <Table>
+            <Table className="cartoes">
               <TableHeader>
                 <TableRow>
                   <TableHead>Documento</TableHead>

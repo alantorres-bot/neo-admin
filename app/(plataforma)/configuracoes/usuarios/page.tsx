@@ -38,7 +38,7 @@ export default async function PaginaUsuarios() {
       </div>
 
       <div className="overflow-x-auto rounded-lg border">
-        <Table>
+        <Table className="cartoes">
           <TableHeader>
             <TableRow>
               <TableHead>Usuário</TableHead>

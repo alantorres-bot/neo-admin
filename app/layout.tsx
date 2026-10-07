@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist_Mono, Roboto, Roboto_Condensed } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
@@ -11,6 +11,8 @@ export const metadata: Metadata = {
   title: { default: "Neo Admin", template: "%s · Neo Admin" },
   description: "Plataforma do Administrativo do grupo Neo Formas.",
 };
+
+export const viewport: Viewport = { width: "device-width", initialScale: 1, themeColor: "#d9433c" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (

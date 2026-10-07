@@ -161,3 +161,42 @@
     background-color: var(--color-cabecalho);
   }
 }
+/* Tabelas em cartões no celular: nas telas com <Table className="cartoes">, cada linha vira um cartão "rótulo: valor".
+   Os rótulos (data-label) vêm do cabeçalho da tabela, copiados por <TabelasEmCartoes /> em components/plataforma/casca.tsx. */
+@media (max-width: 767px) {
+  table.cartoes,
+  table.cartoes tbody { display: block; }
+  table.cartoes thead { display: none; }
+  table.cartoes tr {
+    display: block;
+    margin: 8px 0;
+    padding: 6px 10px;
+    border: 1px solid var(--color-grade);
+    border-radius: 4px;
+    background: #fff;
+  }
+  table.cartoes td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: auto;
+    max-width: none;
+    padding: 4px 0;
+    border: 0;
+    overflow: visible;
+    text-align: right;
+    text-overflow: clip;
+    white-space: normal;
+  }
+  table.cartoes td::before {
+    content: attr(data-label);
+    flex: 0 0 34%;
+    font-size: 11px;
+    text-align: left;
+    color: var(--color-gray-500);
+  }
+  table.cartoes td[data-label=""] { justify-content: flex-start; }
+  table.cartoes td[data-label=""]::before { display: none; }
+  table.cartoes td:empty { display: none; }
+}
