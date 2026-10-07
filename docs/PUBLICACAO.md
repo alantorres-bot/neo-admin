@@ -5,7 +5,7 @@ Estado em 07/10/2026. Objetivo: banco e aplicativo em São Paulo, sem custo mens
 ## 1. Projetos Supabase
 | | Ref | Região | Situação |
 |---|---|---|---|
-| Atual (teste) | `uhujocnxvupsroijgtss` | Canadá (Central) | em uso até a virada; ~200 ms por consulta |
+| Antigo (reserva) | `uhujocnxvupsroijgtss` | Canadá (Central) | congelado em 07/10/2026 (virada feita); manter ~2 semanas e depois pausar |
 | **Novo** (`neo-admin-sp`) | `chdszjpbtfpstjrqnmmm` | **São Paulo (sa-east-1)** | pronto e com os dados copiados; agendamento horário **desligado** até a virada |
 
 No projeto novo já estão: 23 migrations (registradas em `supabase_migrations.schema_migrations`), as 3 Edge Functions, o segredo `SINCRONIZACAO_SEGREDO` (e no Vault `rec_sincronizar_url` / `rec_sincronizar_segredo`), cadastro público desligado e senha mínima de 8. Faltam os segredos que só o usuário tem (seção 3).
