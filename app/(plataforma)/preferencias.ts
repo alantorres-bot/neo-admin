@@ -15,5 +15,6 @@ export async function salvarPreferenciaBooleana(chave: string, valor: boolean): 
   const { error } = await supabase.from("preferencias_usuario").upsert({ perfil_id: sessao.perfil.id, chave, valor }, { onConflict: "perfil_id,chave" });
   if (error) return { ok: false, erro: "Não foi possível salvar a preferência." };
   revalidatePath("/financeiro/recebiveis");
+  revalidatePath("/financeiro/cobranca", "layout");
   return { ok: true };
 }

@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { definirFormaPagamento, marcarBoletoEnviado, marcarDadosEnviados } from "../[id]/acoes";
+import { definirFormaPagamento, marcarBoletoEnviado, marcarDadosEnviados } from "@/app/(plataforma)/financeiro/recebiveis/[id]/acoes";
 
 export type CanalEnvio = "email" | "whatsapp" | "telefone" | "interno";
 

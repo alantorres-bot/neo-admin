@@ -109,7 +109,7 @@ export default async function PaginaInicio({ searchParams }: PageProps<"/inicio"
       {modulosOperador.includes("financeiro.recebiveis") && (
         <p className="text-sm text-muted-foreground">
           As pendências de boleto, confirmação e cobrança também estão organizadas por tarefa em{" "}
-          <Link href="/financeiro/recebiveis/tarefas" className="font-medium text-foreground underline underline-offset-2">Contas a receber &gt; Tarefas</Link>.
+          <Link href="/financeiro/cobranca" className="font-medium text-foreground underline underline-offset-2">Cobrança</Link>.
         </p>
       )}
 

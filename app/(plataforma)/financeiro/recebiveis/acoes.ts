@@ -44,6 +44,7 @@ export async function sincronizarConsistem(simular: boolean): Promise<ResultadoS
 
   if (!simular) {
     revalidatePath("/financeiro/recebiveis");
+    revalidatePath("/financeiro/cobranca", "layout");
     revalidatePath("/inicio");
   }
   return { ok: true, simulacao: simular, linhas: resultados.flatMap(descreverSincronizacao) };

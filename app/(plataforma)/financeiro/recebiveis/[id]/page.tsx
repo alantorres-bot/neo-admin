@@ -17,7 +17,7 @@ import { FUSO } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { BaixaManual } from "../baixas/componentes";
+import { BaixaManual } from "@/app/(plataforma)/financeiro/cobranca/baixas/componentes";
 import { AnexarBoleto, BotaoCopiar, CriarRascunhoDados, CriarRascunhoGmail, FormaPagamento, LinhaDigitavel, MarcarDadosEnviados, MarcarEnviado } from "./componentes";
 import { carregarFicha, centavos, ENCERRADOS } from "./dados";
 
@@ -147,12 +147,12 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
                     )}
                     {confirmavel && p.vencimento >= f.hoje && (
                       naJanela
-                        ? <Button variant="outline" size="sm" render={<Link href={`/financeiro/recebiveis/confirmar/${p.contraparte_id}${p.unidade === "contagem" ? "?unidade=contagem" : ""}`} />}>Confirmar pagamento</Button>
+                        ? <Button variant="outline" size="sm" render={<Link href={`/financeiro/cobranca/confirmar/${p.contraparte_id}${p.unidade === "contagem" ? "?unidade=contagem" : ""}`} />}>Confirmar pagamento</Button>
                         : <Button variant="outline" size="sm" disabled title="A confirmação abre 7 dias antes do vencimento">Confirmar pagamento</Button>
                     )}
                     {ehCobravel && (
                       reguaAplica && marco
-                        ? <Button variant="outline" size="sm" render={<Link href={`/financeiro/recebiveis/cobrar/${p.contraparte_id}`} />}>Cobrar ({nomeDoMarco(marco)})</Button>
+                        ? <Button variant="outline" size="sm" render={<Link href={`/financeiro/cobranca/cobrar/${p.contraparte_id}`} />}>Cobrar ({nomeDoMarco(marco)})</Button>
                         : <Button variant="outline" size="sm" disabled title={`Vencimento anterior à data de corte da régua${f.corteRegua ? ` (${formatarData(f.corteRegua)})` : ""}`}>Cobrar (fora da régua)</Button>
                     )}
                     {podeOperar && (

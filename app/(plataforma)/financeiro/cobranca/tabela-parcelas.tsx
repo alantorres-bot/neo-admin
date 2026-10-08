@@ -13,8 +13,8 @@ import { nomeParcela, type ContatoSugerido, type GrupoNota } from "@/lib/modulos
 import { formatarWhatsapp } from "@/lib/nucleo/documentos";
 import { descreverPrazo } from "@/lib/nucleo/fila";
 import { ROTULO_UNIDADE } from "@/supabase/functions/_shared/cobranca";
-import { AnexarBoleto } from "../[id]/componentes";
-import { definirFormaPagamento, marcarBoletoEnviado, marcarDadosEnviados } from "../[id]/acoes";
+import { AnexarBoleto } from "@/app/(plataforma)/financeiro/recebiveis/[id]/componentes";
+import { definirFormaPagamento, marcarBoletoEnviado, marcarDadosEnviados } from "@/app/(plataforma)/financeiro/recebiveis/[id]/acoes";
 import { MarcarEnviadoRapido, PagoPorTransferencia, SeletorCanal, type CanalEnvio } from "./componentes";
 
 type Tipo = "anexar" | "enviar" | "dados";

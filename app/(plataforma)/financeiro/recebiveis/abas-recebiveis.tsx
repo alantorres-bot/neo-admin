@@ -1,16 +1,14 @@
 import Link from "next/link";
 
-export type AbaRecebiveis = "carteira" | "tarefas" | "clientes" | "baixas";
+export type AbaRecebiveis = "carteira" | "clientes";
 
 const ABAS: { chave: AbaRecebiveis; rotulo: string; href: string }[] = [
   { chave: "carteira", rotulo: "Carteira", href: "/financeiro/recebiveis" },
-  { chave: "tarefas", rotulo: "Tarefas", href: "/financeiro/recebiveis/tarefas" },
   { chave: "clientes", rotulo: "Clientes e contatos", href: "/financeiro/recebiveis/clientes" },
-  { chave: "baixas", rotulo: "Baixas a conferir", href: "/financeiro/recebiveis/baixas" },
 ];
 
 /**
- * Barra de seções do contas a receber (Carteira, Tarefas, Clientes e contatos, Baixas a conferir). A aba ativa vem da página que a
+ * Barra de seções de Recebíveis (Carteira e Clientes e contatos; o trabalho de cobrança fica em Financeiro > Cobrança). A aba ativa vem da página que a
  * desenha; o número ao lado do rótulo só aparece onde a página já o calculou.
  */
 export function RecebiveisAbas({ ativa, contagens = {} }: { ativa: AbaRecebiveis; contagens?: Partial<Record<AbaRecebiveis, number>> }) {

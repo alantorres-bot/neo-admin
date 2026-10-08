@@ -45,6 +45,7 @@ export async function registrarCobranca(entrada: z.input<typeof esquema>): Promi
   if (error) return { ok: false, erro: mensagemDeErro(error) };
 
   revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
   revalidatePath("/inicio");
   return {
     ok: true,
@@ -104,5 +105,6 @@ export async function criarRascunhoCobranca(clienteId: string, marco: number, un
 
   const resultado = data as { url?: string; anexos?: number; aviso?: string } | null;
   revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
   return { ok: true, url: resultado?.url ?? "https://mail.google.com/mail/u/0/#drafts", anexos: resultado?.anexos ?? 0, aviso: resultado?.aviso };
 }

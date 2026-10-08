@@ -7,7 +7,7 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  ChevronRight, ClipboardList, FileSignature, FileText, House, LogOut, Scale, Settings, ShieldCheck, UserRound, Wallet,
+  BellRing, ChevronRight, ClipboardList, FileSignature, FileText, House, LogOut, Scale, Settings, ShieldCheck, UserRound, Wallet,
   type LucideIcon,
 } from "lucide-react";
 import { sair } from "@/app/(auth)/login/acoes";
@@ -22,6 +22,10 @@ const ICONE_DA_AREA: Record<string, LucideIcon> = {
   rh: ShieldCheck,
   administrativo: ClipboardList,
 };
+
+// Módulos que têm ícone próprio (os demais usam o da área); assim Cobrança e Recebíveis, ambos do Financeiro, não ficam iguais.
+const ICONE_DO_MODULO: Record<string, LucideIcon> = { "financeiro.cobranca": BellRing };
+const iconeDoModulo = (area: string, modulo: string): LucideIcon => ICONE_DO_MODULO[modulo] ?? ICONE_DA_AREA[area] ?? ClipboardList;
 
 type Usuario = { nome: string; email: string; adminGeral: boolean };
 
@@ -46,7 +50,7 @@ type Atual = { icone: LucideIcon; rotulo: string; trilha: string[] };
 function descobrirAtual(caminho: string, menu: MenuArea[]): Atual {
   for (const { area, modulos } of menu) {
     const m = modulos.find((x) => caminho === x.rota || caminho.startsWith(x.rota + "/"));
-    if (m) return { icone: ICONE_DA_AREA[area.codigo] ?? ClipboardList, rotulo: m.nome, trilha: [area.nome, m.nome] };
+    if (m) return { icone: iconeDoModulo(area.codigo, m.codigo), rotulo: m.nome, trilha: [area.nome, m.nome] };
   }
   if (caminho.startsWith("/configuracoes")) return { icone: Settings, rotulo: "Configurações", trilha: ["Configurações"] };
   if (caminho.startsWith("/conta")) return { icone: UserRound, rotulo: "Minha conta", trilha: ["Minha conta"] };
@@ -101,7 +105,7 @@ export function Casca({
           {menu.map(({ area, modulos }) => (
             <div key={area.codigo} className="flex border-l border-white/10 md:mt-1 md:block md:border-l-0 md:border-t md:pt-1">
               {modulos.map((m) => (
-                <ItemTrilho key={m.codigo} href={m.rota} icone={ICONE_DA_AREA[area.codigo] ?? ClipboardList} rotulo={m.nome} titulo={`${area.nome} › ${m.nome}`} ativo={ativo(m.rota)} />
+                <ItemTrilho key={m.codigo} href={m.rota} icone={iconeDoModulo(area.codigo, m.codigo)} rotulo={m.nome} titulo={`${area.nome} › ${m.nome}`} ativo={ativo(m.rota)} />
               ))}
             </div>
           ))}

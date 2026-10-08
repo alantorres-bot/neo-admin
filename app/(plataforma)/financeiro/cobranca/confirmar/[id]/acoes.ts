@@ -41,6 +41,7 @@ export async function registrarConfirmacao(entrada: z.input<typeof esquema>): Pr
   if (error) return { ok: false, erro: mensagemDeErro(error) };
 
   revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
   revalidatePath("/inicio");
   const r = (data ?? {}) as { pendencia_ligar?: number };
   return {

@@ -399,3 +399,15 @@ A Fila do dia (pendências da sincronização) e a tela Tarefas (calculada na ho
 - **`npm run producao`** (`next build && next start`): versão de produção, sem compilar tela por tela e com menos memória. Em produção a Carteira caiu de ~5,8 s para ~1,2–2,2 s; Início ~1 s; Tarefas ~0,9–1,3 s; Clientes ~0,8–1,1 s; Baixas ~0,4–0,7 s; AKF ~1,2–1,9 s.
 
 **O que falta (o maior ganho):** o banco em **São Paulo (sa-east-1)**. A região de um projeto Supabase não muda: é preciso um projeto novo, reaplicar as migrations, ressincronizar do Consistem e refazer configurações (dados bancários, contatos, Gmail, agendamento). Com o banco perto, cada consulta deve cair de ~200 ms para ~30 ms. Para o acesso de qualquer máquina e do celular, o aplicativo também precisa ser publicado numa hospedagem (ex.: Vercel, região São Paulo) apontando para esse banco; hoje ele só roda nesta máquina.
+
+## 31. Separação Cobrança × Recebíveis (08/10/2026)
+
+O app estava "poluído": a Carteira misturava totais e lista de títulos com botões, abas, colunas e filtros de cobrança. A partir desta data:
+
+- **Financeiro > Recebíveis** (`/financeiro/recebiveis`): só a **carteira** (cartões, aging, filtros de unidade/faixa/busca, tabela de títulos com link para a ficha) e **Clientes e contatos**. "Sincronizar agora" e "Simular" ficam aqui (gestor).
+- **Financeiro > Cobrança** (`/financeiro/cobranca`, módulo `financeiro.cobranca`, migration 0118; a permissão continua por área Financeiro): abas **Boletos a anexar** (`/anexar`), **A enviar** (`/enviar`, boletos e dados de pagamento), **Confirmar pagamento** (`/confirmar`), **Cobrar** (`/cobrar`), **Baixas a conferir** (`/baixas`) e **Regra de cobrança** (`/regra`, só consulta). A raiz abre na primeira aba com itens. As telas por cliente passaram a `/cobranca/cobrar/[id]` e `/cobranca/confirmar/[id]`.
+- **Fica em Recebíveis:** a ficha do título/NF (`/recebiveis/[id]`, com boleto, mensagem e histórico) e a ficha do cliente (`/recebiveis/clientes/[id]`).
+- **Rotas antigas viram redirects** (`/recebiveis/tarefas?aba=…`, `/baixas`, `/cobrar/[id]`, `/confirmar/[id]`): as pendências já gravadas no banco e a Edge Function de sincronização ainda apontam para elas. Atualizar os links na origem (função e migrations) é limpeza opcional.
+- A fila `contato` (cadastrar contato) deixou de ser tarefa de cobrança: é a aba "a cadastrar" de Clientes e contatos.
+- Código: `app/(plataforma)/financeiro/cobranca/` (`layout.tsx`, `abas.ts`, `fila.tsx` = `PaginaFila`, `dados.ts` = `tarefasDaRequisicao`); a lógica pura continua em `lib/modulos/financeiro/recebiveis/tarefas.ts`.
+- A régua D+1/D+5/D+10, a janela de 30 dias do boleto e o mínimo de confirmação seguem fixos no código/`configuracoes`; a tela `/regra` mostra os valores em vigor. Edição na tela fica para uma fase futura (tabelas `rec_reguas`/`rec_regua_marcos` existem, sem uso).

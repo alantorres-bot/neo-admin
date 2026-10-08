@@ -44,6 +44,7 @@ export async function desdobrarTitulo(entrada: z.input<typeof esquemaParcial>): 
 
   revalidatePath("/financeiro/akf");
   revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
   return { ok: true, aviso: "Antecipação parcial registrada." };
 }
 
@@ -60,6 +61,7 @@ export async function encerrarParte(entrada: { id: string; motivo: string }): Pr
 
   revalidatePath("/financeiro/akf");
   revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
   return { ok: true, aviso: "Antecipação parcial encerrada." };
 }
 
@@ -80,6 +82,7 @@ export async function marcarNaAkf(entrada: z.input<typeof esquema>): Promise<Res
 
   revalidatePath("/financeiro/akf");
   revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
   const n = ids.length;
   return { ok: true, aviso: `${n} ${n === 1 ? "título" : "títulos"} ${cedido ? "marcado" + (n === 1 ? "" : "s") + " como na AKF" : "retirado" + (n === 1 ? "" : "s") + " da AKF"}.` };
 }

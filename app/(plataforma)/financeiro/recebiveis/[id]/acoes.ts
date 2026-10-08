@@ -35,6 +35,7 @@ export async function salvarLinhaDigitavel(tituloId: string, texto: string): Pro
   // A RLS esconde (e não altera) o que o usuário não pode mexer: zero linhas = sem permissão.
   if (!data || data.length === 0) return { ok: false, erro: "Você não tem permissão para alterar este título." };
   revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
   return { ok: true };
 }
 
@@ -76,6 +77,7 @@ export async function marcarBoletoEnviado(entrada: z.input<typeof esquemaEnvio>)
   if (error) return { ok: false, erro: mensagemDeErro(error) };
 
   revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
   revalidatePath("/inicio");
   const concluidas = Number((data as { pendencias_concluidas?: number } | null)?.pendencias_concluidas ?? 0);
   return {
@@ -96,6 +98,7 @@ export async function definirFormaPagamento(tituloIds: string[], forma: "boleto"
   const { error } = await supabase.rpc("rec_definir_forma_pagamento", { p_titulos: ids.data, p_forma: forma });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
   revalidatePath("/inicio");
   return { ok: true, aviso: forma === "transferencia" ? "Forma de pagamento: transferência. A parcela sai das tarefas de boleto." : "Forma de pagamento: boleto." };
 }
@@ -121,6 +124,7 @@ export async function marcarDadosEnviados(entrada: z.input<typeof esquemaEnvio>)
   const { error } = await supabase.rpc("rec_marcar_dados_enviados", { p_titulos: tituloIds, p_canal: canal, p_descricao: descricao });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
   revalidatePath("/inicio");
   return { ok: true, aviso: "Envio dos dados de pagamento registrado." };
 }
@@ -168,6 +172,7 @@ export async function criarRascunhoDados(tituloId: string, contatoId: string | n
   }
   const resultado = data as { url?: string; anexos?: number; aviso?: string } | null;
   revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
   return { ok: true, url: resultado?.url ?? "https://mail.google.com/mail/u/0/#drafts", anexos: 0, aviso: resultado?.aviso };
 }
 
@@ -229,5 +234,6 @@ export async function criarRascunhoGmail(tituloId: string, contatoId: string | n
 
   const resultado = data as { url?: string; anexos?: number; aviso?: string } | null;
   revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
   return { ok: true, url: resultado?.url ?? "https://mail.google.com/mail/u/0/#drafts", anexos: resultado?.anexos ?? 0, aviso: resultado?.aviso };
 }

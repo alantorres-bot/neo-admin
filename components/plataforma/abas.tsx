@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 
-export function Abas({ abas }: { abas: { href: string; rotulo: string }[] }) {
+export function Abas({ abas }: { abas: { href: string; rotulo: string; contagem?: number }[] }) {
   const caminho = usePathname();
   return (
     <nav aria-label="Seções" className="flex gap-1 overflow-x-auto border-b">
@@ -21,6 +21,7 @@ export function Abas({ abas }: { abas: { href: string; rotulo: string }[] }) {
             )}
           >
             {a.rotulo}
+            {a.contagem !== undefined && a.contagem > 0 && <span className="ml-1.5 rounded-[3px] bg-cabecalho px-1.5 text-[11px] font-bold tabular-nums text-texto ring-1 ring-grade">{a.contagem}</span>}
           </Link>
         );
       })}
