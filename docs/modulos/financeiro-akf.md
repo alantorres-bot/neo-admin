@@ -70,3 +70,19 @@ Nas visões **Na AKF** e **Vencidos na AKF**, cada parte antecipada aparece como
 
 ### 11.3 Quadro "A vencer na AKF" (06/10/2026)
 A tela AKF ganhou o quarto cartão **A vencer na AKF** (títulos inteiros e partes antecipadas ainda não vencidos), com quantidade e a porcentagem do que está na AKF. Ordem dos cartões: Na AKF · A vencer na AKF · Vencidos na AKF · Disponíveis para antecipar. "A vencer" + "Vencidos" = "Na AKF".
+
+## 12. Conferência com a planilha da AKF (08/10/2026)
+
+Tela `Financeiro > AKF > Conferir com a planilha da AKF` (`/financeiro/akf/conferencia`, operador do Financeiro ou acima). A planilha de recebíveis da AKF (`RECEBIVEIS - AKF.xlsx`) é a verdade sobre o que está descontado; a tela a cruza com a carteira em aberto do app e mostra:
+
+- **Resumo:** total e quantidade da planilha x "Na AKF" do app (títulos inteiros cedidos/998 mais as partes antecipadas ativas) e a diferença, explicada por categoria.
+- **Falta marcar como cedido:** título inteiro na planilha que o app não mostra como antecipado. Botão em lote (`akf_marcar_cedido`); se o título tem parte ativa, ela é encerrada antes.
+- **Antecipação parcial:** a AKF tem só parte do título. Mostra o que a planilha tem e o que o app tem; "Aplicar este ajuste" encerra as partes divergentes e lança as da planilha (`akf_encerrar_desdobramento` e `akf_desdobrar_titulo`, valor e vencimento da planilha, data da operação editável com padrão hoje). Se o título está cedido por inteiro no app, retira o cedido antes.
+- **No app como AKF, mas fora da planilha:** revisão; "Retirar da AKF" e "Encerrar parte" são opcionais. O portador 998 continua no Consistem.
+- **A confirmar** (nunca aplicado sozinho) e **Na planilha, sem título no app** (informação). Linhas "Liquidado Parcial" e "Baixado da Cobrança" contam como na AKF e aparecem com selo.
+
+**Como casa:** o "Número" da planilha não é o `documento` do app (`1266/5` = `1001266E`; `002323` = `4002323U`; `226/2026/2` = `Z00027B`; `7897/2026/03` = parcela C de `Z00026C`). O casamento usa **cliente (nome aproximado, tolera erro de digitação e nome cortado) + valor + vencimento**, com a NF e a letra da parcela só como desempate. Título inteiro: mesmo valor; a diferença de vencimento (a AKF corrige a data) só pesa quando o título está fora da AKF (acima de 5 dias vira "a confirmar"). Parcial: valor da planilha menor que o do título; várias linhas podem ser o mesmo título.
+
+**Código:** `lib/modulos/financeiro/akf/conciliacao.ts` (regras puras: `lerPlanilhaAkf`, `cruzarComCarteira`, `explicarDiferenca`; testes em `conciliacao.test.ts` com os casos reais), `app/(plataforma)/financeiro/akf/conferencia/` (`acoes.ts` lê o arquivo e a carteira, só lê; `componentes.tsx` aplica cada correção com confirmação em dois cliques, reutilizando `marcarNaAkf`, `desdobrarTitulo` e `encerrarParte` de `akf/acoes.ts`). Sem migration e sem Edge Function.
+
+**Resultado com a planilha de 08/10/2026:** 62 títulos, R$ 4.238.477,39; o app tinha 57 títulos inteiros + 1 parte = R$ 3.276.064,02 (diferença R$ 962.413,37 = 2 títulos J Sete a marcar R$ 134.000 + parciais TC `1001349U` R$ 400.000 e Amorim `Z00026C`/`Z00026D` R$ 450.000 + 1 linha sem título R$ 287,57 − 2 títulos só no app R$ 21.874,20). O portador da AKF é **998** (não 908).
