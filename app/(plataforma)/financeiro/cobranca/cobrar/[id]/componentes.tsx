@@ -12,7 +12,7 @@ export type ParcelaCobranca = { id: string; rotulo: string };
 type Canal = "whatsapp" | "telefone" | "email" | "interno";
 
 /** Resultado da cobrança: "Enviei", "Cliente prometeu pagar em…" ou "Cliente contestou". O sistema não envia a mensagem. */
-export function RegistrarCobranca({ marco, parcelas, hoje, canalSugerido }: { marco: 1 | 5 | 10; parcelas: ParcelaCobranca[]; hoje: string; canalSugerido: Canal }) {
+export function RegistrarCobranca({ marco, parcelas, hoje, canalSugerido }: { marco: number; parcelas: ParcelaCobranca[]; hoje: string; canalSugerido: Canal }) {
   const router = useRouter();
   const [marcadas, setMarcadas] = useState<Set<string>>(new Set(parcelas.map((p) => p.id)));
   const [resultado, setResultado] = useState<"enviada" | "promessa" | "contestou">("enviada");

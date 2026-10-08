@@ -17,7 +17,7 @@ import { temAcesso } from "@/lib/nucleo/permissoes";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { carregarRegra } from "@/lib/modulos/financeiro/recebiveis/regra";
 import { exigirSessao } from "@/lib/nucleo/sessao";
-import { nomeDoMarco, ROTULO_UNIDADE, type Unidade } from "@/supabase/functions/_shared/cobranca";
+import { criticidadeCobranca, nomeDoMarco, ROTULO_UNIDADE, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import { BotaoCopiar } from "@/app/(plataforma)/financeiro/recebiveis/[id]/componentes";
 import { TabelaParcelas } from "./tabela-parcelas";
 import { tarefasDaRequisicao } from "./dados";
@@ -48,7 +48,7 @@ export async function PaginaFila({ filas, caminho, searchParams }: { filas: read
   const abaPedida = primeiro(parametros.aba);
   const paginaPedida = Number.parseInt(primeiro(parametros.pagina), 10) || 1;
 
-  const [todas, { parametros: regra }] = await Promise.all([tarefasDaRequisicao(), carregarRegra(await criarClienteServidor())]);
+  const [todas, { parametros: regra, marcos }] = await Promise.all([tarefasDaRequisicao(), carregarRegra(await criarClienteServidor())]);
   const tarefas = aplicarFiltros(todas, { unidade, busca });
   const contagens = contarFilas(tarefas);
   const aba: Fila = ehFila(abaPedida) && filas.includes(abaPedida) ? abaPedida : (filas.find((f) => contagens[f] > 0) ?? filas[0]);
@@ -164,7 +164,7 @@ export async function PaginaFila({ filas, caminho, searchParams }: { filas: read
             {p.itens.map((i) => (
               <TableRow key={`${i.clienteId}|${i.unidade}|${i.marco}`}>
                 {nomeCliente(i)}
-                <TableCell><Badge variant={i.marco >= 10 ? "destructive" : "secondary"}>{nomeDoMarco(i.marco)}</Badge></TableCell>
+                <TableCell><Badge variant={criticidadeCobranca(i.marco, marcos) === "alta" ? "destructive" : "secondary"}>{nomeDoMarco(i.marco)}</Badge></TableCell>
                 <TableCell className="text-[12px]">{i.parcelas.length} · {resumoParcelas(i.parcelas)}</TableCell>
                 <TableCell className="tabular-nums">{formatarData(i.vencimentoMaisAntigo)}<span className="block text-[11px] text-red-700">{i.diasAtraso} {i.diasAtraso === 1 ? "dia" : "dias"} de atraso</span></TableCell>
                 <TableCell className="text-right tabular-nums">{formatarMoeda(i.totalCentavos)}</TableCell>
@@ -227,7 +227,7 @@ export async function PaginaFila({ filas, caminho, searchParams }: { filas: read
         })}
       </nav>}
       <p className="text-[12px] text-muted-foreground">
-        {explicacaoDaFila(aba, regra)}
+        {explicacaoDaFila(aba, { ...regra, marcos })}
         {contagens[aba] > 0 && <> <strong className="text-foreground">{contagens[aba]} {unidadeDoItem} · {formatarMoeda(totalDaAba)}</strong>.</>}
       </p>
 

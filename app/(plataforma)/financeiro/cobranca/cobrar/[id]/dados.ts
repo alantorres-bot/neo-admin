@@ -3,7 +3,7 @@ import { escolherContato } from "@/supabase/functions/_shared/contatos";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { carregarRegra } from "@/lib/modulos/financeiro/recebiveis/regra";
 import type { criarClienteServidor } from "@/lib/supabase/servidor";
-import { ESTAGIOS_COBRAVEIS, planejarCobrancas, type GrupoCobranca, type TituloCobranca } from "@/supabase/functions/_shared/cobranca";
+import { ESTAGIOS_COBRAVEIS, planejarCobrancas, type GrupoCobranca, type MarcoRegua, type TituloCobranca } from "@/supabase/functions/_shared/cobranca";
 
 type Cliente = Awaited<ReturnType<typeof criarClienteServidor>>;
 
@@ -21,6 +21,8 @@ export type DadosCobranca = {
   codigoErp: string | null;
   hoje: string;
   corte: string | null;
+  /** Marcos da régua em vigor (dias, canais e textos). */
+  marcos: MarcoRegua[];
   grupos: GrupoCobranca[];
   contatos: ContatoCobranca[];
   /** Contato para WhatsApp (nome na saudação). */
@@ -40,7 +42,7 @@ export async function carregarCobranca(supabase: Cliente, clienteId: string): Pr
   if (!cliente) return null;
   const hoje = hojeEmCuiaba();
 
-  const [{ parametros: regra }, { data: linhasBrutas }, { data: contatosBrutos }, { data: baixas }] = await Promise.all([
+  const [{ parametros: regra, marcos }, { data: linhasBrutas }, { data: contatosBrutos }, { data: baixas }] = await Promise.all([
     carregarRegra(supabase),
     supabase.from("rec_titulos")
       .select("id, documento, parcela, vencimento, valor, estagio, cedido, contestado, unidade, regua_pausada_ate, rec_contratos(multa_pct, juros_mes_pct)")
@@ -63,7 +65,7 @@ export async function carregarCobranca(supabase: Cliente, clienteId: string): Pr
       multaPct: contrato ? Number(contrato.multa_pct) : undefined, jurosMesPct: contrato ? Number(contrato.juros_mes_pct) : undefined,
     };
   });
-  const grupos = corte ? planejarCobrancas(titulos, hoje, corte, excluidos) : [];
+  const grupos = corte ? planejarCobrancas(titulos, hoje, corte, excluidos, marcos) : [];
   const antigos = corte ? titulos.filter((t) => t.vencimento < corte && !t.cedido && !t.contestado) : [];
 
   // Regra única de escolha (`_shared/contatos.ts`): só quem tem o canal; finalidade cobrança antes de boleto no e-mail.
@@ -75,6 +77,7 @@ export async function carregarCobranca(supabase: Cliente, clienteId: string): Pr
     codigoErp: (cliente.codigo_erp as string | null) ?? null,
     hoje,
     corte,
+    marcos,
     grupos,
     contatos,
     contatoWhatsapp,

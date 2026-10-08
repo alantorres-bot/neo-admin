@@ -29,7 +29,9 @@ export const EXPLICACAO_FILA: Record<Fila, string> = {
 };
 
 /** A explicação da fila com os números da regra em vigor (janelas e data de corte editáveis em Cobrança > Regra de cobrança). */
-export function explicacaoDaFila(fila: Fila, regra: { janelaBoletoDias: number; janelaConfirmacaoDias: number; reguaAPartirDe: string | null }): string {
+export function explicacaoDaFila(
+  fila: Fila, regra: { janelaBoletoDias: number; janelaConfirmacaoDias: number; reguaAPartirDe: string | null; marcos?: readonly { dias: number }[] },
+): string {
   const dia = (n: number) => `${n} ${n === 1 ? "dia" : "dias"}`;
   if (fila === "anexar") {
     return `Parcelas pagas por boleto, sem o PDF, que vencem em ${dia(regra.janelaBoletoDias)} ou menos (antes disso ainda não é hora de anexar). Anexe aqui mesmo; se o cliente paga por transferência, use “Pago por transferência”.`;
@@ -40,7 +42,9 @@ export function explicacaoDaFila(fila: Fila, regra: { janelaBoletoDias: number; 
   if (fila === "cobrar") {
     const [a, m, d] = (regra.reguaAPartirDe ?? "").split("-");
     const desde = regra.reguaAPartirDe ? `, vencimentos a partir de ${d}/${m}/${a}` : " (a régua está desligada: sem data de início)";
-    return `Parcelas vencidas na régua de cobrança (D+1, D+5 e D+10${desde}), por cliente e marco. Só aparece o que ainda não foi cobrado naquele marco.`;
+    const nomes = (regra.marcos ?? [{ dias: 1 }, { dias: 5 }, { dias: 10 }]).map((m) => `D+${m.dias}`);
+    const lista = nomes.length === 0 ? "sem marcos" : nomes.length === 1 ? nomes[0] : `${nomes.slice(0, -1).join(", ")} e ${nomes[nomes.length - 1]}`;
+    return `Parcelas vencidas na régua de cobrança (${lista}${desde}), por cliente e marco. Só aparece o que ainda não foi cobrado naquele marco.`;
   }
   return EXPLICACAO_FILA[fila];
 }

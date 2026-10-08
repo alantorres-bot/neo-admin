@@ -88,10 +88,13 @@ import {
   descricaoPendenciaCobranca,
   ESTAGIOS_COBRAVEIS,
   ESTAGIOS_QUE_VENCEM,
+  MARCOS_PADRAO,
+  marcosDeLinhas,
   planejarCobrancas,
   PREFIXO_COBRANCA,
   unidadeDaPendencia,
   tituloPendenciaCobranca,
+  type LinhaMarcoBanco,
   type TituloCobranca,
 } from "../_shared/cobranca.ts";
 import { lerParametrosRegra, TODAS_AS_CHAVES_REGRA } from "../_shared/parametros-regra.ts";
@@ -688,6 +691,12 @@ async function sincronizarEmpresa(
       contrapartes: { nome: string } | { nome: string }[] | null;
       rec_contratos: { multa_pct: number | string; juros_mes_pct: number | string } | { multa_pct: number | string; juros_mes_pct: number | string }[] | null;
     };
+    // Marcos da régua (dias, canais e textos editáveis na tela). Falha de leitura = padrão (D+1, D+5, D+10); lista vazia = régua sem marcos.
+    const { data: linhasMarcos, error: erroMarcos } = await banco.from("rec_regua_marcos")
+      .select("dia_relativo, canais, descricao, texto_whatsapp, assunto_email, corpo_email, rec_reguas!inner(nome, ativa)")
+      .eq("acao", "cobranca").eq("ativo", true).eq("rec_reguas.nome", "Padrao").eq("rec_reguas.ativa", true);
+    const marcos = erroMarcos || !linhasMarcos ? [...MARCOS_PADRAO] : marcosDeLinhas(linhasMarcos as unknown as LinhaMarcoBanco[]);
+    resumo.marcosDaRegua = marcos.map((m) => m.nome).join(", ") || "nenhum";
     const candidatasCobranca = await lerTudo<LinhaCobranca>((de, ate) =>
       banco.from("rec_titulos")
         .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, cedido, contestado, regua_pausada_ate, unidade, contrapartes(nome), rec_contratos(multa_pct, juros_mes_pct)")
@@ -705,7 +714,7 @@ async function sincronizarEmpresa(
           multaPct: contrato ? Number(contrato.multa_pct) : undefined, jurosMesPct: contrato ? Number(contrato.juros_mes_pct) : undefined,
         };
       }),
-      hoje, corteRegua, naoCobrar,
+      hoje, corteRegua, naoCobrar, marcos,
     );
 
     // Pendências já criadas (abertas ou concluídas) não se repetem; as canceladas podem voltar a abrir.
@@ -729,9 +738,9 @@ async function sincronizarEmpresa(
         empresa_id: empresa.id,
         contraparte_id: g.contraparteId,
         titulo: tituloPendenciaCobranca(g),
-        descricao: descricaoPendenciaCobranca(g, hoje, contatoDoCliente.get(g.contraparteId) ?? ""),
+        descricao: descricaoPendenciaCobranca(g, hoje, contatoDoCliente.get(g.contraparteId) ?? "", marcos),
         prazo: hoje,
-        criticidade: criticidadeCobranca(g.marco),
+        criticidade: criticidadeCobranca(g.marco, marcos),
         referencia_tabela: "contrapartes",
         referencia_id: g.contraparteId,
         link: `/financeiro/recebiveis/cobrar/${g.contraparteId}`,
@@ -748,7 +757,12 @@ async function sincronizarEmpresa(
     const abertasCobranca = await lerTudo<{ id: string; referencia_id: string; titulo: string }>((de, ate) =>
       banco.from("pendencias").select("id, referencia_id, titulo").eq("modulo", MODULO).eq("referencia_tabela", "contrapartes")
         .like("titulo", `${PREFIXO_COBRANCA} D+%`).in("status", ["aberta", "em_andamento"]).order("id").range(de, ate));
-    const semMotivo = abertasCobranca.filter((p) => !clientesNaRegua.has(`${p.referencia_id}|${unidadeDaPendencia(p.titulo)}`)).map((p) => p.id);
+    // Também perde o sentido a pendência de um marco que saiu da régua (a tela já cancela ao salvar; isto cobre o que sobrar).
+    const diasDosMarcos = new Set(marcos.map((m) => m.dias));
+    const marcoDaPendencia = (titulo: string) => Number(/^Cobrar D\+(\d+):/.exec(titulo)?.[1] ?? NaN);
+    const semMotivo = abertasCobranca
+      .filter((p) => !clientesNaRegua.has(`${p.referencia_id}|${unidadeDaPendencia(p.titulo)}`) || !diasDosMarcos.has(marcoDaPendencia(p.titulo)))
+      .map((p) => p.id);
     for (const lote of lotes(semMotivo)) {
       const { error } = await banco.from("pendencias").update({ status: "cancelada" }).in("id", lote);
       if (error) throw new Error(`Falha ao encerrar pendências de cobrança: ${error.message}`);

@@ -8,6 +8,7 @@ import {
 } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { carregarRegra } from "@/lib/modulos/financeiro/recebiveis/regra";
 import { urlAssinadaAnexo } from "@/lib/nucleo/anexos";
+import type { MarcoRegua } from "@/supabase/functions/_shared/cobranca";
 import type { ParametrosRegra } from "@/supabase/functions/_shared/parametros-regra";
 import { escolherContato } from "@/supabase/functions/_shared/contatos";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
@@ -58,7 +59,7 @@ export type Ficha = {
   /** Data de corte da régua de cobrança (aaaa-mm-dd) e o dia de hoje em Cuiabá. */
   corteRegua: string | null;
   /** Parâmetros da regra de cobrança (janelas de confirmação e de contato). */
-  regra: ParametrosRegra;
+  regra: ParametrosRegra & { marcos: MarcoRegua[] };
   hoje: string;
 };
 
@@ -76,7 +77,7 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
   const parcelas = (grupoBruto ?? []) as Parcela[];
   const ids = parcelas.map((p) => p.id);
 
-  const [{ data: cliente }, { data: nota }, { data: contatosBrutos }, { data: anexosBrutos }, { data: interacoesBrutas }, { data: modelosBrutos }, { parametros: regra }] = await Promise.all([
+  const [{ data: cliente }, { data: nota }, { data: contatosBrutos }, { data: anexosBrutos }, { data: interacoesBrutas }, { data: modelosBrutos }, { parametros: regra, marcos }] = await Promise.all([
     supabase.from("contrapartes").select("nome, codigo_erp").eq("id", base.contraparte_id).maybeSingle(),
     base.nota_saida_id ? supabase.from("rec_notas_saida").select("nota, pedidos").eq("id", base.nota_saida_id).maybeSingle() : Promise.resolve({ data: null }),
     supabase.from("contatos").select("id, nome, funcao, email, whatsapp, telefone, finalidades, canal_preferido, ativo").eq("contraparte_id", base.contraparte_id).eq("ativo", true).order("nome"),
@@ -152,7 +153,7 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
     modeloEmailId: (modeloEmail?.id as string | undefined) ?? null, email, whatsapp,
     totalCentavos: parcelas.reduce((s, p) => s + centavos(p.valor), 0),
     corteRegua: regra.reguaAPartirDe,
-    regra,
+    regra: { ...regra, marcos },
     hoje: hojeEmCuiaba(),
   };
 }

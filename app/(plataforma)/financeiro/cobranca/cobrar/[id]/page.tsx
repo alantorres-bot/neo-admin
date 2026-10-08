@@ -12,7 +12,7 @@ import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import {
-  emailCobranca, linhaDemonstrativo, MARCOS_COBRANCA, mensagemWhatsAppCobranca, ROTULO_UNIDADE, totalAtualizadoCentavos,
+  emailCobranca, linhaDemonstrativo, marcoInformaEncargos, mensagemWhatsAppCobranca, ROTULO_UNIDADE, totalAtualizadoCentavos,
 } from "@/supabase/functions/_shared/cobranca";
 import { BotaoCopiar } from "@/app/(plataforma)/financeiro/recebiveis/[id]/componentes";
 import { carregarCobranca } from "./dados";
@@ -69,9 +69,9 @@ export default async function PaginaCobranca({ params }: PageProps<"/financeiro/
       )}
 
       {grupos.map((g) => {
-        const def = MARCOS_COBRANCA.find((m) => m.dias === g.marco)!;
-        const whats = mensagemWhatsAppCobranca(g, contatoWhatsapp?.nome ?? "");
-        const email = emailCobranca(g, hoje, contatoEmail?.nome ?? "");
+        const def = dados.marcos.find((m) => m.dias === g.marco)!;
+        const whats = mensagemWhatsAppCobranca(g, contatoWhatsapp?.nome ?? "", dados.marcos, hoje);
+        const email = emailCobranca(g, hoje, contatoEmail?.nome ?? "", dados.marcos);
         const parcelas = g.titulos.map((t) => ({ id: t.id, rotulo: `${nomeParcela(t)} — venceu ${formatarData(t.vencimento)} — ${formatarMoeda(t.valorCentavos)}` }));
         const canalSugerido = def.canais.includes("whatsapp") ? "whatsapp" : "email";
         return (
@@ -113,7 +113,7 @@ export default async function PaginaCobranca({ params }: PageProps<"/financeiro/
                   {podeOperar && (
                     <CriarRascunhoCobranca clienteId={id} marco={g.marco} unidade={g.unidade} desabilitadoPor={contatoEmail?.email ? null : "O cliente não tem contato com e-mail cadastrado."} />
                   )}
-                  {g.marco === 10 && (
+                  {marcoInformaEncargos(def) && (
                     <p className="text-xs text-muted-foreground">
                       * Encargos pelo padrão do módulo (multa 2% e juros 2% ao mês, pro rata dia). Confirme no contrato do cliente antes de enviar o demonstrativo.
                     </p>
@@ -121,7 +121,7 @@ export default async function PaginaCobranca({ params }: PageProps<"/financeiro/
                 </div>
               )}
 
-              {g.marco === 10 && (
+              {marcoInformaEncargos(def) && (
                 <details className="text-sm">
                   <summary className="cursor-pointer text-muted-foreground">Demonstrativo por título</summary>
                   <pre className="mt-2 whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 font-sans text-xs">{g.titulos.map((t) => linhaDemonstrativo(t, hoje)).join("\n")}</pre>

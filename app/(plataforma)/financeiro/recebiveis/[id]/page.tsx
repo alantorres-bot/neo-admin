@@ -97,7 +97,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
               dataPagamento: p.data_pagamento, reguaPausadaAte: p.regua_pausada_ate, reguaAplica, forma: p.forma_pagamento,
             }, f.interacoes.filter((i) => i.referencia_id === p.id), f.hoje, f.regra);
             const naVez = etapas.find((e) => e.estado === "atual");
-            const marco = marcoDoAtraso(p.dias_atraso);
+            const marco = marcoDoAtraso(p.dias_atraso, f.regra.marcos);
             const confirmavel = (ESTAGIOS_CONFIRMAVEIS as readonly string[]).includes(p.estagio) || p.estagio === "confirmado_cliente";
             const diasParaVencer = Math.round((Date.parse(`${p.vencimento}T00:00:00Z`) - Date.parse(`${f.hoje}T00:00:00Z`)) / 86_400_000);
             const naJanela = diasParaVencer >= 0 && diasParaVencer <= f.regra.janelaConfirmacaoDias;

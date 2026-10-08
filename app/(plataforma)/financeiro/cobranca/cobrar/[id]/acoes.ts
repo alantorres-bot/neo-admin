@@ -17,7 +17,8 @@ const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P
 
 const esquema = z.object({
   tituloIds: z.array(z.string().uuid()).min(1, "Marque pelo menos uma parcela.").max(100),
-  marco: z.union([z.literal(1), z.literal(5), z.literal(10)]),
+  // O banco confere se o marco existe na régua em vigor (rec_registrar_cobranca).
+  marco: z.number().int().min(1).max(365),
   resultado: z.enum(["enviada", "promessa", "contestou"]),
   canal: z.enum(["whatsapp", "telefone", "email", "interno"]),
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
@@ -67,7 +68,7 @@ export async function criarRascunhoCobranca(clienteId: string, marco: number, un
   if (!dados) return { ok: false, erro: "Cliente não encontrado." };
   const grupo = dados.grupos.find((g) => g.marco === marco && g.unidade === unidade);
   if (!grupo) return { ok: false, erro: "Este marco não tem títulos a cobrar agora." };
-  const email = emailCobranca(grupo, dados.hoje, dados.contatoEmail?.nome ?? "");
+  const email = emailCobranca(grupo, dados.hoje, dados.contatoEmail?.nome ?? "", dados.marcos);
   if (!email) return { ok: false, erro: "Este marco da régua não tem e-mail." };
   if (!dados.contatoEmail?.email) return { ok: false, erro: "Nenhum contato do cliente tem e-mail cadastrado." };
 

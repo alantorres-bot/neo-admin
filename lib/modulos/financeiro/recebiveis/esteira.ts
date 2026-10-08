@@ -1,7 +1,7 @@
 // Esteira de um título: a sequência de passos (boleto, envio, confirmação, vencimento, cobranças D+n, pagamento) com o que já
 // foi feito, o que está na vez e o que vem depois. Regras puras: a tela da ficha só desenha o resultado.
 import { DIAS_CONTATO_ANTES, DIAS_JANELA_CONFIRMACAO } from "../../../../supabase/functions/_shared/confirmacao";
-import { MARCOS_COBRANCA } from "../../../../supabase/functions/_shared/cobranca";
+import { MARCOS_PADRAO, type MarcoRegua } from "../../../../supabase/functions/_shared/cobranca";
 
 export type EstadoEtapa = "feita" | "atual" | "pendente" | "fora";
 
@@ -48,7 +48,7 @@ const marcoDaInteracao = (i: InteracaoEsteira): number | null => {
 /** Monta a sequência de passos do título, na ordem em que acontecem. `hoje` é aaaa-mm-dd (Cuiabá). */
 export function montarEsteira(
   t: TituloEsteira, interacoes: readonly InteracaoEsteira[], hoje: string,
-  regra: { janelaConfirmacaoDias: number; prazoContatoAntesDias: number } = { janelaConfirmacaoDias: DIAS_JANELA_CONFIRMACAO, prazoContatoAntesDias: DIAS_CONTATO_ANTES },
+  regra: { janelaConfirmacaoDias: number; prazoContatoAntesDias: number; marcos?: readonly Pick<MarcoRegua, "dias" | "nome">[] } = { janelaConfirmacaoDias: DIAS_JANELA_CONFIRMACAO, prazoContatoAntesDias: DIAS_CONTATO_ANTES },
 ): Etapa[] {
   const encerrado = ["pago", "cancelado", "renegociado"].includes(t.estagio);
   const diasAtraso = Math.max(diasEntre(hoje, t.vencimento), 0);
@@ -106,7 +106,7 @@ export function montarEsteira(
   });
 
   // 5) Cobranças D+n
-  for (const m of MARCOS_COBRANCA) {
+  for (const m of regra.marcos ?? MARCOS_PADRAO) {
     const feita = maisRecente(interacoes, (i) => ["cobranca", "promessa", "contestacao"].includes(i.tipo) && marcoDaInteracao(i) === m.dias);
     let estado: EstadoEtapa;
     let detalhe: string | null;

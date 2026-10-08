@@ -63,7 +63,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     }
     return todos;
   };
-  const [abertos, { parametros: regra }, { data: baixasPend }, { data: ligarPend }] = await Promise.all([
+  const [abertos, { parametros: regra, marcos }, { data: baixasPend }, { data: ligarPend }] = await Promise.all([
     lerAbertos(),
     carregarRegra(supabase),
     supabase.from("pendencias").select("referencia_id").eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "rec_titulos").like("titulo", "Possível baixa:%").in("status", ["aberta", "em_andamento"]).limit(1000),
@@ -128,7 +128,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
         id: t.id, contraparteId: t.contraparte_id, nomeCliente: "", documento: t.documento, parcela: t.parcela, vencimento: t.vencimento,
         valorCentavos: valorRestante(t), estagio: t.estagio, cedido: t.cedido, contestado: t.contestado, unidade: unidadeDe(t), reguaPausadaAte: t.regua_pausada_ate,
       })),
-      hoje, corte, idsPossivelBaixa,
+      hoje, corte, idsPossivelBaixa, marcos,
     )
     : [];
 
@@ -201,7 +201,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
   const cobrar: ItemCobrar[] = removerCobrancasFeitas(gruposCobranca, (id, marco) => cobrancasFeitas.has(`${id}|${marco}`)).map((g) => {
     const zap = contatoWhatsapp(g.contraparteId);
     // D+10 é por e-mail: sem mensagem de WhatsApp.
-    const mensagem = mensagemWhatsAppCobranca(g, zap?.nome ?? "");
+    const mensagem = mensagemWhatsAppCobranca(g, zap?.nome ?? "", marcos, hoje);
     return {
       ...base(g.contraparteId, g.unidade, g.titulos.map((t) => t.documento)),
       marco: g.marco, parcelas: g.titulos.map(parcelaDe), totalCentavos: g.totalCentavos, vencimentoMaisAntigo: g.vencimentoMaisAntigo,
