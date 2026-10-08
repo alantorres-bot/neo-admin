@@ -8,17 +8,16 @@ import {
 } from "@/lib/modulos/financeiro/recebiveis/tarefas";
 import { titulaNoEscopoDeCadastro } from "@/lib/modulos/financeiro/recebiveis/clientes";
 import { FUSO, hojeEmCuiaba } from "@/lib/nucleo/fila";
+import { carregarRegra } from "@/lib/modulos/financeiro/recebiveis/regra";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { ESTAGIOS_COBRAVEIS, mensagemWhatsAppCobranca, planejarCobrancas, unidadeDaPendencia, type TituloCobranca, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import {
-  ESTAGIOS_CONFIRMAVEIS, mensagemWhatsAppConfirmacao, MINIMO_PADRAO_CENTAVOS, planejarConfirmacoes, prazoConfirmacao, type TituloConfirmacao,
+  ESTAGIOS_CONFIRMAVEIS, mensagemWhatsAppConfirmacao, planejarConfirmacoes, prazoConfirmacao, type TituloConfirmacao,
 } from "@/supabase/functions/_shared/confirmacao";
 import { escolherContato, temContatoUtil, type ContatoEscolha } from "@/supabase/functions/_shared/contatos";
 
 type Cliente = Awaited<ReturnType<typeof criarClienteServidor>>;
 
-const CONFIG_INICIO_REGUA = "financeiro.recebiveis.regua_a_partir_de";
-const CONFIG_MINIMO_CONFIRMACAO = "financeiro.recebiveis.confirmacao_valor_minimo";
 const ENCERRADOS = ["pago", "renegociado", "cancelado"];
 const TIPOS_COBRANCA_FEITA = ["cobranca", "promessa", "contestacao"];
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
@@ -64,17 +63,15 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     }
     return todos;
   };
-  const [abertos, { data: cfgRegua }, { data: cfgMinimo }, { data: baixasPend }, { data: ligarPend }] = await Promise.all([
+  const [abertos, { parametros: regra }, { data: baixasPend }, { data: ligarPend }] = await Promise.all([
     lerAbertos(),
-    supabase.from("configuracoes").select("valor").eq("chave", CONFIG_INICIO_REGUA).maybeSingle(),
-    supabase.from("configuracoes").select("valor").eq("chave", CONFIG_MINIMO_CONFIRMACAO).maybeSingle(),
+    carregarRegra(supabase),
     supabase.from("pendencias").select("referencia_id").eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "rec_titulos").like("titulo", "Possível baixa:%").in("status", ["aberta", "em_andamento"]).limit(1000),
     supabase.from("pendencias").select("referencia_id, titulo").eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "contrapartes").like("titulo", "Ligar para confirmar pagamento:%").in("status", ["aberta", "em_andamento"]).limit(1000),
   ]);
   const emAberto = abertos.filter((t) => !ENCERRADOS.includes(t.estagio));
-  const corte = typeof cfgRegua?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfgRegua.valor) ? cfgRegua.valor : null;
-  const minimoReais = typeof cfgMinimo?.valor === "number" ? cfgMinimo.valor : Number(cfgMinimo?.valor);
-  const minimoCentavos = Number.isFinite(minimoReais) && minimoReais > 0 ? Math.round(minimoReais * 100) : MINIMO_PADRAO_CENTAVOS;
+  const corte = regra.reguaAPartirDe;
+  const minimoCentavos = regra.minimoConfirmacaoCentavos;
   const idsPossivelBaixa = new Set((baixasPend ?? []).map((p) => p.referencia_id as string));
   const ligar = new Set((ligarPend ?? []).map((p) => `${p.referencia_id as string}|${unidadeDaPendencia(p.titulo as string)}`));
 
@@ -111,7 +108,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     for (const a of data ?? []) comBoleto.add(a.referencia_id as string);
   }));
   const [partes] = await Promise.all([
-    lerPartes(supabase, [...candidatasConfirmacao.filter((t) => diasEntre(t.vencimento, hoje) <= 7), ...candidatasCobranca].map((t) => t.id)),
+    lerPartes(supabase, [...candidatasConfirmacao.filter((t) => diasEntre(t.vencimento, hoje) <= regra.janelaConfirmacaoDias), ...candidatasCobranca].map((t) => t.id)),
     lerBoletos,
     carregarClientes([...aguardando, ...emAberto.filter((t) => idsPossivelBaixa.has(t.id)), ...noEscopo].map((t) => t.contraparte_id)),
   ]);
@@ -123,7 +120,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
       id: t.id, contraparteId: t.contraparte_id, nomeCliente: "", documento: t.documento, parcela: t.parcela, vencimento: t.vencimento,
       valorCentavos: valorRestante(t), estagio: t.estagio, cedido: t.cedido, contestado: t.contestado, unidade: unidadeDe(t),
     })),
-    hoje, minimoCentavos,
+    hoje, minimoCentavos, regra.janelaConfirmacaoDias,
   );
   const gruposCobranca = corte
     ? planejarCobrancas(
@@ -182,7 +179,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
   });
   const filas = { anexar: [] as ItemParcela[], enviar: [] as ItemParcela[], dados: [] as ItemParcela[] };
   for (const t of aguardando) {
-    const fila = filaDaParcela({ estagio: t.estagio, forma: t.forma_pagamento, temBoleto: comBoleto.has(t.id), vencimento: t.vencimento, hoje });
+    const fila = filaDaParcela({ estagio: t.estagio, forma: t.forma_pagamento, temBoleto: comBoleto.has(t.id), vencimento: t.vencimento, hoje, janelaBoletoDias: regra.janelaBoletoDias });
     if (fila) filas[fila].push(itemParcela(t));
   }
 
@@ -195,7 +192,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     return {
       ...base(g.contraparteId, g.unidade, g.titulos.map((t) => t.documento)),
       parcelas: g.titulos.map(parcelaDe), totalCentavos: g.totalCentavos, vencimentoMaisProximo: g.vencimentoMaisProximo,
-      prazo: prazoConfirmacao(g.vencimentoMaisProximo, hoje), ligar: ligar.has(`${g.contraparteId}|${g.unidade}`), contato: contatoMensagem(g.contraparteId),
+      prazo: prazoConfirmacao(g.vencimentoMaisProximo, hoje, regra.prazoContatoAntesDias), ligar: ligar.has(`${g.contraparteId}|${g.unidade}`), contato: contatoMensagem(g.contraparteId),
       andamento: g.titulos.map((t) => ultimo.get(t.id)).find((a) => a) ?? null,
       mensagem, linkWhatsApp: linkWhatsApp(zap?.whatsapp, mensagem),
     };

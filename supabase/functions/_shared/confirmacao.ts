@@ -111,9 +111,9 @@ export function pendenciasConfirmacaoObsoletas(
   }).map((p) => p.id);
 }
 
-/** Prazo do contato: vencimento menos 4 dias; se já passou, hoje. */
-export function prazoConfirmacao(vencimento: string, hoje: string): string {
-  const alvo = adicionarDias(vencimento, -DIAS_CONTATO_ANTES);
+/** Prazo do contato: vencimento menos 4 dias (parâmetro `antes`); se já passou, hoje. */
+export function prazoConfirmacao(vencimento: string, hoje: string, antes = DIAS_CONTATO_ANTES): string {
+  const alvo = adicionarDias(vencimento, -antes);
   return alvo > hoje ? alvo : hoje;
 }
 

@@ -95,12 +95,12 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
             const etapas = montarEsteira({
               estagio: p.estagio, vencimento: p.vencimento, boletoAnexado: boletoDaParcela.has(p.id), boletoEnviadoEm: p.boleto_enviado_em,
               dataPagamento: p.data_pagamento, reguaPausadaAte: p.regua_pausada_ate, reguaAplica, forma: p.forma_pagamento,
-            }, f.interacoes.filter((i) => i.referencia_id === p.id), f.hoje);
+            }, f.interacoes.filter((i) => i.referencia_id === p.id), f.hoje, f.regra);
             const naVez = etapas.find((e) => e.estado === "atual");
             const marco = marcoDoAtraso(p.dias_atraso);
             const confirmavel = (ESTAGIOS_CONFIRMAVEIS as readonly string[]).includes(p.estagio) || p.estagio === "confirmado_cliente";
             const diasParaVencer = Math.round((Date.parse(`${p.vencimento}T00:00:00Z`) - Date.parse(`${f.hoje}T00:00:00Z`)) / 86_400_000);
-            const naJanela = diasParaVencer >= 0 && diasParaVencer <= 7;
+            const naJanela = diasParaVencer >= 0 && diasParaVencer <= f.regra.janelaConfirmacaoDias;
             const ehCobravel = p.dias_atraso > 0 && !["pago", "cancelado", "renegociado", "juridico", "em_renegociacao"].includes(p.estagio) && !p.cedido && !p.contestado;
             const nomeParcela = `${p.documento}${p.parcela !== "1" ? `/${p.parcela}` : ""}`;
             return (
@@ -148,7 +148,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
                     {confirmavel && p.vencimento >= f.hoje && (
                       naJanela
                         ? <Button variant="outline" size="sm" render={<Link href={`/financeiro/cobranca/confirmar/${p.contraparte_id}${p.unidade === "contagem" ? "?unidade=contagem" : ""}`} />}>Confirmar pagamento</Button>
-                        : <Button variant="outline" size="sm" disabled title="A confirmação abre 7 dias antes do vencimento">Confirmar pagamento</Button>
+                        : <Button variant="outline" size="sm" disabled title={`A confirmação abre ${f.regra.janelaConfirmacaoDias} dias antes do vencimento`}>Confirmar pagamento</Button>
                     )}
                     {ehCobravel && (
                       reguaAplica && marco

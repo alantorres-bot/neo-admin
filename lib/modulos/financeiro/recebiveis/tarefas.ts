@@ -28,6 +28,23 @@ export const EXPLICACAO_FILA: Record<Fila, string> = {
   contato: "Clientes de Cuiabá (Matriz) com título a vencer ou vencido há menos de 60 dias e sem nenhum contato cadastrado.",
 };
 
+/** A explicação da fila com os números da regra em vigor (janelas e data de corte editáveis em Cobrança > Regra de cobrança). */
+export function explicacaoDaFila(fila: Fila, regra: { janelaBoletoDias: number; janelaConfirmacaoDias: number; reguaAPartirDe: string | null }): string {
+  const dia = (n: number) => `${n} ${n === 1 ? "dia" : "dias"}`;
+  if (fila === "anexar") {
+    return `Parcelas pagas por boleto, sem o PDF, que vencem em ${dia(regra.janelaBoletoDias)} ou menos (antes disso ainda não é hora de anexar). Anexe aqui mesmo; se o cliente paga por transferência, use “Pago por transferência”.`;
+  }
+  if (fila === "confirmar") {
+    return `Clientes com parcelas vencendo nos próximos ${dia(regra.janelaConfirmacaoDias)} e soma a partir do valor mínimo: contatar para confirmar a programação do pagamento. “Ligar” = o cliente não respondeu à mensagem.`;
+  }
+  if (fila === "cobrar") {
+    const [a, m, d] = (regra.reguaAPartirDe ?? "").split("-");
+    const desde = regra.reguaAPartirDe ? `, vencimentos a partir de ${d}/${m}/${a}` : " (a régua está desligada: sem data de início)";
+    return `Parcelas vencidas na régua de cobrança (D+1, D+5 e D+10${desde}), por cliente e marco. Só aparece o que ainda não foi cobrado naquele marco.`;
+  }
+  return EXPLICACAO_FILA[fila];
+}
+
 /** Filtros comuns a todas as filas. */
 export type Filtros = { unidade: Unidade | null; busca: string };
 
@@ -80,12 +97,12 @@ export const montarTextoBusca = (cliente: string, codigo: string | null, documen
  * Em qual fila de boleto/dados a parcela está? Só parcela aguardando boleto entra: com PDF vai para "enviar", sem PDF para "anexar";
  * quem paga por transferência não tem boleto e vai para "dados de pagamento".
  */
-export function filaDaParcela(t: { estagio: string; forma: string; temBoleto: boolean; vencimento?: string; hoje?: string }): "anexar" | "enviar" | "dados" | null {
+export function filaDaParcela(t: { estagio: string; forma: string; temBoleto: boolean; vencimento?: string; hoje?: string; janelaBoletoDias?: number }): "anexar" | "enviar" | "dados" | null {
   if (t.estagio !== "aguardando_boleto") return null;
   if (t.forma === "transferencia") return "dados";
   if (t.temBoleto) return "enviar";
-  // "Anexar boleto" só vira tarefa a 30 dias ou menos do vencimento (a mesma regra da pendência da sincronização).
-  if (t.vencimento && t.hoje && !dentroDaJanelaDoBoleto(t.vencimento, t.hoje)) return null;
+  // "Anexar boleto" só vira tarefa dentro da janela (30 dias, editável na Regra de cobrança; a mesma regra da pendência da sincronização).
+  if (t.vencimento && t.hoje && !dentroDaJanelaDoBoleto(t.vencimento, t.hoje, t.janelaBoletoDias)) return null;
   return "anexar";
 }
 

@@ -61,9 +61,7 @@ import {
 import {
   criticidadeConfirmacao,
   descricaoPendenciaConfirmacao,
-  DIAS_JANELA_CONFIRMACAO,
   ESTAGIOS_CONFIRMAVEIS,
-  MINIMO_PADRAO_CENTAVOS,
   pendenciasConfirmacaoObsoletas,
   planejarConfirmacoes,
   prazoConfirmacao,
@@ -93,17 +91,14 @@ import {
   planejarCobrancas,
   PREFIXO_COBRANCA,
   unidadeDaPendencia,
-  TRAVA_PENDENCIAS_COBRANCA,
   tituloPendenciaCobranca,
   type TituloCobranca,
 } from "../_shared/cobranca.ts";
+import { lerParametrosRegra, TODAS_AS_CHAVES_REGRA } from "../_shared/parametros-regra.ts";
 
 const MODULO = "financeiro.recebiveis";
-const CONFIG_INICIO_REGUA = "financeiro.recebiveis.regua_a_partir_de";
 const PREFIXO_BAIXA = "Possível baixa: ";
 const LOTE = 200;
-const CONFIG_INICIO_ESTEIRA = "financeiro.recebiveis.esteira_a_partir_de";
-const CONFIG_MINIMO_CONFIRMACAO = "financeiro.recebiveis.confirmacao_valor_minimo";
 
 /** Data de hoje no fuso de Cuiabá, 'aaaa-mm-dd'. */
 const hojeCuiaba = (): string =>
@@ -347,9 +342,10 @@ async function sincronizarEmpresa(
   }
 
   // Entrada na esteira: só títulos novos a partir da data de início, e nunca em carga em lote.
-  const { data: cfgInicio } = await banco.from("configuracoes").select("valor").eq("chave", CONFIG_INICIO_ESTEIRA).maybeSingle();
-  const inicio = typeof cfgInicio?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfgInicio.valor) ? cfgInicio.valor : null;
-  const decisao = decidirEntrada(plano.novos.length, hoje, inicio);
+  // Parâmetros da regra (Cobrança > Regra de cobrança): lidos uma vez por rodada; valor ausente ou inválido cai no padrão.
+  const { data: linhasRegra } = await banco.from("configuracoes").select("chave, valor").in("chave", [...TODAS_AS_CHAVES_REGRA]);
+  const regra = lerParametrosRegra(linhasRegra);
+  const decisao = decidirEntrada(plano.novos.length, hoje, regra.esteiraAPartirDe);
 
   const resumo: ResumoEmpresa = {
     empresa: empresa.nome_curto,
@@ -489,8 +485,8 @@ async function sincronizarEmpresa(
     banco.from("pendencias").select("id, referencia_id, titulo, descricao").eq("modulo", MODULO).like("titulo", `${PREFIXO_BOLETO}%`)
       .in("status", ["aberta", "em_andamento"]).order("id").range(de, ate));
   const abertasBoleto = new Set(abertasBoletoLinhas.map((p) => p.referencia_id));
-  // Só entra na lista de tarefas quem vence em 30 dias ou menos; as abertas que ficaram fora da janela são canceladas.
-  const planoBoleto = planejarPendenciasBoleto(titulosEsteira, notasEsteira, hoje, abertasBoleto);
+  // Só entra na lista de tarefas quem vence dentro da janela do boleto (30 dias, editável); as abertas que ficaram fora da janela são canceladas.
+  const planoBoleto = planejarPendenciasBoleto(titulosEsteira, notasEsteira, hoje, abertasBoleto, regra.janelaBoletoDias);
   const foraDaJanela = new Set(planoBoleto.fora);
   const boletoObsoletas = abertasBoletoLinhas.filter((p) => foraDaJanela.has(p.referencia_id)).map((p) => p.id);
   for (const lote of lotes(boletoObsoletas)) {
@@ -532,9 +528,7 @@ async function sincronizarEmpresa(
 
   // 5c) Confirmação de pagamento: clientes acima do corte, com parcelas vencendo nos próximos 7 dias, ganham UMA pendência
   // "Confirmar pagamento" (por cliente e vencimento mais próximo; nunca repete, nem depois de concluída).
-  const { data: cfgMinimo } = await banco.from("configuracoes").select("valor").eq("chave", CONFIG_MINIMO_CONFIRMACAO).maybeSingle();
-  const minimoReais = typeof cfgMinimo?.valor === "number" ? cfgMinimo.valor : Number(cfgMinimo?.valor);
-  const minimoCentavos = Number.isFinite(minimoReais) && minimoReais > 0 ? Math.round(minimoReais * 100) : MINIMO_PADRAO_CENTAVOS;
+  const minimoCentavos = regra.minimoConfirmacaoCentavos;
   type LinhaConfirmacao = {
     id: string; contraparte_id: string; documento: string; parcela: string; vencimento: string; valor: number | string; estagio: string;
     cedido: boolean; contestado: boolean; unidade: string; contrapartes: { nome: string } | { nome: string }[] | null;
@@ -543,7 +537,7 @@ async function sincronizarEmpresa(
     banco.from("rec_titulos")
       .select("id, contraparte_id, documento, parcela, vencimento, valor, estagio, cedido, contestado, unidade, contrapartes(nome)")
       .eq("empresa_id", empresa.id).in("estagio", [...ESTAGIOS_CONFIRMAVEIS])
-      .gte("vencimento", hoje).lte("vencimento", addDias(hoje, DIAS_JANELA_CONFIRMACAO)).order("id").range(de, ate));
+      .gte("vencimento", hoje).lte("vencimento", addDias(hoje, regra.janelaConfirmacaoDias)).order("id").range(de, ate));
   const restanteConfirmacao = await lerRestantes(banco, candidatas.map((l) => l.id));
   const gruposConfirmacao = planejarConfirmacoes(
     candidatas.map((l): TituloConfirmacao => ({
@@ -553,6 +547,7 @@ async function sincronizarEmpresa(
     })),
     hoje,
     minimoCentavos,
+    regra.janelaConfirmacaoDias,
   );
   let pendenciasConfirmacao = 0;
   if (gruposConfirmacao.length > 0) {
@@ -569,7 +564,7 @@ async function sincronizarEmpresa(
         contraparte_id: g.contraparteId,
         titulo: tituloPendenciaConfirmacao(g),
         descricao: descricaoPendenciaConfirmacao(g, contatoDoCliente.get(g.contraparteId) ?? ""),
-        prazo: prazoConfirmacao(g.vencimentoMaisProximo, hoje),
+        prazo: prazoConfirmacao(g.vencimentoMaisProximo, hoje, regra.prazoContatoAntesDias),
         criticidade: criticidadeConfirmacao(g.vencimentoMaisProximo, hoje),
         referencia_tabela: "contrapartes",
         referencia_id: g.contraparteId,
@@ -678,8 +673,7 @@ async function sincronizarEmpresa(
 
   // 7b) Régua de cobrança (D+1, D+5, D+10): só vencimentos a partir da data de corte; nunca envia, só abre a pendência
   // "Cobrar D+n" com o texto pronto. Antes, o que passou do vencimento sem pagamento vira `vencido`.
-  const { data: cfgRegua } = await banco.from("configuracoes").select("valor").eq("chave", CONFIG_INICIO_REGUA).maybeSingle();
-  const corteRegua = typeof cfgRegua?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfgRegua.valor) ? cfgRegua.valor : null;
+  const corteRegua = regra.reguaAPartirDe;
   const { data: novosVencidos, error: erroVencidos } = await banco.from("rec_titulos").update({ estagio: "vencido" })
     .eq("empresa_id", empresa.id).in("estagio", [...ESTAGIOS_QUE_VENCEM]).lt("vencimento", hoje).select("id");
   if (erroVencidos) throw new Error(`Falha ao marcar títulos vencidos: ${erroVencidos.message}`);
@@ -724,9 +718,9 @@ async function sincronizarEmpresa(
     }
     const novasCobrancas = gruposCobranca.filter((g) => !existentes.has(tituloPendenciaCobranca(g)));
     resumo.clientesNaRegua = new Set(gruposCobranca.map((g) => `${g.contraparteId}|${g.unidade}`)).size;
-    if (novasCobrancas.length > TRAVA_PENDENCIAS_COBRANCA) {
+    if (novasCobrancas.length > regra.travaPendenciasCobranca) {
       // Passou da trava: provável erro de configuração (data de corte antiga). Ninguém é cobrado.
-      resumo.regua = `trava: ${novasCobrancas.length} pendências de uma vez (limite ${TRAVA_PENDENCIAS_COBRANCA}); confira a data de corte`;
+      resumo.regua = `trava: ${novasCobrancas.length} pendências de uma vez (limite ${regra.travaPendenciasCobranca}); confira a data de corte`;
       resumo.pendenciasCobranca = 0;
     } else {
       const contatoDoCliente = await contatosParaSaudacao(banco, novasCobrancas.map((g) => g.contraparteId), ["cobranca", "confirmacao"]);

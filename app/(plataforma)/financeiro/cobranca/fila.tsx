@@ -7,13 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import {
-  agruparPorNota, aplicarFiltros, contarFilas, EXPLICACAO_FILA, ehFila, nomeParcela, paginar, ROTULO_FILA, totalDaFila,
+  agruparPorNota, aplicarFiltros, contarFilas, explicacaoDaFila, ehFila, nomeParcela, paginar, ROTULO_FILA, totalDaFila,
   type ContatoSugerido, type Fila, type ItemBase, type ParcelaItem,
 } from "@/lib/modulos/financeiro/recebiveis/tarefas";
 import { formatarWhatsapp } from "@/lib/nucleo/documentos";
 import { sanitizarBusca } from "@/lib/nucleo/erros";
 import { descreverPrazo } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
+import { criarClienteServidor } from "@/lib/supabase/servidor";
+import { carregarRegra } from "@/lib/modulos/financeiro/recebiveis/regra";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { nomeDoMarco, ROTULO_UNIDADE, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import { BotaoCopiar } from "@/app/(plataforma)/financeiro/recebiveis/[id]/componentes";
@@ -46,7 +48,7 @@ export async function PaginaFila({ filas, caminho, searchParams }: { filas: read
   const abaPedida = primeiro(parametros.aba);
   const paginaPedida = Number.parseInt(primeiro(parametros.pagina), 10) || 1;
 
-  const todas = await tarefasDaRequisicao();
+  const [todas, { parametros: regra }] = await Promise.all([tarefasDaRequisicao(), carregarRegra(await criarClienteServidor())]);
   const tarefas = aplicarFiltros(todas, { unidade, busca });
   const contagens = contarFilas(tarefas);
   const aba: Fila = ehFila(abaPedida) && filas.includes(abaPedida) ? abaPedida : (filas.find((f) => contagens[f] > 0) ?? filas[0]);
@@ -225,7 +227,7 @@ export async function PaginaFila({ filas, caminho, searchParams }: { filas: read
         })}
       </nav>}
       <p className="text-[12px] text-muted-foreground">
-        {EXPLICACAO_FILA[aba]}
+        {explicacaoDaFila(aba, regra)}
         {contagens[aba] > 0 && <> <strong className="text-foreground">{contagens[aba]} {unidadeDoItem} · {formatarMoeda(totalDaAba)}</strong>.</>}
       </p>
 

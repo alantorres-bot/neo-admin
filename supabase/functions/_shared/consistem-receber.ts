@@ -456,8 +456,8 @@ export function agruparBoletosPendentes(titulos: readonly TituloEsteira[], notas
 /** A tarefa "anexar boleto" só existe quando faltam 30 dias ou menos para o vencimento (vencido também): antes disso não há pendência. */
 export const DIAS_JANELA_ANEXAR_BOLETO = 30;
 
-export function dentroDaJanelaDoBoleto(vencimento: string, hoje: string): boolean {
-  return diasEntre(vencimento, hoje) <= DIAS_JANELA_ANEXAR_BOLETO;
+export function dentroDaJanelaDoBoleto(vencimento: string, hoje: string, janelaDias = DIAS_JANELA_ANEXAR_BOLETO): boolean {
+  return diasEntre(vencimento, hoje) <= janelaDias;
 }
 
 /**
@@ -466,9 +466,9 @@ export function dentroDaJanelaDoBoleto(vencimento: string, hoje: string): boolea
  * aberta delas perde o sentido e é cancelada; volta a abrir quando uma parcela entrar na janela).
  */
 export function planejarPendenciasBoleto(
-  titulos: readonly TituloEsteira[], notas: readonly NotaEsteira[], hoje: string, abertas: ReadonlySet<string>,
+  titulos: readonly TituloEsteira[], notas: readonly NotaEsteira[], hoje: string, abertas: ReadonlySet<string>, janelaDias = DIAS_JANELA_ANEXAR_BOLETO,
 ): { novas: GrupoBoleto[]; fora: string[]; atualizar: GrupoBoleto[] } {
-  const naJanela = agruparBoletosPendentes(titulos.filter((t) => dentroDaJanelaDoBoleto(t.vencimento, hoje)), notas);
+  const naJanela = agruparBoletosPendentes(titulos.filter((t) => dentroDaJanelaDoBoleto(t.vencimento, hoje, janelaDias)), notas);
   const comJanela = new Set(naJanela.map((g) => g.referenciaId));
   return {
     novas: naJanela.filter((g) => !abertas.has(g.referenciaId)),

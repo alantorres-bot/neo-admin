@@ -6,7 +6,9 @@ import {
   MODELO_BOLETO_EMAIL, MODELO_BOLETO_WHATSAPP, MODELO_DADOS_EMAIL, MODELO_DADOS_WHATSAPP, MODULO_RECEBIVEIS, montarMensagem, TIPO_ANEXO_BOLETO,
   type DadosMensagem, type MensagemMontada, type ParcelaMensagem,
 } from "@/lib/modulos/financeiro/recebiveis/boleto";
+import { carregarRegra } from "@/lib/modulos/financeiro/recebiveis/regra";
 import { urlAssinadaAnexo } from "@/lib/nucleo/anexos";
+import type { ParametrosRegra } from "@/supabase/functions/_shared/parametros-regra";
 import { escolherContato } from "@/supabase/functions/_shared/contatos";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 
@@ -55,6 +57,8 @@ export type Ficha = {
   totalCentavos: number;
   /** Data de corte da régua de cobrança (aaaa-mm-dd) e o dia de hoje em Cuiabá. */
   corteRegua: string | null;
+  /** Parâmetros da regra de cobrança (janelas de confirmação e de contato). */
+  regra: ParametrosRegra;
   hoje: string;
 };
 
@@ -72,7 +76,7 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
   const parcelas = (grupoBruto ?? []) as Parcela[];
   const ids = parcelas.map((p) => p.id);
 
-  const [{ data: cliente }, { data: nota }, { data: contatosBrutos }, { data: anexosBrutos }, { data: interacoesBrutas }, { data: modelosBrutos }, { data: cfgRegua }] = await Promise.all([
+  const [{ data: cliente }, { data: nota }, { data: contatosBrutos }, { data: anexosBrutos }, { data: interacoesBrutas }, { data: modelosBrutos }, { parametros: regra }] = await Promise.all([
     supabase.from("contrapartes").select("nome, codigo_erp").eq("id", base.contraparte_id).maybeSingle(),
     base.nota_saida_id ? supabase.from("rec_notas_saida").select("nota, pedidos").eq("id", base.nota_saida_id).maybeSingle() : Promise.resolve({ data: null }),
     supabase.from("contatos").select("id, nome, funcao, email, whatsapp, telefone, finalidades, canal_preferido, ativo").eq("contraparte_id", base.contraparte_id).eq("ativo", true).order("nome"),
@@ -81,7 +85,7 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
     supabase.from("interacoes").select("id, referencia_id, canal, tipo, descricao, criado_em, usuario_id").eq("referencia_tabela", "rec_titulos")
       .in("referencia_id", ids).order("criado_em", { ascending: false }).limit(60),
     supabase.from("modelos_mensagem").select("id, nome, canal, assunto, corpo").eq("modulo", MODULO_RECEBIVEIS).eq("ativo", true).in("nome", [MODELO_BOLETO_EMAIL, MODELO_BOLETO_WHATSAPP, MODELO_DADOS_EMAIL, MODELO_DADOS_WHATSAPP]),
-    supabase.from("configuracoes").select("valor").eq("chave", "financeiro.recebiveis.regua_a_partir_de").maybeSingle(),
+    carregarRegra(supabase),
   ]);
 
   // Boleto mais recente de cada parcela; o link assinado (bucket privado) só é gerado quando a tela vai mostrá-lo.
@@ -147,7 +151,8 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
     aguardando, paraMensagem, paraDados, dadosPagamento, modeloDadosEmailId: (modeloDadosEmail?.id as string | undefined) ?? null, emailDados, whatsappDados,
     modeloEmailId: (modeloEmail?.id as string | undefined) ?? null, email, whatsapp,
     totalCentavos: parcelas.reduce((s, p) => s + centavos(p.valor), 0),
-    corteRegua: typeof cfgRegua?.valor === "string" && /^\d{4}-\d{2}-\d{2}$/.test(cfgRegua.valor) ? cfgRegua.valor : null,
+    corteRegua: regra.reguaAPartirDe,
+    regra,
     hoje: hojeEmCuiaba(),
   };
 }

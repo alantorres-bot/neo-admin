@@ -13,6 +13,7 @@ import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis
 import { FUSO, hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
+import { carregarRegra } from "@/lib/modulos/financeiro/recebiveis/regra";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import {
   agruparPorCliente, mensagemWhatsAppConfirmacao, observacaoDemaisParcelas, prazoConfirmacao, type TituloConfirmacao,
@@ -47,7 +48,8 @@ export default async function PaginaConfirmacao({ params, searchParams }: PagePr
   const nomeCliente = cliente.nome as string;
 
   const hoje = hojeEmCuiaba();
-  const [{ data: linhasBrutas }, { data: contatosBrutos }, { data: interacoesBrutas }] = await Promise.all([
+  const [{ parametros: regra }, { data: linhasBrutas }, { data: contatosBrutos }, { data: interacoesBrutas }] = await Promise.all([
+    carregarRegra(supabase),
     supabase.from("rec_titulos").select("id, documento, parcela, vencimento, valor, estagio, cedido, contestado").eq("contraparte_id", id).eq("unidade", unidade)
       .in("estagio", ["importado", "aguardando_boleto", "boleto_enviado", "confirmado_cliente"]).gte("vencimento", hoje).order("vencimento").limit(200),
     supabase.from("contatos").select("id, nome, funcao, whatsapp, email, telefone, finalidades, canal_preferido, ativo").eq("contraparte_id", id).eq("ativo", true).order("nome"),
@@ -66,9 +68,9 @@ export default async function PaginaConfirmacao({ params, searchParams }: PagePr
     id: l.id, contraparteId: id, nomeCliente, documento: l.documento, parcela: l.parcela, vencimento: l.vencimento,
     valorCentavos: partes.get(l.id)?.restanteCentavos ?? Math.round(Number(l.valor) * 100), estagio: l.estagio, cedido: l.cedido, contestado: l.contestado, unidade,
   }));
-  const [grupo] = agruparPorCliente(titulos, hoje);
-  const jaConfirmadas = linhas.filter((l) => l.estagio === "confirmado_cliente" && l.vencimento <= new Date(Date.parse(`${hoje}T00:00:00Z`) + 7 * 86_400_000).toISOString().slice(0, 10));
-  const prazoContato = grupo ? prazoConfirmacao(grupo.vencimentoMaisProximo, hoje) : hoje;
+  const [grupo] = agruparPorCliente(titulos, hoje, regra.janelaConfirmacaoDias);
+  const jaConfirmadas = linhas.filter((l) => l.estagio === "confirmado_cliente" && l.vencimento <= new Date(Date.parse(`${hoje}T00:00:00Z`) + regra.janelaConfirmacaoDias * 86_400_000).toISOString().slice(0, 10));
+  const prazoContato = grupo ? prazoConfirmacao(grupo.vencimentoMaisProximo, hoje, regra.prazoContatoAntesDias) : hoje;
   const mensagem = grupo ? mensagemWhatsAppConfirmacao(grupo, contato?.nome ?? "") : null;
   const observacao = grupo ? observacaoDemaisParcelas(grupo) : "";
   const parcelas = grupo ? grupo.titulos.map((t) => ({ id: t.id, rotulo: `${nomeParcela(t)} — vence ${formatarData(t.vencimento)} — ${formatarMoeda(t.valorCentavos)}` })) : [];
@@ -81,8 +83,8 @@ export default async function PaginaConfirmacao({ params, searchParams }: PagePr
         <h2 className="text-xl font-semibold tracking-tight">Confirmar pagamento <span className="font-normal text-muted-foreground">— <Link href={`/financeiro/recebiveis/clientes/${id}`} className="hover:underline">{nomeCliente}</Link></span> <Badge variant={unidade === "contagem" ? "default" : "secondary"} className="align-middle">{ROTULO_UNIDADE[unidade]}</Badge></h2>
         <p className="text-sm text-muted-foreground">
           {grupo
-            ? <>{grupo.titulos.length} {grupo.titulos.length === 1 ? "parcela" : "parcelas"} vencendo nos próximos 7 dias, total {formatarMoeda(grupo.totalCentavos)}. {prazoContato === hoje ? "Contate o cliente hoje" : `Contate o cliente até ${formatarData(prazoContato)}`} (o ideal é 4 dias antes do vencimento).</>
-            : "Nenhuma parcela pendente de confirmação nos próximos 7 dias."}
+            ? <>{grupo.titulos.length} {grupo.titulos.length === 1 ? "parcela" : "parcelas"} vencendo nos próximos {regra.janelaConfirmacaoDias} dias, total {formatarMoeda(grupo.totalCentavos)}. {prazoContato === hoje ? "Contate o cliente hoje" : `Contate o cliente até ${formatarData(prazoContato)}`} (o ideal é {regra.prazoContatoAntesDias} dias antes do vencimento).</>
+            : `Nenhuma parcela pendente de confirmação nos próximos ${regra.janelaConfirmacaoDias} dias.`}
           {cliente.codigo_erp ? <> Cliente {cliente.codigo_erp as string} no Consistem.</> : null}
         </p>
       </div>

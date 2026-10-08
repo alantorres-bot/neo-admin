@@ -46,7 +46,10 @@ const marcoDaInteracao = (i: InteracaoEsteira): number | null => {
 };
 
 /** Monta a sequência de passos do título, na ordem em que acontecem. `hoje` é aaaa-mm-dd (Cuiabá). */
-export function montarEsteira(t: TituloEsteira, interacoes: readonly InteracaoEsteira[], hoje: string): Etapa[] {
+export function montarEsteira(
+  t: TituloEsteira, interacoes: readonly InteracaoEsteira[], hoje: string,
+  regra: { janelaConfirmacaoDias: number; prazoContatoAntesDias: number } = { janelaConfirmacaoDias: DIAS_JANELA_CONFIRMACAO, prazoContatoAntesDias: DIAS_CONTATO_ANTES },
+): Etapa[] {
   const encerrado = ["pago", "cancelado", "renegociado"].includes(t.estagio);
   const diasAtraso = Math.max(diasEntre(hoje, t.vencimento), 0);
   const etapas: Etapa[] = [];
@@ -86,13 +89,13 @@ export function montarEsteira(t: TituloEsteira, interacoes: readonly InteracaoEs
     confirmacao = { chave: "confirmacao", rotulo: "Confirmação do pagamento", estado: "feita", quando: confirmou?.criado_em ?? null, detalhe: "cliente confirmou" };
   } else if (t.vencimento < hoje || encerrado) {
     confirmacao = { chave: "confirmacao", rotulo: "Confirmação do pagamento", estado: "fora", quando: semResposta?.criado_em ?? null, detalhe: semResposta ? "sem resposta do cliente" : "não feita" };
-  } else if (diasEntre(t.vencimento, hoje) <= DIAS_JANELA_CONFIRMACAO) {
+  } else if (diasEntre(t.vencimento, hoje) <= regra.janelaConfirmacaoDias) {
     confirmacao = {
       chave: "confirmacao", rotulo: "Confirmação do pagamento", estado: "atual", quando: null,
-      detalhe: semResposta ? `sem resposta em ${dataCurta(semResposta.criado_em)}; ligar` : `contatar até ${dataCurta(somar(t.vencimento, -DIAS_CONTATO_ANTES))}`,
+      detalhe: semResposta ? `sem resposta em ${dataCurta(semResposta.criado_em)}; ligar` : `contatar até ${dataCurta(somar(t.vencimento, -regra.prazoContatoAntesDias))}`,
     };
   } else {
-    confirmacao = { chave: "confirmacao", rotulo: "Confirmação do pagamento", estado: "pendente", quando: null, detalhe: `a partir de ${dataCurta(somar(t.vencimento, -DIAS_JANELA_CONFIRMACAO))}` };
+    confirmacao = { chave: "confirmacao", rotulo: "Confirmação do pagamento", estado: "pendente", quando: null, detalhe: `a partir de ${dataCurta(somar(t.vencimento, -regra.janelaConfirmacaoDias))}` };
   }
   etapas.push(confirmacao);
 
