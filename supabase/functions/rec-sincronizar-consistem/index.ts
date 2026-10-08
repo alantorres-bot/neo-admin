@@ -369,7 +369,7 @@ async function sincronizarEmpresa(
     titulosLigadosANota: notaDoTitulo.size,
     titulosSemNotaLigada: naoLigados,
     entrada: decisao.abrir ? "novos entram em aguardando_boleto" : `não abre pendência (${decisao.motivo})`,
-    esteiraAPartirDe: inicio,
+    esteiraAPartirDe: regra.esteiraAPartirDe,
     simulacao: simular,
   };
   if (simular) return resumo;

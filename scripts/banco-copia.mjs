@@ -168,6 +168,17 @@ function importar() {
     }
     console.log(`${String(linhas.length).padStart(6)}  ${t.esquema}.${t.tabela}`);
   }
+  // As linhas entram com o `id` da cópia, então as sequências do destino ficam para trás (a próxima gravação auditada falharia com
+  // "duplicate key"). Adianta cada sequência de `public` para o maior id da tabela dela.
+  consultar(ref, `do $$ declare r record; begin
+    for r in select t.relname as tabela, a.attname as coluna, pg_get_serial_sequence(format('public.%I', t.relname), a.attname) as seq
+             from pg_class s join pg_depend d on d.objid = s.oid and d.deptype in ('a','i') join pg_class t on t.oid = d.refobjid
+             join pg_attribute a on a.attrelid = t.oid and a.attnum = d.refobjsubid
+             where s.relkind = 'S' and t.relnamespace = 'public'::regnamespace loop
+      if r.seq is not null then
+        execute format('select setval(%L, greatest(coalesce((select max(%I) from public.%I), 0), 1), true)', r.seq, r.coluna, r.tabela);
+      end if;
+    end loop; end $$;`);
   console.log("\nImportação concluída. Rode `conferir` para comparar as contagens.");
 }
 
