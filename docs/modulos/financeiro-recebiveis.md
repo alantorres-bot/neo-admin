@@ -411,3 +411,13 @@ O app estava "poluído": a Carteira misturava totais e lista de títulos com bot
 - A fila `contato` (cadastrar contato) deixou de ser tarefa de cobrança: é a aba "a cadastrar" de Clientes e contatos.
 - Código: `app/(plataforma)/financeiro/cobranca/` (`layout.tsx`, `abas.ts`, `fila.tsx` = `PaginaFila`, `dados.ts` = `tarefasDaRequisicao`); a lógica pura continua em `lib/modulos/financeiro/recebiveis/tarefas.ts`.
 - A régua D+1/D+5/D+10, a janela de 30 dias do boleto e o mínimo de confirmação seguem fixos no código/`configuracoes`; a tela `/regra` mostra os valores em vigor. Edição na tela fica para uma fase futura (tabelas `rec_reguas`/`rec_regua_marcos` existem, sem uso).
+
+## 32. Regra de cobrança editável — Fase 1: parâmetros (08/10/2026)
+
+A tela `Cobrança > Regra de cobrança` (`/financeiro/cobranca/regra`) virou formulário para **gestor do Financeiro ou acima** (os demais só consultam). Parâmetros editáveis, todos em `configuracoes` (chaves `financeiro.recebiveis.*`): `esteira_a_partir_de` e `regua_a_partir_de` (data; vazio desliga), `confirmacao_valor_minimo` (R$), `janela_anexar_boleto_dias` (30), `janela_confirmacao_dias` (7), `prazo_contato_antes_dias` (4) e `trava_pendencias_cobranca` (40). Multa e juros padrão (2% + 2% a.m.) continuam só consulta (valem o contrato de cada cliente; a view `rec_vw_titulos` os calcula).
+
+- **Gravação:** só pela função de banco `rec_salvar_regua(jsonb)` (migration 0119): confere o nível, aceita só as chaves acima, valida tipo e faixa (mensagens em português), grava tudo numa transação e registra quem alterou na chave `…regra_ultima_alteracao`. A auditoria de `configuracoes` guarda antes/depois com o usuário.
+- **Leitura única:** `supabase/functions/_shared/parametros-regra.ts` (`lerParametrosRegra`: valor ausente/inválido cai no padrão = comportamento anterior). Usada pela Edge Function `rec-sincronizar-consistem` (uma leitura por rodada) e, no app, por `lib/modulos/financeiro/recebiveis/regra.ts` (`carregarRegra`). As funções puras receberam o parâmetro com padrão igual à constante antiga.
+- **Vale a partir** da próxima sincronização e da próxima abertura de tela. O sistema continua sem enviar nada.
+- **Pendente (Fase 2, só com OK):** marcos da régua (dias, canais, textos com variáveis, demonstrativo) editáveis; `rec_registrar_cobranca` deixa de fixar (1,5,10).
+- **Lição do banco de São Paulo:** a cópia com `id` explícito deixou a sequência de `auditoria` atrasada (próxima gravação auditada falhava com "duplicate key"). Corrigido com `setval` e o `scripts/banco-copia.mjs importar` agora ajusta as sequências no fim.
