@@ -9,8 +9,12 @@ export const POR_PAGINA = 100;
 export type TipoItem = "titulo" | "antecipacao";
 export const ROTULO_TIPO: Record<TipoItem, string> = { titulo: "Título", antecipacao: "Antecipação" };
 
+export type AutorizacaoAtiva = { id: string; numero: number; status: "rascunho" | "autorizada" };
+export type Tratada = { id: string; motivo: string; em: string };
+
 export type ItemPendente = {
   id: string;
+  empresaId: string;
   tipo: TipoItem;
   codLancamento: string;
   codFornecedor: string;
@@ -28,14 +32,24 @@ export type ItemPendente = {
   complemento: string;
   codBanco: string;
   categoria: string;
+  /** Autorização ativa (rascunho ou autorizada) em que o lançamento já está, se houver. */
+  autorizacao: AutorizacaoAtiva | null;
+  /** Antecipação marcada como paga fora do Neo Admin. */
+  tratada: Tratada | null;
 };
+
+/** Pendente de autorização = sem autorização ativa e não tratada. */
+export const estaPendente = (i: Pick<ItemPendente, "autorizacao" | "tratada">): boolean => i.autorizacao === null && i.tratada === null;
 
 export type FiltroTipo = "todos" | "titulos" | "antecipacoes";
 export type FiltroSituacao = "todos" | "vencidos" | "a_vencer";
+export type FiltroMostrar = "pendentes" | "todos";
 export type FiltrosPendentes = {
   busca: string;
   tipo: FiltroTipo;
   situacao: FiltroSituacao;
+  /** pendentes = só o que ainda não está em autorização nem foi tratado (padrão); todos = inclui esses também. */
+  mostrar: FiltroMostrar;
   /** Vencimento (título) ou data de referência (antecipação) de/até, 'aaaa-mm-dd'. */
   vencDe: string | null;
   vencAte: string | null;
@@ -43,6 +57,7 @@ export type FiltrosPendentes = {
 
 export const ehFiltroTipo = (v: string): v is FiltroTipo => v === "todos" || v === "titulos" || v === "antecipacoes";
 export const ehFiltroSituacao = (v: string): v is FiltroSituacao => v === "todos" || v === "vencidos" || v === "a_vencer";
+export const ehFiltroMostrar = (v: string): v is FiltroMostrar => v === "pendentes" || v === "todos";
 export const ehDataIso = (v: string): boolean => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(`${v}T00:00:00Z`));
 
 /** Data que manda na ordem e nos filtros: vencimento do título; pagamento programado (ou emissão) da antecipação. */
@@ -81,6 +96,7 @@ export function aplicarCorteAntecipacoes<T extends Pick<ItemPendente, "tipo" | "
 export function aplicarFiltrosPendentes(itens: readonly ItemPendente[], f: FiltrosPendentes, hoje: string): ItemPendente[] {
   const termos = semAcento(f.busca.trim()).split(/\s+/).filter(Boolean);
   return itens.filter((i) => {
+    if (f.mostrar === "pendentes" && !estaPendente(i)) return false;
     if (f.tipo === "titulos" && i.tipo !== "titulo") return false;
     if (f.tipo === "antecipacoes" && i.tipo !== "antecipacao") return false;
     if (f.situacao === "vencidos" && !(i.tipo === "titulo" && i.vencimento !== null && i.vencimento < hoje)) return false;

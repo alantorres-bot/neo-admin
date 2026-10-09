@@ -275,6 +275,22 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
     if (error) throw new Error(`Falha ao marcar baixados: ${error.message}`);
   }
 
+  // 6b) Autorizações (Fase 2): o item cujo lançamento saiu dos abertos recebe a data; reaberto perde a marca.
+  try {
+    const reabertos = plano.alterados.filter((a) => a.campos.baixado_em === null).map((a) => a.id);
+    for (const lote of lotes(plano.baixados)) {
+      const { error } = await banco.from("cap_autorizacao_itens").update({ baixado_consistem_em: hoje }).in("lancamento_id", lote).is("baixado_consistem_em", null);
+      if (error) throw new Error(error.message);
+    }
+    for (const lote of lotes(reabertos)) {
+      const { error } = await banco.from("cap_autorizacao_itens").update({ baixado_consistem_em: null }).in("lancamento_id", lote).not("baixado_consistem_em", "is", null);
+      if (error) throw new Error(error.message);
+    }
+  } catch (e) {
+    // Antes da migration 0122 a tabela não existe; depois dela, uma falha aqui não derruba a rodada (a próxima conserta).
+    resumo.avisoAutorizacoes = `Baixas não anotadas nas autorizações: ${e instanceof Error ? e.message.slice(0, 200) : "falha"}`;
+  }
+
   // 7) Detalhe das antecipações (data de pagamento programada, portador, código de barras, Pix): um GET por lançamento,
   // só para as que ainda não têm detalhe, com teto por rodada. Falha aqui não derruba a rodada.
   try {
@@ -315,6 +331,7 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
       origem: "api", empresa: empresa.codigo_erp, segundosApi, registrosNaApi: registros.length, abertos: resumo.abertos,
       recusados: recusados.slice(0, 20), duplicadosApi: plano.duplicadosApi.slice(0, 20), ignorados: plano.ignorados, encerradosNaApi: plano.encerradosNaApi,
       fornecedoresNovos, avisoFornecedores: resumo.avisoFornecedores ?? null, detalhesLidos: resumo.detalhesLidos ?? 0, avisoDetalhe: resumo.avisoDetalhe ?? null,
+      avisoAutorizacoes: resumo.avisoAutorizacoes ?? null,
     },
     linhas_novas: plano.novos.length,
     linhas_alteradas: plano.alterados.length,

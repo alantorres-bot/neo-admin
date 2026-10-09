@@ -18,6 +18,7 @@ export type ResumoSincronizacaoPagar = {
   avisoFornecedores?: string;
   detalhesLidos?: number;
   avisoDetalhe?: string;
+  avisoAutorizacoes?: string;
 };
 
 export type ResultadoMedicao = {
@@ -47,6 +48,7 @@ export function descreverSincronizacaoPagar(r: ResumoSincronizacaoPagar): string
   if (r.duplicadosNaApi > 0) linhas.push(`${plural(r.duplicadosNaApi, "lançamento repetido", "lançamentos repetidos")} na resposta do Consistem (usado o primeiro).`);
   if (r.avisoFornecedores) linhas.push(`Aviso: ${r.avisoFornecedores}`);
   if (r.avisoDetalhe) linhas.push(`Aviso: ${r.avisoDetalhe}`);
+  if (r.avisoAutorizacoes) linhas.push(`Aviso: ${r.avisoAutorizacoes}`);
   return linhas;
 }
 

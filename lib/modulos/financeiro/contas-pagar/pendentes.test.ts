@@ -7,14 +7,14 @@ import {
 const HOJE = "2026-10-09";
 function item(p: Partial<ItemPendente> & { id: string }): ItemPendente {
   return {
-    tipo: "titulo", codLancamento: p.id, codFornecedor: "1", fornecedor: "ALUSSIN IND. E COM. METAIS LTDA", documentoFornecedor: "12.345.678/0001-95",
+    empresaId: "e1", tipo: "titulo", codLancamento: p.id, codFornecedor: "1", fornecedor: "ALUSSIN IND. E COM. METAIS LTDA", documentoFornecedor: "12.345.678/0001-95",
     numDocumento: "NF 10", emissao: "2026-09-01", vencimento: "2026-10-20", dataPagamento: null, valorDocumentoCentavos: 10_000, saldoCentavos: 10_000,
-    complemento: "", codBanco: "91", categoria: "16", ...p,
+    complemento: "", codBanco: "91", categoria: "16", autorizacao: null, tratada: null, ...p,
   };
 }
 const antecipacao = (id: string, extra: Partial<ItemPendente> = {}) =>
   item({ id, tipo: "antecipacao", vencimento: null, emissao: "2026-10-01", fornecedor: "PERFILADOS MULTIACO", complemento: "ANTECIPAÇÃO DE COMPRA - PEDIDO 948", ...extra });
-const filtro = { busca: "", tipo: "todos" as const, situacao: "todos" as const, vencDe: null, vencAte: null };
+const filtro = { busca: "", tipo: "todos" as const, situacao: "todos" as const, mostrar: "pendentes" as const, vencDe: null, vencAte: null };
 
 describe("data de referência e atraso", () => {
   it("título usa o vencimento; antecipação usa o pagamento programado ou, sem ele, a emissão", () => {
@@ -56,6 +56,11 @@ describe("filtros", () => {
     item({ id: "f", vencimento: "2026-10-20", fornecedor: "HYDRO EXTRUSION", codFornecedor: "642", documentoFornecedor: "99.999.999/0001-91", numDocumento: "577082/1" }),
     antecipacao("a", { dataPagamento: "2026-10-15" }),
   ];
+  it("mostrar: pendentes esconde quem já está em autorização ativa ou foi tratado; todos inclui", () => {
+    const lista = [item({ id: "livre" }), item({ id: "aut", autorizacao: { id: "a", numero: 3, status: "rascunho" } }), antecipacao("trat", { tratada: { id: "t", motivo: "borderô 1", em: "2026-10-01" } })];
+    expect(aplicarFiltrosPendentes(lista, filtro, HOJE).map((i) => i.id)).toEqual(["livre"]);
+    expect(aplicarFiltrosPendentes(lista, { ...filtro, mostrar: "todos" }, HOJE).map((i) => i.id)).toEqual(["livre", "aut", "trat"]);
+  });
   it("por tipo", () => {
     expect(aplicarFiltrosPendentes(itens, { ...filtro, tipo: "titulos" }, HOJE).map((i) => i.id)).toEqual(["v", "f"]);
     expect(aplicarFiltrosPendentes(itens, { ...filtro, tipo: "antecipacoes" }, HOJE).map((i) => i.id)).toEqual(["a"]);

@@ -4,8 +4,11 @@ import { MODULO_CONTAS_PAGAR, ROTA_CONTAS_PAGAR } from "@/lib/modulos/financeiro
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 
-// Abas do módulo. "Autorizações" (histórico) entra na Fase 2; "Antecipações" e "Parâmetros" na Fase 4.
-const ABAS = [{ href: ROTA_CONTAS_PAGAR, rotulo: "Autorizar pagamento" }];
+// Abas do módulo. "Antecipações" e "Parâmetros" entram na Fase 4.
+const ABAS = [
+  { href: ROTA_CONTAS_PAGAR, rotulo: "Autorizar pagamento" },
+  { href: `${ROTA_CONTAS_PAGAR}/autorizacoes`, rotulo: "Autorizações" },
+];
 
 export default async function LayoutContasPagar({ children }: LayoutProps<"/financeiro/contas-pagar">) {
   const sessao = await exigirSessao();
@@ -20,8 +23,12 @@ export default async function LayoutContasPagar({ children }: LayoutProps<"/fina
           Títulos e antecipações a fornecedor em aberto no Consistem, juntos, para montar a autorização de pagamento. O Neo Admin só lê o ERP: pagar e dar baixa continuam no Consistem.
         </p>
       </div>
-      <Abas abas={ABAS} />
+      <AbasContasPagar />
       {children}
     </div>
   );
+}
+
+function AbasContasPagar() {
+  return <Abas abas={ABAS} />;
 }

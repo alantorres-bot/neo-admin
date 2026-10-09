@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  aplicarCorteAntecipacoes, aplicarFiltrosPendentes, descreverSituacao, diasAtraso, ehDataIso, ehFiltroSituacao, ehFiltroTipo, ordenarPendentes, paginar,
-  ROTA_CONTAS_PAGAR, ROTULO_TIPO, totalizar, type FiltrosPendentes,
+  aplicarCorteAntecipacoes, aplicarFiltrosPendentes, ehDataIso, ehFiltroMostrar, ehFiltroSituacao, ehFiltroTipo, estaPendente, ordenarPendentes, paginar,
+  ROTA_CONTAS_PAGAR, totalizar, type FiltrosPendentes,
 } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { sanitizarBusca } from "@/lib/nucleo/erros";
@@ -16,6 +14,7 @@ import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { BotoesAtualizar } from "./componentes";
 import { pendentesDaRequisicao } from "./dados";
+import { TabelaPendentes } from "./tabela-pendentes";
 
 export const metadata: Metadata = { title: "Contas a pagar" };
 
@@ -23,30 +22,35 @@ const primeiro = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] 
 
 export default async function PaginaAutorizarPagamento({ searchParams }: PageProps<"/financeiro/contas-pagar">) {
   const sessao = await exigirSessao();
-  const podeAtualizar = temAcesso(sessao.acesso, "financeiro", "operador");
+  const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
+  const ehGestor = temAcesso(sessao.acesso, "financeiro", "gestor");
   const hoje = hojeEmCuiaba();
 
   const parametros = await searchParams;
   const tipoPedido = primeiro(parametros.tipo);
   const situacaoPedida = primeiro(parametros.situacao);
+  const mostrarPedido = primeiro(parametros.mostrar);
   const de = primeiro(parametros.de);
   const ate = primeiro(parametros.ate);
   const filtros: FiltrosPendentes = {
     busca: sanitizarBusca(primeiro(parametros.q)),
     tipo: ehFiltroTipo(tipoPedido) ? tipoPedido : "todos",
     situacao: ehFiltroSituacao(situacaoPedida) ? situacaoPedida : "todos",
+    mostrar: ehFiltroMostrar(mostrarPedido) ? mostrarPedido : "pendentes",
     vencDe: ehDataIso(de) ? de : null,
     vencAte: ehDataIso(ate) ? ate : null,
   };
   const paginaPedida = Number.parseInt(primeiro(parametros.pagina), 10) || 1;
-  const temFiltro = Boolean(filtros.busca || filtros.tipo !== "todos" || filtros.situacao !== "todos" || filtros.vencDe || filtros.vencAte);
+  const temFiltro = Boolean(filtros.busca || filtros.tipo !== "todos" || filtros.situacao !== "todos" || filtros.vencDe || filtros.vencAte || filtros.mostrar !== "pendentes");
 
-  const { itens: todos, parametros: param, ultima } = await pendentesDaRequisicao();
+  const { itens: todos, parametros: param, ultima, empresas } = await pendentesDaRequisicao();
   const emAberto = aplicarCorteAntecipacoes(todos, param.corteAntecipacoes);
   const foraDoCorte = todos.length - emAberto.length;
-  const totalGeral = totalizar(emAberto, hoje);
+  const pendentes = emAberto.filter(estaPendente);
+  const jaTratados = emAberto.length - pendentes.length;
+  const totalGeral = totalizar(pendentes, hoje);
   const filtrados = ordenarPendentes(aplicarFiltrosPendentes(emAberto, filtros, hoje));
-  const totais = totalizar(filtrados, hoje);
+  const totais = totalizar(filtrados.filter(estaPendente), hoje);
   const { pagina, totalPaginas, itens } = paginar(filtrados, paginaPedida);
 
   const link = (p: number) => {
@@ -54,6 +58,7 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
     if (filtros.busca) qs.set("q", filtros.busca);
     if (filtros.tipo !== "todos") qs.set("tipo", filtros.tipo);
     if (filtros.situacao !== "todos") qs.set("situacao", filtros.situacao);
+    if (filtros.mostrar !== "pendentes") qs.set("mostrar", filtros.mostrar);
     if (filtros.vencDe) qs.set("de", filtros.vencDe);
     if (filtros.vencAte) qs.set("ate", filtros.vencAte);
     if (p > 1) qs.set("pagina", String(p));
@@ -70,25 +75,25 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
             : "Ainda não foi atualizado do Consistem. Use “Atualizar do Consistem” para trazer a lista."}
           {param.corteAntecipacoes && <> Antecipações a partir de {formatarData(param.corteAntecipacoes)}{foraDoCorte > 0 ? ` (${foraDoCorte} anteriores ficam fora)` : ""}.</>}
         </p>
-        {podeAtualizar && <BotoesAtualizar />}
+        {podeOperar && <BotoesAtualizar />}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Card size="sm">
-          <CardHeader><CardDescription>Títulos{temFiltro ? " no filtro" : ""}</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(totais.titulos.centavos)}</CardTitle></CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{totais.titulos.quantidade} {totais.titulos.quantidade === 1 ? "título" : "títulos"}{temFiltro ? ` · ${totalGeral.titulos.quantidade} no total` : ""}</CardContent>
+          <CardHeader><CardDescription>Títulos{temFiltro ? " no filtro" : " pendentes"}</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(totais.titulos.centavos)}</CardTitle></CardHeader>
+          <CardContent className="text-xs text-muted-foreground">{totais.titulos.quantidade} {totais.titulos.quantidade === 1 ? "título" : "títulos"}{temFiltro ? ` · ${totalGeral.titulos.quantidade} pendentes no total` : ""}</CardContent>
         </Card>
         <Card size="sm">
-          <CardHeader><CardDescription>Antecipações{temFiltro ? " no filtro" : ""}</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(totais.antecipacoes.centavos)}</CardTitle></CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{totais.antecipacoes.quantidade} {totais.antecipacoes.quantidade === 1 ? "antecipação" : "antecipações"} com saldo{temFiltro ? ` · ${totalGeral.antecipacoes.quantidade} no total` : ""}</CardContent>
+          <CardHeader><CardDescription>Antecipações{temFiltro ? " no filtro" : " pendentes"}</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(totais.antecipacoes.centavos)}</CardTitle></CardHeader>
+          <CardContent className="text-xs text-muted-foreground">{totais.antecipacoes.quantidade} {totais.antecipacoes.quantidade === 1 ? "antecipação" : "antecipações"} com saldo{temFiltro ? ` · ${totalGeral.antecipacoes.quantidade} pendentes no total` : ""}</CardContent>
         </Card>
         <Card size="sm">
           <CardHeader><CardDescription>Vencidos</CardDescription><CardTitle className="text-xl tabular-nums text-red-700">{formatarMoeda(totais.vencidos.centavos)}</CardTitle></CardHeader>
           <CardContent className="text-xs text-muted-foreground">{totais.vencidos.quantidade} {totais.vencidos.quantidade === 1 ? "título vencido" : "títulos vencidos"}</CardContent>
         </Card>
         <Card size="sm">
-          <CardHeader><CardDescription>Total{temFiltro ? " no filtro" : " em aberto"}</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(totais.geral.centavos)}</CardTitle></CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{totais.geral.quantidade} {totais.geral.quantidade === 1 ? "item" : "itens"}{temFiltro ? ` · ${formatarMoeda(totalGeral.geral.centavos)} no total` : ""}</CardContent>
+          <CardHeader><CardDescription>Total{temFiltro ? " no filtro" : " pendente de autorização"}</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(totais.geral.centavos)}</CardTitle></CardHeader>
+          <CardContent className="text-xs text-muted-foreground">{totais.geral.quantidade} {totais.geral.quantidade === 1 ? "item" : "itens"}{temFiltro ? ` · ${formatarMoeda(totalGeral.geral.centavos)} pendentes no total` : jaTratados > 0 ? ` · ${jaTratados} já em autorização ou pagos fora` : ""}</CardContent>
         </Card>
       </div>
 
@@ -96,7 +101,7 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
         <div>
           <h2 className="text-base font-bold">Em aberto no Consistem</h2>
           <p className="text-xs text-muted-foreground">
-            Título = saldo a pagar. Antecipação = valor adiantado ao fornecedor ainda não abatido por nota fiscal (o Consistem não informa se a antecipação já foi paga; a autorização, na próxima fase, registra isso).
+            Título = saldo a pagar. Antecipação = valor adiantado ao fornecedor ainda não abatido por nota fiscal. Marque os itens e clique em “Gerar autorização”; o item sai da lista de pendentes ao entrar numa autorização.
           </p>
         </div>
 
@@ -112,6 +117,10 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
             <option value="vencidos">Só vencidos</option>
             <option value="a_vencer">Só a vencer</option>
           </select>
+          <select name="mostrar" defaultValue={filtros.mostrar} aria-label="Mostrar" className="h-8 rounded-[3px] border border-input bg-white px-2 text-[13px]">
+            <option value="pendentes">Pendentes de autorização</option>
+            <option value="todos">Incluir já autorizados e pagos fora</option>
+          </select>
           <label className="flex items-center gap-1 text-[13px]">de <Input type="date" name="de" defaultValue={filtros.vencDe ?? ""} aria-label="Vencimento de" className="w-36" /></label>
           <label className="flex items-center gap-1 text-[13px]">até <Input type="date" name="ate" defaultValue={filtros.vencAte ?? ""} aria-label="Vencimento até" className="w-36" /></label>
           <Button type="submit" variant="secondary">Filtrar</Button>
@@ -123,53 +132,11 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
             {todos.length === 0 ? "Nenhum lançamento em aberto. Use “Atualizar do Consistem” para trazer a lista." : "Nenhum item encontrado com esse filtro."}
           </p>
         ) : (
-          <div className="overflow-x-auto rounded-[3px] border border-grade">
-            <Table className="cartoes">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Tipo</TableHead>
-                  <TableHead>Fornecedor</TableHead>
-                  <TableHead>Documento</TableHead>
-                  <TableHead>Emissão</TableHead>
-                  <TableHead>Vencimento</TableHead>
-                  <TableHead>Situação</TableHead>
-                  <TableHead className="text-right">Valor</TableHead>
-                  <TableHead className="text-right">Saldo</TableHead>
-                  <TableHead>Histórico</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {itens.map((i) => {
-                  const atraso = diasAtraso(i, hoje);
-                  return (
-                    <TableRow key={i.id}>
-                      <TableCell>
-                        <Badge variant={i.tipo === "antecipacao" ? "default" : "outline"}>{ROTULO_TIPO[i.tipo]}</Badge>
-                      </TableCell>
-                      <TableCell className="max-w-72">
-                        <span className="block truncate" title={i.fornecedor}>{i.fornecedor}</span>
-                        <span className="block text-[11px] text-muted-foreground">{i.documentoFornecedor ?? `cód. ${i.codFornecedor || "—"}`}</span>
-                      </TableCell>
-                      <TableCell className="tabular-nums">
-                        {i.numDocumento || "—"}
-                        <span className="block text-[11px] text-muted-foreground">lanç. {i.codLancamento}</span>
-                      </TableCell>
-                      <TableCell className="tabular-nums">{formatarData(i.emissao) || "—"}</TableCell>
-                      <TableCell className="tabular-nums">{i.tipo === "titulo" ? formatarData(i.vencimento) || "—" : (i.dataPagamento ? formatarData(i.dataPagamento) : "—")}</TableCell>
-                      <TableCell className={atraso > 0 ? "font-medium text-red-700" : "text-muted-foreground"}>{descreverSituacao(i, hoje)}</TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">{formatarMoeda(i.valorDocumentoCentavos)}</TableCell>
-                      <TableCell className="text-right font-medium tabular-nums">{formatarMoeda(i.saldoCentavos)}</TableCell>
-                      <TableCell className="max-w-64 truncate text-xs text-muted-foreground" title={i.complemento}>{i.complemento || "—"}</TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+          <TabelaPendentes itens={itens} podeOperar={podeOperar} ehGestor={ehGestor} hoje={hoje} empresas={empresas} />
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-          <span>{filtrados.length} {filtrados.length === 1 ? "item" : "itens"}{temFiltro ? " no filtro" : ""}</span>
+          <span>{filtrados.length} {filtrados.length === 1 ? "item" : "itens"}{temFiltro ? " no filtro" : ""}{totalPaginas > 1 ? " · a seleção vale para a página atual" : ""}</span>
           {totalPaginas > 1 && (
             <span className="flex items-center gap-2">
               {pagina > 1 && <Button variant="outline" size="sm" render={<Link href={link(pagina - 1)} />}>Anterior</Button>}

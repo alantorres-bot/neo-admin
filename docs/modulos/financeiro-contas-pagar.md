@@ -1,6 +1,6 @@
 # Módulo: Financeiro / Contas a pagar
 
-Status: em construção — especificação aprovada em 09/10/2026; **Fase 1 entregue em 09/10/2026** (sincronização + lista unificada só leitura)
+Status: em construção — especificação aprovada em 09/10/2026; **Fases 1 e 2 entregues em 09/10/2026** (sincronização + lista unificada; autorização, histórico e pendência)
 
 ## 1. Objetivo
 Reunir numa única tela os **títulos a pagar** e as **antecipações a fornecedor** que estão em aberto no Consistem, para a
@@ -124,7 +124,7 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
 6. Bug da listagem `lancamentoContasPagar` (HTTP 500): reportar à Consistem; o módulo não depende dele.
 
 ## 11. Fases
-0. Especificação (aprovada 09/10/2026). 1. Sincronização + lista unificada só leitura (**feita**). 2. Autorização, histórico e pendência.
+0. Especificação (aprovada 09/10/2026). 1. Sincronização + lista unificada só leitura (**feita**). 2. Autorização, histórico e pendência (**feita**).
 3. Relatório/impressão. 4. Extras (abas Antecipações e Parâmetros, fornecedores como contrapartes, crédito D, agendamento).
 
 ## 12. Fase 1 — o que foi feito (09/10/2026)
@@ -144,3 +144,25 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
   3.535 lançamentos (2.423 títulos R$ 20.911.373,98 · 48 antecipações R$ 483.910,44 · 1.064 créditos de fornecedor) e 1.346
   fornecedores; 9 registros recusados (tipo de lançamento vazio). Sem necessidade do plano B incremental.
 - Fica para a Fase 2: seleção em lote, geração da autorização, view `cap_vw_pendentes`, aba Autorizações.
+
+## 13. Fase 2 — o que foi feito (09/10/2026)
+- Migration `0122_cap_autorizacoes.sql` (aplicada em produção): enum `cap_status_autorizacao` (rascunho → autorizada | cancelada);
+  `cap_autorizacoes` (número sequencial sem buracos, quem/quando montou, autorizou e cancelou, motivo), `cap_autorizacao_itens`
+  (cópia do lançamento no momento: prova, imutável; remoção só em rascunho com motivo; `baixado_consistem_em` anotado pela
+  sincronização), `cap_antecipacoes_tratadas` (antecipação "já paga fora do Neo Admin", com motivo; desfazível); views
+  `cap_vw_pendentes` (o que a tela lista, com autorização ativa e marcação de tratada) e `cap_vw_autorizacoes` (totais e nomes);
+  funções `cap_criar_autorizacao`, `cap_autorizar`, `cap_cancelar`, `cap_remover_item`, `cap_marcar_antecipacao_tratada`,
+  `cap_desfazer_antecipacao_tratada`, `cap_salvar_parametros`; gatilhos de regra (transição de status, imutabilidade dos itens),
+  auditoria e bloqueio de delete; RLS por área. Testes em `tests/db/cap-autorizacoes.test.ts` (13 casos) e
+  `lib/modulos/financeiro/contas-pagar/autorizacao.test.ts`.
+- Telas: `Autorizar pagamento` ganhou caixas de marcação, barra "N itens · R$ X — Gerar autorização" (diálogo com data,
+  observação e, para gestor, "Autorizar agora"), filtro "Pendentes de autorização / Incluir já autorizados e pagos fora" (padrão:
+  pendentes), botão "Já paga fora" nas antecipações (com Desfazer); aba **Autorizações** (histórico com filtro por situação,
+  totais por tipo, montada/autorizada por, baixados no Consistem X de N); página da autorização
+  (`/financeiro/contas-pagar/autorizacoes/[id]`: cartões, seções Títulos e Antecipações, Autorizar em dois cliques, Cancelar com
+  motivo, Remover item em rascunho, lista dos removidos).
+- Edge Function: após cada rodada anota `baixado_consistem_em` nos itens cujo lançamento saiu dos abertos (e limpa se reabriu).
+- **Testado ao vivo (09/10/2026):** autorização nº 1 (1 título + 1 antecipação da Acofer, R$ 3.128,94) gerada como rascunho,
+  autorizada (pendência "Executar autorização de pagamento nº 1 — R$ 3.128,94" na Fila do dia, criticidade alta) e cancelada com
+  motivo; itens voltaram à lista; 3 registros em `auditoria`. A nº 1 fica no histórico como cancelada (teste).
+- Fica para a Fase 3: impressão/PDF. Para a Fase 4: abas Antecipações e Parâmetros (hoje a data de corte só muda pela função).
