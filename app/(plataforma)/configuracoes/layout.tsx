@@ -10,7 +10,9 @@ export default async function LayoutConfiguracoes({ children }: LayoutProps<"/co
   const abas = [
     { href: "/configuracoes/empresas", rotulo: "Empresas" },
     { href: "/configuracoes/contrapartes", rotulo: "Contrapartes e contatos" },
-    ...(sessao.acesso.adminGeral ? [{ href: "/configuracoes/usuarios", rotulo: "Usuários e permissões" }] : []),
+    ...(sessao.acesso.adminGeral
+      ? [{ href: "/configuracoes/usuarios", rotulo: "Usuários e permissões" }, { href: "/configuracoes/aplicativos", rotulo: "Aplicativos" }]
+      : []),
     ...(temAcessoAlgumaArea(sessao.acesso, sessao.areas, "operador") ? [{ href: "/configuracoes/importador", rotulo: "Importador" }] : []),
   ];
 

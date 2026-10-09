@@ -66,7 +66,7 @@ describe("sem login, sem permissão e inativo", () => {
 
   it("usuário ativo vê as áreas e os módulos (para montar o menu)", async () => {
     await como(db, semAcesso, async () => {
-      expect((await q(`select * from areas`)).rows).toHaveLength(6);
+      expect((await q(`select * from areas`)).rows).toHaveLength(7); // 6 do núcleo + Produção (0006)
       expect((await q(`select * from modulos`)).rows.length).toBeGreaterThan(10);
     });
   });

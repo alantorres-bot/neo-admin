@@ -67,7 +67,7 @@ export async function salvarContraparte(_anterior: EstadoForm, dados: FormData):
   revalidatePath("/financeiro/recebiveis", "layout");
   revalidatePath("/financeiro/cobranca", "layout");
   revalidatePath("/financeiro/akf");
-  revalidatePath("/inicio");
+  revalidatePath("/financeiro/recebiveis/fila");
   return { ok: true, chave: Date.now() };
 }
 
@@ -135,6 +135,6 @@ export async function salvarContato(_anterior: EstadoForm, dados: FormData): Pro
   revalidatePath("/financeiro/recebiveis", "layout");
   revalidatePath("/financeiro/cobranca", "layout");
   revalidatePath("/financeiro/akf");
-  revalidatePath("/inicio");
+  revalidatePath("/financeiro/recebiveis/fila");
   return { ok: true, chave: Date.now() };
 }

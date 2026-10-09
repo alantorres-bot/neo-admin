@@ -47,7 +47,7 @@ export async function registrarCobranca(entrada: z.input<typeof esquema>): Promi
 
   revalidatePath("/financeiro/recebiveis", "layout");
   revalidatePath("/financeiro/cobranca", "layout");
-  revalidatePath("/inicio");
+  revalidatePath("/financeiro/recebiveis/fila");
   return {
     ok: true,
     aviso: resultado === "enviada" ? "Cobrança registrada." : resultado === "promessa" ? "Promessa registrada: a régua fica pausada até a data." : "Contestação registrada: a régua fica pausada para estes títulos.",

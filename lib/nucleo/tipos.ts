@@ -11,6 +11,14 @@ export type Canal = "email" | "whatsapp" | "telefone" | "interno";
 export type Area = { codigo: string; nome: string; sensivel: boolean; ordem: number };
 export type Modulo = { codigo: string; area: string; nome: string; ativo: boolean };
 
+/** Como um aplicativo externo abre a partir do painel: dentro de um quadro ou em nova aba. */
+export type ModoAbrir = "embutido" | "nova_aba";
+/** Aplicativo externo (sistema separado, com login próprio) cadastrado no super painel. Rota no painel: /apps/<codigo>. */
+export type Aplicativo = {
+  id: string; codigo: string; nome: string; descricao: string | null; area: string; url: string; abrir: ModoAbrir;
+  icone: string | null; ordem: number; ativo: boolean;
+};
+
 export type Perfil = {
   id: string; nome: string; email: string; admin_geral: boolean; ativo: boolean;
   /** senha definida pelo admin: o usuário só acessa /conta até trocá-la */

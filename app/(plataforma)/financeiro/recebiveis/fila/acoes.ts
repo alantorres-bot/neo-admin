@@ -22,7 +22,7 @@ async function atualizar(id: string, campos: Record<string, unknown>): Promise<R
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   // A RLS esconde (e não altera) o que o usuário não pode mexer: zero linhas = sem permissão.
   if (!data || data.length === 0) return { ok: false, erro: "Você não tem permissão para alterar esta pendência." };
-  revalidatePath("/inicio");
+  revalidatePath("/financeiro/recebiveis/fila");
   return { ok: true };
 }
 

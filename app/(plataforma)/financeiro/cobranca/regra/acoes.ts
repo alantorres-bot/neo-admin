@@ -81,7 +81,7 @@ export async function salvarRegra(valores: ValoresRegra, marcos?: MarcoEntrada[]
 
   revalidatePath("/financeiro/cobranca", "layout");
   revalidatePath("/financeiro/recebiveis", "layout");
-  revalidatePath("/inicio");
+  revalidatePath("/financeiro/recebiveis/fila");
   const canceladas = Number((resultado as { pendencias_canceladas?: number } | null)?.pendencias_canceladas ?? 0);
   const aviso = "Regra de cobrança salva. Vale a partir da próxima sincronização e da próxima abertura de tela.";
   return { ok: true, aviso: canceladas > 0 ? `${aviso} ${canceladas} ${canceladas === 1 ? "pendência de um marco removido foi cancelada" : "pendências de marcos removidos foram canceladas"}.` : aviso };

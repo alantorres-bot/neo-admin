@@ -59,7 +59,7 @@ describe("troca obrigatória de senha", () => {
     await q(`update auth.users set encrypted_password = 'hash-novo' where id = $1`, [forcado]);
     expect((await q(`select deve_trocar_senha from perfis where id = $1`, [forcado])).rows[0].deve_trocar_senha).toBe(false);
     await como(db, forcado, async () => {
-      expect((await q(`select * from areas`)).rows).toHaveLength(6);
+      expect((await q(`select * from areas`)).rows).toHaveLength(7); // 6 do núcleo + Produção (0006)
       expect((await q(`select * from empresas`)).rows).toHaveLength(1);
     });
   });

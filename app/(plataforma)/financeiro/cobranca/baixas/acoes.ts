@@ -55,7 +55,7 @@ export async function baixarComEvidencia(ids: string[]): Promise<Resultado> {
 
   revalidatePath("/financeiro/recebiveis", "layout");
   revalidatePath("/financeiro/cobranca", "layout");
-  revalidatePath("/inicio");
+  revalidatePath("/financeiro/recebiveis/fila");
   const baixados = Number((data as { baixados?: number } | null)?.baixados ?? itens.length);
   return { ok: true, aviso: `${plural(baixados, "título baixado", "títulos baixados")}.` };
 }
@@ -85,6 +85,6 @@ export async function baixarManual(entrada: z.input<typeof esquemaManual>): Prom
 
   revalidatePath("/financeiro/recebiveis", "layout");
   revalidatePath("/financeiro/cobranca", "layout");
-  revalidatePath("/inicio");
+  revalidatePath("/financeiro/recebiveis/fila");
   return { ok: true, aviso: resultado === "pago" ? "Baixa registrada." : "Título cancelado." };
 }

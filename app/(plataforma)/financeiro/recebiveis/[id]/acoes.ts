@@ -78,7 +78,7 @@ export async function marcarBoletoEnviado(entrada: z.input<typeof esquemaEnvio>)
 
   revalidatePath("/financeiro/recebiveis", "layout");
   revalidatePath("/financeiro/cobranca", "layout");
-  revalidatePath("/inicio");
+  revalidatePath("/financeiro/recebiveis/fila");
   const concluidas = Number((data as { pendencias_concluidas?: number } | null)?.pendencias_concluidas ?? 0);
   return {
     ok: true,
@@ -99,7 +99,7 @@ export async function definirFormaPagamento(tituloIds: string[], forma: "boleto"
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   revalidatePath("/financeiro/recebiveis", "layout");
   revalidatePath("/financeiro/cobranca", "layout");
-  revalidatePath("/inicio");
+  revalidatePath("/financeiro/recebiveis/fila");
   return { ok: true, aviso: forma === "transferencia" ? "Forma de pagamento: transferência. A parcela sai das tarefas de boleto." : "Forma de pagamento: boleto." };
 }
 
@@ -125,7 +125,7 @@ export async function marcarDadosEnviados(entrada: z.input<typeof esquemaEnvio>)
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   revalidatePath("/financeiro/recebiveis", "layout");
   revalidatePath("/financeiro/cobranca", "layout");
-  revalidatePath("/inicio");
+  revalidatePath("/financeiro/recebiveis/fila");
   return { ok: true, aviso: "Envio dos dados de pagamento registrado." };
 }
 

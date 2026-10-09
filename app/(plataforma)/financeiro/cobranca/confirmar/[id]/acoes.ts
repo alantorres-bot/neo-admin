@@ -42,7 +42,7 @@ export async function registrarConfirmacao(entrada: z.input<typeof esquema>): Pr
 
   revalidatePath("/financeiro/recebiveis", "layout");
   revalidatePath("/financeiro/cobranca", "layout");
-  revalidatePath("/inicio");
+  revalidatePath("/financeiro/recebiveis/fila");
   const r = (data ?? {}) as { pendencia_ligar?: number };
   return {
     ok: true,

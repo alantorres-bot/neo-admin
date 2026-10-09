@@ -41,11 +41,12 @@ Prioridade: 1 = primeiro a construir. Ajustável.
 | Integração ClickUp | Cria/atualiza tarefas a partir de pendências, quando configurado |
 | Auditoria | Antes/depois de toda alteração relevante |
 | Configurações | Parâmetros globais e por módulo (`modo_rascunho`, horários de envio etc.) |
+| Aplicativos externos | Cadastro dos sistemas de outras áreas (Vigilância Fiscal, NEOControl, apps de Produção…) que aparecem no menu e no Início; abrem embutidos em `/apps/<codigo>` ou em nova aba. Só admin_geral cadastra; quem tem a área vê |
 
 ## 3. Telas da plataforma
-- **Início (Fila do dia):** pendências do usuário de todos os módulos, por prazo e criticidade.
 - **Painel geral:** indicadores-chave de cada área que o usuário pode ver.
-- **Menu por área:** Financeiro, Fiscal, Contratos, Jurídico, RH/SST, Administrativo.
+- **Início (super painel):** cartões por área com os módulos do Neo Admin e os aplicativos externos a que o usuário tem acesso. A Fila do dia fica em Financeiro > Recebíveis > Fila do dia.
+- **Menu por área:** Financeiro, Fiscal, Contratos, Jurídico, RH/SST, Administrativo, Produção. Módulos nativos e aplicativos externos lado a lado.
 - **Configurações:** empresas, contrapartes, usuários e permissões, integrações.
 
 ## 4. Ordem de construção
@@ -58,3 +59,11 @@ Prioridade: 1 = primeiro a construir. Ajustável.
 6. **Fase 5 — Fluxo de caixa; POPs; painel geral consolidado.**
 
 Cada módulo novo começa com uma especificação em `docs/modulos/` (usar `_MODELO.md`), aprovada antes do código.
+
+## 5. Aplicativos externos (super painel) — decisão de 09/10/2026
+Os sistemas das outras áreas **não** são fundidos ao Neo Admin: cada um segue com código, banco, login e time próprios.
+O Neo Admin é a porta de entrada única: tabela `aplicativos` (migration 0006), rota `app/(plataforma)/apps/[codigo]`
+(quadro embutido com "Abrir em nova aba", ou só nova aba), itens no menu e cartões no Início via `montarMenu(..., aplicativos)`.
+Cadastro em Configurações > Aplicativos (admin_geral): nome, código, endereço https, área, modo de abertura, ícone, ordem, ativo.
+Limite conhecido: cada app pede o próprio login uma vez por navegador (bancos separados). Login único só com migração ou
+"Entrar com Google" em cada app, ambos fora do escopo atual.

@@ -29,6 +29,7 @@ app/
     fiscal/parcelamentos/
     ...
     configuracoes/
+    apps/[codigo]/           -> aplicativo externo (sistema separado) embutido no painel; cadastro em Configurações > Aplicativos
 lib/
   nucleo/                    -> empresas, usuários, permissões, anexos, pendências, auditoria
   integracoes/               -> gmail, whatsapp, clickup, importador de planilhas
@@ -54,6 +55,9 @@ docs/modulos/                -> uma especificação por módulo
 6. Áreas sensíveis (Jurídico, RH/SST) com acesso restrito por padrão.
 7. Regras fiscais, trabalhistas e jurídicas vêm da especificação do módulo. **Nunca inventar** alíquota,
    prazo legal, fundamento ou cláusula; em dúvida, perguntar.
+8. O Neo Admin é o **super painel** do grupo: aplicativos de outras áreas (Vigilância Fiscal, NEOControl, apps de Produção…)
+   são cadastrados na tabela `aplicativos` (Configurações > Aplicativos) e abrem em `/apps/<codigo>`; nunca fixar URL de app no código.
+   Eles continuam sistemas separados, com login próprio: o painel só organiza o acesso por área.
 
 ## Segurança
 - Nunca commitar chaves (`.env.local` no `.gitignore`); `.env.example` com os nomes das variáveis.

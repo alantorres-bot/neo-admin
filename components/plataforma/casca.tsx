@@ -6,26 +6,11 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import {
-  BellRing, ChevronRight, ClipboardList, FileSignature, FileText, House, LogOut, Scale, Settings, ShieldCheck, UserRound, Wallet,
-  type LucideIcon,
-} from "lucide-react";
+import { ChevronRight, House, LogOut, Settings, UserRound, type LucideIcon } from "lucide-react";
 import { sair } from "@/app/(auth)/login/acoes";
 import { cn } from "@/lib/utils";
 import type { MenuArea } from "@/lib/nucleo/permissoes";
-
-const ICONE_DA_AREA: Record<string, LucideIcon> = {
-  financeiro: Wallet,
-  fiscal: FileText,
-  contratos: FileSignature,
-  juridico: Scale,
-  rh: ShieldCheck,
-  administrativo: ClipboardList,
-};
-
-// Módulos que têm ícone próprio (os demais usam o da área); assim Cobrança e Recebíveis, ambos do Financeiro, não ficam iguais.
-const ICONE_DO_MODULO: Record<string, LucideIcon> = { "financeiro.cobranca": BellRing };
-const iconeDoModulo = (area: string, modulo: string): LucideIcon => ICONE_DO_MODULO[modulo] ?? ICONE_DA_AREA[area] ?? ClipboardList;
+import { iconeDoItem } from "./icones";
 
 type Usuario = { nome: string; email: string; adminGeral: boolean };
 
@@ -50,7 +35,7 @@ type Atual = { icone: LucideIcon; rotulo: string; trilha: string[] };
 function descobrirAtual(caminho: string, menu: MenuArea[]): Atual {
   for (const { area, modulos } of menu) {
     const m = modulos.find((x) => caminho === x.rota || caminho.startsWith(x.rota + "/"));
-    if (m) return { icone: iconeDoModulo(area.codigo, m.codigo), rotulo: m.nome, trilha: [area.nome, m.nome] };
+    if (m) return { icone: iconeDoItem(area.codigo, m.codigo, m.icone), rotulo: m.nome, trilha: [area.nome, m.nome] };
   }
   if (caminho.startsWith("/configuracoes")) return { icone: Settings, rotulo: "Configurações", trilha: ["Configurações"] };
   if (caminho.startsWith("/conta")) return { icone: UserRound, rotulo: "Minha conta", trilha: ["Minha conta"] };
@@ -105,7 +90,7 @@ export function Casca({
           {menu.map(({ area, modulos }) => (
             <div key={area.codigo} className="flex border-l border-white/10 md:mt-1 md:block md:border-l-0 md:border-t md:pt-1">
               {modulos.map((m) => (
-                <ItemTrilho key={m.codigo} href={m.rota} icone={iconeDoModulo(area.codigo, m.codigo)} rotulo={m.nome} titulo={`${area.nome} › ${m.nome}`} ativo={ativo(m.rota)} />
+                <ItemTrilho key={m.codigo} href={m.rota} icone={iconeDoItem(area.codigo, m.codigo, m.icone)} rotulo={m.nome} titulo={`${area.nome} › ${m.nome}${m.externo ? " (aplicativo externo)" : ""}`} ativo={ativo(m.rota)} />
               ))}
             </div>
           ))}

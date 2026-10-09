@@ -22,7 +22,7 @@ export default async function LayoutPlataforma({ children }: LayoutProps<"/">) {
     );
   }
 
-  const menu = montarMenu(sessao.areas, sessao.modulos, sessao.acesso);
+  const menu = montarMenu(sessao.areas, sessao.modulos, sessao.acesso, sessao.aplicativos);
   const mostrarConfiguracoes = temAcessoAlgumaArea(sessao.acesso, sessao.areas);
 
   return (

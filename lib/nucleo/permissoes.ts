@@ -1,6 +1,7 @@
 // Regras de acesso do lado da aplicação. Espelham tem_acesso_area()/nivel_area() do banco,
 // mas servem só para decidir o que MOSTRAR (menu, botões). Quem protege os dados é a RLS.
-import type { Area, Modulo, NivelAcesso } from "./tipos";
+import { rotaDoAplicativo } from "./aplicativos";
+import type { Aplicativo, Area, Modulo, NivelAcesso } from "./tipos";
 
 export const NIVEIS: readonly NivelAcesso[] = ["sem_acesso", "consulta", "operador", "gestor", "administrador"];
 
@@ -54,21 +55,37 @@ export function codigoDoModulo(area: string, modulo: string): string {
   return `${area}.${modulo}`;
 }
 
+export type ItemMenu = {
+  codigo: string; nome: string; rota: string;
+  /** aplicativo externo (sistema separado), e não módulo nativo */
+  externo?: boolean; icone?: string | null; descricao?: string | null;
+};
 export type MenuArea = {
   area: Area;
-  modulos: { codigo: string; nome: string; rota: string }[];
+  modulos: ItemMenu[];
 };
 
-/** Menu lateral: só áreas em que o usuário tem acesso e que possuem módulo ativo; só módulos ativos. */
-export function montarMenu(areas: readonly Area[], modulos: readonly Modulo[], acesso: Acesso): MenuArea[] {
+/**
+ * Menu lateral e cartões do Início: só áreas em que o usuário tem acesso e que possuem algo ativo. Em cada área, primeiro os
+ * módulos nativos ativos, depois os aplicativos externos ativos (na ordem cadastrada).
+ */
+export function montarMenu(areas: readonly Area[], modulos: readonly Modulo[], acesso: Acesso, aplicativos: readonly Aplicativo[] = []): MenuArea[] {
   return [...areas]
     .sort((a, b) => a.ordem - b.ordem)
     .filter((area) => temAcesso(acesso, area.codigo, "consulta"))
     .map((area) => ({
       area,
-      modulos: modulos
-        .filter((m) => m.area === area.codigo && m.ativo)
-        .map((m) => ({ codigo: m.codigo, nome: m.nome, rota: rotaDoModulo(m.codigo) })),
+      modulos: [
+        ...modulos
+          .filter((m) => m.area === area.codigo && m.ativo)
+          .map((m): ItemMenu => ({ codigo: m.codigo, nome: m.nome, rota: rotaDoModulo(m.codigo) })),
+        ...aplicativos
+          .filter((a) => a.area === area.codigo && a.ativo)
+          .sort((a, b) => a.ordem - b.ordem || a.nome.localeCompare(b.nome))
+          .map((a): ItemMenu => ({
+            codigo: `app:${a.codigo}`, nome: a.nome, rota: rotaDoAplicativo(a.codigo), externo: true, icone: a.icone, descricao: a.descricao,
+          })),
+      ],
     }))
     .filter((item) => item.modulos.length > 0);
 }
