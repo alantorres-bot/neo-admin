@@ -9,6 +9,7 @@ const DESCRICAO_PADRAO: Record<string, string> = {
   "financeiro.recebiveis": "Carteira, fila do dia, clientes e contatos.",
   "financeiro.cobranca": "Boletos, confirmações, régua de cobrança e baixas.",
   "financeiro.akf": "Títulos cedidos e antecipações na AKF.",
+  "financeiro.contas-pagar": "Títulos e antecipações a fornecedor; autorização de pagamento.",
 };
 
 export function CartoesApps({ menu }: { menu: MenuArea[] }) {

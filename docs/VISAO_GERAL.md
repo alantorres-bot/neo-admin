@@ -8,7 +8,8 @@ uma rotina que hoje é feita em planilha, e-mail, ERP ou skill avulsa.
 | Área | Módulo | O que automatiza | Prioridade |
 | --- | --- | --- | --- |
 | **Financeiro** | Recebíveis | Carteira, envio de boletos, confirmações, régua de cobrança, renegociações | 1 |
-| Financeiro | Contas a pagar e cartão | Conciliação da fatura do cartão x contas a pagar, sugestão de lançamentos | 3 |
+| Financeiro | Contas a pagar | Lista unificada de títulos e antecipações a fornecedor em aberto (API do Consistem), autorização de pagamento pela diretoria, histórico e relatório (ver `modulos/financeiro-contas-pagar.md`) | em construção |
+| Financeiro | Cartão de crédito | Conciliação da fatura do cartão x contas a pagar, sugestão de lançamentos | 3 |
 | Financeiro | Conciliação bancária | Extrato x lançamentos do ERP, pendências de baixa | 4 |
 | Financeiro | Comissões | Cálculo de comissão sobre parcelas pagas (relatório de títulos pagos) | 3 |
 | Financeiro | Fluxo de caixa | Previsão a partir de recebíveis, pagáveis e parcelamentos | 5 |
@@ -54,7 +55,7 @@ Prioridade: 1 = primeiro a construir. Ajustável.
    importador genérico, layout com menu por área e Fila do dia.
 2. **Fase 1 — Financeiro / Recebíveis** (ver `docs/modulos/financeiro-recebiveis.md`, fases internas 1 a 8).
 3. **Fase 2 — Fiscal / Parcelamentos e Notificações; Jurídico / Processos; Contratos / Cessões.**
-4. **Fase 3 — Contas a pagar e cartão; Comissões; Contratos de venda/locação.**
+4. **Fase 3 — Contas a pagar (em construção desde 09/10/2026); Cartão de crédito; Comissões; Contratos de venda/locação.**
 5. **Fase 4 — Conciliação bancária; Análise de entradas; REM x RET; RH/SST.**
 6. **Fase 5 — Fluxo de caixa; POPs; painel geral consolidado.**
 

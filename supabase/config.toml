@@ -420,3 +420,6 @@ enabled = true
 # (pg_cron) não leva JWT, então o gateway não pode exigi-lo.
 [functions.rec-sincronizar-consistem]
 verify_jwt = false
+
+[functions.cap-sincronizar-consistem]
+verify_jwt = false
