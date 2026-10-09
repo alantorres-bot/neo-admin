@@ -18,6 +18,12 @@ A senha do banco novo e o segredo de sincronização foram gerados no computador
 - `node scripts/banco-copia.mjs importar --ref <destino> --pasta <pasta> --mesclar`: só insere/atualiza (nada é apagado). `--sim` apaga as tabelas do destino antes (recuperação de desastre; use por sua conta).
 - Anexos (bucket `anexos`): `npx supabase storage cp -r "ss:///anexos/financeiro.recebiveis" backups/anexos --linked --project-ref <ref> --experimental` e o caminho inverso para subir.
 - `node scripts/gravar-segredo.mjs NOME --ref <ref>` e `node scripts/gmail-autorizar.mjs --ref <ref>`: gravam segredos com entrada oculta.
+- **Aplicar uma migration nova em produção** (o CLI local está ligado ao projeto antigo; o `--project-ref` é obrigatório):
+  ```
+  npx supabase db query --linked --project-ref chdszjpbtfpstjrqnmmm --agent no -f supabase/migrations/NNNN_nome.sql
+  npx supabase db query --linked --project-ref chdszjpbtfpstjrqnmmm --agent no "insert into supabase_migrations.schema_migrations (version, name) values ('NNNN','nome') on conflict do nothing"
+  ```
+  O `db query` não registra a migration; sem o segundo comando o registro fica defasado (aconteceu com 0118–0120, regularizado em 09/10/2026).
 
 ## 3. O que só o usuário pode fazer (uma vez)
 1. Token do Consistem no projeto novo: `node scripts/gravar-segredo.mjs CONSISTEM_API_KEY --ref chdszjpbtfpstjrqnmmm` (cole o token quando pedir; ele não aparece na tela).

@@ -68,6 +68,8 @@ docs/modulos/                -> uma especificação por módulo
 - Construir por fases (ver `docs/VISAO_GERAL.md`). Não avançar de fase sem minha aprovação.
 - Antes de cada fase: plano curto. Depois: o que foi feito e como testar.
 - Banco só via migrations. Testes obrigatórios para cálculos (encargos, prazos, valores).
+- Migration aplicada em produção com `supabase db query ... -f` NÃO fica registrada sozinha: logo em seguida
+  inserir `(version, name)` em `supabase_migrations.schema_migrations` (ver `docs/PUBLICACAO.md`, seção 2).
 - Ao terminar um módulo, atualizar a especificação dele com o que mudou.
 
 @AGENTS.md
