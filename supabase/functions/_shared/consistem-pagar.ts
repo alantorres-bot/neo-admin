@@ -20,6 +20,45 @@ export const ROTA_FORNECEDORES = "cadastrosgerais/v10/fornecedor";
 /** Quantos detalhes (um GET por lançamento) uma rodada lê, no máximo: só antecipações novas precisam dele. */
 export const LIMITE_DETALHES_POR_RODADA = 150;
 
+/**
+ * Borderô: a tabela por trás da listagem (Cpg.MovimentoFornecedor) tem o campo `codBordero`, que a resposta não traz, mas o
+ * filtro dinâmico aceita. `codBordero LIKE '%'` devolve só os lançamentos COM borderô (nulo fica fora). Antecipação com
+ * borderô = paga (regra confirmada com o financeiro em 10/10/2026). Funciona junto com dataEmissaoIni/Fim.
+ */
+export const FILTRO_BORDERO = { campoFiltroDinamico: "codBordero", valorFiltroDinamico: "%" } as const;
+
+const addDiasIso = (iso: string, dias: number): string => new Date(Date.parse(`${iso}T00:00:00Z`) + dias * 86_400_000).toISOString().slice(0, 10);
+const diasEntreIso = (a: string, b: string): number => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000);
+
+/**
+ * Agrupa datas (aaaa-mm-dd) em janelas contíguas para consultar a API por intervalo: datas a até `maxLacuna` dias uma da
+ * outra ficam na mesma janela. Se o intervalo todo couber em `maxJanelaUnica` dias, devolve uma janela só.
+ * A consulta de borderô custa ~1 s a cada 250 lançamentos, então janelas pequenas em volta das emissões que interessam
+ * saem muito mais baratas que o ano inteiro.
+ */
+export function janelasDeDatas(datas: readonly string[], maxLacuna = 3, maxJanelaUnica = 45): { ini: string; fim: string }[] {
+  const ordenadas = [...new Set(datas.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort();
+  if (ordenadas.length === 0) return [];
+  if (diasEntreIso(ordenadas[ordenadas.length - 1], ordenadas[0]) <= maxJanelaUnica) return [{ ini: ordenadas[0], fim: ordenadas[ordenadas.length - 1] }];
+  const janelas: { ini: string; fim: string }[] = [];
+  let ini = ordenadas[0];
+  let fim = ordenadas[0];
+  for (const d of ordenadas.slice(1)) {
+    if (diasEntreIso(d, fim) <= maxLacuna) {
+      fim = d;
+    } else {
+      janelas.push({ ini, fim });
+      ini = d;
+      fim = d;
+    }
+  }
+  janelas.push({ ini, fim });
+  return janelas;
+}
+
+/** Só para manter a API coerente nos testes: a data seguinte (usada ao fechar janelas). */
+export const diaSeguinte = (iso: string): string => addDiasIso(iso, 1);
+
 const texto = (v: unknown): string => (v === null || v === undefined ? "" : String(v).trim());
 
 // toFixed(6) tira o ruído binário (1.005 * 100 = 100.49999999999999) antes de arredondar ao centavo.

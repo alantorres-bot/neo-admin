@@ -181,3 +181,25 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
   com a lista "Relatório assinado" (links assinados de 15 min). Anexo é prova: não se apaga; para trocar, envia outro.
 - Sem dependência nova. Se um dia for preciso PDF gerado no servidor (anexo automático, e-mail), a opção é `@react-pdf/renderer`.
 - Fica para a Fase 4: abas Antecipações e Parâmetros, fornecedores como contrapartes, crédito D, agendamento.
+
+## 15. Fase 4a — borderô pela API, tela só com filtros, caixa disponível (10/10/2026)
+- **Antecipação paga = tem borderô no Consistem** (regra confirmada pelo financeiro: toda paga tem borderô). A API não devolve
+  o número, mas o filtro dinâmico da listagem (`campoFiltroDinamico=codBordero&valorFiltroDinamico=%`, campo da tabela
+  `Cpg.MovimentoFornecedor`) devolve só os lançamentos com borderô, e aceita `dataEmissaoIni/Fim` junto. A Edge Function, a cada
+  rodada, agrupa as datas de emissão das antecipações abertas em janelas (`janelasDeDatas`) e consulta cada janela
+  (~1 s / 250 lançamentos); grava `cap_lancamentos.tem_bordero` (true = paga, false = a pagar, nulo = não verificada) e
+  `bordero_visto_em`. Títulos não entram (borderô em título = pagamento parcial). Nada de planilha nem digitação.
+  Migration `0123_cap_bordero.sql`: colunas, view `cap_vw_pendentes` com `tem_bordero`, `cap_criar_autorizacao` recusa
+  antecipação paga, `cap_marcar_antecipacao_tratada` recusa paga. A data de corte continua, mas fica secundária.
+- **Tela Autorizar pagamento abre só com os filtros:** período de **vencimento** de/até (antecipação: pagamento programado;
+  sem data entra em qualquer período) com atalhos "Vencidos até hoje", "Próximos 7/15/30 dias" e "Últimos 15 + próximos 15",
+  mais busca, tipo, situação e "mostrar pagos e já autorizados". Cartões e lista só depois de **Consultar**, já do recorte.
+  Situação da antecipação: "paga (borderô no Consistem)", "a pagar · programada para dd/mm" ou "pagamento não verificado".
+- **Soma fixa e caixa disponível:** a barra de seleção fica fixa no alto da lista (soma do que está marcado); campo "Caixa
+  disponível" e resumo "Sobra R$ S" / "Ultrapassa o caixa em R$ E" (vermelho). Ultrapassar **não bloqueia**. O caixa é gravado
+  em `cap_autorizacoes.caixa_disponivel` (`cap_criar_autorizacao` ganhou `p_caixa`; `cap_definir_caixa` ajusta em rascunho;
+  gatilho impede alteração fora do rascunho); `cap_vw_autorizacoes` calcula `excedente`. Página da autorização: cartões
+  "Caixa disponível" e "Excedente/Sobra", aviso em vermelho, botão "Alterar caixa" em rascunho. Relatório impresso: linhas
+  "Caixa disponível", "Total autorizado", "Excedente/Sobra" e frase de fechamento quando ultrapassa.
+- Testes: `tests/db/cap-bordero.test.ts`, `lib/.../pendentes.test.ts` (atalhos, paga/pendente), `autorizacao.test.ts`
+  (`parseReais`, `compararComCaixa`), `consistem-pagar.test.ts` (`janelasDeDatas`).

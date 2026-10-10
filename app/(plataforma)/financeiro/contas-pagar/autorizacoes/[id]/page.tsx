@@ -6,14 +6,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Printer } from "lucide-react";
-import { podeAutorizar, podeCancelar, podeRemoverItem, resumirItens, ROTULO_STATUS, rotaImpressao, situacaoDoItem, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { compararComCaixa, podeAutorizar, podeCancelar, podeRemoverItem, resumirItens, ROTULO_STATUS, rotaImpressao, situacaoDoItem, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { ROTA_CONTAS_PAGAR, ROTULO_TIPO } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { lerAutorizacao, quandoEm, type LinhaItemAutorizacao } from "../../dados";
-import { AnexarAssinada, BotaoAutorizar, BotaoRemoverItem, DialogoCancelar } from "./componentes";
+import { AnexarAssinada, BotaoAutorizar, BotaoRemoverItem, DialogoCaixa, DialogoCancelar } from "./componentes";
 
 export const metadata: Metadata = { title: "Autorização de pagamento" };
 
@@ -35,6 +35,8 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
   const titulos = ativos.filter((i) => i.tipo === "titulo");
   const antecipacoes = ativos.filter((i) => i.tipo === "antecipacao");
   const removidos = itens.filter((i) => i.removido_em !== null);
+  const caixaCentavos = a.caixa_disponivel === null ? null : centavos(a.caixa_disponivel);
+  const caixa = compararComCaixa(resumo.geral.centavos, caixaCentavos);
   const resumoTexto = `${resumo.titulos.quantidade} ${resumo.titulos.quantidade === 1 ? "título" : "títulos"} (${formatarMoeda(resumo.titulos.centavos)}) e ${resumo.antecipacoes.quantidade} ${resumo.antecipacoes.quantidade === 1 ? "antecipação" : "antecipações"} (${formatarMoeda(resumo.antecipacoes.centavos)}), total ${formatarMoeda(resumo.geral.centavos)}`;
 
   return (
@@ -56,6 +58,7 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
           {papel.podeOperar && a.status !== "rascunho" && <AnexarAssinada autorizacaoId={a.id} temAnexo={anexos.length > 0} />}
           {podeAutorizar(a.status, papel) && <BotaoAutorizar id={a.id} numero={a.numero} resumo={resumoTexto} />}
           {podeCancelar(a.status, a.criado_por, papel) && a.status !== "cancelada" && <DialogoCancelar id={a.id} numero={a.numero} status={a.status} />}
+          {a.status === "rascunho" && papel.podeOperar && <DialogoCaixa id={a.id} caixaCentavos={caixaCentavos} />}
         </div>
       </div>
 
@@ -77,6 +80,29 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
           <CardContent className="text-xs text-muted-foreground">anotado pela atualização do Consistem</CardContent>
         </Card>
       </div>
+
+      {caixa && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Card size="sm">
+            <CardHeader><CardDescription>Caixa disponível</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(caixa.caixaCentavos)}</CardTitle></CardHeader>
+            <CardContent className="text-xs text-muted-foreground">informado ao montar a autorização</CardContent>
+          </Card>
+          <Card size="sm">
+            <CardHeader><CardDescription>{caixa.ultrapassa ? "Excedente" : "Sobra"}</CardDescription><CardTitle className={`text-xl tabular-nums ${caixa.ultrapassa ? "text-red-700" : "text-emerald-700"}`}>{formatarMoeda(caixa.ultrapassa ? caixa.excedenteCentavos : caixa.sobraCentavos)}</CardTitle></CardHeader>
+            <CardContent className="text-xs text-muted-foreground">{caixa.ultrapassa ? "autorizado acima do caixa" : "autorizado dentro do caixa"}</CardContent>
+          </Card>
+        </div>
+      )}
+      {a.status !== "cancelada" && ativos.some((i) => i.tipo === "antecipacao" && i.tem_bordero === true && !i.baixado_consistem_em) && (
+        <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+          Esta autorização inclui antecipação que <strong>já consta como paga no Consistem (tem borderô)</strong>. {a.status === "rascunho" ? "Remova o item do rascunho antes de autorizar." : "Confira antes de pagar de novo."}
+        </p>
+      )}
+      {caixa?.ultrapassa && a.status !== "cancelada" && (
+        <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
+          O total autorizado passa do caixa disponível em <strong>{formatarMoeda(caixa.excedenteCentavos)}</strong>.{a.status === "rascunho" ? " Decida quais itens não pagar agora (remova do rascunho) ou ajuste o caixa." : " Decida quais itens deixar de pagar."}
+        </p>
+      )}
 
       {a.status === "rascunho" && (
         <p className="rounded-lg border border-grade bg-marca-clara p-3 text-sm">
@@ -155,8 +181,10 @@ function SecaoItens({ titulo, lista, total, autorizacaoId, podeRemover }: { titu
                   <TableCell className="tabular-nums">{formatarData(i.tipo === "titulo" ? i.data_vencimento : i.data_pagamento) || "—"}</TableCell>
                   <TableCell className="max-w-64 truncate text-xs text-muted-foreground" title={i.complemento_historico ?? ""}>{i.complemento_historico || "—"}</TableCell>
                   <TableCell className="text-right font-medium tabular-nums">{formatarMoeda(centavos(i.valor))}</TableCell>
-                  <TableCell className={i.baixado_consistem_em ? "text-emerald-700" : "text-muted-foreground"}>
-                    {situacaoDoItem({ removido: false, baixadoConsistemEm: i.baixado_consistem_em, tipo: i.tipo })}{i.baixado_consistem_em ? ` em ${formatarData(i.baixado_consistem_em)}` : ""}
+                  <TableCell className={i.tipo === "antecipacao" && i.tem_bordero === true && !i.baixado_consistem_em ? "font-medium text-red-700" : i.baixado_consistem_em ? "text-emerald-700" : "text-muted-foreground"}>
+                    {i.tipo === "antecipacao" && i.tem_bordero === true && !i.baixado_consistem_em
+                      ? "já paga (tem borderô no Consistem)"
+                      : <>{situacaoDoItem({ removido: false, baixadoConsistemEm: i.baixado_consistem_em, tipo: i.tipo })}{i.baixado_consistem_em ? ` em ${formatarData(i.baixado_consistem_em)}` : ""}</>}
                   </TableCell>
                   {podeRemover && (
                     <TableCell className="text-right"><BotaoRemoverItem autorizacaoId={autorizacaoId} itemId={i.id} descricao={`${i.fornecedor_nome} · ${i.num_documento || i.cod_lancamento} · ${formatarMoeda(centavos(i.valor))}`} /></TableCell>

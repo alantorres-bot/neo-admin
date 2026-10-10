@@ -34,6 +34,8 @@ import {
   type ConfigConsistem,
 } from "../_shared/consistem-receber.ts";
 import {
+  FILTRO_BORDERO,
+  janelasDeDatas,
   LIMITE_DETALHES_POR_RODADA,
   normalizarDetalheLancamento,
   normalizarFornecedorApi,
@@ -291,6 +293,41 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
     resumo.avisoAutorizacoes = `Baixas não anotadas nas autorizações: ${e instanceof Error ? e.message.slice(0, 200) : "falha"}`;
   }
 
+  // 6c) Borderô = antecipação paga. A API não devolve o número, mas o filtro dinâmico `codBordero LIKE '%'` devolve só quem
+  // tem borderô. Consulta por janelas em volta das datas de emissão das antecipações abertas (custo ~1 s / 250 lançamentos).
+  // Falha aqui não derruba a rodada: fica o aviso e a próxima tenta de novo.
+  try {
+    type LinhaA = { id: string; cod_lancamento: string; data_emissao: string | null; tem_bordero: boolean | null };
+    const abertasA = await lerTudo<LinhaA>((de, ate) =>
+      banco.from("cap_lancamentos").select("id, cod_lancamento, data_emissao, tem_bordero")
+        .eq("empresa_id", empresa.id).eq("tipo_lancamento", "A").is("baixado_em", null).gt("valor_atualizado", 0).order("id").range(de, ate));
+    const janelas = janelasDeDatas(abertasA.map((l) => l.data_emissao ?? ""));
+    const comBordero = new Set<string>();
+    let chamadas = 0;
+    for (const j of janelas) {
+      const regs = await buscarTodasPaginas(buscar, cfg, ROTA_CONTAS_PAGAR, { ...FILTRO_BORDERO, dataEmissaoIni: j.ini, dataEmissaoFim: j.fim, paginacao: PAGINACAO });
+      chamadas++;
+      for (const r of regs) {
+        const cod = r.codLancamento === null || r.codLancamento === undefined ? "" : String(r.codLancamento).trim();
+        if (cod) comBordero.add(cod);
+      }
+    }
+    // Só as antecipações cuja emissão caiu em alguma janela consultada podem ser avaliadas (sem emissão: fica como está).
+    const cobertas = abertasA.filter((l) => l.data_emissao !== null && janelas.some((j) => (l.data_emissao as string) >= j.ini && (l.data_emissao as string) <= j.fim));
+    const pagas = cobertas.filter((l) => comBordero.has(l.cod_lancamento));
+    const aPagar = cobertas.filter((l) => !comBordero.has(l.cod_lancamento));
+    for (const [valor, lista] of [[true, pagas], [false, aPagar]] as const) {
+      const ids = lista.filter((l) => l.tem_bordero !== valor).map((l) => l.id);
+      for (const lote of lotes(ids)) {
+        const { error } = await banco.from("cap_lancamentos").update({ tem_bordero: valor, bordero_visto_em: agora }).in("id", lote);
+        if (error) throw new Error(error.message);
+      }
+    }
+    resumo.borderos = { janelas: janelas.length, chamadas, antecipacoesPagas: pagas.length, antecipacoesAPagar: aPagar.length, naoVerificadas: abertasA.length - cobertas.length };
+  } catch (e) {
+    resumo.avisoBorderos = `Borderôs das antecipações não verificados: ${e instanceof Error ? e.message.slice(0, 200) : "falha"}`;
+  }
+
   // 7) Detalhe das antecipações (data de pagamento programada, portador, código de barras, Pix): um GET por lançamento,
   // só para as que ainda não têm detalhe, com teto por rodada. Falha aqui não derruba a rodada.
   try {
@@ -331,7 +368,7 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
       origem: "api", empresa: empresa.codigo_erp, segundosApi, registrosNaApi: registros.length, abertos: resumo.abertos,
       recusados: recusados.slice(0, 20), duplicadosApi: plano.duplicadosApi.slice(0, 20), ignorados: plano.ignorados, encerradosNaApi: plano.encerradosNaApi,
       fornecedoresNovos, avisoFornecedores: resumo.avisoFornecedores ?? null, detalhesLidos: resumo.detalhesLidos ?? 0, avisoDetalhe: resumo.avisoDetalhe ?? null,
-      avisoAutorizacoes: resumo.avisoAutorizacoes ?? null,
+      avisoAutorizacoes: resumo.avisoAutorizacoes ?? null, borderos: resumo.borderos ?? null, avisoBorderos: resumo.avisoBorderos ?? null,
     },
     linhas_novas: plano.novos.length,
     linhas_alteradas: plano.alterados.length,

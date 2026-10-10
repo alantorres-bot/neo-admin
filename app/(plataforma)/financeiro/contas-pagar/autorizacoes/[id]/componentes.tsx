@@ -7,11 +7,66 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { TIPO_ANEXO_AUTORIZACAO } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { parseReais, TIPO_ANEXO_AUTORIZACAO } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { MODULO_CONTAS_PAGAR } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { enviarAnexo } from "@/lib/nucleo/anexos";
 import { criarClienteNavegador } from "@/lib/supabase/navegador";
-import { autorizar, cancelar, removerItem } from "./acoes";
+import { autorizar, cancelar, definirCaixa, removerItem } from "./acoes";
+
+/** Altera o caixa disponível de um rascunho (ou remove). Ultrapassar o caixa é só aviso. */
+export function DialogoCaixa({ id, caixaCentavos }: { id: string; caixaCentavos: number | null }) {
+  const router = useRouter();
+  const [aberto, setAberto] = useState(false);
+  const [texto, setTexto] = useState(caixaCentavos === null ? "" : (caixaCentavos / 100).toFixed(2).replace(".", ","));
+  const [erro, setErro] = useState<string>();
+  const [pendente, iniciar] = useTransition();
+
+  function salvar() {
+    const centavos = texto.trim() === "" ? null : parseReais(texto);
+    if (texto.trim() !== "" && centavos === null) {
+      setErro("Caixa inválido: use números, ex.: 150.000,00.");
+      return;
+    }
+    iniciar(async () => {
+      const r = await definirCaixa({ id, caixaCentavos: centavos });
+      if (r.ok) {
+        toast.success(r.aviso);
+        setAberto(false);
+        router.refresh();
+      } else {
+        setErro(r.erro);
+      }
+    });
+  }
+
+  return (
+    <>
+      <Button type="button" variant="outline" onClick={() => { setErro(undefined); setAberto(true); }}>{caixaCentavos === null ? "Informar caixa" : "Alterar caixa"}</Button>
+      {aberto && (
+        <Dialog open onOpenChange={(v) => { if (!v) setAberto(false); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Caixa disponível</DialogTitle>
+              <DialogDescription>Quanto há em caixa para esta autorização{caixaCentavos !== null ? ` (hoje: ${formatarMoeda(caixaCentavos)})` : ""}. Em branco remove. Passar do caixa não impede autorizar: o relatório mostra o excedente.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3">
+              <div className="grid gap-1.5">
+                <label htmlFor="cap-caixa-editar" className="text-sm font-medium">Caixa disponível (R$)</label>
+                <Input id="cap-caixa-editar" value={texto} onChange={(e) => setTexto(e.target.value)} inputMode="decimal" placeholder="R$ 0,00" className="w-48 text-right tabular-nums" />
+              </div>
+              {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => setAberto(false)} disabled={pendente}>Voltar</Button>
+                <Button type="button" onClick={salvar} disabled={pendente}>{pendente ? "Salvando…" : "Salvar"}</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
+  );
+}
 
 /** Guarda o relatório assinado (PDF ou foto) como anexo da autorização. Anexo é prova: não se apaga; para trocar, envie outro. */
 export function AnexarAssinada({ autorizacaoId, temAnexo }: { autorizacaoId: string; temAnexo: boolean }) {

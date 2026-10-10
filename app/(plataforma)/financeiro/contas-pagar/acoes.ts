@@ -69,6 +69,8 @@ const esquemaCriar = z.object({
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.").nullable().default(null),
   observacao: z.string().trim().max(500, "A observação pode ter até 500 caracteres.").default(""),
   autorizar: z.boolean().default(false),
+  /** Caixa disponível informado pela diretoria, em centavos; nulo = não informado. Ultrapassar é só aviso. */
+  caixaCentavos: z.number().int().min(0).max(100_000_000_000).nullable().default(null),
 });
 
 /**
@@ -81,12 +83,13 @@ export async function criarAutorizacao(entrada: z.input<typeof esquemaCriar>): P
   if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) pode montar uma autorização." };
   const dados = esquemaCriar.safeParse(entrada);
   if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
-  const { empresaId, lancamentoIds, data, observacao, autorizar } = dados.data;
+  const { empresaId, lancamentoIds, data, observacao, autorizar, caixaCentavos } = dados.data;
   if (autorizar && !temAcesso(sessao.acesso, "financeiro", "gestor")) return { ok: false, erro: "Somente gestor do Financeiro (ou acima) pode autorizar o pagamento." };
 
   const supabase = await criarClienteServidor();
   const { data: r, error } = await supabase.rpc("cap_criar_autorizacao", {
     p_empresa: empresaId, p_lancamentos: lancamentoIds, p_observacao: observacao || null, p_data: data, p_autorizar: autorizar,
+    p_caixa: caixaCentavos === null ? null : caixaCentavos / 100,
   });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   const resultado = r as { id: string; numero: number; itens: number; status: "rascunho" | "autorizada" };

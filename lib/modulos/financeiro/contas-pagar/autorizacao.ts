@@ -70,3 +70,25 @@ export function situacaoDoItem(i: { removido: boolean; baixadoConsistemEm: strin
   if (i.baixadoConsistemEm) return i.tipo === "antecipacao" ? "abatida por NF no Consistem" : "baixado no Consistem";
   return "em aberto no Consistem";
 }
+
+// ---------------------------------------------------------------- caixa disponível
+
+/** Valor em reais digitado ("1.234,56", "1234.56", "R$ 1.234") → centavos; null se vazio ou inválido. */
+export function parseReais(texto: string): number | null {
+  let s = texto.replace(/[R$\s]/g, "");
+  if (s === "") return null;
+  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  else if (/\.\d{3}$/.test(s) && (s.match(/\./g) ?? []).length >= 1 && !/\.\d{1,2}$/.test(s)) s = s.replace(/\./g, ""); // "50.000" = cinquenta mil
+  const n = Number(s);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(Number((n * 100).toFixed(6)));
+}
+
+export type ComparacaoCaixa = { caixaCentavos: number; sobraCentavos: number; excedenteCentavos: number; ultrapassa: boolean } | null;
+
+/** Compara o total (selecionado ou autorizado) com o caixa informado. Ultrapassar é aviso, nunca bloqueio. */
+export function compararComCaixa(totalCentavos: number, caixaCentavos: number | null): ComparacaoCaixa {
+  if (caixaCentavos === null) return null;
+  const diferenca = caixaCentavos - totalCentavos;
+  return { caixaCentavos, sobraCentavos: Math.max(diferenca, 0), excedenteCentavos: Math.max(-diferenca, 0), ultrapassa: diferenca < 0 };
+}

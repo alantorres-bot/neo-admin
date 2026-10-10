@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  aplicarCorteAntecipacoes, aplicarFiltrosPendentes, dataReferencia, descreverSituacao, diasAtraso, ehDataIso, ordenarPendentes, paginar, textoBusca, totalizar,
+  aplicarCorteAntecipacoes, aplicarFiltrosPendentes, dataReferencia, descreverSituacao, diasAtraso, ehDataIso, estaPaga, estaPendente, ordenarPendentes, paginar,
+  periodoDoAtalho, textoBusca, totalizar,
   type ItemPendente,
 } from "./pendentes";
 
@@ -9,7 +10,7 @@ function item(p: Partial<ItemPendente> & { id: string }): ItemPendente {
   return {
     empresaId: "e1", tipo: "titulo", codLancamento: p.id, codFornecedor: "1", fornecedor: "ALUSSIN IND. E COM. METAIS LTDA", documentoFornecedor: "12.345.678/0001-95",
     numDocumento: "NF 10", emissao: "2026-09-01", vencimento: "2026-10-20", dataPagamento: null, valorDocumentoCentavos: 10_000, saldoCentavos: 10_000,
-    complemento: "", codBanco: "91", categoria: "16", autorizacao: null, tratada: null, ...p,
+    complemento: "", codBanco: "91", categoria: "16", autorizacao: null, tratada: null, temBordero: null, borderoVistoEm: null, ...p,
   };
 }
 const antecipacao = (id: string, extra: Partial<ItemPendente> = {}) =>
@@ -32,13 +33,41 @@ describe("data de referência e atraso", () => {
     expect(descreverSituacao(item({ id: "1", vencimento: "2026-10-09" }), HOJE)).toBe("vence hoje");
     expect(descreverSituacao(item({ id: "1", vencimento: "2026-10-10" }), HOJE)).toBe("vence amanhã");
     expect(descreverSituacao(item({ id: "1", vencimento: "2026-10-20" }), HOJE)).toBe("vence em 11 dias");
-    expect(descreverSituacao(antecipacao("2", { dataPagamento: "2026-10-28" }), HOJE)).toBe("programada para 28/10");
-    expect(descreverSituacao(antecipacao("2"), HOJE)).toBe("sem data de pagamento");
+    expect(descreverSituacao(antecipacao("2", { dataPagamento: "2026-10-28", temBordero: false }), HOJE)).toBe("a pagar · programada para 28/10");
+    expect(descreverSituacao(antecipacao("2", { temBordero: false }), HOJE)).toBe("a pagar · sem data de pagamento");
+    expect(descreverSituacao(antecipacao("2", { temBordero: true }), HOJE)).toBe("paga (borderô no Consistem)");
+    expect(descreverSituacao(antecipacao("2", { dataPagamento: "2026-10-28" }), HOJE)).toBe("programada para 28/10 · pagamento não verificado");
   });
   it("ehDataIso confere o calendário", () => {
     expect(ehDataIso("2026-10-09")).toBe(true);
     expect(ehDataIso("2026-13-01")).toBe(false);
     expect(ehDataIso("09/10/2026")).toBe(false);
+  });
+});
+
+describe("borderô = paga; atalhos de período", () => {
+  it("antecipação com borderô está paga e não é pendente; sem borderô ou não verificada continua pendente", () => {
+    expect(estaPaga(antecipacao("a", { temBordero: true }))).toBe(true);
+    expect(estaPendente(antecipacao("a", { temBordero: true }))).toBe(false);
+    expect(estaPendente(antecipacao("a", { temBordero: false }))).toBe(true);
+    expect(estaPendente(antecipacao("a"))).toBe(true);
+    expect(estaPaga(item({ id: "t", temBordero: true }))).toBe(false); // título com borderô não é "pago" (pagamento parcial)
+  });
+  it("mostrar=pendentes esconde as pagas; todos inclui", () => {
+    const lista = [antecipacao("paga", { temBordero: true }), antecipacao("apagar", { temBordero: false })];
+    expect(aplicarFiltrosPendentes(lista, filtro, HOJE).map((i) => i.id)).toEqual(["apagar"]);
+    expect(aplicarFiltrosPendentes(lista, { ...filtro, mostrar: "todos" }, HOJE).map((i) => i.id)).toEqual(["paga", "apagar"]);
+  });
+  it("atalhos de vencimento", () => {
+    expect(periodoDoAtalho("vencidos", HOJE)).toEqual({ de: null, ate: "2026-10-09" });
+    expect(periodoDoAtalho("7", HOJE)).toEqual({ de: "2026-10-09", ate: "2026-10-16" });
+    expect(periodoDoAtalho("15", HOJE)).toEqual({ de: "2026-10-09", ate: "2026-10-24" });
+    expect(periodoDoAtalho("30", HOJE)).toEqual({ de: "2026-10-09", ate: "2026-11-08" });
+    expect(periodoDoAtalho("15_15", HOJE)).toEqual({ de: "2026-09-24", ate: "2026-10-24" });
+  });
+  it("antecipação sem data programada entra em qualquer período; título sem data fica fora", () => {
+    const lista = [antecipacao("semdata", { emissao: null, dataPagamento: null }), item({ id: "t", vencimento: "2026-10-20" })];
+    expect(aplicarFiltrosPendentes(lista, { ...filtro, vencDe: "2026-11-01", vencAte: "2026-11-30" }, HOJE).map((i) => i.id)).toEqual(["semdata"]);
   });
 });
 

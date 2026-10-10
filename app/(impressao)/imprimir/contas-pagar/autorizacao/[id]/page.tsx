@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { lerAutorizacao, quandoEm, type LinhaItemAutorizacao } from "@/app/(plataforma)/financeiro/contas-pagar/dados";
-import { resumirItens, ROTULO_STATUS } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { compararComCaixa, resumirItens, ROTULO_STATUS } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { MODULO_CONTAS_PAGAR } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
@@ -32,6 +32,7 @@ export default async function PaginaImprimirAutorizacao({ params }: PageProps<"/
   const titulos = ativos.filter((i) => i.tipo === "titulo");
   const antecipacoes = ativos.filter((i) => i.tipo === "antecipacao");
   const resumo = resumirItens(ativos.map((i) => ({ tipo: i.tipo, valorCentavos: centavos(i.valor), removido: false, baixadoConsistemEm: i.baixado_consistem_em })));
+  const caixa = compararComCaixa(resumo.geral.centavos, a.caixa_disponivel === null ? null : centavos(a.caixa_disponivel));
   const selo = a.status === "rascunho" ? "RASCUNHO — SEM VALIDADE" : a.status === "cancelada" ? `CANCELADA EM ${formatarData(a.cancelada_em ?? "")}` : null;
 
   return (
@@ -61,8 +62,18 @@ export default async function PaginaImprimirAutorizacao({ params }: PageProps<"/
             <tr><td className="py-0.5 pr-4">Subtotal títulos ({resumo.titulos.quantidade})</td><td className="py-0.5 text-right tabular-nums">{formatarMoeda(resumo.titulos.centavos)}</td></tr>
             <tr><td className="py-0.5 pr-4">Subtotal antecipações ({resumo.antecipacoes.quantidade})</td><td className="py-0.5 text-right tabular-nums">{formatarMoeda(resumo.antecipacoes.centavos)}</td></tr>
             <tr className="border-t-2 border-black text-[13px] font-bold"><td className="py-1 pr-4">Total geral ({resumo.geral.quantidade} {resumo.geral.quantidade === 1 ? "item" : "itens"})</td><td className="py-1 text-right tabular-nums">{formatarMoeda(resumo.geral.centavos)}</td></tr>
+            {caixa && (
+              <>
+                <tr className="border-t border-black"><td className="py-0.5 pr-4">Caixa disponível</td><td className="py-0.5 text-right tabular-nums">{formatarMoeda(caixa.caixaCentavos)}</td></tr>
+                <tr><td className="py-0.5 pr-4">Total autorizado</td><td className="py-0.5 text-right tabular-nums">{formatarMoeda(resumo.geral.centavos)}</td></tr>
+                <tr className="text-[13px] font-bold"><td className="py-1 pr-4">{caixa.ultrapassa ? "Excedente (acima do caixa)" : "Sobra de caixa"}</td><td className="py-1 text-right tabular-nums">{formatarMoeda(caixa.ultrapassa ? caixa.excedenteCentavos : caixa.sobraCentavos)}</td></tr>
+              </>
+            )}
           </tbody>
         </table>
+        {caixa?.ultrapassa && (
+          <p className="mt-2 border-2 border-black p-2 text-[12px] font-bold">O total autorizado ultrapassa o caixa disponível em {formatarMoeda(caixa.excedenteCentavos)}. Decidir quais itens deixar de pagar.</p>
+        )}
 
         <footer className="mt-6 border-t border-black pt-2 text-[11px]">
           <p>Montada por {a.criado_por_nome ?? "—"} em {quandoEm(a.criado_em)}.</p>

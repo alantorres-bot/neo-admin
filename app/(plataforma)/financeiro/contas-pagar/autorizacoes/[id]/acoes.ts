@@ -62,3 +62,18 @@ export async function removerItem(entrada: z.input<typeof esquemaRemover>): Prom
   const r = (data ?? {}) as { restantes?: number };
   return { ok: true, aviso: r.restantes === 0 ? "Item removido. A autorização ficou sem itens: cancele-a ou volte à lista para gerar outra." : "Item removido do rascunho." };
 }
+
+const esquemaCaixa = z.object({ id: uuid, caixaCentavos: z.number().int().min(0).max(100_000_000_000).nullable() });
+
+/** Ajusta o caixa disponível de um rascunho (função de banco `cap_definir_caixa`). Ultrapassar o caixa é só aviso. */
+export async function definirCaixa(entrada: z.input<typeof esquemaCaixa>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) pode alterar o caixa." };
+  const dados = esquemaCaixa.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("cap_definir_caixa", { p_id: dados.data.id, p_caixa: dados.data.caixaCentavos === null ? null : dados.data.caixaCentavos / 100 });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidar(dados.data.id);
+  return { ok: true, aviso: dados.data.caixaCentavos === null ? "Caixa disponível removido." : "Caixa disponível atualizado." };
+}

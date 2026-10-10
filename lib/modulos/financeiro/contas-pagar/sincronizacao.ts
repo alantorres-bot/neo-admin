@@ -19,6 +19,8 @@ export type ResumoSincronizacaoPagar = {
   detalhesLidos?: number;
   avisoDetalhe?: string;
   avisoAutorizacoes?: string;
+  borderos?: { janelas: number; chamadas: number; antecipacoesPagas: number; antecipacoesAPagar: number; naoVerificadas: number };
+  avisoBorderos?: string;
 };
 
 export type ResultadoMedicao = {
@@ -48,7 +50,11 @@ export function descreverSincronizacaoPagar(r: ResumoSincronizacaoPagar): string
   if (r.duplicadosNaApi > 0) linhas.push(`${plural(r.duplicadosNaApi, "lançamento repetido", "lançamentos repetidos")} na resposta do Consistem (usado o primeiro).`);
   if (r.avisoFornecedores) linhas.push(`Aviso: ${r.avisoFornecedores}`);
   if (r.avisoDetalhe) linhas.push(`Aviso: ${r.avisoDetalhe}`);
+  if (!r.simulacao && r.borderos) {
+    linhas.push(`Borderôs conferidos no Consistem: ${plural(r.borderos.antecipacoesPagas, "antecipação paga", "antecipações pagas")} · ${plural(r.borderos.antecipacoesAPagar, "a pagar", "a pagar")}${r.borderos.naoVerificadas > 0 ? ` · ${r.borderos.naoVerificadas} sem data de emissão (não verificadas)` : ""} (${r.borderos.chamadas} ${r.borderos.chamadas === 1 ? "consulta" : "consultas"}).`);
+  }
   if (r.avisoAutorizacoes) linhas.push(`Aviso: ${r.avisoAutorizacoes}`);
+  if (r.avisoBorderos) linhas.push(`Aviso: ${r.avisoBorderos}`);
   return linhas;
 }
 

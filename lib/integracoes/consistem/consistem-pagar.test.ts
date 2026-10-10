@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { paraCentavos as paraCentavosReceber, paraDataIso as paraDataIsoReceber } from "../../../supabase/functions/_shared/consistem-receber";
 import {
   classificarLancamento,
+  diaSeguinte,
   estaEmAberto,
+  FILTRO_BORDERO,
+  janelasDeDatas,
   normalizarDetalheLancamento,
   normalizarFornecedorApi,
   normalizarLancamentoPagar,
@@ -98,6 +101,27 @@ describe("detalhe e fornecedor", () => {
       .toEqual({ codFornecedor: "382", nome: "PERFILADOS MULTIACO", nomeFantasia: "MULTIAÇO", documentoBruto: "12345678000195", ativo: true });
     expect(normalizarFornecedorApi({ codFornecedor: 9, situacao: 0 })).toMatchObject({ nome: "Fornecedor 9 (Consistem)", ativo: false });
     expect(normalizarFornecedorApi({ nome: "sem código" })).toBeNull();
+  });
+});
+
+describe("janelas de datas para a consulta de borderô", () => {
+  it("intervalo curto vira uma janela só", () => {
+    expect(janelasDeDatas(["2026-10-09", "2026-09-14", "2026-10-09", "2026-09-24"])).toEqual([{ ini: "2026-09-14", fim: "2026-10-09" }]);
+  });
+  it("intervalo longo é partido onde há lacuna maior que o limite", () => {
+    expect(janelasDeDatas(["2026-01-06", "2026-03-10", "2026-04-14", "2026-05-28", "2026-07-02", "2026-07-06", "2026-07-17", "2026-10-09"], 3)).toEqual([
+      { ini: "2026-01-06", fim: "2026-01-06" }, { ini: "2026-03-10", fim: "2026-03-10" }, { ini: "2026-04-14", fim: "2026-04-14" },
+      { ini: "2026-05-28", fim: "2026-05-28" }, { ini: "2026-07-02", fim: "2026-07-02" }, { ini: "2026-07-06", fim: "2026-07-06" }, { ini: "2026-07-17", fim: "2026-07-17" }, { ini: "2026-10-09", fim: "2026-10-09" },
+    ]);
+  });
+  it("lacuna maior agrupa dias próximos", () => {
+    expect(janelasDeDatas(["2026-07-02", "2026-07-06", "2026-10-09"], 4)).toEqual([{ ini: "2026-07-02", fim: "2026-07-06" }, { ini: "2026-10-09", fim: "2026-10-09" }]);
+  });
+  it("ignora lixo e lista vazia", () => {
+    expect(janelasDeDatas([])).toEqual([]);
+    expect(janelasDeDatas(["0", "", "2026-10-09"])).toEqual([{ ini: "2026-10-09", fim: "2026-10-09" }]);
+    expect(diaSeguinte("2026-12-31")).toBe("2027-01-01");
+    expect(FILTRO_BORDERO).toEqual({ campoFiltroDinamico: "codBordero", valorFiltroDinamico: "%" });
   });
 });
 

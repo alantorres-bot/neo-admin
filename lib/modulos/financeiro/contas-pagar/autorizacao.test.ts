@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { criticidadeExecucao, podeAutorizar, podeCancelar, podeRemoverItem, prazoExecucao, resumirItens, situacaoDoItem, tituloPendenciaExecucao } from "./autorizacao";
+import { compararComCaixa, criticidadeExecucao, parseReais, podeAutorizar, podeCancelar, podeRemoverItem, prazoExecucao, resumirItens, situacaoDoItem, tituloPendenciaExecucao } from "./autorizacao";
 
 const gestor = { podeOperar: true, ehGestor: true, userId: "g" };
 const operador = { podeOperar: true, ehGestor: false, userId: "o" };
@@ -51,5 +51,21 @@ describe("totais e textos", () => {
     expect(situacaoDoItem({ removido: false, baixadoConsistemEm: "2026-10-10", tipo: "titulo" })).toBe("baixado no Consistem");
     expect(situacaoDoItem({ removido: false, baixadoConsistemEm: "2026-10-10", tipo: "antecipacao" })).toBe("abatida por NF no Consistem");
     expect(situacaoDoItem({ removido: false, baixadoConsistemEm: null, tipo: "titulo" })).toBe("em aberto no Consistem");
+  });
+});
+
+describe("caixa disponível", () => {
+  it("parseReais aceita formato brasileiro e americano; rejeita vazio, negativo e lixo", () => {
+    expect(parseReais("1.234,56")).toBe(123_456);
+    expect(parseReais("R$ 50.000")).toBe(5_000_000);
+    expect(parseReais("1234.56")).toBe(123_456);
+    expect(parseReais("")).toBeNull();
+    expect(parseReais("-10")).toBeNull();
+    expect(parseReais("abc")).toBeNull();
+  });
+  it("compara total com caixa: sobra, excedente e aviso", () => {
+    expect(compararComCaixa(100, null)).toBeNull();
+    expect(compararComCaixa(80_00, 100_00)).toEqual({ caixaCentavos: 100_00, sobraCentavos: 20_00, excedenteCentavos: 0, ultrapassa: false });
+    expect(compararComCaixa(130_00, 100_00)).toEqual({ caixaCentavos: 100_00, sobraCentavos: 0, excedenteCentavos: 30_00, ultrapassa: true });
   });
 });

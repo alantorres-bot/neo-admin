@@ -36,10 +36,42 @@ export type ItemPendente = {
   autorizacao: AutorizacaoAtiva | null;
   /** Antecipação marcada como paga fora do Neo Admin. */
   tratada: Tratada | null;
+  /** Antecipação: true = tem borderô no Consistem (paga); false = sem borderô (a pagar); null = ainda não verificado. */
+  temBordero: boolean | null;
+  borderoVistoEm: string | null;
 };
 
-/** Pendente de autorização = sem autorização ativa e não tratada. */
-export const estaPendente = (i: Pick<ItemPendente, "autorizacao" | "tratada">): boolean => i.autorizacao === null && i.tratada === null;
+/** Antecipação paga de verdade: tem borderô no Consistem. */
+export const estaPaga = (i: Pick<ItemPendente, "tipo" | "temBordero">): boolean => i.tipo === "antecipacao" && i.temBordero === true;
+
+/** Pendente de autorização = sem autorização ativa, não tratada e (antecipação) sem borderô. */
+export const estaPendente = (i: Pick<ItemPendente, "tipo" | "autorizacao" | "tratada" | "temBordero">): boolean =>
+  i.autorizacao === null && i.tratada === null && !estaPaga(i);
+
+// ---------------------------------------------------------------- atalhos de período (vencimento)
+
+export type Atalho = "vencidos" | "7" | "15" | "30" | "15_15";
+export const ATALHOS: { codigo: Atalho; rotulo: string }[] = [
+  { codigo: "vencidos", rotulo: "Vencidos até hoje" },
+  { codigo: "7", rotulo: "Próximos 7 dias" },
+  { codigo: "15", rotulo: "Próximos 15 dias" },
+  { codigo: "30", rotulo: "Próximos 30 dias" },
+  { codigo: "15_15", rotulo: "Últimos 15 + próximos 15" },
+];
+export const ehAtalho = (v: string): v is Atalho => ATALHOS.some((a) => a.codigo === v);
+
+const somarDias = (iso: string, dias: number): string => new Date(Date.parse(`${iso}T00:00:00Z`) + dias * 86_400_000).toISOString().slice(0, 10);
+
+/** Período de vencimento (de/até) de cada atalho. "Vencidos até hoje" não tem início (tudo o que já venceu). */
+export function periodoDoAtalho(atalho: Atalho, hoje: string): { de: string | null; ate: string } {
+  switch (atalho) {
+    case "vencidos": return { de: null, ate: hoje };
+    case "7": return { de: hoje, ate: somarDias(hoje, 7) };
+    case "15": return { de: hoje, ate: somarDias(hoje, 15) };
+    case "30": return { de: hoje, ate: somarDias(hoje, 30) };
+    case "15_15": return { de: somarDias(hoje, -15), ate: somarDias(hoje, 15) };
+  }
+}
 
 export type FiltroTipo = "todos" | "titulos" | "antecipacoes";
 export type FiltroSituacao = "todos" | "vencidos" | "a_vencer";
@@ -101,9 +133,12 @@ export function aplicarFiltrosPendentes(itens: readonly ItemPendente[], f: Filtr
     if (f.tipo === "antecipacoes" && i.tipo !== "antecipacao") return false;
     if (f.situacao === "vencidos" && !(i.tipo === "titulo" && i.vencimento !== null && i.vencimento < hoje)) return false;
     if (f.situacao === "a_vencer" && i.tipo === "titulo" && i.vencimento !== null && i.vencimento < hoje) return false;
+    // Antecipação sem data programada entra em qualquer período (não pode sumir por falta de data).
     const ref = dataReferencia(i);
-    if (f.vencDe && (ref === null || ref < f.vencDe)) return false;
-    if (f.vencAte && (ref === null || ref > f.vencAte)) return false;
+    if (ref !== null || i.tipo === "titulo") {
+      if (f.vencDe && (ref === null || ref < f.vencDe)) return false;
+      if (f.vencAte && (ref === null || ref > f.vencAte)) return false;
+    }
     if (termos.length > 0) {
       const alvo = textoBusca(i);
       if (!termos.every((t) => alvo.includes(t))) return false;
@@ -150,7 +185,11 @@ export function paginar<T>(itens: readonly T[], pagina: number, porPagina = POR_
 
 /** Rótulo curto da situação de um item para a tabela. */
 export function descreverSituacao(item: ItemPendente, hoje: string): string {
-  if (item.tipo === "antecipacao") return item.dataPagamento ? `programada para ${formatarDataCurta(item.dataPagamento)}` : "sem data de pagamento";
+  if (item.tipo === "antecipacao") {
+    if (item.temBordero === true) return "paga (borderô no Consistem)";
+    if (item.temBordero === null) return item.dataPagamento ? `programada para ${formatarDataCurta(item.dataPagamento)} · pagamento não verificado` : "pagamento não verificado";
+    return item.dataPagamento ? `a pagar · programada para ${formatarDataCurta(item.dataPagamento)}` : "a pagar · sem data de pagamento";
+  }
   const dias = diasAtraso(item, hoje);
   if (dias > 0) return dias === 1 ? "vencido há 1 dia" : `vencido há ${dias} dias`;
   if (item.vencimento === hoje) return "vence hoje";
