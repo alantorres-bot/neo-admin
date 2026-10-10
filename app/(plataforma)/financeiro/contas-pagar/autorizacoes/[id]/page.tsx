@@ -1,19 +1,21 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Printer } from "lucide-react";
-import { compararComCaixa, podeAutorizar, podeCancelar, podeRemoverItem, resumirItens, ROTULO_STATUS, rotaImpressao, situacaoDoItem, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { compararComCaixa, mensagemSlack, podeAutorizar, podeCancelar, podeRemoverItem, resumirItens, ROTULO_STATUS, rotaImpressao, situacaoDoItem, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { CHAVES_CONTAS_PAGAR, lerParametrosContasPagar } from "@/lib/modulos/financeiro/contas-pagar/parametros";
 import { ROTA_CONTAS_PAGAR, ROTULO_TIPO } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { lerAutorizacao, quandoEm, type LinhaItemAutorizacao } from "../../dados";
-import { AnexarAssinada, BotaoAutorizar, BotaoRemoverItem, DialogoCaixa, DialogoCancelar } from "./componentes";
+import { AnexarAssinada, BotaoAutorizar, BotaoEnviarSlack, BotaoRemoverItem, DialogoCaixa, DialogoCancelar } from "./componentes";
 
 export const metadata: Metadata = { title: "Autorização de pagamento" };
 
@@ -25,8 +27,16 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
   const supabase = await criarClienteServidor();
-  const lido = await lerAutorizacao(supabase, id);
+  const [lido, { data: configs }, cabecalhos] = await Promise.all([
+    lerAutorizacao(supabase, id),
+    supabase.from("configuracoes").select("chave, valor").in("chave", [...CHAVES_CONTAS_PAGAR]),
+    headers(),
+  ]);
   if (!lido) notFound();
+  const parametrosModulo = lerParametrosContasPagar((configs ?? []) as { chave: string; valor: unknown }[]);
+  // Link absoluto da autorização para a mensagem (host e protocolo da própria requisição).
+  const host = cabecalhos.get("x-forwarded-host") ?? cabecalhos.get("host") ?? "localhost:3000";
+  const protocolo = cabecalhos.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
   const { autorizacao: a, itens, anexos } = lido;
 
   const papel = { podeOperar: temAcesso(sessao.acesso, "financeiro", "operador"), ehGestor: temAcesso(sessao.acesso, "financeiro", "gestor"), userId: sessao.userId };
@@ -37,6 +47,10 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
   const removidos = itens.filter((i) => i.removido_em !== null);
   const caixaCentavos = a.caixa_disponivel === null ? null : centavos(a.caixa_disponivel);
   const caixa = compararComCaixa(resumo.geral.centavos, caixaCentavos);
+  const textoSlack = mensagemSlack({
+    numero: a.numero, data: formatarData(a.data), empresa: a.empresa_nome, status: a.status, titulos: resumo.titulos, antecipacoes: resumo.antecipacoes,
+    totalCentavos: resumo.geral.centavos, caixa, autorizadaPor: a.autorizada_por_nome, observacao: a.observacao, link: `${protocolo}://${host}${ROTA_CONTAS_PAGAR}/autorizacoes/${a.id}`,
+  });
   const resumoTexto = `${resumo.titulos.quantidade} ${resumo.titulos.quantidade === 1 ? "título" : "títulos"} (${formatarMoeda(resumo.titulos.centavos)}) e ${resumo.antecipacoes.quantidade} ${resumo.antecipacoes.quantidade === 1 ? "antecipação" : "antecipações"} (${formatarMoeda(resumo.antecipacoes.centavos)}), total ${formatarMoeda(resumo.geral.centavos)}`;
 
   return (
@@ -55,6 +69,7 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="ghost" render={<Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes`} />}>Voltar ao histórico</Button>
           <Button variant="outline" render={<a href={rotaImpressao(a.id)} target="_blank" rel="noopener" />}><Printer /> Imprimir / salvar PDF</Button>
+          {a.status !== "cancelada" && <BotaoEnviarSlack mensagem={textoSlack} canalUrl={parametrosModulo.slackCanalUrl} />}
           {papel.podeOperar && a.status !== "rascunho" && <AnexarAssinada autorizacaoId={a.id} temAnexo={anexos.length > 0} />}
           {podeAutorizar(a.status, papel) && <BotaoAutorizar id={a.id} numero={a.numero} resumo={resumoTexto} />}
           {podeCancelar(a.status, a.criado_por, papel) && a.status !== "cancelada" && <DialogoCancelar id={a.id} numero={a.numero} status={a.status} />}

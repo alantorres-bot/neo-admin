@@ -203,3 +203,7 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
   "Caixa disponível", "Total autorizado", "Excedente/Sobra" e frase de fechamento quando ultrapassa.
 - Testes: `tests/db/cap-bordero.test.ts`, `lib/.../pendentes.test.ts` (atalhos, paga/pendente), `autorizacao.test.ts`
   (`parseReais`, `compararComCaixa`), `consistem-pagar.test.ts` (`janelasDeDatas`).
+- **Enviar no Slack (10/10/2026):** botão ao lado de "Imprimir / salvar PDF" na página da autorização (menos em cancelada). Copia a
+  mensagem pronta (nº, data, empresa, totais por tipo, total, caixa/excedente, observação, quem autorizou e o link da autorização;
+  `mensagemSlack` em `autorizacao.ts`) e abre o canal do financeiro (`financeiro.contas-pagar.slack_canal_url` em
+  `configuracoes`; sem ele, abre o Slack no último canal). **O sistema nunca envia: o diretor cola e envia.** Sem token nem API do Slack.

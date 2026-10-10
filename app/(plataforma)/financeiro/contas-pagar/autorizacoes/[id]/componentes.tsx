@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Paperclip } from "lucide-react";
+import { Paperclip, Send } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -243,6 +243,33 @@ export function BotaoRemoverItem({ autorizacaoId, itemId, descricao }: { autoriz
           </DialogContent>
         </Dialog>
       )}
+    </>
+  );
+}
+
+/**
+ * "Enviar no Slack": copia a mensagem pronta e abre o canal do financeiro (ou o Slack, se o canal não estiver configurado).
+ * O sistema NUNCA envia sozinho: o diretor cola e envia. Sem Slack Web API nem token.
+ */
+export function BotaoEnviarSlack({ mensagem, canalUrl }: { mensagem: string; canalUrl: string | null }) {
+  const [copiado, setCopiado] = useState(false);
+  async function enviar() {
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(mensagem);
+      ok = true;
+    } catch {
+      ok = false;
+    }
+    setCopiado(ok);
+    if (ok) toast.success(canalUrl ? "Mensagem copiada. No Slack, cole no canal e envie." : "Mensagem copiada. Abra o canal do financeiro no Slack, cole e envie.");
+    else toast.error("Não consegui copiar a mensagem. Copie o texto abaixo e cole no Slack.");
+    window.open(canalUrl ?? "https://app.slack.com/client", "_blank", "noopener");
+  }
+  return (
+    <>
+      <Button type="button" variant="outline" onClick={enviar}><Send /> Enviar no Slack</Button>
+      {copiado === false && null}
     </>
   );
 }

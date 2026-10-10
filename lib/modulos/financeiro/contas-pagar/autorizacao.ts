@@ -92,3 +92,35 @@ export function compararComCaixa(totalCentavos: number, caixaCentavos: number | 
   const diferenca = caixaCentavos - totalCentavos;
   return { caixaCentavos, sobraCentavos: Math.max(diferenca, 0), excedenteCentavos: Math.max(-diferenca, 0), ultrapassa: diferenca < 0 };
 }
+
+// ---------------------------------------------------------------- Slack
+
+export type DadosMensagemSlack = {
+  numero: number;
+  data: string; // dd/mm/aaaa
+  empresa: string;
+  status: StatusAutorizacao;
+  titulos: Totais;
+  antecipacoes: Totais;
+  totalCentavos: number;
+  caixa: ComparacaoCaixa;
+  autorizadaPor: string | null;
+  observacao: string | null;
+  link: string;
+};
+
+/** Texto que o diretor cola no canal do financeiro. O sistema nunca envia: só copia e abre o Slack. */
+export function mensagemSlack(d: DadosMensagemSlack): string {
+  const linhas = [
+    `*Autorização de pagamento nº ${d.numero}* · ${d.empresa} · ${d.data}${d.status !== "autorizada" ? ` · ${ROTULO_STATUS[d.status].toUpperCase()}` : ""}`,
+    `Títulos: ${d.titulos.quantidade} (${reais(d.titulos.centavos)}) · Antecipações: ${d.antecipacoes.quantidade} (${reais(d.antecipacoes.centavos)})`,
+    `*Total autorizado: ${reais(d.totalCentavos)}*`,
+  ];
+  if (d.caixa) {
+    linhas.push(`Caixa disponível: ${reais(d.caixa.caixaCentavos)} · ${d.caixa.ultrapassa ? `*Ultrapassa em ${reais(d.caixa.excedenteCentavos)}*` : `Sobra ${reais(d.caixa.sobraCentavos)}`}`);
+  }
+  if (d.observacao) linhas.push(`Obs.: ${d.observacao}`);
+  if (d.autorizadaPor) linhas.push(`Autorizada por ${d.autorizadaPor}.`);
+  linhas.push(`Relatório e itens: ${d.link}`);
+  return linhas.join("\n");
+}

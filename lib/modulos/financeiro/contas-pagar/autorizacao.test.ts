@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compararComCaixa, criticidadeExecucao, parseReais, podeAutorizar, podeCancelar, podeRemoverItem, prazoExecucao, resumirItens, situacaoDoItem, tituloPendenciaExecucao } from "./autorizacao";
+import { compararComCaixa, criticidadeExecucao, mensagemSlack, parseReais, podeAutorizar, podeCancelar, podeRemoverItem, prazoExecucao, resumirItens, situacaoDoItem, tituloPendenciaExecucao } from "./autorizacao";
 
 const gestor = { podeOperar: true, ehGestor: true, userId: "g" };
 const operador = { podeOperar: true, ehGestor: false, userId: "o" };
@@ -67,5 +67,28 @@ describe("caixa disponível", () => {
     expect(compararComCaixa(100, null)).toBeNull();
     expect(compararComCaixa(80_00, 100_00)).toEqual({ caixaCentavos: 100_00, sobraCentavos: 20_00, excedenteCentavos: 0, ultrapassa: false });
     expect(compararComCaixa(130_00, 100_00)).toEqual({ caixaCentavos: 100_00, sobraCentavos: 0, excedenteCentavos: 30_00, ultrapassa: true });
+  });
+});
+
+describe("mensagem para o Slack", () => {
+  it("monta o texto com totais, caixa e link", () => {
+    const texto = mensagemSlack({
+      numero: 4, data: "10/10/2026", empresa: "NEO FORMAS", status: "autorizada", titulos: { quantidade: 2, centavos: 300_000 }, antecipacoes: { quantidade: 1, centavos: 50_000 },
+      totalCentavos: 350_000, caixa: compararComCaixa(350_000, 300_000), autorizadaPor: "Diretor", observacao: "Semana 41", link: "https://neo.exemplo/financeiro/contas-pagar/autorizacoes/x",
+    });
+    expect(texto.split("\n")).toEqual([
+      "*Autorização de pagamento nº 4* · NEO FORMAS · 10/10/2026",
+      "Títulos: 2 (R$ 3.000,00) · Antecipações: 1 (R$ 500,00)",
+      "*Total autorizado: R$ 3.500,00*",
+      "Caixa disponível: R$ 3.000,00 · *Ultrapassa em R$ 500,00*",
+      "Obs.: Semana 41",
+      "Autorizada por Diretor.",
+      "Relatório e itens: https://neo.exemplo/financeiro/contas-pagar/autorizacoes/x",
+    ]);
+  });
+  it("rascunho vai marcado e sem caixa não há linha de caixa", () => {
+    const texto = mensagemSlack({ numero: 5, data: "10/10/2026", empresa: "NEO", status: "rascunho", titulos: { quantidade: 1, centavos: 100 }, antecipacoes: { quantidade: 0, centavos: 0 }, totalCentavos: 100, caixa: null, autorizadaPor: null, observacao: null, link: "l" });
+    expect(texto).toContain("· RASCUNHO");
+    expect(texto).not.toContain("Caixa");
   });
 });
