@@ -1,6 +1,6 @@
 # Módulo: Financeiro / Contas a pagar
 
-Status: em construção — especificação aprovada em 09/10/2026; **Fases 1 e 2 entregues em 09/10/2026** (sincronização + lista unificada; autorização, histórico e pendência)
+Status: em construção — especificação aprovada em 09/10/2026; **Fases 1 a 3 entregues (09–10/10/2026)** (sincronização + lista unificada; autorização, histórico e pendência; impressão/PDF)
 
 ## 1. Objetivo
 Reunir numa única tela os **títulos a pagar** e as **antecipações a fornecedor** que estão em aberto no Consistem, para a
@@ -125,7 +125,7 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
 
 ## 11. Fases
 0. Especificação (aprovada 09/10/2026). 1. Sincronização + lista unificada só leitura (**feita**). 2. Autorização, histórico e pendência (**feita**).
-3. Relatório/impressão. 4. Extras (abas Antecipações e Parâmetros, fornecedores como contrapartes, crédito D, agendamento).
+3. Relatório/impressão (**feita**). 4. Extras (abas Antecipações e Parâmetros, fornecedores como contrapartes, crédito D, agendamento).
 
 ## 12. Fase 1 — o que foi feito (09/10/2026)
 - Migration `0121_cap_base.sql` (aplicada em produção em 09/10/2026): módulo `financeiro.contas-pagar` ativo, parâmetro
@@ -166,3 +166,18 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
   autorizada (pendência "Executar autorização de pagamento nº 1 — R$ 3.128,94" na Fila do dia, criticidade alta) e cancelada com
   motivo; itens voltaram à lista; 3 registros em `auditoria`. A nº 1 fica no histórico como cancelada (teste).
 - Fica para a Fase 3: impressão/PDF. Para a Fase 4: abas Antecipações e Parâmetros (hoje a data de corte só muda pela função).
+
+## 14. Fase 3 — o que foi feito (10/10/2026)
+- **Página de impressão** `/imprimir/contas-pagar/autorizacao/[id]` (grupo de rota `app/(impressao)/`, sem a moldura do painel;
+  exige login e acesso ao módulo): cabeçalho com razão social e CNPJ da empresa, "Autorização de pagamento nº N", data e hora
+  de emissão, selo "RASCUNHO — SEM VALIDADE" ou "CANCELADA EM dd/mm/aaaa", observação, motivo do cancelamento; tabela
+  **Títulos a pagar** (fornecedor e CNPJ, documento e lançamento, vencimento, histórico, valor) e tabela **Antecipações a
+  fornecedor** (idem, com pagamento programado), subtotal de cada uma, **subtotais por tipo e total geral**; rodapé com quem
+  montou, autorizou e cancelou e quando. Itens removidos do rascunho não entram.
+- Botão "Imprimir / salvar PDF" (`window.print()`; a barra some no papel). "Salvar como PDF" é a impressora virtual do
+  navegador. CSS em `app/globals.css` (`@media print`: A4 retrato, margens, cabeçalho de tabela repetido, linha não quebra).
+- Na página da autorização: botão "Imprimir / salvar PDF" (abre em nova aba) e, para operador, **"Anexar PDF assinado"**
+  (PDF ou imagem; `enviarAnexo`, módulo `financeiro.contas-pagar`, tabela `cap_autorizacoes`, tipo `autorizacao_assinada`)
+  com a lista "Relatório assinado" (links assinados de 15 min). Anexo é prova: não se apaga; para trocar, envia outro.
+- Sem dependência nova. Se um dia for preciso PDF gerado no servidor (anexo automático, e-mail), a opção é `@react-pdf/renderer`.
+- Fica para a Fase 4: abas Antecipações e Parâmetros, fornecedores como contrapartes, crédito D, agendamento.

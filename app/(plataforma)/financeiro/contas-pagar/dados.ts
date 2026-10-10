@@ -1,6 +1,7 @@
 import { cache } from "react";
 import { lerParametrosContasPagar, CHAVES_CONTAS_PAGAR, type ParametrosContasPagar } from "@/lib/modulos/financeiro/contas-pagar/parametros";
 import { MODULO_CONTAS_PAGAR, type ItemPendente } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
+import { urlAssinadaAnexo } from "@/lib/nucleo/anexos";
 import { FUSO } from "@/lib/nucleo/fila";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
@@ -115,15 +116,24 @@ export async function listarAutorizacoes(supabase: Cliente, filtro: { status: st
   return { linhas: (data ?? []) as unknown as LinhaAutorizacao[], total: count ?? 0 };
 }
 
-export async function lerAutorizacao(supabase: Cliente, id: string): Promise<{ autorizacao: LinhaAutorizacao; itens: LinhaItemAutorizacao[] } | null> {
-  const [{ data: a, error: erroA }, { data: itens, error: erroI }] = await Promise.all([
+export type AnexoAutorizacao = { id: string; nome: string; enviadoEm: string; url: string | null };
+
+export async function lerAutorizacao(supabase: Cliente, id: string): Promise<{ autorizacao: LinhaAutorizacao; itens: LinhaItemAutorizacao[]; anexos: AnexoAutorizacao[] } | null> {
+  const [{ data: a, error: erroA }, { data: itens, error: erroI }, { data: anexosBrutos }] = await Promise.all([
     supabase.from("cap_vw_autorizacoes").select(COLUNAS_AUTORIZACAO).eq("id", id).maybeSingle(),
     supabase.from("cap_autorizacao_itens")
       .select("id, lancamento_id, tipo, cod_lancamento, cod_fornecedor, fornecedor_nome, fornecedor_documento, num_documento, categoria_doc, data_emissao, data_vencimento, data_pagamento, valor, valor_original, complemento_historico, cod_banco, cod_portador, cod_barras, qrcode_pix, ordem, removido_em, motivo_remocao, baixado_consistem_em")
       .eq("autorizacao_id", id).order("ordem").limit(1000),
+    supabase.from("anexos").select("id, arquivo_path, nome_arquivo, enviado_em")
+      .eq("modulo", MODULO_CONTAS_PAGAR).eq("referencia_tabela", "cap_autorizacoes").eq("referencia_id", id).order("enviado_em", { ascending: false }).limit(20),
   ]);
   if (erroA) throw new Error(`Falha ao ler a autorização: ${erroA.message}`);
   if (erroI) throw new Error(`Falha ao ler os itens: ${erroI.message}`);
   if (!a) return null;
-  return { autorizacao: a as unknown as LinhaAutorizacao, itens: (itens ?? []) as unknown as LinhaItemAutorizacao[] };
+  // Link assinado de 15 min para cada anexo (o bucket é privado; a RLS do Storage decide).
+  const anexos: AnexoAutorizacao[] = await Promise.all((anexosBrutos ?? []).map(async (x) => {
+    const r = await urlAssinadaAnexo(supabase, x.arquivo_path as string, 900);
+    return { id: x.id as string, nome: x.nome_arquivo as string, enviadoEm: quandoEm(x.enviado_em as string), url: r.ok ? r.url : null };
+  }));
+  return { autorizacao: a as unknown as LinhaAutorizacao, itens: (itens ?? []) as unknown as LinhaItemAutorizacao[], anexos };
 }

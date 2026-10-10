@@ -7,6 +7,12 @@ export const ehStatus = (v: string): v is StatusAutorizacao => v === "rascunho" 
 
 export type Papel = { podeOperar: boolean; ehGestor: boolean; userId: string };
 
+/** Tipo do anexo (tabela `anexos`) do relatório assinado/escaneado que o financeiro guarda na autorização. */
+export const TIPO_ANEXO_AUTORIZACAO = "autorizacao_assinada";
+
+/** Rota da página de impressão (fora da moldura do painel). */
+export const rotaImpressao = (id: string): string => `/imprimir/contas-pagar/autorizacao/${id}`;
+
 /** Só gestor autoriza, e só um rascunho. Quem montou pode autorizar a própria (fluxo real: a diretoria monta e autoriza). */
 export const podeAutorizar = (status: StatusAutorizacao, p: Papel): boolean => status === "rascunho" && p.ehGestor;
 

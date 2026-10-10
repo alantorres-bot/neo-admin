@@ -200,3 +200,17 @@
   table.cartoes td[data-label=""]::before { display: none; }
   table.cartoes td:empty { display: none; }
 }
+
+/* Páginas de impressão (app/(impressao)): folha A4, sem moldura; a barra com o botão não sai no papel. */
+@media print {
+  @page { size: A4 portrait; margin: 14mm 12mm; }
+  html, body { background: #fff !important; }
+  .nao-imprimir { display: none !important; }
+  .folha { padding: 0 !important; max-width: none !important; font-size: 11px; color: #000; }
+  .relatorio table { page-break-inside: auto; }
+  .relatorio thead { display: table-header-group; }
+  .relatorio tfoot { display: table-footer-group; }
+  .relatorio tr { break-inside: avoid; page-break-inside: avoid; }
+  .relatorio section { break-inside: auto; }
+  .relatorio h2 { break-after: avoid; }
+}

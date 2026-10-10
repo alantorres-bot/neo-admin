@@ -1,12 +1,55 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { TIPO_ANEXO_AUTORIZACAO } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { MODULO_CONTAS_PAGAR } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
+import { enviarAnexo } from "@/lib/nucleo/anexos";
+import { criarClienteNavegador } from "@/lib/supabase/navegador";
 import { autorizar, cancelar, removerItem } from "./acoes";
+
+/** Guarda o relatório assinado (PDF ou foto) como anexo da autorização. Anexo é prova: não se apaga; para trocar, envie outro. */
+export function AnexarAssinada({ autorizacaoId, temAnexo }: { autorizacaoId: string; temAnexo: boolean }) {
+  const router = useRouter();
+  const entrada = useRef<HTMLInputElement>(null);
+  const [enviando, setEnviando] = useState(false);
+
+  async function aoEscolher(e: React.ChangeEvent<HTMLInputElement>) {
+    const arquivo = e.target.files?.[0];
+    e.target.value = "";
+    if (!arquivo) return;
+    if (!(arquivo.type === "application/pdf" || arquivo.type.startsWith("image/"))) {
+      toast.error("Envie o relatório assinado em PDF ou imagem.");
+      return;
+    }
+    setEnviando(true);
+    try {
+      const r = await enviarAnexo(criarClienteNavegador(), { modulo: MODULO_CONTAS_PAGAR, referenciaTabela: "cap_autorizacoes", referenciaId: autorizacaoId }, arquivo, TIPO_ANEXO_AUTORIZACAO);
+      if (r.ok) {
+        toast.success("Relatório assinado anexado.");
+        router.refresh();
+      } else {
+        toast.error(r.erro);
+      }
+    } finally {
+      setEnviando(false);
+    }
+  }
+
+  return (
+    <>
+      <input ref={entrada} type="file" accept="application/pdf,image/*" className="hidden" onChange={aoEscolher} />
+      <Button type="button" variant="outline" disabled={enviando} onClick={() => entrada.current?.click()}>
+        <Paperclip /> {enviando ? "Enviando…" : temAnexo ? "Anexar outra versão assinada" : "Anexar PDF assinado"}
+      </Button>
+    </>
+  );
+}
 
 /** Autorizar em dois cliques: o botão abre a confirmação com o total. */
 export function BotaoAutorizar({ id, numero, resumo }: { id: string; numero: number; resumo: string }) {

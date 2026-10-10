@@ -5,14 +5,15 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { podeAutorizar, podeCancelar, podeRemoverItem, resumirItens, ROTULO_STATUS, situacaoDoItem, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { Printer } from "lucide-react";
+import { podeAutorizar, podeCancelar, podeRemoverItem, resumirItens, ROTULO_STATUS, rotaImpressao, situacaoDoItem, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { ROTA_CONTAS_PAGAR, ROTULO_TIPO } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { lerAutorizacao, quandoEm, type LinhaItemAutorizacao } from "../../dados";
-import { BotaoAutorizar, BotaoRemoverItem, DialogoCancelar } from "./componentes";
+import { AnexarAssinada, BotaoAutorizar, BotaoRemoverItem, DialogoCancelar } from "./componentes";
 
 export const metadata: Metadata = { title: "Autorização de pagamento" };
 
@@ -26,7 +27,7 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
   const supabase = await criarClienteServidor();
   const lido = await lerAutorizacao(supabase, id);
   if (!lido) notFound();
-  const { autorizacao: a, itens } = lido;
+  const { autorizacao: a, itens, anexos } = lido;
 
   const papel = { podeOperar: temAcesso(sessao.acesso, "financeiro", "operador"), ehGestor: temAcesso(sessao.acesso, "financeiro", "gestor"), userId: sessao.userId };
   const resumo = resumirItens(itens.map((i) => ({ tipo: i.tipo, valorCentavos: centavos(i.valor), removido: i.removido_em !== null, baixadoConsistemEm: i.baixado_consistem_em })));
@@ -51,6 +52,8 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="ghost" render={<Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes`} />}>Voltar ao histórico</Button>
+          <Button variant="outline" render={<a href={rotaImpressao(a.id)} target="_blank" rel="noopener" />}><Printer /> Imprimir / salvar PDF</Button>
+          {papel.podeOperar && a.status !== "rascunho" && <AnexarAssinada autorizacaoId={a.id} temAnexo={anexos.length > 0} />}
           {podeAutorizar(a.status, papel) && <BotaoAutorizar id={a.id} numero={a.numero} resumo={resumoTexto} />}
           {podeCancelar(a.status, a.criado_por, papel) && a.status !== "cancelada" && <DialogoCancelar id={a.id} numero={a.numero} status={a.status} />}
         </div>
@@ -83,6 +86,24 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
 
       <SecaoItens titulo="Títulos" lista={titulos} total={resumo.titulos.centavos} autorizacaoId={a.id} podeRemover={podeRemoverItem(a.status, papel)} />
       <SecaoItens titulo="Antecipações" lista={antecipacoes} total={resumo.antecipacoes.centavos} autorizacaoId={a.id} podeRemover={podeRemoverItem(a.status, papel)} />
+
+      {(anexos.length > 0 || a.status === "autorizada") && (
+        <section className="space-y-2">
+          <h3 className="text-sm font-bold">Relatório assinado</h3>
+          {anexos.length === 0 ? (
+            <p className="text-xs text-muted-foreground">Nenhum arquivo anexado. Depois de imprimir e colher a assinatura, anexe o PDF ou a foto aqui para ficar junto do histórico.</p>
+          ) : (
+            <ul className="space-y-1 text-sm">
+              {anexos.map((x) => (
+                <li key={x.id}>
+                  {x.url ? <a href={x.url} target="_blank" rel="noopener" className="text-elo hover:underline">{x.nome}</a> : <span>{x.nome}</span>}
+                  <span className="ml-2 text-xs text-muted-foreground">enviado em {x.enviadoEm}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
 
       {removidos.length > 0 && (
         <section className="space-y-2">
