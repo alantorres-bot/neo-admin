@@ -23,25 +23,61 @@ export const podeCancelar = (status: StatusAutorizacao, criadoPor: string | null
 /** Itens só saem de um rascunho, por operador ou acima. */
 export const podeRemoverItem = (status: StatusAutorizacao, p: Papel): boolean => status === "rascunho" && p.podeOperar;
 
-export type ItemResumo = { tipo: "titulo" | "antecipacao"; valorCentavos: number; removido: boolean; baixadoConsistemEm: string | null };
-export type Totais = { quantidade: number; centavos: number };
-export type ResumoAutorizacao = { titulos: Totais; antecipacoes: Totais; geral: Totais; baixados: number; removidos: number };
+/** Pagamentos extras (fora do Consistem) entram e saem só em rascunho, por operador ou acima. */
+export const podeEditarExtras = (status: StatusAutorizacao, p: Papel): boolean => status === "rascunho" && p.podeOperar;
 
-export function resumirItens(itens: readonly ItemResumo[]): ResumoAutorizacao {
-  const r: ResumoAutorizacao = { titulos: { quantidade: 0, centavos: 0 }, antecipacoes: { quantidade: 0, centavos: 0 }, geral: { quantidade: 0, centavos: 0 }, baixados: 0, removidos: 0 };
+export type ItemResumo = { tipo: "titulo" | "antecipacao"; valorCentavos: number; removido: boolean; baixadoConsistemEm: string | null };
+/** Pagamento extra: pedido da diretoria que não existe no Consistem (frete avulso, reembolso, taxa…). */
+export type ExtraResumo = { valorCentavos: number; removido: boolean };
+export type Totais = { quantidade: number; centavos: number };
+export type ResumoAutorizacao = {
+  titulos: Totais;
+  antecipacoes: Totais;
+  /** Pagamentos extras (fora do Consistem). */
+  extras: Totais;
+  /** Títulos + antecipações (o que existe no Consistem). */
+  lancamentos: Totais;
+  /** Tudo: lançamentos + extras. É o total autorizado. */
+  geral: Totais;
+  baixados: number;
+  removidos: number;
+};
+
+export function resumirItens(itens: readonly ItemResumo[], extras: readonly ExtraResumo[] = []): ResumoAutorizacao {
+  const zero = (): Totais => ({ quantidade: 0, centavos: 0 });
+  const r: ResumoAutorizacao = { titulos: zero(), antecipacoes: zero(), extras: zero(), lancamentos: zero(), geral: zero(), baixados: 0, removidos: 0 };
+  const somar = (t: Totais, centavos: number) => { t.quantidade++; t.centavos += centavos; };
   for (const i of itens) {
     if (i.removido) {
       r.removidos++;
       continue;
     }
-    const alvo = i.tipo === "titulo" ? r.titulos : r.antecipacoes;
-    alvo.quantidade++;
-    alvo.centavos += i.valorCentavos;
-    r.geral.quantidade++;
-    r.geral.centavos += i.valorCentavos;
+    somar(i.tipo === "titulo" ? r.titulos : r.antecipacoes, i.valorCentavos);
+    somar(r.lancamentos, i.valorCentavos);
+    somar(r.geral, i.valorCentavos);
     if (i.baixadoConsistemEm) r.baixados++;
   }
+  for (const x of extras) {
+    if (x.removido) continue;
+    somar(r.extras, x.valorCentavos);
+    somar(r.geral, x.valorCentavos);
+  }
   return r;
+}
+
+// ---------------------------------------------------------------- pagamentos extras
+
+export const LIMITES_EXTRA = { descricaoMin: 3, descricaoMax: 200, favorecidoMin: 2, favorecidoMax: 120, valorMaxCentavos: 10_000_000_000 } as const;
+
+/** Mesmas regras da função de banco cap_incluir_extra; devolve a mensagem de erro ou null quando está tudo certo. */
+export function validarExtra(e: { descricao: string; favorecido: string; valorCentavos: number | null }): string | null {
+  const descricao = e.descricao.trim();
+  const favorecido = e.favorecido.trim();
+  if (descricao.length < LIMITES_EXTRA.descricaoMin || descricao.length > LIMITES_EXTRA.descricaoMax) return `Informe a descrição do pagamento (${LIMITES_EXTRA.descricaoMin} a ${LIMITES_EXTRA.descricaoMax} caracteres).`;
+  if (favorecido.length < LIMITES_EXTRA.favorecidoMin || favorecido.length > LIMITES_EXTRA.favorecidoMax) return `Informe o favorecido (quem recebe), com ${LIMITES_EXTRA.favorecidoMin} a ${LIMITES_EXTRA.favorecidoMax} caracteres.`;
+  if (e.valorCentavos === null || !Number.isInteger(e.valorCentavos) || e.valorCentavos <= 0) return "Valor inválido: informe um valor maior que zero, ex.: 1.234,56.";
+  if (e.valorCentavos > LIMITES_EXTRA.valorMaxCentavos) return "Valor acima do limite.";
+  return null;
 }
 
 const reais = (centavos: number) => {
@@ -102,6 +138,8 @@ export type DadosMensagemSlack = {
   status: StatusAutorizacao;
   titulos: Totais;
   antecipacoes: Totais;
+  /** Pagamentos extras (fora do Consistem); opcional para quem não tem. */
+  extras?: Totais;
   totalCentavos: number;
   caixa: ComparacaoCaixa;
   autorizadaPor: string | null;
@@ -113,7 +151,7 @@ export type DadosMensagemSlack = {
 export function mensagemSlack(d: DadosMensagemSlack): string {
   const linhas = [
     `*Autorização de pagamento ${d.codigo}* · ${d.empresa} · ${d.data}${d.status !== "autorizada" ? ` · ${ROTULO_STATUS[d.status].toUpperCase()}` : ""}`,
-    `Títulos: ${d.titulos.quantidade} (${reais(d.titulos.centavos)}) · Antecipações: ${d.antecipacoes.quantidade} (${reais(d.antecipacoes.centavos)})`,
+    `Títulos: ${d.titulos.quantidade} (${reais(d.titulos.centavos)}) · Antecipações: ${d.antecipacoes.quantidade} (${reais(d.antecipacoes.centavos)})${d.extras && d.extras.quantidade > 0 ? ` · Extras (fora do Consistem): ${d.extras.quantidade} (${reais(d.extras.centavos)})` : ""}`,
     `*Total autorizado: ${reais(d.totalCentavos)}*`,
   ];
   if (d.caixa) {

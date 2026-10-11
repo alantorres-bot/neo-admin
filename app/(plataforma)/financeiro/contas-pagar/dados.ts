@@ -99,6 +99,14 @@ export type LinhaAutorizacao = {
   slack_enviada_em: string | null; slack_enviada_por: string | null; slack_enviada_por_nome: string | null; slack_permalink: string | null; slack_file_id: string | null; slack_message_ts: string | null; slack_retirada_em: string | null; empresa_nome: string; empresa_razao_social: string; empresa_cnpj: string | null;
   criado_por_nome: string | null; autorizada_por_nome: string | null; cancelada_por_nome: string | null;
   itens: number; titulos: number; antecipacoes: number; total_titulos: number | string; total_antecipacoes: number | string; total: number | string; baixados: number;
+  /** Pagamentos extras (fora do Consistem) ativos e sua soma; `total` já inclui. */
+  extras: number; total_extras: number | string;
+};
+
+/** Pagamento extra da autorização (fora do Consistem). Removidos ficam na lista para o histórico. */
+export type LinhaExtraAutorizacao = {
+  id: string; descricao: string; favorecido: string; valor: number | string; ordem: number;
+  criado_por: string | null; criado_por_nome: string | null; criado_em: string; removido_em: string | null; motivo_remocao: string | null;
 };
 
 export type LinhaItemAutorizacao = {
@@ -110,7 +118,7 @@ export type LinhaItemAutorizacao = {
   tem_bordero: boolean | null;
 };
 
-const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados";
+const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados, extras, total_extras";
 
 export async function listarAutorizacoes(supabase: Cliente, filtro: { status: string | null; pagina: number; porPagina: number }): Promise<{ linhas: LinhaAutorizacao[]; total: number }> {
   let consulta = supabase.from("cap_vw_autorizacoes").select(COLUNAS_AUTORIZACAO, { count: "exact" }).order("numero", { ascending: false })
@@ -123,18 +131,28 @@ export async function listarAutorizacoes(supabase: Cliente, filtro: { status: st
 
 export type AnexoAutorizacao = { id: string; nome: string; enviadoEm: string; url: string | null };
 
-export async function lerAutorizacao(supabase: Cliente, id: string): Promise<{ autorizacao: LinhaAutorizacao; itens: LinhaItemAutorizacao[]; anexos: AnexoAutorizacao[] } | null> {
-  const [{ data: a, error: erroA }, { data: itens, error: erroI }, { data: anexosBrutos }] = await Promise.all([
+export async function lerAutorizacao(supabase: Cliente, id: string): Promise<{ autorizacao: LinhaAutorizacao; itens: LinhaItemAutorizacao[]; extras: LinhaExtraAutorizacao[]; anexos: AnexoAutorizacao[] } | null> {
+  const [{ data: a, error: erroA }, { data: itens, error: erroI }, { data: extrasBrutos, error: erroX }, { data: anexosBrutos }] = await Promise.all([
     supabase.from("cap_vw_autorizacoes").select(COLUNAS_AUTORIZACAO).eq("id", id).maybeSingle(),
     supabase.from("cap_autorizacao_itens")
       .select("id, lancamento_id, tipo, cod_lancamento, cod_fornecedor, fornecedor_nome, fornecedor_documento, num_documento, categoria_doc, data_emissao, data_vencimento, data_pagamento, valor, valor_original, complemento_historico, cod_banco, cod_portador, cod_barras, qrcode_pix, ordem, removido_em, motivo_remocao, baixado_consistem_em")
       .eq("autorizacao_id", id).order("ordem").limit(1000),
+    supabase.from("cap_autorizacao_extras").select("id, descricao, favorecido, valor, ordem, criado_por, criado_em, removido_em, motivo_remocao").eq("autorizacao_id", id).order("ordem").limit(200),
     supabase.from("anexos").select("id, arquivo_path, nome_arquivo, enviado_em")
       .eq("modulo", MODULO_CONTAS_PAGAR).eq("referencia_tabela", "cap_autorizacoes").eq("referencia_id", id).order("enviado_em", { ascending: false }).limit(20),
   ]);
   if (erroA) throw new Error(`Falha ao ler a autorização: ${erroA.message}`);
   if (erroI) throw new Error(`Falha ao ler os itens: ${erroI.message}`);
+  if (erroX) throw new Error(`Falha ao ler os pagamentos extras: ${erroX.message}`);
   if (!a) return null;
+  // Nome de quem incluiu cada extra.
+  const extras = (extrasBrutos ?? []).map((x) => ({ ...(x as Omit<LinhaExtraAutorizacao, "criado_por_nome">), criado_por_nome: null as string | null }));
+  const idsPerfis = [...new Set(extras.map((x) => x.criado_por).filter((v): v is string => v !== null))];
+  if (idsPerfis.length > 0) {
+    const { data: perfis } = await supabase.from("perfis").select("id, nome").in("id", idsPerfis);
+    const nomeDe = new Map((perfis ?? []).map((p) => [p.id as string, p.nome as string]));
+    for (const x of extras) x.criado_por_nome = x.criado_por ? nomeDe.get(x.criado_por) ?? null : null;
+  }
   // Link assinado de 15 min para cada anexo (o bucket é privado; a RLS do Storage decide).
   // Antecipação do item já tem borderô (paga) no espelho? Aviso na página: o item deveria sair do rascunho.
   const lista = (itens ?? []) as unknown as LinhaItemAutorizacao[];
@@ -149,5 +167,5 @@ export async function lerAutorizacao(supabase: Cliente, id: string): Promise<{ a
     const r = await urlAssinadaAnexo(supabase, x.arquivo_path as string, 900);
     return { id: x.id as string, nome: x.nome_arquivo as string, enviadoEm: quandoEm(x.enviado_em as string), url: r.ok ? r.url : null };
   }));
-  return { autorizacao: a as unknown as LinhaAutorizacao, itens: lista, anexos };
+  return { autorizacao: a as unknown as LinhaAutorizacao, itens: lista, extras, anexos };
 }

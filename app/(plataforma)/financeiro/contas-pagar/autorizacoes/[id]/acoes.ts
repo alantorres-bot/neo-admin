@@ -2,10 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { compararComCaixa, resumirItens } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { LIMITES_EXTRA } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { gerarPdfAutorizacao, nomeArquivoAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/pdf-autorizacao";
 import { ROTA_CONTAS_PAGAR } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
-import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
+import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { lerAutorizacao, quandoEm } from "../../dados";
 import { temAcesso } from "@/lib/nucleo/permissoes";
@@ -16,6 +16,7 @@ export type Resultado = { ok: true; aviso: string } | { ok: false; erro: string 
 
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
 const uuid = z.string().uuid();
+const centavos = (v: number | string | null) => (v === null ? 0 : Math.round(Number(v) * 100));
 
 function revalidar(id: string) {
   revalidatePath(ROTA_CONTAS_PAGAR, "layout");
@@ -77,6 +78,48 @@ export async function removerItem(entrada: z.input<typeof esquemaRemover>): Prom
   return { ok: true, aviso: r.restantes === 0 ? "Item removido. A autorização ficou sem itens: cancele-a ou volte à lista para gerar outra." : "Item removido do rascunho." };
 }
 
+const esquemaExtra = z.object({
+  autorizacaoId: uuid,
+  descricao: z.string().trim().min(LIMITES_EXTRA.descricaoMin, "Informe a descrição do pagamento (3 a 200 caracteres).").max(LIMITES_EXTRA.descricaoMax, "A descrição pode ter até 200 caracteres."),
+  favorecido: z.string().trim().min(LIMITES_EXTRA.favorecidoMin, "Informe o favorecido (quem recebe).").max(LIMITES_EXTRA.favorecidoMax, "O favorecido pode ter até 120 caracteres."),
+  valorCentavos: z.number().int().min(1, "Valor inválido: informe um valor maior que zero.").max(LIMITES_EXTRA.valorMaxCentavos, "Valor acima do limite."),
+});
+
+/**
+ * Inclui um pagamento extra (fora do Consistem) no rascunho: descrição, favorecido e valor (função de banco
+ * `cap_incluir_extra`). Operador ou acima; só em rascunho. O valor entra no total autorizado, no caixa e no relatório.
+ */
+export async function incluirExtra(entrada: z.input<typeof esquemaExtra>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) pode incluir pagamentos extras." };
+  const dados = esquemaExtra.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.rpc("cap_incluir_extra", {
+    p_autorizacao: dados.data.autorizacaoId, p_descricao: dados.data.descricao, p_favorecido: dados.data.favorecido, p_valor: dados.data.valorCentavos / 100,
+  });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidar(dados.data.autorizacaoId);
+  const r = (data ?? {}) as { total?: number | string };
+  return { ok: true, aviso: `Pagamento extra incluído. Total da autorização: ${formatarMoeda(centavos(r.total ?? 0))}.` };
+}
+
+const esquemaRemoverExtra = z.object({ autorizacaoId: uuid, extraId: uuid, motivo: z.string().trim().min(3, "Informe o motivo.").max(300) });
+
+/** Remove um pagamento extra do rascunho (registro com motivo; nunca delete). */
+export async function removerExtra(entrada: z.input<typeof esquemaRemoverExtra>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) pode remover pagamentos extras." };
+  const dados = esquemaRemoverExtra.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.rpc("cap_remover_extra", { p_extra: dados.data.extraId, p_motivo: dados.data.motivo });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidar(dados.data.autorizacaoId);
+  const r = (data ?? {}) as { total?: number | string };
+  return { ok: true, aviso: `Pagamento extra removido. Total da autorização: ${formatarMoeda(centavos(r.total ?? 0))}.` };
+}
+
 const esquemaCaixa = z.object({ id: uuid, caixaCentavos: z.number().int().min(0).max(100_000_000_000).nullable() });
 
 /** Ajusta o caixa disponível de um rascunho (função de banco `cap_definir_caixa`). Ultrapassar o caixa é só aviso. */
@@ -94,7 +137,6 @@ export async function definirCaixa(entrada: z.input<typeof esquemaCaixa>): Promi
 
 export type ResultadoSlack = { ok: true; permalink: string | null; aviso: string } | { ok: false; erro: string; naoConfigurado?: boolean };
 
-const centavos = (v: number | string | null) => (v === null ? 0 : Math.round(Number(v) * 100));
 
 /**
  * Publica o PDF da autorização (sem texto) no canal do financeiro no Slack pela Edge Function `cap-enviar-slack`, que tem
@@ -108,9 +150,10 @@ export async function enviarNoSlack(entrada: { id: string }): Promise<ResultadoS
   const supabase = await criarClienteServidor();
   const lido = await lerAutorizacao(supabase, entrada.id);
   if (!lido) return { ok: false, erro: "Autorização não encontrada." };
-  const { autorizacao: a, itens } = lido;
+  const { autorizacao: a, itens, extras } = lido;
   if (a.status === "cancelada") return { ok: false, erro: "Autorização cancelada não é enviada." };
   const ativos = itens.filter((i) => i.removido_em === null);
+  const extrasAtivos = extras.filter((x) => x.removido_em === null);
 
   const pdf = await gerarPdfAutorizacao({
     codigo: a.codigo, data: a.data, status: a.status, empresaRazaoSocial: a.empresa_razao_social, empresaCnpj: a.empresa_cnpj,
@@ -121,6 +164,7 @@ export async function enviarNoSlack(entrada: { id: string }): Promise<ResultadoS
       tipo: i.tipo, fornecedorNome: i.fornecedor_nome, fornecedorDocumento: i.fornecedor_documento, codFornecedor: i.cod_fornecedor, numDocumento: i.num_documento,
       codLancamento: i.cod_lancamento, dataVencimento: i.data_vencimento, dataPagamento: i.data_pagamento, complemento: i.complemento_historico, valorCentavos: centavos(i.valor),
     })),
+    extras: extrasAtivos.map((x) => ({ descricao: x.descricao, favorecido: x.favorecido, valorCentavos: centavos(x.valor) })),
   });
 
   const { data, error } = await supabase.functions.invoke("cap-enviar-slack", {

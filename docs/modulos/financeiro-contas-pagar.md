@@ -74,6 +74,12 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
    porque é isso que o saldo zero significa.
 10. **Totais** sempre por tipo (títulos, antecipações) e geral, na tela e no relatório.
 11. Limite de 500 itens por autorização. Valores em `numeric(14,2)`; datas no fuso America/Cuiaba.
+12. **Pagamentos extras (fora do Consistem)** (11/10/2026): a diretoria pode mandar pagar algo que não existe no Consistem
+    (frete avulso, reembolso, taxa, fornecedor ainda sem título). Entram num **terceiro bloco** da autorização, com
+    **descrição, favorecido e valor** (`cap_autorizacao_extras`), e somam no total autorizado, no caixa/excedente, na pendência
+    e no relatório. Qualquer um do Financeiro (operador) inclui e remove, **só em rascunho** (remoção com motivo; nunca delete).
+    Uma autorização pode ter **só extras**: "Novo rascunho só com extras" no histórico cria o rascunho vazio; autorizar exige ao
+    menos 1 item do Consistem ou 1 extra. O lançamento desses pagamentos no Consistem continua por conta do financeiro.
 
 ## 6. Saídas e automações
 - **Relatório de autorização de pagamento** (Fase 3): página de impressão (A4) com cabeçalho da empresa (razão social e CNPJ),
@@ -101,8 +107,9 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
 | `cap_autorizacoes` | Cabeçalho da autorização (número, data, status, quem/quando) — prova |
 | `cap_autorizacao_itens` | Cópia dos lançamentos autorizados — prova |
 | `cap_antecipacoes_tratadas` | Antecipações marcadas como pagas fora do Neo Admin (motivo, quem; desfazível) |
+| `cap_autorizacao_extras` | Pagamentos extras (fora do Consistem) da autorização: descrição, favorecido, valor; só em rascunho — prova |
 | `cap_vw_pendentes` | View: abertos C/A com fornecedor, autorização ativa, tratada, fora do corte (a tela lê daqui) |
-| Funções | `cap_criar_autorizacao`, `cap_autorizar`, `cap_cancelar`, `cap_remover_item`, `cap_marcar_antecipacao_tratada`, `cap_desfazer_antecipacao_tratada`, `cap_salvar_parametros` |
+| Funções | `cap_criar_autorizacao`, `cap_autorizar`, `cap_cancelar`, `cap_remover_item`, `cap_incluir_extra`, `cap_remover_extra`, `cap_marcar_antecipacao_tratada`, `cap_desfazer_antecipacao_tratada`, `cap_salvar_parametros` |
 | Configuração | `financeiro.contas-pagar.antecipacoes_a_partir_de` |
 Migrations: `0121_cap_base.sql` (Fase 1), `0122_cap_autorizacoes.sql` (Fase 2), `0123_cap_fornecedores_contrapartes.sql` (Fase 4).
 Edge Function: `cap-sincronizar-consistem` (ações `medir`, `simular`, `sincronizar`; `detalhar` na Fase 3).
@@ -225,3 +232,11 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
     `acao: "cancelar"`, que apaga o arquivo (`files.delete`) e a mensagem (`chat.delete`) e publica o aviso curto
     "Autorização de pagamento <código> CANCELADA em dd/mm/aaaa. Motivo: … O relatório anterior não vale mais."; grava
     `slack_retirada_em`. Se o Slack falhar, a autorização fica cancelada mesmo assim e a tela pede para apagar à mão.
+- **Pagamentos extras na autorização (11/10/2026, Fase 4c):** migration `0126_cap_extras.sql` — tabela `cap_autorizacao_extras`
+  (gatilho `fn_cap_extra_regras`: só em rascunho, imutável, remoção com motivo; auditoria; sem delete), funções
+  `cap_incluir_extra`/`cap_remover_extra`, `cap_vw_autorizacoes` com `extras`/`total_extras` e `total` somando itens + extras,
+  `cap_autorizar` com o total completo na pendência, `cap_criar_autorizacao` aceita rascunho vazio (não ao autorizar na hora).
+  App: bloco "Pagamentos extras (fora do Consistem)" na página da autorização com "Incluir pagamento extra" (descrição,
+  favorecido, valor; mostra o novo total e o efeito no caixa) e "Remover"; cartão "Pagamentos extras"; coluna "Extras" no
+  histórico; botão "Novo rascunho só com extras" no histórico; PDF e impressão com a terceira tabela e o subtotal; Slack via o PDF.
+  Regras puras: `resumirItens(itens, extras)` (`extras`, `lancamentos`, `geral`), `validarExtra`, `podeEditarExtras`.

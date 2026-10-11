@@ -1,5 +1,5 @@
 // PDF do relatório de autorização de pagamento gerado no servidor (@react-pdf/renderer), para o envio no Slack.
-// Mesmo conteúdo da página de impressão: cabeçalho da empresa, títulos, antecipações, subtotais, total, caixa, rodapé.
+// Mesmo conteúdo da página de impressão: cabeçalho da empresa, títulos, antecipações, pagamentos extras, subtotais, total, caixa, rodapé.
 // Só lógica de apresentação: recebe os dados já lidos (dados.ts) e devolve os bytes do PDF.
 import React from "react";
 import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
@@ -19,6 +19,9 @@ export type ItemPdf = {
   valorCentavos: number;
 };
 
+/** Pagamento extra (fora do Consistem): descrição, favorecido e valor. */
+export type ExtraPdf = { descricao: string; favorecido: string; valorCentavos: number };
+
 export type DadosPdfAutorizacao = {
   codigo: string;
   data: string; // aaaa-mm-dd
@@ -35,6 +38,8 @@ export type DadosPdfAutorizacao = {
   canceladaEm: string | null; // aaaa-mm-dd ou formatado
   emitidoEm: string; // já formatado
   itens: ItemPdf[];
+  /** Pagamentos extras (fora do Consistem); a tabela só aparece quando há algum. */
+  extras?: ExtraPdf[];
 };
 
 const estilos = StyleSheet.create({
@@ -51,6 +56,8 @@ const estilos = StyleSheet.create({
   cData: { width: "12%", paddingRight: 4 },
   cHistorico: { width: "24%", paddingRight: 4 },
   cValor: { width: "14%", textAlign: "right" },
+  cDescricao: { width: "50%", paddingRight: 4 },
+  cFavorecido: { width: "36%", paddingRight: 4 },
   pequeno: { fontSize: 7, color: "#333" },
   subtotal: { flexDirection: "row", justifyContent: "flex-end", paddingVertical: 2, fontFamily: "Helvetica-Bold" },
   totais: { marginTop: 8, alignSelf: "flex-end", width: 260 },
@@ -97,10 +104,37 @@ function Tabela({ titulo, itens, rotuloData, subtotal }: { titulo: string; itens
   );
 }
 
+function TabelaExtras({ extras, subtotal }: { extras: ExtraPdf[]; subtotal: number }) {
+  return (
+    <View>
+      <Text style={estilos.secao}>Pagamentos extras — fora do Consistem ({extras.length})</Text>
+      <View style={estilos.linhaCab}>
+        <Text style={estilos.cDescricao}>Descrição</Text>
+        <Text style={estilos.cFavorecido}>Favorecido</Text>
+        <Text style={estilos.cValor}>Valor</Text>
+      </View>
+      {extras.map((x, n) => (
+        <View key={n} style={estilos.linha} wrap={false}>
+          <Text style={estilos.cDescricao}>{x.descricao}</Text>
+          <Text style={estilos.cFavorecido}>{x.favorecido}</Text>
+          <Text style={estilos.cValor}>{formatarMoeda(x.valorCentavos)}</Text>
+        </View>
+      ))}
+      <View style={estilos.subtotal}>
+        <Text>Subtotal {formatarMoeda(subtotal)}</Text>
+      </View>
+    </View>
+  );
+}
+
 export function DocumentoAutorizacao({ d }: { d: DadosPdfAutorizacao }) {
   const titulos = d.itens.filter((i) => i.tipo === "titulo");
   const antecipacoes = d.itens.filter((i) => i.tipo === "antecipacao");
-  const resumo = resumirItens(d.itens.map((i) => ({ tipo: i.tipo, valorCentavos: i.valorCentavos, removido: false, baixadoConsistemEm: null })));
+  const extras = d.extras ?? [];
+  const resumo = resumirItens(
+    d.itens.map((i) => ({ tipo: i.tipo, valorCentavos: i.valorCentavos, removido: false, baixadoConsistemEm: null })),
+    extras.map((x) => ({ valorCentavos: x.valorCentavos, removido: false })),
+  );
   const caixa = compararComCaixa(resumo.geral.centavos, d.caixaCentavos);
   const selo = d.status === "rascunho" ? "RASCUNHO — SEM VALIDADE" : d.status === "cancelada" ? `CANCELADA${d.canceladaEm ? ` EM ${d.canceladaEm}` : ""}` : null;
   return (
@@ -122,10 +156,12 @@ export function DocumentoAutorizacao({ d }: { d: DadosPdfAutorizacao }) {
 
         <Tabela titulo="Títulos a pagar" itens={titulos} rotuloData="Vencimento" subtotal={resumo.titulos.centavos} />
         <Tabela titulo="Antecipações a fornecedor" itens={antecipacoes} rotuloData="Pagamento prog." subtotal={resumo.antecipacoes.centavos} />
+        {extras.length > 0 && <TabelaExtras extras={extras} subtotal={resumo.extras.centavos} />}
 
         <View style={estilos.totais}>
           <View style={estilos.totalLinha}><Text>Subtotal títulos ({resumo.titulos.quantidade})</Text><Text>{formatarMoeda(resumo.titulos.centavos)}</Text></View>
           <View style={estilos.totalLinha}><Text>Subtotal antecipações ({resumo.antecipacoes.quantidade})</Text><Text>{formatarMoeda(resumo.antecipacoes.centavos)}</Text></View>
+          {extras.length > 0 && <View style={estilos.totalLinha}><Text>Subtotal pagamentos extras ({resumo.extras.quantidade})</Text><Text>{formatarMoeda(resumo.extras.centavos)}</Text></View>}
           <View style={[estilos.totalLinha, estilos.totalGeral]}><Text>Total geral ({resumo.geral.quantidade} {resumo.geral.quantidade === 1 ? "item" : "itens"})</Text><Text>{formatarMoeda(resumo.geral.centavos)}</Text></View>
           {caixa && (
             <View>

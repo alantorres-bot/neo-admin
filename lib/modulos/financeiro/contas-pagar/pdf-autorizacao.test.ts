@@ -11,6 +11,7 @@ describe("PDF da autorização", () => {
         { tipo: "titulo", fornecedorNome: "ACOFER", fornecedorDocumento: "03.989.217/0026-12", codFornecedor: "27", numDocumento: "170555/3", codLancamento: "14471", dataVencimento: "2026-03-19", dataPagamento: null, complemento: "CARTORIO", valorCentavos: 300_926 },
         { tipo: "antecipacao", fornecedorNome: "ACOFER EIRELI", fornecedorDocumento: null, codFornecedor: "3", numDocumento: "27783", codLancamento: "27783", dataVencimento: null, dataPagamento: "2026-07-06", complemento: "ANTECIPAÇÃO", valorCentavos: 11_968 },
       ],
+      extras: [{ descricao: "Frete avulso — NF 123", favorecido: "Transportadora XPTO", valorCentavos: 8_050 }],
     });
     expect(pdf.length).toBeGreaterThan(1500);
     expect(new TextDecoder().decode(pdf.slice(0, 5))).toBe("%PDF-");

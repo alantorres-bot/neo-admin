@@ -6,9 +6,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { ehStatus, ROTULO_STATUS, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { ROTA_CONTAS_PAGAR } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
+import { hojeEmCuiaba } from "@/lib/nucleo/fila";
+import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { listarAutorizacoes } from "../dados";
+import { NovoRascunhoVazio } from "./novo-rascunho";
 
 export const metadata: Metadata = { title: "Autorizações de pagamento" };
 
@@ -18,22 +21,29 @@ const centavos = (v: number | string) => Math.round(Number(v) * 100);
 const COR_STATUS: Record<StatusAutorizacao, "default" | "secondary" | "outline" | "destructive"> = { rascunho: "outline", autorizada: "default", cancelada: "destructive" };
 
 export default async function PaginaAutorizacoes({ searchParams }: PageProps<"/financeiro/contas-pagar/autorizacoes">) {
-  await exigirSessao();
+  const sessao = await exigirSessao();
   const parametros = await searchParams;
   const statusPedido = primeiro(parametros.status);
   const status = ehStatus(statusPedido) ? statusPedido : null;
   const pagina = Math.max(1, Number.parseInt(primeiro(parametros.pagina), 10) || 1);
 
   const supabase = await criarClienteServidor();
-  const { linhas, total } = await listarAutorizacoes(supabase, { status, pagina, porPagina: POR_PAGINA });
+  const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
+  const [{ linhas, total }, { data: empresas }] = await Promise.all([
+    listarAutorizacoes(supabase, { status, pagina, porPagina: POR_PAGINA }),
+    podeOperar ? supabase.from("empresas").select("id, nome_curto").eq("ativa", true).not("codigo_erp", "is", null).order("nome_curto") : Promise.resolve({ data: [] as { id: string; nome_curto: string }[] }),
+  ]);
   const totalPaginas = Math.max(1, Math.ceil(total / POR_PAGINA));
   const link = (p: number) => `${ROTA_CONTAS_PAGAR}/autorizacoes?${new URLSearchParams({ ...(status ? { status } : {}), ...(p > 1 ? { pagina: String(p) } : {}) })}`;
 
   return (
     <section className="space-y-3">
-      <div>
-        <h2 className="text-base font-bold">Autorizações de pagamento</h2>
-        <p className="text-xs text-muted-foreground">Histórico com os itens copiados no momento da autorização. Nada é apagado: uma autorização é autorizada ou cancelada, sempre com quem e quando.</p>
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h2 className="text-base font-bold">Autorizações de pagamento</h2>
+          <p className="text-xs text-muted-foreground">Histórico com os itens copiados no momento da autorização. Nada é apagado: uma autorização é autorizada ou cancelada, sempre com quem e quando.</p>
+        </div>
+        {podeOperar && <NovoRascunhoVazio empresas={(empresas ?? []).map((e) => ({ id: e.id as string, nome: e.nome_curto as string }))} hoje={hojeEmCuiaba()} />}
       </div>
 
       <nav aria-label="Situação" className="flex flex-wrap gap-1">
@@ -59,6 +69,7 @@ export default async function PaginaAutorizacoes({ searchParams }: PageProps<"/f
                 <TableHead>Empresa</TableHead>
                 <TableHead className="text-right">Títulos</TableHead>
                 <TableHead className="text-right">Antecipações</TableHead>
+                <TableHead className="text-right">Extras</TableHead>
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead>Baixados no Consistem</TableHead>
                 <TableHead>Montada por</TableHead>
@@ -75,7 +86,8 @@ export default async function PaginaAutorizacoes({ searchParams }: PageProps<"/f
                   <TableCell>{a.empresa_nome}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatarMoeda(centavos(a.total_titulos))}<span className="block text-[11px] text-muted-foreground">{a.titulos}</span></TableCell>
                   <TableCell className="text-right tabular-nums">{formatarMoeda(centavos(a.total_antecipacoes))}<span className="block text-[11px] text-muted-foreground">{a.antecipacoes}</span></TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">{formatarMoeda(centavos(a.total))}<span className="block text-[11px] font-normal text-muted-foreground">{a.itens} {a.itens === 1 ? "item" : "itens"}</span></TableCell>
+                  <TableCell className="text-right tabular-nums">{a.extras > 0 ? <>{formatarMoeda(centavos(a.total_extras))}<span className="block text-[11px] text-muted-foreground">{a.extras}</span></> : <span className="text-muted-foreground">—</span>}</TableCell>
+                  <TableCell className="text-right font-medium tabular-nums">{formatarMoeda(centavos(a.total))}<span className="block text-[11px] font-normal text-muted-foreground">{a.itens + a.extras} {a.itens + a.extras === 1 ? "item" : "itens"}</span></TableCell>
                   <TableCell className="tabular-nums">{a.status === "cancelada" ? "—" : `${a.baixados} de ${a.itens}`}</TableCell>
                   <TableCell>{a.criado_por_nome ?? "—"}</TableCell>
                   <TableCell>{a.autorizada_por_nome ? <>{a.autorizada_por_nome}<span className="block text-[11px] text-muted-foreground">{a.autorizada_em ? formatarData(a.autorizada_em) : ""}</span></> : "—"}</TableCell>

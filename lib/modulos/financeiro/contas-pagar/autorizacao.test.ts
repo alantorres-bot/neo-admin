@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compararComCaixa, criticidadeExecucao, mensagemSlack, parseReais, podeAutorizar, podeCancelar, podeRemoverItem, prazoExecucao, resumirItens, situacaoDoItem, tituloPendenciaExecucao } from "./autorizacao";
+import { compararComCaixa, criticidadeExecucao, mensagemSlack, parseReais, podeAutorizar, podeCancelar, podeEditarExtras, podeRemoverItem, prazoExecucao, resumirItens, situacaoDoItem, tituloPendenciaExecucao, validarExtra } from "./autorizacao";
 
 const gestor = { podeOperar: true, ehGestor: true, userId: "g" };
 const operador = { podeOperar: true, ehGestor: false, userId: "o" };
@@ -33,7 +33,7 @@ describe("totais e textos", () => {
       { tipo: "titulo", valorCentavos: 500, removido: true, baixadoConsistemEm: null },
       { tipo: "antecipacao", valorCentavos: 2_000, removido: false, baixadoConsistemEm: null },
     ]);
-    expect(r).toEqual({ titulos: { quantidade: 1, centavos: 1_000 }, antecipacoes: { quantidade: 1, centavos: 2_000 }, geral: { quantidade: 2, centavos: 3_000 }, baixados: 1, removidos: 1 });
+    expect(r).toEqual({ titulos: { quantidade: 1, centavos: 1_000 }, antecipacoes: { quantidade: 1, centavos: 2_000 }, extras: { quantidade: 0, centavos: 0 }, lancamentos: { quantidade: 2, centavos: 3_000 }, geral: { quantidade: 2, centavos: 3_000 }, baixados: 1, removidos: 1 });
   });
   it("título da pendência igual ao do banco", () => {
     expect(tituloPendenciaExecucao("101026", 48_391_044)).toBe("Executar autorização de pagamento 101026 — R$ 483.910,44");
@@ -90,5 +90,41 @@ describe("mensagem para o Slack", () => {
     const texto = mensagemSlack({ codigo: "101026-2", data: "10/10/2026", empresa: "NEO", status: "rascunho", titulos: { quantidade: 1, centavos: 100 }, antecipacoes: { quantidade: 0, centavos: 0 }, totalCentavos: 100, caixa: null, autorizadaPor: null, observacao: null, link: "l" });
     expect(texto).toContain("· RASCUNHO");
     expect(texto).not.toContain("Caixa");
+  });
+});
+
+describe("pagamentos extras (fora do Consistem)", () => {
+  it("resumirItens soma os extras no total geral, separados dos lançamentos; removidos não contam", () => {
+    const r = resumirItens(
+      [{ tipo: "titulo", valorCentavos: 10_000, removido: false, baixadoConsistemEm: null }, { tipo: "antecipacao", valorCentavos: 5_000, removido: false, baixadoConsistemEm: null }],
+      [{ valorCentavos: 8_050, removido: false }, { valorCentavos: 999, removido: true }],
+    );
+    expect(r.extras).toEqual({ quantidade: 1, centavos: 8_050 });
+    expect(r.lancamentos).toEqual({ quantidade: 2, centavos: 15_000 });
+    expect(r.geral).toEqual({ quantidade: 3, centavos: 23_050 });
+    // sem extras, geral = lançamentos (compatível com o que já existia)
+    const s = resumirItens([{ tipo: "titulo", valorCentavos: 100, removido: false, baixadoConsistemEm: null }]);
+    expect(s.extras).toEqual({ quantidade: 0, centavos: 0 });
+    expect(s.geral).toEqual(s.lancamentos);
+  });
+  it("validarExtra aplica as mesmas regras do banco", () => {
+    expect(validarExtra({ descricao: "Frete avulso — NF 123", favorecido: "Transportadora XPTO", valorCentavos: 8_050 })).toBeNull();
+    expect(validarExtra({ descricao: "ab", favorecido: "Alguém", valorCentavos: 100 })).toMatch(/descrição/);
+    expect(validarExtra({ descricao: "Frete avulso", favorecido: " ", valorCentavos: 100 })).toMatch(/favorecido/);
+    expect(validarExtra({ descricao: "Frete avulso", favorecido: "Alguém", valorCentavos: 0 })).toMatch(/Valor inválido/);
+    expect(validarExtra({ descricao: "Frete avulso", favorecido: "Alguém", valorCentavos: null })).toMatch(/Valor inválido/);
+    expect(validarExtra({ descricao: "x".repeat(201), favorecido: "Alguém", valorCentavos: 100 })).toMatch(/descrição/);
+  });
+  it("extras só em rascunho, por operador ou acima", () => {
+    const operador = { podeOperar: true, ehGestor: false, userId: "u" };
+    const consulta = { podeOperar: false, ehGestor: false, userId: "u" };
+    expect(podeEditarExtras("rascunho", operador)).toBe(true);
+    expect(podeEditarExtras("autorizada", operador)).toBe(false);
+    expect(podeEditarExtras("rascunho", consulta)).toBe(false);
+  });
+  it("mensagemSlack cita os extras quando há", () => {
+    const base = { codigo: "101026", data: "10/10/2026", empresa: "NEO FORMAS", status: "autorizada" as const, titulos: { quantidade: 1, centavos: 100 }, antecipacoes: { quantidade: 0, centavos: 0 }, totalCentavos: 8_150, caixa: null, autorizadaPor: null, observacao: null, link: "http://x" };
+    expect(mensagemSlack({ ...base, extras: { quantidade: 1, centavos: 8_050 } })).toContain("Extras (fora do Consistem): 1 (R$ 80,50)");
+    expect(mensagemSlack(base)).not.toContain("Extras");
   });
 });

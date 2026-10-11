@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { lerAutorizacao, quandoEm, type LinhaItemAutorizacao } from "@/app/(plataforma)/financeiro/contas-pagar/dados";
+import { lerAutorizacao, quandoEm, type LinhaExtraAutorizacao, type LinhaItemAutorizacao } from "@/app/(plataforma)/financeiro/contas-pagar/dados";
 import { compararComCaixa, resumirItens, ROTULO_STATUS } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { MODULO_CONTAS_PAGAR } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -16,7 +16,7 @@ const centavos = (v: number | string | null) => (v === null ? 0 : Math.round(Num
 /**
  * Relatório de autorização de pagamento para imprimir ou salvar em PDF (impressora virtual do navegador). Sem a moldura do
  * painel. Mostra o que foi autorizado: títulos e antecipações copiados no momento da autorização, com complemento do
- * histórico, subtotal por tipo e total geral; selo quando é rascunho ou foi cancelada.
+ * histórico, pagamentos extras (fora do Consistem), subtotal por tipo e total geral; selo quando é rascunho ou foi cancelada.
  */
 export default async function PaginaImprimirAutorizacao({ params }: PageProps<"/imprimir/contas-pagar/autorizacao/[id]">) {
   const sessao = await exigirSessao();
@@ -27,11 +27,15 @@ export default async function PaginaImprimirAutorizacao({ params }: PageProps<"/
 
   const lido = await lerAutorizacao(await criarClienteServidor(), id);
   if (!lido) notFound();
-  const { autorizacao: a, itens } = lido;
+  const { autorizacao: a, itens, extras } = lido;
   const ativos = itens.filter((i) => i.removido_em === null);
   const titulos = ativos.filter((i) => i.tipo === "titulo");
   const antecipacoes = ativos.filter((i) => i.tipo === "antecipacao");
-  const resumo = resumirItens(ativos.map((i) => ({ tipo: i.tipo, valorCentavos: centavos(i.valor), removido: false, baixadoConsistemEm: i.baixado_consistem_em })));
+  const extrasAtivos = extras.filter((x) => x.removido_em === null);
+  const resumo = resumirItens(
+    ativos.map((i) => ({ tipo: i.tipo, valorCentavos: centavos(i.valor), removido: false, baixadoConsistemEm: i.baixado_consistem_em })),
+    extrasAtivos.map((x) => ({ valorCentavos: centavos(x.valor), removido: false })),
+  );
   const caixa = compararComCaixa(resumo.geral.centavos, a.caixa_disponivel === null ? null : centavos(a.caixa_disponivel));
   const selo = a.status === "rascunho" ? "RASCUNHO — SEM VALIDADE" : a.status === "cancelada" ? `CANCELADA EM ${formatarData(a.cancelada_em ?? "")}` : null;
 
@@ -56,11 +60,13 @@ export default async function PaginaImprimirAutorizacao({ params }: PageProps<"/
 
         <TabelaImpressa titulo="Títulos a pagar" lista={titulos} colunaData="Vencimento" subtotal={resumo.titulos.centavos} />
         <TabelaImpressa titulo="Antecipações a fornecedor" lista={antecipacoes} colunaData="Pagamento programado" subtotal={resumo.antecipacoes.centavos} />
+        {extrasAtivos.length > 0 && <TabelaExtrasImpressa lista={extrasAtivos} subtotal={resumo.extras.centavos} />}
 
         <table className="mt-3 ml-auto w-[320px] border-collapse text-[12px]">
           <tbody>
             <tr><td className="py-0.5 pr-4">Subtotal títulos ({resumo.titulos.quantidade})</td><td className="py-0.5 text-right tabular-nums">{formatarMoeda(resumo.titulos.centavos)}</td></tr>
             <tr><td className="py-0.5 pr-4">Subtotal antecipações ({resumo.antecipacoes.quantidade})</td><td className="py-0.5 text-right tabular-nums">{formatarMoeda(resumo.antecipacoes.centavos)}</td></tr>
+            {extrasAtivos.length > 0 && <tr><td className="py-0.5 pr-4">Subtotal pagamentos extras ({resumo.extras.quantidade})</td><td className="py-0.5 text-right tabular-nums">{formatarMoeda(resumo.extras.centavos)}</td></tr>}
             <tr className="border-t-2 border-black text-[13px] font-bold"><td className="py-1 pr-4">Total geral ({resumo.geral.quantidade} {resumo.geral.quantidade === 1 ? "item" : "itens"})</td><td className="py-1 text-right tabular-nums">{formatarMoeda(resumo.geral.centavos)}</td></tr>
             {caixa && (
               <>
@@ -83,6 +89,38 @@ export default async function PaginaImprimirAutorizacao({ params }: PageProps<"/
         </footer>
       </article>
     </>
+  );
+}
+
+function TabelaExtrasImpressa({ lista, subtotal }: { lista: LinhaExtraAutorizacao[]; subtotal: number }) {
+  return (
+    <section className="mb-4">
+      <h2 className="mb-1 text-[13px] font-bold uppercase">Pagamentos extras — fora do Consistem <span className="font-normal normal-case">({lista.length})</span></h2>
+      <table className="w-full border-collapse text-[11px]">
+        <thead>
+          <tr className="border-b border-black text-left">
+            <th className="py-1 pr-2 font-bold">Descrição</th>
+            <th className="py-1 pr-2 font-bold">Favorecido</th>
+            <th className="py-1 text-right font-bold">Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {lista.map((x) => (
+            <tr key={x.id} className="border-b border-gray-300 align-top">
+              <td className="py-1 pr-2">{x.descricao}</td>
+              <td className="py-1 pr-2">{x.favorecido}</td>
+              <td className="py-1 text-right font-medium tabular-nums">{formatarMoeda(centavos(x.valor))}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="font-bold">
+            <td colSpan={2} className="py-1 pr-2 text-right">Subtotal</td>
+            <td className="py-1 text-right tabular-nums">{formatarMoeda(subtotal)}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </section>
   );
 }
 

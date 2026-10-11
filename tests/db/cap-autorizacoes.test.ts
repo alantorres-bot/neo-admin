@@ -58,10 +58,10 @@ describe("criar autorização (rascunho)", () => {
     expect(r2.numero).toBe(2);
     expect(r2.codigo).toBe(`${r.codigo}-2`);
   });
-  it("recusa: consulta, lista vazia, crédito (D), lançamento baixado e lançamento já em autorização ativa", async () => {
+  it("recusa: consulta, lista vazia ao autorizar, crédito (D), lançamento baixado e lançamento já em autorização ativa", async () => {
     const t = await lancamento("C", 10);
     await expect(criar(finConsulta, [t])).rejects.toThrow(/Somente operador/);
-    await expect(criar(finOperador, [])).rejects.toThrow(/pelo menos um item/);
+    await expect(criar(finOperador, [], { autorizar: true })).rejects.toThrow(/pelo menos um item/); // rascunho vazio é permitido (extras); autorizar na hora, não
     const d = await lancamento("D", 10);
     await expect(criar(finOperador, [d])).rejects.toThrow(/já saiu dos abertos|não é título/);
     const baixado = await lancamento("C", 10);

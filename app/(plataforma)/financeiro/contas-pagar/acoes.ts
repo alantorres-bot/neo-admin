@@ -65,13 +65,14 @@ export type ResultadoCriar = { ok: true; id: string; numero: number; codigo: str
 
 const esquemaCriar = z.object({
   empresaId: z.string().uuid(),
-  lancamentoIds: z.array(z.string().uuid()).min(1, "Marque pelo menos um item.").max(500, "Uma autorização aceita no máximo 500 itens."),
+  /** Vazio = rascunho vazio, para receber só pagamentos extras (fora do Consistem). Autorizar na hora exige itens. */
+  lancamentoIds: z.array(z.string().uuid()).max(500, "Uma autorização aceita no máximo 500 itens."),
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.").nullable().default(null),
   observacao: z.string().trim().max(500, "A observação pode ter até 500 caracteres.").default(""),
   autorizar: z.boolean().default(false),
   /** Caixa disponível informado pela diretoria, em centavos; nulo = não informado. Ultrapassar é só aviso. */
   caixaCentavos: z.number().int().min(0).max(100_000_000_000).nullable().default(null),
-});
+}).refine((v) => !(v.autorizar && v.lancamentoIds.length === 0), { message: "Marque pelo menos um item.", path: ["lancamentoIds"] });
 
 /**
  * Gera a autorização de pagamento (função de banco `cap_criar_autorizacao`, numa transação): cabeçalho numerado + cópia dos
@@ -100,7 +101,9 @@ export async function criarAutorizacao(entrada: z.input<typeof esquemaCriar>): P
     ok: true, id: resultado.id, numero: resultado.numero, codigo: resultado.codigo, status: resultado.status,
     aviso: resultado.status === "autorizada"
       ? `Autorização ${resultado.codigo} gerada e autorizada (${resultado.itens} ${resultado.itens === 1 ? "item" : "itens"}). A pendência de execução está na Fila do dia.`
-      : `Rascunho da autorização ${resultado.codigo} gerado com ${resultado.itens} ${resultado.itens === 1 ? "item" : "itens"}.`,
+      : resultado.itens === 0
+        ? `Rascunho vazio da autorização ${resultado.codigo} criado. Inclua os pagamentos extras na página da autorização.`
+        : `Rascunho da autorização ${resultado.codigo} gerado com ${resultado.itens} ${resultado.itens === 1 ? "item" : "itens"}.`,
   };
 }
 
