@@ -109,7 +109,7 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, r
               desativado={!umaEmpresa || caixaInvalido || salvando}
               totalAtualCentavos={totalComRascunho}
               caixaCentavos={caixaCentavos}
-              contexto={marcadas.size > 0 ? `Os ${marcadas.size} ${marcadas.size === 1 ? "item marcado" : "itens marcados"} (${formatarMoeda(totalMarcado)}) também são salvos no rascunho.` : rascunho ? `Entra no rascunho ${rascunho.codigo}.` : "Cria o rascunho de hoje e inclui o pagamento."}
+              contexto={marcadas.size === 1 ? `O item marcado (${formatarMoeda(totalMarcado)}) também é salvo no rascunho.` : marcadas.size > 1 ? `Os ${marcadas.size} itens marcados (${formatarMoeda(totalMarcado)}) também são salvos no rascunho.` : rascunho ? `Entra no rascunho ${rascunho.codigo}.` : "Cria o rascunho de hoje e inclui o pagamento."}
               aoConfirmar={(extra) => montarRascunho({ empresaId: empresaId ?? "", lancamentoIds: [...marcadas], caixaCentavos: caixaParaGravar, extra })}
               aoSucesso={() => setMarcadas(new Set())}
             />
