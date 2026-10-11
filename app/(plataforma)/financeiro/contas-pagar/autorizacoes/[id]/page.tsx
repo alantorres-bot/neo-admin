@@ -15,7 +15,7 @@ import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { lerAutorizacao, quandoEm, type LinhaExtraAutorizacao } from "../../dados";
-import { AnexarAssinada, BotaoAutorizar, BotaoEnviarSlack, BotaoRemoverExtra, DialogoCaixa, DialogoCancelar, DialogoExtraAutorizacao } from "./componentes";
+import { BotaoAutorizar, BotaoEnviarSlack, BotaoExcluirDaLista, BotaoRemoverExtra, DialogoCaixa, DialogoCancelar, DialogoExtraAutorizacao } from "./componentes";
 import { SecaoItens } from "./secao-itens";
 
 export const metadata: Metadata = { title: "Autorização de pagamento" };
@@ -38,7 +38,7 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
   // Link absoluto da autorização para a mensagem (host e protocolo da própria requisição).
   const host = cabecalhos.get("x-forwarded-host") ?? cabecalhos.get("host") ?? "localhost:3000";
   const protocolo = cabecalhos.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  const { autorizacao: a, itens, extras, anexos } = lido;
+  const { autorizacao: a, itens, extras } = lido;
 
   const papel = { podeOperar: temAcesso(sessao.acesso, "financeiro", "operador"), ehGestor: temAcesso(sessao.acesso, "financeiro", "gestor"), userId: sessao.userId };
   const resumo = resumirItens(
@@ -73,12 +73,13 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
           </p>
           {a.observacao && <p className="mt-1 text-sm">{a.observacao}</p>}
           {a.motivo_cancelamento && <p className="mt-1 text-sm text-destructive">Motivo do cancelamento: {a.motivo_cancelamento}</p>}
+          {a.excluida_em && <p className="mt-1 text-sm text-destructive">Excluída da lista por {a.excluida_por_nome ?? "—"} em {quandoEm(a.excluida_em)}{a.motivo_exclusao ? ` — ${a.motivo_exclusao}` : ""}.</p>}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="ghost" render={<Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes`} />}>Voltar ao histórico</Button>
           <Button variant="outline" render={<a href={rotaImpressao(a.id)} target="_blank" rel="noopener" />}><Printer /> Imprimir / salvar PDF</Button>
           {a.status !== "cancelada" && <BotaoEnviarSlack id={a.id} codigo={a.codigo} mensagem={textoSlack} canalUrl={parametrosModulo.slackCanalUrl} ehGestor={papel.ehGestor} jaEnviadaEm={a.slack_enviada_em ? quandoEm(a.slack_enviada_em) : null} />}
-          {papel.podeOperar && a.status !== "rascunho" && <AnexarAssinada autorizacaoId={a.id} temAnexo={anexos.length > 0} />}
+          {papel.ehGestor && a.status === "cancelada" && !a.excluida_em && <BotaoExcluirDaLista id={a.id} codigo={a.codigo} />}
           {podeAutorizar(a.status, papel) && <BotaoAutorizar id={a.id} codigo={a.codigo} resumo={resumoTexto} />}
           {podeCancelar(a.status, a.criado_por, papel) && a.status !== "cancelada" && <DialogoCancelar id={a.id} codigo={a.codigo} status={a.status} enviadaSlack={Boolean(a.slack_enviada_em && !a.slack_retirada_em)} />}
           {a.status === "rascunho" && papel.podeOperar && <DialogoCaixa id={a.id} caixaCentavos={caixaCentavos} />}
@@ -140,24 +141,6 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
       <SecaoItens titulo="Títulos" lista={titulos} total={resumo.titulos.centavos} autorizacaoId={a.id} podeRemover={podeRemoverItem(a.status, papel)} />
       <SecaoItens titulo="Antecipações" lista={antecipacoes} total={resumo.antecipacoes.centavos} autorizacaoId={a.id} podeRemover={podeRemoverItem(a.status, papel)} />
       <SecaoExtras lista={extrasAtivos} total={resumo.extras.centavos} totalAutorizacao={resumo.geral.centavos} caixaCentavos={caixaCentavos} autorizacaoId={a.id} podeEditar={podeEditarExtras(a.status, papel)} />
-
-      {(anexos.length > 0 || a.status === "autorizada") && (
-        <section className="space-y-2">
-          <h3 className="text-sm font-bold">Relatório assinado</h3>
-          {anexos.length === 0 ? (
-            <p className="text-xs text-muted-foreground">Nenhum arquivo anexado. Depois de imprimir e colher a assinatura, anexe o PDF ou a foto aqui para ficar junto do histórico.</p>
-          ) : (
-            <ul className="space-y-1 text-sm">
-              {anexos.map((x) => (
-                <li key={x.id}>
-                  {x.url ? <a href={x.url} target="_blank" rel="noopener" className="text-elo hover:underline">{x.nome}</a> : <span>{x.nome}</span>}
-                  <span className="ml-2 text-xs text-muted-foreground">enviado em {x.enviadoEm}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      )}
 
       {(removidos.length > 0 || extrasRemovidos.length > 0) && (
         <section className="space-y-2">

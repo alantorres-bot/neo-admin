@@ -62,6 +62,22 @@ export async function cancelar(entrada: z.input<typeof esquemaMotivo>): Promise<
   return { ok: true, aviso: `Autorização ${r.codigo} cancelada. Os itens voltam à lista de pendentes.${complemento}` };
 }
 
+const esquemaExcluir = z.object({ id: uuid, motivo: z.string().trim().max(300, "O motivo pode ter até 300 caracteres.").default("") });
+
+/** Tira da lista uma autorização cancelada (só gestor; função de banco `cap_excluir_da_lista`). Nada é apagado. */
+export async function excluirDaLista(entrada: z.input<typeof esquemaExcluir>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "gestor")) return { ok: false, erro: "Somente gestor do Financeiro (ou acima) pode excluir uma autorização da lista." };
+  const dados = esquemaExcluir.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.rpc("cap_excluir_da_lista", { p_id: dados.data.id, p_motivo: dados.data.motivo || null });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidar(dados.data.id);
+  const r = (data ?? {}) as { codigo?: string };
+  return { ok: true, aviso: `Autorização ${r.codigo} excluída da lista.` };
+}
+
 const esquemaRemover = z.object({ autorizacaoId: uuid, itemId: uuid, motivo: z.string().trim().min(3, "Informe o motivo.").max(300) });
 
 /** Remove um item do rascunho (registro com motivo; nunca delete). */

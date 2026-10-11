@@ -260,3 +260,8 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
   o documento; clicar no título da coluna ordena (crescente ↔ decrescente; nulos por último). Lista de pendentes: ordem pela URL
   (`?ordem=fornecedor&dir=asc`), aplicada sobre a lista inteira antes de paginar (`lib/.../ordenacao.ts`, `cabecalho-ordenavel.tsx`);
   autorização: estado local (`autorizacoes/[id]/secao-itens.tsx`). Vencido sem destaque na linha (o filtro "Só vencidos" basta).
+- **Excluir da lista e fim do "Anexar PDF assinado" (11/10/2026, pedido do Alan: "nós não assinamos nada"):** saem o botão
+  "Anexar PDF assinado" e a seção "Relatório assinado". Entra **"Excluir da lista"**, só para autorização **cancelada** e só
+  gestor: migration `0128_cap_excluir_da_lista.sql` (`excluida_em/por`, `motivo_exclusao`; `cap_excluir_da_lista`; gatilho
+  permite só essa mudança numa cancelada, uma vez). Nada é apagado: a autorização some do histórico (`listarAutorizacoes`
+  filtra `excluida_em is null`) e fica no banco com quem excluiu, quando e o motivo.

@@ -1,19 +1,16 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Paperclip, Send } from "lucide-react";
+import { Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { parseReais, TIPO_ANEXO_AUTORIZACAO } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { parseReais } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import { MODULO_CONTAS_PAGAR } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
-import { enviarAnexo } from "@/lib/nucleo/anexos";
-import { criarClienteNavegador } from "@/lib/supabase/navegador";
 import { DialogoExtra } from "../../dialogo-extra";
-import { autorizar, cancelar, definirCaixa, enviarNoSlack, incluirExtra, removerExtra, removerItem } from "./acoes";
+import { autorizar, cancelar, definirCaixa, enviarNoSlack, excluirDaLista, incluirExtra, removerExtra, removerItem } from "./acoes";
 
 /** "Incluir pagamento extra" na página da autorização (rascunho): o diálogo compartilhado gravando via `incluirExtra`. */
 export function DialogoExtraAutorizacao({ autorizacaoId, totalAtualCentavos, caixaCentavos }: { autorizacaoId: string; totalAtualCentavos: number; caixaCentavos: number | null }) {
@@ -123,40 +120,51 @@ export function DialogoCaixa({ id, caixaCentavos }: { id: string; caixaCentavos:
   );
 }
 
-/** Guarda o relatório assinado (PDF ou foto) como anexo da autorização. Anexo é prova: não se apaga; para trocar, envie outro. */
-export function AnexarAssinada({ autorizacaoId, temAnexo }: { autorizacaoId: string; temAnexo: boolean }) {
+/** Tira uma autorização CANCELADA da lista (só gestor). Nada é apagado: fica gravada com quem excluiu, quando e por quê. */
+export function BotaoExcluirDaLista({ id, codigo }: { id: string; codigo: string }) {
   const router = useRouter();
-  const entrada = useRef<HTMLInputElement>(null);
-  const [enviando, setEnviando] = useState(false);
+  const [aberto, setAberto] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [erro, setErro] = useState<string>();
+  const [pendente, iniciar] = useTransition();
 
-  async function aoEscolher(e: React.ChangeEvent<HTMLInputElement>) {
-    const arquivo = e.target.files?.[0];
-    e.target.value = "";
-    if (!arquivo) return;
-    if (!(arquivo.type === "application/pdf" || arquivo.type.startsWith("image/"))) {
-      toast.error("Envie o relatório assinado em PDF ou imagem.");
-      return;
-    }
-    setEnviando(true);
-    try {
-      const r = await enviarAnexo(criarClienteNavegador(), { modulo: MODULO_CONTAS_PAGAR, referenciaTabela: "cap_autorizacoes", referenciaId: autorizacaoId }, arquivo, TIPO_ANEXO_AUTORIZACAO);
+  function confirmar() {
+    iniciar(async () => {
+      const r = await excluirDaLista({ id, motivo });
       if (r.ok) {
-        toast.success("Relatório assinado anexado.");
-        router.refresh();
+        toast.success(r.aviso);
+        setAberto(false);
+        router.push("/financeiro/contas-pagar/autorizacoes");
       } else {
-        toast.error(r.erro);
+        setErro(r.erro);
       }
-    } finally {
-      setEnviando(false);
-    }
+    });
   }
 
   return (
     <>
-      <input ref={entrada} type="file" accept="application/pdf,image/*" className="hidden" onChange={aoEscolher} />
-      <Button type="button" variant="outline" disabled={enviando} onClick={() => entrada.current?.click()}>
-        <Paperclip /> {enviando ? "Enviando…" : temAnexo ? "Anexar outra versão assinada" : "Anexar PDF assinado"}
-      </Button>
+      <Button type="button" variant="outline" onClick={() => { setErro(undefined); setAberto(true); }}><Trash2 /> Excluir da lista</Button>
+      {aberto && (
+        <Dialog open onOpenChange={(v) => { if (!v) setAberto(false); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Excluir a autorização {codigo} da lista?</DialogTitle>
+              <DialogDescription>Ela some do histórico e das telas. O registro fica guardado no banco com quem excluiu e quando, mas não volta para a lista.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3">
+              <div className="grid gap-1.5">
+                <label htmlFor="cap-motivo-excluir" className="text-sm font-medium">Motivo (opcional)</label>
+                <Input id="cap-motivo-excluir" value={motivo} onChange={(e) => setMotivo(e.target.value)} maxLength={300} placeholder="Ex.: era teste" />
+              </div>
+              {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => setAberto(false)} disabled={pendente}>Voltar</Button>
+                <Button type="button" variant="destructive" onClick={confirmar} disabled={pendente}>{pendente ? "Excluindo…" : "Excluir da lista"}</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

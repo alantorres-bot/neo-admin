@@ -123,6 +123,7 @@ export type LinhaAutorizacao = {
   itens: number; titulos: number; antecipacoes: number; total_titulos: number | string; total_antecipacoes: number | string; total: number | string; baixados: number;
   /** Pagamentos extras (fora do Consistem) ativos e sua soma; `total` já inclui. */
   extras: number; total_extras: number | string;
+  excluida_em: string | null; excluida_por_nome: string | null; motivo_exclusao: string | null;
 };
 
 /** Pagamento extra da autorização (fora do Consistem). Removidos ficam na lista para o histórico. */
@@ -140,10 +141,10 @@ export type LinhaItemAutorizacao = {
   tem_bordero: boolean | null;
 };
 
-const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados, extras, total_extras";
+const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados, extras, total_extras, excluida_em, excluida_por_nome, motivo_exclusao";
 
 export async function listarAutorizacoes(supabase: Cliente, filtro: { status: string | null; pagina: number; porPagina: number }): Promise<{ linhas: LinhaAutorizacao[]; total: number }> {
-  let consulta = supabase.from("cap_vw_autorizacoes").select(COLUNAS_AUTORIZACAO, { count: "exact" }).order("numero", { ascending: false })
+  let consulta = supabase.from("cap_vw_autorizacoes").select(COLUNAS_AUTORIZACAO, { count: "exact" }).is("excluida_em", null).order("numero", { ascending: false })
     .range((filtro.pagina - 1) * filtro.porPagina, filtro.pagina * filtro.porPagina - 1);
   if (filtro.status) consulta = consulta.eq("status", filtro.status);
   const { data, count, error } = await consulta;
