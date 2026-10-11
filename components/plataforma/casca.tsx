@@ -1,6 +1,7 @@
 "use client";
 
-// Moldura no visual do ERP Consistem (a mesma do Vigilância Fiscal): trilho escuro de ícones à esquerda, barra vermelha no
+// Moldura no visual do ERP Consistem (a mesma do Vigilância Fiscal): trilho escuro à esquerda com as áreas (cada uma abre
+// um submenu com seus módulos, em `submenu-area.tsx`), barra vermelha no
 // topo com a "aba" da tela atual e trilha de navegação em vermelho. O trilho tem 68 px no computador; abaixo de `md`
 // (celular) ele vira uma barra inferior que rola na horizontal.
 import { useEffect } from "react";
@@ -11,6 +12,7 @@ import { sair } from "@/app/(auth)/login/acoes";
 import { cn } from "@/lib/utils";
 import type { MenuArea } from "@/lib/nucleo/permissoes";
 import { iconeDoItem } from "./icones";
+import { AreasDoTrilho } from "./submenu-area";
 
 type Usuario = { nome: string; email: string; adminGeral: boolean };
 
@@ -87,13 +89,9 @@ export function Casca({
         </Link>
         <nav aria-label="Principal" className="flex flex-1 flex-row overflow-x-auto [scrollbar-width:none] md:flex-col md:overflow-y-auto md:py-1 [&::-webkit-scrollbar]:hidden">
           <ItemTrilho href="/inicio" icone={House} rotulo="Início" ativo={ativo("/inicio")} />
-          {menu.map(({ area, modulos }) => (
-            <div key={area.codigo} className="flex border-l border-white/10 md:mt-1 md:block md:border-l-0 md:border-t md:pt-1">
-              {modulos.map((m) => (
-                <ItemTrilho key={m.codigo} href={m.rota} icone={iconeDoItem(area.codigo, m.codigo, m.icone)} rotulo={m.nome} titulo={`${area.nome} › ${m.nome}${m.externo ? " (aplicativo externo)" : ""}`} ativo={ativo(m.rota)} />
-              ))}
-            </div>
-          ))}
+          <div className="flex border-l border-white/10 md:mt-1 md:block md:border-l-0 md:border-t md:pt-1">
+            <AreasDoTrilho menu={menu} caminho={caminho} />
+          </div>
         </nav>
         <div className="flex shrink-0 border-l border-white/10 md:block md:border-l-0 md:border-t">
           {mostrarConfiguracoes && <ItemTrilho href="/configuracoes" icone={Settings} rotulo="Config." titulo="Configurações" ativo={ativo("/configuracoes")} />}

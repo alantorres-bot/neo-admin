@@ -66,10 +66,13 @@ export type MenuArea = {
 };
 
 /**
- * Menu lateral e cartões do Início: só áreas em que o usuário tem acesso e que possuem algo ativo. Em cada área, primeiro os
- * módulos nativos ativos, depois os aplicativos externos ativos (na ordem cadastrada).
+ * Menu lateral e cartões do Início: só áreas em que o usuário tem acesso. Em cada área, primeiro os módulos nativos ativos,
+ * depois os aplicativos externos ativos (na ordem cadastrada). Por padrão, áreas sem nada ativo ficam de fora (cartões do
+ * Início); o menu lateral pede `incluirVazias` para mostrar todas as áreas (a vazia abre "Nenhum módulo ainda").
  */
-export function montarMenu(areas: readonly Area[], modulos: readonly Modulo[], acesso: Acesso, aplicativos: readonly Aplicativo[] = []): MenuArea[] {
+export function montarMenu(
+  areas: readonly Area[], modulos: readonly Modulo[], acesso: Acesso, aplicativos: readonly Aplicativo[] = [], opcoes: { incluirVazias?: boolean } = {},
+): MenuArea[] {
   return [...areas]
     .sort((a, b) => a.ordem - b.ordem)
     .filter((area) => temAcesso(acesso, area.codigo, "consulta"))
@@ -87,5 +90,5 @@ export function montarMenu(areas: readonly Area[], modulos: readonly Modulo[], a
           })),
       ],
     }))
-    .filter((item) => item.modulos.length > 0);
+    .filter((item) => opcoes.incluirVazias || item.modulos.length > 0);
 }

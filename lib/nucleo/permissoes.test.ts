@@ -54,6 +54,12 @@ describe("menu lateral", () => {
     expect(montarMenu(areas, modulos, admin).map((m) => m.area.codigo)).toEqual(["financeiro", "juridico"]);
   });
 
+  it("menu lateral (incluirVazias) mostra também a área com acesso e sem módulo ativo; sem acesso continua fora", () => {
+    const menu = montarMenu(areas, modulos, comum, [], { incluirVazias: true });
+    expect(menu.map((m) => [m.area.codigo, m.modulos.length])).toEqual([["financeiro", 1], ["fiscal", 0]]);
+    expect(montarMenu(areas, modulos, { adminGeral: false, niveis: {} }, [], { incluirVazias: true })).toEqual([]);
+  });
+
   it("usuário sem nenhuma permissão não vê menu de área", () => {
     expect(montarMenu(areas, modulos, { adminGeral: false, niveis: {} })).toEqual([]);
     expect(montarMenu(areas, modulos, { adminGeral: false, niveis: { financeiro: "sem_acesso" } })).toEqual([]);
