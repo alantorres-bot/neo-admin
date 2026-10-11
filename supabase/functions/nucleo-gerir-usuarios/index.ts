@@ -4,7 +4,7 @@
 // decide, antes de qualquer operação privilegiada.
 //
 // Corpo (JSON), campo `acao`:
-//   criar_usuario   { email, nome, senha }
+//   criar_usuario   { email, nome, senha? }   (sem senha: a pessoa entra só com o Google; docs/LOGIN_GOOGLE.md)
 //   redefinir_senha { id, senha }
 //   definir_ativo   { id, ativo }
 //
@@ -55,16 +55,16 @@ Deno.serve(async (req) => {
       const senha = String(corpo.senha ?? "");
       if (!EMAIL.test(email)) return responder({ erro: "E-mail inválido." }, 400);
       if (nome.length < 2) return responder({ erro: "Informe o nome." }, 400);
-      if (senha.length < SENHA_MINIMA) return responder({ erro: `A senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.` }, 400);
+      if (senha && senha.length < SENHA_MINIMA) return responder({ erro: `A senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.` }, 400);
 
-      // O gatilho (migrations 0003/0005) cria o perfil sem nenhuma permissão e, por causa de
-      // app_metadata.deve_trocar_senha (que só a service role grava), com a troca de senha obrigatória.
+      // O gatilho (migrations 0003/0005/0007) cria o perfil sem nenhuma permissão. Com senha inicial, vai
+      // app_metadata.deve_trocar_senha (só a service role grava) e a troca é obrigatória no primeiro acesso por senha.
+      // Sem senha, a pessoa entra só com a conta Google da empresa: não há senha temporária para trocar.
       const { data, error } = await admin.auth.admin.createUser({
         email,
-        password: senha,
         email_confirm: true,
         user_metadata: { nome },
-        app_metadata: { deve_trocar_senha: true },
+        ...(senha ? { password: senha, app_metadata: { deve_trocar_senha: true } } : {}),
       });
       if (error) {
         if (error.code === "email_exists") return responder({ erro: "Já existe um usuário com este e-mail." }, 409);

@@ -23,6 +23,25 @@ test.describe("tela de login", () => {
     await expect(page.getByLabel("Senha")).toBeVisible();
   });
 
+  test("oferece entrar com o Google por um link (não por formulário)", async ({ page }) => {
+    await page.goto("/login?proximo=%2Fconfiguracoes%2Fempresas");
+    const link = page.getByRole("link", { name: "Entrar com Google" });
+    await expect(link).toBeVisible();
+    await expect(link).toHaveAttribute("href", "/auth/google?proximo=%2Fconfiguracoes%2Fempresas");
+  });
+
+  test("mostra o motivo quando o e-mail não tem cadastro", async ({ page }) => {
+    await page.goto("/login?erro=sem_cadastro");
+    // getByText, não getByRole("alert"): o Next injeta um anunciador de rota que também tem role="alert".
+    await expect(page.getByText("ainda não tem acesso")).toBeVisible();
+  });
+
+  test("a volta do Google é pública: sem código, volta ao login com aviso", async ({ page }) => {
+    await page.goto("/auth/callback");
+    await expect(page).toHaveURL(/\/login\?erro=google$/);
+    await expect(page.getByText("Não foi possível entrar com o Google")).toBeVisible();
+  });
+
   test("não aceita enviar vazio", async ({ page }) => {
     await page.goto("/login");
     await page.getByRole("button", { name: "Entrar" }).click();

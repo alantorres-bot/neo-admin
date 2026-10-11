@@ -28,6 +28,8 @@ const PREPARO_SUPABASE = `
   );
   create function auth.uid() returns uuid language sql stable as $$
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $$;
+  create function auth.jwt() returns jsonb language sql stable as $$
+    select coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb, '{}'::jsonb) $$;
 
   create table storage.buckets (
     id text primary key, name text not null, public boolean not null default false, file_size_limit bigint
@@ -89,16 +91,22 @@ export async function novoUsuario(
 
 type Quem = string | "service" | "anon";
 
-/** Executa `fn` com o papel e o usuário da API do Supabase (RLS valendo). */
-export async function como<T>(db: PGlite, quem: Quem, fn: () => Promise<T>): Promise<T> {
+/**
+ * Executa `fn` com o papel e o usuário da API do Supabase (RLS valendo).
+ * `oauth: true` simula sessão iniciada pelo Google (claim `amr`); o padrão é sessão por senha.
+ */
+export async function como<T>(db: PGlite, quem: Quem, fn: () => Promise<T>, opcoes: { oauth?: boolean } = {}): Promise<T> {
   const papel = quem === "service" ? "service_role" : quem === "anon" ? "anon" : "authenticated";
   const sub = quem === "service" || quem === "anon" ? "" : quem;
+  const claims = sub ? JSON.stringify({ sub, amr: [{ method: opcoes.oauth ? "oauth" : "password", timestamp: 1 }] }) : "";
   await db.query(`select set_config('request.jwt.claim.sub', $1, false)`, [sub]);
+  await db.query(`select set_config('request.jwt.claims', $1, false)`, [claims]);
   await db.exec(`set role ${papel}`);
   try {
     return await fn();
   } finally {
     await db.exec(`reset role`);
     await db.query(`select set_config('request.jwt.claim.sub', '', false)`);
+    await db.query(`select set_config('request.jwt.claims', '', false)`);
   }
 }

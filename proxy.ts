@@ -25,8 +25,10 @@ export async function proxy(request: NextRequest) {
   const logado = Boolean(data?.claims);
   const { pathname, search } = request.nextUrl;
   const naTelaDeLogin = pathname === "/login";
+  // /auth/* = ida e volta do "Entrar com Google" (docs/LOGIN_GOOGLE.md): precisa funcionar sem sessão.
+  const rotaPublica = naTelaDeLogin || pathname.startsWith("/auth/");
 
-  if (!logado && !naTelaDeLogin) {
+  if (!logado && !rotaPublica) {
     const destino = request.nextUrl.clone();
     destino.pathname = "/login";
     destino.search = pathname === "/" ? "" : `?proximo=${encodeURIComponent(pathname + search)}`;

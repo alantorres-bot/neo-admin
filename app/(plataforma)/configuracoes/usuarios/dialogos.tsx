@@ -11,7 +11,7 @@ export function DialogoNovoUsuario() {
   return (
     <DialogoFormulario
       titulo="Novo usuário"
-      descricao="O usuário entra sem nenhuma permissão; libere as áreas depois de criar. Informe a senha inicial pessoalmente: no primeiro acesso ele é obrigado a trocá-la."
+      descricao="O usuário entra sem nenhuma permissão; libere as áreas depois de criar. Quem tem conta Google da Neo Formas entra com o Google: deixe a senha em branco. Se informar uma senha inicial, avise pessoalmente; no primeiro acesso por senha ele é obrigado a trocá-la."
       botao={<><Plus /> Novo usuário</>}
       variante="default"
       tamanho="default"
@@ -21,8 +21,8 @@ export function DialogoNovoUsuario() {
     >
       <Campo id="nome" rotulo="Nome"><Input id="nome" name="nome" required /></Campo>
       <Campo id="email" rotulo="E-mail"><Input id="email" name="email" type="email" autoComplete="off" required /></Campo>
-      <Campo id="senha" rotulo="Senha inicial" dica="Mínimo de 8 caracteres.">
-        <Input id="senha" name="senha" type="text" autoComplete="off" minLength={8} required />
+      <Campo id="senha" rotulo="Senha inicial (opcional)" dica="Em branco, a pessoa entra só com o Google. Se preencher, mínimo de 8 caracteres.">
+        <Input id="senha" name="senha" type="text" autoComplete="off" minLength={8} />
       </Campo>
     </DialogoFormulario>
   );

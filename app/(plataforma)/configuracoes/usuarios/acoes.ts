@@ -32,12 +32,13 @@ async function chamarGestaoUsuarios(corpo: Record<string, unknown>): Promise<{ o
 const esquemaNovo = z.object({
   nome: z.string().trim().min(2, "Informe o nome."),
   email: z.string().trim().email("E-mail inválido."),
-  senha: z.string().min(8, "A senha precisa ter pelo menos 8 caracteres."),
+  // Em branco: a pessoa entra só com o Google (docs/LOGIN_GOOGLE.md). Preenchida: mínimo de 8 e troca obrigatória.
+  senha: z.string().refine((s) => s === "" || s.length >= 8, "A senha precisa ter pelo menos 8 caracteres."),
 });
 
 export async function criarUsuario(_anterior: EstadoForm, dados: FormData): Promise<EstadoForm> {
   await exigirAdminGeral();
-  const entrada = esquemaNovo.safeParse({ nome: dados.get("nome"), email: dados.get("email"), senha: dados.get("senha") });
+  const entrada = esquemaNovo.safeParse({ nome: dados.get("nome"), email: dados.get("email"), senha: String(dados.get("senha") ?? "") });
   if (!entrada.success) return { erro: entrada.error.issues[0].message };
 
   const r = await chamarGestaoUsuarios({ acao: "criar_usuario", ...entrada.data });

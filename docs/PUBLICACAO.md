@@ -29,6 +29,8 @@ A senha do banco novo e o segredo de sincronização foram gerados no computador
 1. Token do Consistem no projeto novo: `node scripts/gravar-segredo.mjs CONSISTEM_API_KEY --ref chdszjpbtfpstjrqnmmm` (cole o token quando pedir; ele não aparece na tela).
 2. Autorizar o Gmail: `node scripts/gmail-autorizar.mjs --ref chdszjpbtfpstjrqnmmm` (pede o ID e o segredo do cliente OAuth "Neo Admin Gmail" e abre o login do Google).
 3. Criar a conta da hospedagem escolhida (seção 4).
+4. Login com Google: criar o cliente OAuth "Neo Formas Login" no Google Cloud e ligar o provedor Google no Supabase
+   (Authentication > Providers), com Site URL e Redirect URLs do Cloud Run. Passo a passo em `docs/LOGIN_GOOGLE.md`, seção 4.
 
 ## 4. Hospedagem do aplicativo
 O servidor Next gasta ~160 ms de CPU por requisição, então o plano gratuito da Cloudflare Workers (10 ms) **não serve**. Opções sem custo:

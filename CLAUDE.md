@@ -57,7 +57,10 @@ docs/modulos/                -> uma especificação por módulo
    prazo legal, fundamento ou cláusula; em dúvida, perguntar.
 8. O Neo Admin é o **super painel** do grupo: aplicativos de outras áreas (Vigilância Fiscal, NEOControl, apps de Produção…)
    são cadastrados na tabela `aplicativos` (Configurações > Aplicativos) e abrem em `/apps/<codigo>`; nunca fixar URL de app no código.
-   Eles continuam sistemas separados, com login próprio: o painel só organiza o acesso por área.
+   Eles continuam sistemas separados, cada um com seu banco e sua sessão; a identidade comum é a conta Google do
+   Workspace ("Entrar com Google", `docs/LOGIN_GOOGLE.md`). O painel organiza o acesso por área.
+9. Login por e-mail/senha ou Google (só `@neoformas.com.br`; cadastro fechado, o admin cria o usuário). A troca de senha
+   pendente só prende sessão iniciada por senha (claim `amr`; funções `acesso_liberado()`/`sessao_por_oauth()`, migration 0007).
 
 ## Segurança
 - Nunca commitar chaves (`.env.local` no `.gitignore`); `.env.example` com os nomes das variáveis.

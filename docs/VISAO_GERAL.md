@@ -66,5 +66,6 @@ Os sistemas das outras áreas **não** são fundidos ao Neo Admin: cada um segue
 O Neo Admin é a porta de entrada única: tabela `aplicativos` (migration 0006), rota `app/(plataforma)/apps/[codigo]`
 (quadro embutido com "Abrir em nova aba", ou só nova aba), itens no menu e cartões no Início via `montarMenu(..., aplicativos)`.
 Cadastro em Configurações > Aplicativos (admin_geral): nome, código, endereço https, área, modo de abertura, ícone, ordem, ativo.
-Limite conhecido: cada app pede o próprio login uma vez por navegador (bancos separados). Login único só com migração ou
-"Entrar com Google" em cada app, ambos fora do escopo atual.
+Identidade comum: a conta Google do Workspace. O Neo Admin aceita "Entrar com Google" desde 10/10/2026 (`docs/LOGIN_GOOGLE.md`,
+migration 0007); a Vigilância Fiscal e o NEOControl recebem o mesmo botão na fase seguinte, funcionando dentro do quadro
+embutido por meio de uma janela de login (popup). Os bancos continuam separados: sair de um app não sai dos outros.

@@ -8,7 +8,8 @@ export const metadata: Metadata = { title: "Minha conta" };
 
 export default async function PaginaConta() {
   const sessao = await exigirSessao({ permitirTrocaPendente: true });
-  const obrigatoria = sessao.perfil.ativo && sessao.perfil.deve_trocar_senha;
+  // Quem entrou pelo Google não é cobrado pela senha temporária (ver docs/LOGIN_GOOGLE.md, seção 3).
+  const obrigatoria = sessao.porSenha && sessao.perfil.ativo && sessao.perfil.deve_trocar_senha;
   return (
     <div className="max-w-xl space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">Minha conta</h1>

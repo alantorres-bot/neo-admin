@@ -4,6 +4,7 @@
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
+import { entrouPorOAuth } from "./login";
 import type { Acesso } from "./permissoes";
 import type { Aplicativo, Area, Modulo, NivelAcesso, Perfil } from "./tipos";
 
@@ -15,6 +16,8 @@ export type Sessao = {
   modulos: Modulo[];
   /** Aplicativos externos ativos que o usuário pode ver (a RLS já filtra pela área). */
   aplicativos: Aplicativo[];
+  /** Sessão iniciada por e-mail e senha (e não pelo Google): só ela fica presa à troca de senha pendente. */
+  porSenha: boolean;
 };
 
 export const obterSessao = cache(async (): Promise<Sessao | null> => {
@@ -47,7 +50,9 @@ export const obterSessao = cache(async (): Promise<Sessao | null> => {
   for (const p of permissoes.data ?? []) niveis[p.area] = p.nivel as NivelAcesso;
 
   // Conta desativada ou com troca de senha pendente: sem poderes (o banco já devolve áreas e módulos vazios).
-  const liberado = perfil.data.ativo && !perfil.data.deve_trocar_senha;
+  // A troca pendente só prende quem entrou por senha; pelo Google não há senha a trocar (migration 0007, docs/LOGIN_GOOGLE.md).
+  const porSenha = !entrouPorOAuth(auth.claims);
+  const liberado = perfil.data.ativo && !(perfil.data.deve_trocar_senha && porSenha);
 
   return {
     userId: userId,
@@ -56,6 +61,7 @@ export const obterSessao = cache(async (): Promise<Sessao | null> => {
     areas: (areas.data ?? []) as Area[],
     modulos: (modulos.data ?? []) as Modulo[],
     aplicativos: liberado ? ((aplicativos.data ?? []) as Aplicativo[]) : [],
+    porSenha,
   };
 });
 
@@ -66,7 +72,7 @@ export const obterSessao = cache(async (): Promise<Sessao | null> => {
 export async function exigirSessao(opcoes: { permitirTrocaPendente?: boolean } = {}): Promise<Sessao> {
   const sessao = await obterSessao();
   if (!sessao) redirect("/login");
-  if (sessao.perfil.ativo && sessao.perfil.deve_trocar_senha && !opcoes.permitirTrocaPendente) redirect("/conta");
+  if (sessao.porSenha && sessao.perfil.ativo && sessao.perfil.deve_trocar_senha && !opcoes.permitirTrocaPendente) redirect("/conta");
   return sessao;
 }
 
