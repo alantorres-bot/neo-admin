@@ -207,3 +207,10 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
   mensagem pronta (nº, data, empresa, totais por tipo, total, caixa/excedente, observação, quem autorizou e o link da autorização;
   `mensagemSlack` em `autorizacao.ts`) e abre o canal do financeiro (`financeiro.contas-pagar.slack_canal_url` em
   `configuracoes`; sem ele, abre o Slack no último canal). **O sistema nunca envia: o diretor cola e envia.** Sem token nem API do Slack.
+- **Enviar no Slack com o PDF (11/10/2026):** o diretor (gestor) clica em "Enviar no Slack", vê a mensagem e confirma; o app
+  gera o PDF no servidor (`lib/modulos/financeiro/contas-pagar/pdf-autorizacao.tsx`, `@react-pdf/renderer`) e a Edge Function
+  `cap-enviar-slack` publica mensagem + PDF no canal do financeiro como o aplicativo "Neo Admin" do Slack (`files.uploadV2`).
+  Segredo `SLACK_BOT_TOKEN` (xoxb-, escopos `chat:write` e `files:write`; o app precisa estar no canal) em Edge Functions > Secrets;
+  canal em `configuracoes` (`financeiro.contas-pagar.slack_canal_id`, hoje C088FV34S4A; migration `0124_cap_slack.sql`).
+  Registro do envio em `cap_autorizacoes.slack_enviada_em/por/permalink` (só a service role grava). Sem token/canal, o diálogo
+  oferece o plano B: copiar a mensagem e abrir o canal. **Nada é enviado sem o clique e a confirmação do gestor.**

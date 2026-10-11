@@ -12,7 +12,7 @@ import { formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { MODULO_CONTAS_PAGAR } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { enviarAnexo } from "@/lib/nucleo/anexos";
 import { criarClienteNavegador } from "@/lib/supabase/navegador";
-import { autorizar, cancelar, definirCaixa, removerItem } from "./acoes";
+import { autorizar, cancelar, definirCaixa, enviarNoSlack, removerItem } from "./acoes";
 
 /** Altera o caixa disponível de um rascunho (ou remove). Ultrapassar o caixa é só aviso. */
 export function DialogoCaixa({ id, caixaCentavos }: { id: string; caixaCentavos: number | null }) {
@@ -248,28 +248,62 @@ export function BotaoRemoverItem({ autorizacaoId, itemId, descricao }: { autoriz
 }
 
 /**
- * "Enviar no Slack": copia a mensagem pronta e abre o canal do financeiro (ou o Slack, se o canal não estiver configurado).
- * O sistema NUNCA envia sozinho: o diretor cola e envia. Sem Slack Web API nem token.
+ * "Enviar no Slack": com confirmação, o Neo Admin publica a mensagem e o PDF no canal do financeiro (Edge Function com o
+ * token do aplicativo do Slack). Só gestor; nada sai sem o clique. Se o aplicativo ainda não estiver configurado, cai no
+ * plano B: copia a mensagem e abre o canal para o diretor colar.
  */
-export function BotaoEnviarSlack({ mensagem, canalUrl }: { mensagem: string; canalUrl: string | null }) {
-  const [copiado, setCopiado] = useState(false);
-  async function enviar() {
-    let ok = false;
+export function BotaoEnviarSlack({ id, mensagem, canalUrl, ehGestor, jaEnviadaEm }: { id: string; mensagem: string; canalUrl: string | null; ehGestor: boolean; jaEnviadaEm: string | null }) {
+  const router = useRouter();
+  const [aberto, setAberto] = useState(false);
+  const [erro, setErro] = useState<string>();
+  const [pendente, iniciar] = useTransition();
+
+  async function planoB() {
     try {
       await navigator.clipboard.writeText(mensagem);
-      ok = true;
+      toast.success("Mensagem copiada. No Slack, cole no canal do financeiro e envie.");
     } catch {
-      ok = false;
+      toast.error("Não consegui copiar a mensagem.");
     }
-    setCopiado(ok);
-    if (ok) toast.success(canalUrl ? "Mensagem copiada. No Slack, cole no canal e envie." : "Mensagem copiada. Abra o canal do financeiro no Slack, cole e envie.");
-    else toast.error("Não consegui copiar a mensagem. Copie o texto abaixo e cole no Slack.");
     window.open(canalUrl ?? "https://app.slack.com/client", "_blank", "noopener");
   }
+
+  function confirmar() {
+    iniciar(async () => {
+      const r = await enviarNoSlack({ id, link: `${window.location.origin}/financeiro/contas-pagar/autorizacoes/${id}` });
+      if (r.ok) {
+        toast.success(r.aviso);
+        setAberto(false);
+        router.refresh();
+      } else if (r.naoConfigurado) {
+        setErro(`${r.erro} Enquanto isso: copie a mensagem e cole no Slack.`);
+      } else {
+        setErro(r.erro);
+      }
+    });
+  }
+
+  if (!ehGestor) return null;
   return (
     <>
-      <Button type="button" variant="outline" onClick={enviar}><Send /> Enviar no Slack</Button>
-      {copiado === false && null}
+      <Button type="button" variant="outline" onClick={() => { setErro(undefined); setAberto(true); }}><Send /> {jaEnviadaEm ? "Enviar no Slack de novo" : "Enviar no Slack"}</Button>
+      {aberto && (
+        <Dialog open onOpenChange={(v) => { if (!v) setAberto(false); }}>
+          <DialogContent className="sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Enviar no canal do financeiro?</DialogTitle>
+              <DialogDescription>O Neo Admin publica esta mensagem e o PDF do relatório no canal do financeiro no Slack{jaEnviadaEm ? ` (já enviada em ${jaEnviadaEm})` : ""}.</DialogDescription>
+            </DialogHeader>
+            <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded-[3px] border border-grade bg-cabecalho p-3 text-xs">{mensagem}</pre>
+            {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button type="button" variant="ghost" onClick={() => setAberto(false)} disabled={pendente}>Voltar</Button>
+              <Button type="button" variant="outline" onClick={planoB} disabled={pendente}>Só copiar e abrir o Slack</Button>
+              <Button type="button" onClick={confirmar} disabled={pendente}>{pendente ? "Enviando…" : "Sim, enviar com o PDF"}</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </>
   );
 }

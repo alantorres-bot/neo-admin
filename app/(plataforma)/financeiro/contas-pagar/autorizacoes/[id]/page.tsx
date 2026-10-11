@@ -62,6 +62,7 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
             {a.empresa_nome} · data {formatarData(a.data)} · montada por {a.criado_por_nome ?? "—"} em {quandoEm(a.criado_em)}
             {a.autorizada_em && <> · autorizada por {a.autorizada_por_nome ?? "—"} em {quandoEm(a.autorizada_em)}</>}
             {a.cancelada_em && <> · cancelada por {a.cancelada_por_nome ?? "—"} em {quandoEm(a.cancelada_em)}</>}
+            {a.slack_enviada_em && <> · enviada no Slack por {a.slack_enviada_por_nome ?? "—"} em {quandoEm(a.slack_enviada_em)}{a.slack_permalink ? <> (<a href={a.slack_permalink} target="_blank" rel="noopener" className="text-elo hover:underline">ver mensagem</a>)</> : null}</>}
           </p>
           {a.observacao && <p className="mt-1 text-sm">{a.observacao}</p>}
           {a.motivo_cancelamento && <p className="mt-1 text-sm text-destructive">Motivo do cancelamento: {a.motivo_cancelamento}</p>}
@@ -69,7 +70,7 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="ghost" render={<Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes`} />}>Voltar ao histórico</Button>
           <Button variant="outline" render={<a href={rotaImpressao(a.id)} target="_blank" rel="noopener" />}><Printer /> Imprimir / salvar PDF</Button>
-          {a.status !== "cancelada" && <BotaoEnviarSlack mensagem={textoSlack} canalUrl={parametrosModulo.slackCanalUrl} />}
+          {a.status !== "cancelada" && <BotaoEnviarSlack id={a.id} mensagem={textoSlack} canalUrl={parametrosModulo.slackCanalUrl} ehGestor={papel.ehGestor} jaEnviadaEm={a.slack_enviada_em ? quandoEm(a.slack_enviada_em) : null} />}
           {papel.podeOperar && a.status !== "rascunho" && <AnexarAssinada autorizacaoId={a.id} temAnexo={anexos.length > 0} />}
           {podeAutorizar(a.status, papel) && <BotaoAutorizar id={a.id} numero={a.numero} resumo={resumoTexto} />}
           {podeCancelar(a.status, a.criado_por, papel) && a.status !== "cancelada" && <DialogoCancelar id={a.id} numero={a.numero} status={a.status} />}
