@@ -206,7 +206,7 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
   Migration `0123_cap_bordero.sql`: colunas, view `cap_vw_pendentes` com `tem_bordero`, `cap_criar_autorizacao` recusa
   antecipação paga, `cap_marcar_antecipacao_tratada` recusa paga. A data de corte continua, mas fica secundária.
 - **Tela Autorizar pagamento abre só com os filtros:** período de **vencimento** de/até (antecipação: pagamento programado;
-  sem data entra em qualquer período) com atalhos "Vencidos até hoje", "Próximos 7/15/30 dias" e "Últimos 15 + próximos 15",
+  sem data entra em qualquer período) com atalhos "Vencidos até hoje" e "Vencidos nos últimos 7/15/30 dias" (11/10/2026: só vencidos, a diretoria não antecipa pagamento),
   mais busca, tipo, situação e "mostrar pagos e já autorizados". Cartões e lista só depois de **Consultar**, já do recorte.
   Situação da antecipação: "paga (borderô no Consistem)", "a pagar · programada para dd/mm" ou "pagamento não verificado".
 - **Soma fixa e caixa disponível:** a barra de seleção fica fixa no alto da lista (soma do que está marcado); campo "Caixa

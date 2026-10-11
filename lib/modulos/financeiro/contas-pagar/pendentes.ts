@@ -50,26 +50,25 @@ export const estaPendente = (i: Pick<ItemPendente, "tipo" | "autorizacao" | "tra
 
 // ---------------------------------------------------------------- atalhos de período (vencimento)
 
-export type Atalho = "vencidos" | "7" | "15" | "30" | "15_15";
+export type Atalho = "vencidos" | "v7" | "v15" | "v30";
+/** Atalhos voltados para trás: a diretoria autoriza pagamento de vencidos, nunca antecipa. Todos terminam hoje. */
 export const ATALHOS: { codigo: Atalho; rotulo: string }[] = [
   { codigo: "vencidos", rotulo: "Vencidos até hoje" },
-  { codigo: "7", rotulo: "Próximos 7 dias" },
-  { codigo: "15", rotulo: "Próximos 15 dias" },
-  { codigo: "30", rotulo: "Próximos 30 dias" },
-  { codigo: "15_15", rotulo: "Últimos 15 + próximos 15" },
+  { codigo: "v7", rotulo: "Vencidos nos últimos 7 dias" },
+  { codigo: "v15", rotulo: "Vencidos nos últimos 15 dias" },
+  { codigo: "v30", rotulo: "Vencidos nos últimos 30 dias" },
 ];
 export const ehAtalho = (v: string): v is Atalho => ATALHOS.some((a) => a.codigo === v);
 
 const somarDias = (iso: string, dias: number): string => new Date(Date.parse(`${iso}T00:00:00Z`) + dias * 86_400_000).toISOString().slice(0, 10);
 
-/** Período de vencimento (de/até) de cada atalho. "Vencidos até hoje" não tem início (tudo o que já venceu). */
+/** Período de vencimento (de/até) de cada atalho; todos terminam hoje. "Vencidos até hoje" não tem início (tudo o que já venceu). */
 export function periodoDoAtalho(atalho: Atalho, hoje: string): { de: string | null; ate: string } {
   switch (atalho) {
     case "vencidos": return { de: null, ate: hoje };
-    case "7": return { de: hoje, ate: somarDias(hoje, 7) };
-    case "15": return { de: hoje, ate: somarDias(hoje, 15) };
-    case "30": return { de: hoje, ate: somarDias(hoje, 30) };
-    case "15_15": return { de: somarDias(hoje, -15), ate: somarDias(hoje, 15) };
+    case "v7": return { de: somarDias(hoje, -7), ate: hoje };
+    case "v15": return { de: somarDias(hoje, -15), ate: hoje };
+    case "v30": return { de: somarDias(hoje, -30), ate: hoje };
   }
 }
 

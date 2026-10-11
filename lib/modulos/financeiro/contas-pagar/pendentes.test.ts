@@ -60,10 +60,9 @@ describe("borderô = paga; atalhos de período", () => {
   });
   it("atalhos de vencimento", () => {
     expect(periodoDoAtalho("vencidos", HOJE)).toEqual({ de: null, ate: "2026-10-09" });
-    expect(periodoDoAtalho("7", HOJE)).toEqual({ de: "2026-10-09", ate: "2026-10-16" });
-    expect(periodoDoAtalho("15", HOJE)).toEqual({ de: "2026-10-09", ate: "2026-10-24" });
-    expect(periodoDoAtalho("30", HOJE)).toEqual({ de: "2026-10-09", ate: "2026-11-08" });
-    expect(periodoDoAtalho("15_15", HOJE)).toEqual({ de: "2026-09-24", ate: "2026-10-24" });
+    expect(periodoDoAtalho("v7", HOJE)).toEqual({ de: "2026-10-02", ate: "2026-10-09" });
+    expect(periodoDoAtalho("v15", HOJE)).toEqual({ de: "2026-09-24", ate: "2026-10-09" });
+    expect(periodoDoAtalho("v30", HOJE)).toEqual({ de: "2026-09-09", ate: "2026-10-09" });
   });
   it("antecipação sem data programada entra em qualquer período; título sem data fica fora", () => {
     const lista = [antecipacao("semdata", { emissao: null, dataPagamento: null }), item({ id: "t", vencimento: "2026-10-20" })];
