@@ -82,7 +82,8 @@ Deno.serve(async (req) => {
     const pdf = base64ParaBytes(pdfBase64);
     // Upload em 3 passos (files.uploadV2): pede URL, envia bytes, conclui no canal com a mensagem.
     const passo1 = await slack("files.getUploadURLExternal", tokenSlack, { filename: nomeArquivo, length: pdf.length });
-    const envio = await fetch(passo1.upload_url as string, { method: "POST", body: new Blob([pdf], { type: "application/pdf" }) });
+    const conteudo = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength) as ArrayBuffer;
+    const envio = await fetch(passo1.upload_url as string, { method: "POST", body: new Blob([conteudo], { type: "application/pdf" }) });
     if (!envio.ok) throw new Error(`Slack upload: HTTP ${envio.status}`);
     const passo3 = await slack("files.completeUploadExternal", tokenSlack, {
       files: [{ id: passo1.file_id, title: `Autorização de pagamento nº ${a.numero}` }],
