@@ -10,10 +10,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { compararComCaixa, parseReais, ROTULO_STATUS } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { compararComCaixa, descreverRascunho, parseReais, ROTULO_STATUS, totalParaCaixa, type RascunhoEmMontagem } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { descreverSituacao, diasAtraso, estaPaga, estaPendente, ROTULO_TIPO, type ItemPendente } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import { criarAutorizacao, desfazerAntecipacaoTratada, marcarAntecipacaoTratada } from "./acoes";
+import { desfazerAntecipacaoTratada, gerarAutorizacao, marcarAntecipacaoTratada, montarRascunho } from "./acoes";
+import { DialogoExtra } from "./dialogo-extra";
 
 type Props = {
   itens: ItemPendente[];
@@ -22,6 +23,8 @@ type Props = {
   hoje: string;
   /** Nome da empresa por id (para a confirmação). */
   empresas: { id: string; nome: string }[];
+  /** Rascunho em montagem por empresa (o mais recente em rascunho). */
+  rascunhos: RascunhoEmMontagem[];
 };
 
 /** Texto do resumo caixa × selecionado. */
@@ -35,14 +38,15 @@ function ResumoCaixa({ totalCentavos, caixaCentavos }: { totalCentavos: number; 
 
 /**
  * Tabela unificada (títulos + antecipações) com caixas de marcação e a barra FIXA no alto da lista: soma do que está marcado,
- * caixa disponível e "Gerar autorização". Linhas que já estão numa autorização ativa, pagas (borderô) ou marcadas como pagas
- * fora aparecem apagadas e sem caixa. Antecipação a pagar tem "Já paga fora" para exceção.
+ * caixa disponível, o rascunho em montagem e os três botões em sequência — "Salvar parcial" (grava no rascunho e continua
+ * aqui), "Extras" (pagamento fora do Consistem direto no rascunho) e "Gerar autorização" (fecha o rascunho). Linhas que já
+ * estão numa autorização ativa, pagas (borderô) ou marcadas como pagas fora aparecem apagadas e sem caixa.
  */
-export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas }: Props) {
+export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, rascunhos }: Props) {
   const router = useRouter();
   const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
-  const [caixaTexto, setCaixaTexto] = useState("");
   const [dialogo, setDialogo] = useState(false);
+  const [salvando, iniciarSalvar] = useTransition();
 
   const selecionaveis = useMemo(() => itens.filter(estaPendente), [itens]);
   const idsSelecionaveis = useMemo(() => selecionaveis.map((i) => i.id), [selecionaveis]);
@@ -50,7 +54,30 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas }:
   const selecionados = useMemo(() => [...marcadas].map((id) => porId.get(id)).filter((i): i is ItemPendente => Boolean(i)), [marcadas, porId]);
   const totalMarcado = selecionados.reduce((s, i) => s + i.saldoCentavos, 0);
   const empresasMarcadas = new Set(selecionados.map((i) => i.empresaId));
+  // Empresa da montagem: a dos itens marcados; sem marcação, a única empresa ou a do rascunho mais recente.
+  const empresaId = empresasMarcadas.size === 1 ? [...empresasMarcadas][0] : empresas.length === 1 ? empresas[0].id : (rascunhos[0]?.empresaId ?? null);
+  const rascunho = empresaId ? rascunhos.find((r) => r.empresaId === empresaId) ?? null : null;
+  const empresaNome = empresas.find((e) => e.id === empresaId)?.nome ?? "empresa";
+  const [caixaTexto, setCaixaTexto] = useState(rascunho?.caixaCentavos != null ? (rascunho.caixaCentavos / 100).toFixed(2).replace(".", ",") : "");
   const caixaCentavos = parseReais(caixaTexto);
+  const caixaParaGravar = caixaTexto.trim() === "" ? null : caixaCentavos;
+  const caixaInvalido = caixaTexto.trim() !== "" && caixaCentavos === null;
+  const totalComRascunho = totalParaCaixa(rascunho, totalMarcado);
+  const umaEmpresa = empresasMarcadas.size <= 1 && empresaId !== null;
+
+  function salvarParcial() {
+    if (!empresaId || caixaInvalido) return;
+    iniciarSalvar(async () => {
+      const r = await montarRascunho({ empresaId, lancamentoIds: [...marcadas], caixaCentavos: caixaParaGravar });
+      if (r.ok) {
+        toast.success(r.aviso);
+        setMarcadas(new Set());
+        router.refresh();
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
 
   const alternar = (ids: string[]) => setMarcadas((atual) => {
     const novo = new Set(atual);
@@ -72,19 +99,41 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas }:
             Caixa disponível
             <Input value={caixaTexto} onChange={(e) => setCaixaTexto(e.target.value)} placeholder="R$ 0,00" inputMode="decimal" aria-label="Caixa disponível" className="h-7 w-36 bg-white text-right tabular-nums" />
           </label>
-          <ResumoCaixa totalCentavos={totalMarcado} caixaCentavos={caixaCentavos} />
+          <ResumoCaixa totalCentavos={totalComRascunho} caixaCentavos={caixaCentavos} />
           <span className="ml-auto flex items-center gap-2">
-            <Button type="button" size="sm" onClick={() => setDialogo(true)} disabled={marcadas.size === 0 || empresasMarcadas.size !== 1}>Gerar autorização ({marcadas.size})</Button>
+            <Button type="button" size="sm" variant="outline" onClick={salvarParcial} disabled={marcadas.size === 0 || !umaEmpresa || caixaInvalido || salvando} title="Grava os itens marcados no rascunho e continua nesta tela">
+              {salvando ? "Salvando…" : "Salvar parcial"}
+            </Button>
+            <DialogoExtra
+              rotulo="Extras"
+              desativado={!umaEmpresa || caixaInvalido || salvando}
+              totalAtualCentavos={totalComRascunho}
+              caixaCentavos={caixaCentavos}
+              contexto={marcadas.size > 0 ? `Os ${marcadas.size} ${marcadas.size === 1 ? "item marcado" : "itens marcados"} (${formatarMoeda(totalMarcado)}) também são salvos no rascunho.` : rascunho ? `Entra no rascunho ${rascunho.codigo}.` : "Cria o rascunho de hoje e inclui o pagamento."}
+              aoConfirmar={(extra) => montarRascunho({ empresaId: empresaId ?? "", lancamentoIds: [...marcadas], caixaCentavos: caixaParaGravar, extra })}
+              aoSucesso={() => setMarcadas(new Set())}
+            />
+            <Button type="button" size="sm" onClick={() => setDialogo(true)} disabled={(marcadas.size === 0 && !rascunho) || !umaEmpresa || caixaInvalido || salvando}>
+              Gerar autorização{marcadas.size > 0 ? ` (${marcadas.size})` : ""}
+            </Button>
             {marcadas.size > 0 && <Button type="button" variant="ghost" size="sm" onClick={() => setMarcadas(new Set())}>Limpar seleção</Button>}
           </span>
+          {rascunho && (
+            <span className="basis-full text-[13px]">
+              <strong>{descreverRascunho(rascunho)}</strong> · total com os marcados {formatarMoeda(totalComRascunho)} ·{" "}
+              <Link href={`/financeiro/contas-pagar/autorizacoes/${rascunho.id}`} className="text-elo hover:underline">Abrir</Link>
+            </span>
+          )}
           {empresasMarcadas.size > 1 && <span className="basis-full text-xs text-destructive">Marque itens de uma empresa só por autorização.</span>}
-          {caixaTexto !== "" && caixaCentavos === null && <span className="basis-full text-xs text-destructive">Caixa inválido: use números, ex.: 150.000,00.</span>}
+          {caixaInvalido && <span className="basis-full text-xs text-destructive">Caixa inválido: use números, ex.: 150.000,00.</span>}
         </div>
       )}
-      {dialogo && selecionados.length > 0 && (
+      {dialogo && empresaId && (
         <DialogoGerarAutorizacao
           itens={selecionados}
-          empresaNome={empresas.find((e) => e.id === selecionados[0].empresaId)?.nome ?? "empresa"}
+          rascunho={rascunho}
+          empresaId={empresaId}
+          empresaNome={empresaNome}
           ehGestor={ehGestor}
           hoje={hoje}
           caixaInicial={caixaTexto}
@@ -163,11 +212,11 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas }:
   );
 }
 
-function DialogoGerarAutorizacao({ itens, empresaNome, ehGestor, hoje, caixaInicial, aoFechar, aoGerar }: {
-  itens: ItemPendente[]; empresaNome: string; ehGestor: boolean; hoje: string; caixaInicial: string; aoFechar: () => void; aoGerar: (id: string) => void;
+function DialogoGerarAutorizacao({ itens, rascunho, empresaId, empresaNome, ehGestor, hoje, caixaInicial, aoFechar, aoGerar }: {
+  itens: ItemPendente[]; rascunho: RascunhoEmMontagem | null; empresaId: string; empresaNome: string; ehGestor: boolean; hoje: string; caixaInicial: string; aoFechar: () => void; aoGerar: (id: string) => void;
 }) {
   const [data, setData] = useState(hoje);
-  const [observacao, setObservacao] = useState("");
+  const [observacao, setObservacao] = useState(rascunho?.observacao ?? "");
   const [caixaTexto, setCaixaTexto] = useState(caixaInicial);
   const [autorizar, setAutorizar] = useState(false);
   const [erro, setErro] = useState<string>();
@@ -175,7 +224,8 @@ function DialogoGerarAutorizacao({ itens, empresaNome, ehGestor, hoje, caixaInic
   const titulos = itens.filter((i) => i.tipo === "titulo");
   const antecipacoes = itens.filter((i) => i.tipo === "antecipacao");
   const soma = (lista: ItemPendente[]) => lista.reduce((s, i) => s + i.saldoCentavos, 0);
-  const total = soma(itens);
+  const totalMarcado = soma(itens);
+  const total = totalParaCaixa(rascunho, totalMarcado);
   const caixaCentavos = parseReais(caixaTexto);
   const comparacao = compararComCaixa(total, caixaCentavos);
 
@@ -185,7 +235,7 @@ function DialogoGerarAutorizacao({ itens, empresaNome, ehGestor, hoje, caixaInic
       return;
     }
     iniciar(async () => {
-      const r = await criarAutorizacao({ empresaId: itens[0].empresaId, lancamentoIds: itens.map((i) => i.id), data, observacao, autorizar, caixaCentavos });
+      const r = await gerarAutorizacao({ empresaId, lancamentoIds: itens.map((i) => i.id), data: rascunho ? null : data, observacao, autorizar, caixaCentavos: caixaTexto.trim() === "" ? null : caixaCentavos });
       if (r.ok) {
         toast.success(r.aviso);
         aoGerar(r.id);
@@ -201,14 +251,22 @@ function DialogoGerarAutorizacao({ itens, empresaNome, ehGestor, hoje, caixaInic
         <DialogHeader>
           <DialogTitle>Gerar autorização de pagamento</DialogTitle>
           <DialogDescription>
-            {empresaNome}: {titulos.length} {titulos.length === 1 ? "título" : "títulos"} ({formatarMoeda(soma(titulos))}) e {antecipacoes.length} {antecipacoes.length === 1 ? "antecipação" : "antecipações"} ({formatarMoeda(soma(antecipacoes))}). Total {formatarMoeda(total)}.
+            {rascunho && <>{descreverRascunho(rascunho)}. </>}
+            {itens.length > 0
+              ? <>{rascunho ? "Marcados agora" : empresaNome}: {titulos.length} {titulos.length === 1 ? "título" : "títulos"} ({formatarMoeda(soma(titulos))}) e {antecipacoes.length} {antecipacoes.length === 1 ? "antecipação" : "antecipações"} ({formatarMoeda(soma(antecipacoes))}). </>
+              : null}
+            Total {formatarMoeda(total)}.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4">
-          <div className="grid gap-1.5">
-            <label htmlFor="cap-data" className="text-sm font-medium">Data da autorização</label>
-            <Input id="cap-data" type="date" value={data} onChange={(e) => setData(e.target.value)} className="w-44" />
-          </div>
+          {rascunho ? (
+            <p className="text-xs text-muted-foreground">O rascunho {rascunho.codigo} já tem a data do pagamento; os itens marcados entram nele.</p>
+          ) : (
+            <div className="grid gap-1.5">
+              <label htmlFor="cap-data" className="text-sm font-medium">Data da autorização</label>
+              <Input id="cap-data" type="date" value={data} onChange={(e) => setData(e.target.value)} className="w-44" />
+            </div>
+          )}
           <div className="grid gap-1.5">
             <label htmlFor="cap-caixa" className="text-sm font-medium">Caixa disponível (opcional)</label>
             <div className="flex flex-wrap items-center gap-2">
@@ -234,7 +292,7 @@ function DialogoGerarAutorizacao({ itens, empresaNome, ehGestor, hoje, caixaInic
           {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" onClick={aoFechar} disabled={pendente}>Voltar</Button>
-            <Button type="button" onClick={gerar} disabled={pendente}>{pendente ? "Gerando…" : autorizar ? "Gerar e autorizar" : "Gerar rascunho"}</Button>
+            <Button type="button" onClick={gerar} disabled={pendente}>{pendente ? "Gerando…" : autorizar ? "Gerar e autorizar" : rascunho ? "Gerar (abrir o rascunho)" : "Gerar rascunho"}</Button>
           </div>
         </div>
       </DialogContent>

@@ -1,4 +1,5 @@
 import { cache } from "react";
+import type { RascunhoEmMontagem } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { lerParametrosContasPagar, CHAVES_CONTAS_PAGAR, type ParametrosContasPagar } from "@/lib/modulos/financeiro/contas-pagar/parametros";
 import { MODULO_CONTAS_PAGAR, type ItemPendente } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { urlAssinadaAnexo } from "@/lib/nucleo/anexos";
@@ -17,7 +18,14 @@ type LinhaPendente = {
 };
 
 export type UltimaAtualizacao = { quando: string; novos: number; alterados: number; baixados: number } | null;
-export type Pendentes = { itens: ItemPendente[]; parametros: ParametrosContasPagar; ultima: UltimaAtualizacao; empresas: { id: string; nome: string }[] };
+export type Pendentes = {
+  itens: ItemPendente[];
+  parametros: ParametrosContasPagar;
+  ultima: UltimaAtualizacao;
+  empresas: { id: string; nome: string }[];
+  /** Rascunho em montagem de cada empresa (o mais recente em rascunho), onde Salvar parcial e Extras gravam. */
+  rascunhos: RascunhoEmMontagem[];
+};
 
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
 export const quandoEm = (iso: string) =>
@@ -43,7 +51,7 @@ export const pendentesDaRequisicao = cache(async (): Promise<Pendentes> => carre
  * A RLS de quem chama vale. Nada é gravado.
  */
 export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
-  const [linhas, { data: configs }, { data: ultimas }, { data: empresas }] = await Promise.all([
+  const [linhas, { data: configs }, { data: ultimas }, { data: empresas }, { data: rascunhosBrutos }] = await Promise.all([
     lerTudo<LinhaPendente>((de, ate) =>
       supabase.from("cap_vw_pendentes")
         .select("id, empresa_id, cod_lancamento, tipo_lancamento, cod_fornecedor, num_documento, categoria_doc, cod_banco, complemento_historico, data_emissao, data_vencimento, data_pagamento, valor_documento, valor_atualizado, tem_bordero, bordero_visto_em, fornecedor_nome, fornecedor_documento, autorizacao_id, autorizacao_numero, autorizacao_codigo, autorizacao_status, tratada_id, tratada_motivo, tratada_em")
@@ -52,7 +60,20 @@ export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
     supabase.from("importacoes").select("criado_em, linhas_novas, linhas_alteradas, linhas_baixadas")
       .eq("modulo", MODULO_CONTAS_PAGAR).eq("arquivo", "api:consistem").order("criado_em", { ascending: false }).limit(1),
     supabase.from("empresas").select("id, nome_curto").eq("ativa", true).not("codigo_erp", "is", null).order("nome_curto"),
+    supabase.from("cap_vw_autorizacoes").select("id, codigo, empresa_id, itens, extras, total, total_extras, caixa_disponivel, observacao")
+      .eq("status", "rascunho").order("numero", { ascending: false }).limit(50),
   ]);
+
+  // Um rascunho em montagem por empresa: o mais recente.
+  const rascunhos: RascunhoEmMontagem[] = [];
+  for (const r of rascunhosBrutos ?? []) {
+    if (rascunhos.some((x) => x.empresaId === r.empresa_id)) continue;
+    rascunhos.push({
+      id: r.id as string, codigo: r.codigo as string, empresaId: r.empresa_id as string, itens: r.itens as number, extras: r.extras as number,
+      totalCentavos: centavos(r.total as number | string), totalExtrasCentavos: centavos(r.total_extras as number | string),
+      caixaCentavos: r.caixa_disponivel === null ? null : centavos(r.caixa_disponivel as number | string), observacao: (r.observacao as string | null) ?? null,
+    });
+  }
 
   const itens: ItemPendente[] = linhas.map((l) => ({
     id: l.id,
@@ -87,6 +108,7 @@ export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
     parametros: lerParametrosContasPagar((configs ?? []) as { chave: string; valor: unknown }[]),
     ultima,
     empresas: (empresas ?? []).map((e) => ({ id: e.id as string, nome: e.nome_curto as string })),
+    rascunhos,
   };
 }
 

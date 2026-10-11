@@ -78,8 +78,15 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
     (frete avulso, reembolso, taxa, fornecedor ainda sem título). Entram num **terceiro bloco** da autorização, com
     **descrição, favorecido e valor** (`cap_autorizacao_extras`), e somam no total autorizado, no caixa/excedente, na pendência
     e no relatório. Qualquer um do Financeiro (operador) inclui e remove, **só em rascunho** (remoção com motivo; nunca delete).
-    Uma autorização pode ter **só extras**: "Novo rascunho só com extras" no histórico cria o rascunho vazio; autorizar exige ao
-    menos 1 item do Consistem ou 1 extra. O lançamento desses pagamentos no Consistem continua por conta do financeiro.
+    Uma autorização pode ter **só extras**; autorizar exige ao menos 1 item do Consistem ou 1 extra. O lançamento desses
+    pagamentos no Consistem continua por conta do financeiro.
+13. **Montagem na tela de seleção** (11/10/2026): "rascunho em montagem" = a autorização mais recente da empresa em `rascunho`.
+    Na barra fixa da tela Autorizar pagamento, três botões em sequência: **Salvar parcial** (grava os marcados no rascunho em
+    montagem, ou cria um, e a pessoa continua na tela; pode fechar e voltar), **Extras** (inclui o pagamento fora do Consistem
+    direto no rascunho; se houver itens marcados, salva-os junto), **Gerar autorização** (acrescenta os marcados, abre a página
+    da autorização; gestor pode "Autorizar agora"). A barra mostra "Rascunho 111026 em montagem: N itens · R$ X + E extras ·
+    R$ Y" e compara com o caixa o total do rascunho + marcados. Itens já salvos aparecem "Na autorização 111026 (rascunho)".
+    Função de banco `cap_montar_rascunho` (uma transação); `cap_adicionar_itens` concentra as validações de inclusão.
 
 ## 6. Saídas e automações
 - **Relatório de autorização de pagamento** (Fase 3): página de impressão (A4) com cabeçalho da empresa (razão social e CNPJ),
@@ -93,7 +100,7 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
 ## 7. Telas (rota `/financeiro/contas-pagar`, menu Financeiro > Contas a pagar)
 | Tela | O que mostra |
 | --- | --- |
-| **Autorizar pagamento** (`/financeiro/contas-pagar`) | Três cartões (Títulos, Antecipações, Total: quantidade e R$); filtros (fornecedor/documento, tipo, vencimento de/até, mostrar já autorizados); tabela unificada com caixa de marcação, selo Título/Antecipação, fornecedor, documento, emissão, vencimento (antecipação: pagamento programado), valor, histórico, situação ("Na autorização nº N — rascunho/autorizada", "Tratada"); barra "N itens · R$ X — Gerar autorização" (diálogo: data, observação; gestor vê "Autorizar agora"); "Atualizado do Consistem em …" + Simular/Atualizar |
+| **Autorizar pagamento** (`/financeiro/contas-pagar`) | Três cartões (Títulos, Antecipações, Total: quantidade e R$); filtros (fornecedor/documento, tipo, vencimento de/até, mostrar já autorizados); tabela unificada com caixa de marcação, selo Título/Antecipação, fornecedor, documento, emissão, vencimento (antecipação: pagamento programado), valor, histórico, situação ("Na autorização nº N — rascunho/autorizada", "Tratada"); barra fixa "N itens · R$ X" + caixa disponível + rascunho em montagem + botões **Salvar parcial · Extras · Gerar autorização** (diálogo: data (só ao criar), caixa, observação; gestor vê "Autorizar agora"); "Atualizado do Consistem em …" + Simular/Atualizar |
 | **Autorizações** (`/autorizacoes`) | Histórico: nº, data, status, itens, total títulos, total antecipações, montada por, autorizada por, baixados no Consistem X/N; filtro por status |
 | **Autorização nº N** (`/autorizacoes/[id]`) | Cabeçalho e status; seção Títulos e seção Antecipações com totais; por item "baixado no Consistem em" ou "em aberto"; botões Autorizar (gestor), Cancelar (motivo), Remover item (só rascunho), Imprimir / salvar PDF |
 | **Impressão** (`/imprimir/contas-pagar/autorizacao/[id]`) | O relatório da seção 6, sem a moldura do sistema |
@@ -109,7 +116,7 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
 | `cap_antecipacoes_tratadas` | Antecipações marcadas como pagas fora do Neo Admin (motivo, quem; desfazível) |
 | `cap_autorizacao_extras` | Pagamentos extras (fora do Consistem) da autorização: descrição, favorecido, valor; só em rascunho — prova |
 | `cap_vw_pendentes` | View: abertos C/A com fornecedor, autorização ativa, tratada, fora do corte (a tela lê daqui) |
-| Funções | `cap_criar_autorizacao`, `cap_autorizar`, `cap_cancelar`, `cap_remover_item`, `cap_incluir_extra`, `cap_remover_extra`, `cap_marcar_antecipacao_tratada`, `cap_desfazer_antecipacao_tratada`, `cap_salvar_parametros` |
+| Funções | `cap_criar_autorizacao`, `cap_adicionar_itens`, `cap_montar_rascunho`, `cap_autorizar`, `cap_cancelar`, `cap_remover_item`, `cap_incluir_extra`, `cap_remover_extra`, `cap_marcar_antecipacao_tratada`, `cap_desfazer_antecipacao_tratada`, `cap_salvar_parametros` |
 | Configuração | `financeiro.contas-pagar.antecipacoes_a_partir_de` |
 Migrations: `0121_cap_base.sql` (Fase 1), `0122_cap_autorizacoes.sql` (Fase 2), `0123_cap_fornecedores_contrapartes.sql` (Fase 4).
 Edge Function: `cap-sincronizar-consistem` (ações `medir`, `simular`, `sincronizar`; `detalhar` na Fase 3).
@@ -240,3 +247,11 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
   favorecido, valor; mostra o novo total e o efeito no caixa) e "Remover"; cartão "Pagamentos extras"; coluna "Extras" no
   histórico; botão "Novo rascunho só com extras" no histórico; PDF e impressão com a terceira tabela e o subtotal; Slack via o PDF.
   Regras puras: `resumirItens(itens, extras)` (`extras`, `lancamentos`, `geral`), `validarExtra`, `podeEditarExtras`.
+- **Montagem na própria tela de seleção (11/10/2026, Fase 4c parte 2):** o Alan achou confuso ir ao histórico para criar o
+  rascunho dos extras. Migration `0127_cap_montar_rascunho.sql`: `cap_adicionar_itens` (validações de inclusão num lugar só;
+  `cap_criar_autorizacao` passa a chamá-la; item removido e marcado de novo é reativado), `cap_montar_rascunho(empresa,
+  lançamentos, caixa, observação, extra, data)` (acha o rascunho em montagem da empresa ou cria; tudo numa transação).
+  App: `carregarPendentes` devolve `rascunhos` (um por empresa); ações `montarRascunho` e `gerarAutorizacao` (substituem
+  `criarAutorizacao`); barra fixa com Salvar parcial · Extras · Gerar autorização e a linha do rascunho em montagem; aviso do
+  rascunho acima dos filtros; diálogo de extra compartilhado (`dialogo-extra.tsx`) entre a tela de seleção e a página da
+  autorização; botão "Novo rascunho só com extras" retirado do histórico.

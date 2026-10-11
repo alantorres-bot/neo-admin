@@ -7,6 +7,7 @@ import {
   aplicarCorteAntecipacoes, aplicarFiltrosPendentes, ATALHOS, ehAtalho, ehDataIso, ehFiltroMostrar, ehFiltroSituacao, ehFiltroTipo, estaPaga, estaPendente,
   ordenarPendentes, paginar, periodoDoAtalho, ROTA_CONTAS_PAGAR, totalizar, type FiltrosPendentes,
 } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
+import { descreverRascunho } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { sanitizarBusca } from "@/lib/nucleo/erros";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
@@ -50,7 +51,18 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
   const consultou = primeiro(parametros.consultar) === "1" || atalho !== null;
   const paginaPedida = Number.parseInt(primeiro(parametros.pagina), 10) || 1;
 
-  const { itens: todos, parametros: param, ultima, empresas } = await pendentesDaRequisicao();
+  const { itens: todos, parametros: param, ultima, empresas, rascunhos } = await pendentesDaRequisicao();
+  const avisoRascunhos = rascunhos.length > 0 && (
+    <div className="space-y-1">
+      {rascunhos.map((r) => (
+        <p key={r.id} className="rounded-[3px] border border-grade bg-marca-clara px-3 py-2 text-sm">
+          <strong>{descreverRascunho(r)}</strong>{empresas.length > 1 ? ` (${empresas.find((e) => e.id === r.empresaId)?.nome ?? "empresa"})` : ""}.
+          Marque mais itens e use “Salvar parcial”, inclua “Extras” ou clique em “Gerar autorização”.{" "}
+          <Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes/${r.id}`} className="text-elo hover:underline">Abrir o rascunho</Link>
+        </p>
+      ))}
+    </div>
+  );
   const linhaAtualizacao = (
     <p className="text-sm text-muted-foreground">
       {ultima
@@ -111,6 +123,7 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
           {linhaAtualizacao}
           {podeOperar && <BotoesAtualizar />}
         </div>
+        {avisoRascunhos}
         {formulario}
         <p className="text-xs text-muted-foreground">
           {todos.length > 0 ? `${todos.filter(estaPendente).length} itens pendentes de autorização no total; a consulta mostra só o período escolhido.` : "Nenhum lançamento em aberto ainda: atualize do Consistem."}
@@ -151,6 +164,7 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
         {podeOperar && <BotoesAtualizar />}
       </div>
 
+      {avisoRascunhos}
       {formulario}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -176,7 +190,7 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
         <div>
           <h2 className="text-base font-bold">Em aberto no Consistem · {descricaoPeriodo}</h2>
           <p className="text-xs text-muted-foreground">
-            Marque os itens: a soma do que está marcado fica fixa no alto da lista. Informe o caixa disponível para ver se a seleção cabe; passar do caixa só avisa, não impede.
+            Marque os itens: a soma fica fixa no alto da lista. “Salvar parcial” grava no rascunho e você continua aqui; “Extras” inclui pagamentos fora do Consistem; “Gerar autorização” fecha o rascunho. Passar do caixa só avisa, não impede.
           </p>
         </div>
 
@@ -185,7 +199,7 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
             {todos.length === 0 ? "Nenhum lançamento em aberto. Use “Atualizar do Consistem” para trazer a lista." : "Nenhum item pendente nesse período e filtros."}
           </p>
         ) : (
-          <TabelaPendentes itens={itens} podeOperar={podeOperar} ehGestor={ehGestor} hoje={hoje} empresas={empresas} />
+          <TabelaPendentes itens={itens} podeOperar={podeOperar} ehGestor={ehGestor} hoje={hoje} empresas={empresas} rascunhos={rascunhos} />
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compararComCaixa, criticidadeExecucao, mensagemSlack, parseReais, podeAutorizar, podeCancelar, podeEditarExtras, podeRemoverItem, prazoExecucao, resumirItens, situacaoDoItem, tituloPendenciaExecucao, validarExtra } from "./autorizacao";
+import { compararComCaixa, criticidadeExecucao, mensagemSlack, parseReais, podeAutorizar, podeCancelar, podeEditarExtras, podeRemoverItem, prazoExecucao, resumirItens, situacaoDoItem, tituloPendenciaExecucao, totalParaCaixa, validarExtra, descreverRascunho } from "./autorizacao";
 
 const gestor = { podeOperar: true, ehGestor: true, userId: "g" };
 const operador = { podeOperar: true, ehGestor: false, userId: "o" };
@@ -126,5 +126,16 @@ describe("pagamentos extras (fora do Consistem)", () => {
     const base = { codigo: "101026", data: "10/10/2026", empresa: "NEO FORMAS", status: "autorizada" as const, titulos: { quantidade: 1, centavos: 100 }, antecipacoes: { quantidade: 0, centavos: 0 }, totalCentavos: 8_150, caixa: null, autorizadaPor: null, observacao: null, link: "http://x" };
     expect(mensagemSlack({ ...base, extras: { quantidade: 1, centavos: 8_050 } })).toContain("Extras (fora do Consistem): 1 (R$ 80,50)");
     expect(mensagemSlack(base)).not.toContain("Extras");
+  });
+});
+
+describe("rascunho em montagem (tela de seleção)", () => {
+  it("descreverRascunho mostra itens e, quando há, os extras", () => {
+    expect(descreverRascunho({ codigo: "111026", itens: 3, extras: 0, totalCentavos: 150_000, totalExtrasCentavos: 0 })).toBe("Rascunho 111026 em montagem: 3 itens · R$ 1.500,00");
+    expect(descreverRascunho({ codigo: "111026", itens: 1, extras: 2, totalCentavos: 110_050, totalExtrasCentavos: 10_050 })).toBe("Rascunho 111026 em montagem: 1 item · R$ 1.000,00 + 2 extras · R$ 100,50");
+  });
+  it("totalParaCaixa soma o rascunho com o que está marcado", () => {
+    expect(totalParaCaixa(null, 500)).toBe(500);
+    expect(totalParaCaixa({ totalCentavos: 1_000 }, 500)).toBe(1_500);
   });
 });

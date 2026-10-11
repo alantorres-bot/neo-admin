@@ -15,7 +15,7 @@ import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { lerAutorizacao, quandoEm, type LinhaExtraAutorizacao, type LinhaItemAutorizacao } from "../../dados";
-import { AnexarAssinada, BotaoAutorizar, BotaoEnviarSlack, BotaoRemoverExtra, BotaoRemoverItem, DialogoCaixa, DialogoCancelar, DialogoExtra } from "./componentes";
+import { AnexarAssinada, BotaoAutorizar, BotaoEnviarSlack, BotaoRemoverExtra, BotaoRemoverItem, DialogoCaixa, DialogoCancelar, DialogoExtraAutorizacao } from "./componentes";
 
 export const metadata: Metadata = { title: "Autorização de pagamento" };
 
@@ -185,7 +185,7 @@ function SecaoExtras({ lista, total, totalAutorizacao, caixaCentavos, autorizaca
         <h3 className="text-base font-bold">Pagamentos extras <span className="text-sm font-normal text-muted-foreground">(fora do Consistem)</span></h3>
         <span className="flex items-center gap-3 text-sm tabular-nums">
           {lista.length} {lista.length === 1 ? "item" : "itens"} · <strong>{formatarMoeda(total)}</strong>
-          {podeEditar && <DialogoExtra autorizacaoId={autorizacaoId} totalAtualCentavos={totalAutorizacao} caixaCentavos={caixaCentavos} />}
+          {podeEditar && <DialogoExtraAutorizacao autorizacaoId={autorizacaoId} totalAtualCentavos={totalAutorizacao} caixaCentavos={caixaCentavos} />}
         </span>
       </div>
       {lista.length === 0 ? (

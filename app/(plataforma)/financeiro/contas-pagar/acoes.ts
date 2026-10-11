@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
+import { LIMITES_EXTRA } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { ROTA_CONTAS_PAGAR } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
+import { formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { descreverMedicao, descreverSincronizacaoPagar, type ResultadoMedicao, type ResumoSincronizacaoPagar } from "@/lib/modulos/financeiro/contas-pagar/sincronizacao";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
@@ -59,51 +61,107 @@ export async function atualizarDoConsistem(modo: ModoAtualizacao): Promise<Resul
   return { ok: true, modo, linhas: resultados.flatMap(descreverSincronizacaoPagar) };
 }
 
-// ---------------------------------------------------------------- autorização (Fase 2)
+// ---------------------------------------------------------------- montagem do rascunho (tela de seleção)
 
-export type ResultadoCriar = { ok: true; id: string; numero: number; codigo: string; status: "rascunho" | "autorizada"; aviso: string } | { ok: false; erro: string };
-
-const esquemaCriar = z.object({
-  empresaId: z.string().uuid(),
-  /** Vazio = rascunho vazio, para receber só pagamentos extras (fora do Consistem). Autorizar na hora exige itens. */
-  lancamentoIds: z.array(z.string().uuid()).max(500, "Uma autorização aceita no máximo 500 itens."),
+const uuid = z.string().uuid();
+const centavos = (v: number | string | null | undefined) => (v === null || v === undefined ? 0 : Math.round(Number(v) * 100));
+const esquemaExtra = z.object({
+  descricao: z.string().trim().min(LIMITES_EXTRA.descricaoMin, "Informe a descrição do pagamento (3 a 200 caracteres).").max(LIMITES_EXTRA.descricaoMax, "A descrição pode ter até 200 caracteres."),
+  favorecido: z.string().trim().min(LIMITES_EXTRA.favorecidoMin, "Informe o favorecido (quem recebe).").max(LIMITES_EXTRA.favorecidoMax, "O favorecido pode ter até 120 caracteres."),
+  valorCentavos: z.number().int().min(1, "Valor inválido: informe um valor maior que zero.").max(LIMITES_EXTRA.valorMaxCentavos, "Valor acima do limite."),
+});
+const esquemaMontar = z.object({
+  empresaId: uuid,
+  lancamentoIds: z.array(uuid).max(500, "Uma autorização aceita no máximo 500 itens.").default([]),
+  /** Data do pagamento; só vale quando o rascunho é criado agora (define o código DDMMAA). */
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.").nullable().default(null),
-  observacao: z.string().trim().max(500, "A observação pode ter até 500 caracteres.").default(""),
-  autorizar: z.boolean().default(false),
-  /** Caixa disponível informado pela diretoria, em centavos; nulo = não informado. Ultrapassar é só aviso. */
+  /** Caixa disponível em centavos; nulo = não mexer no que já está no rascunho. */
   caixaCentavos: z.number().int().min(0).max(100_000_000_000).nullable().default(null),
-}).refine((v) => !(v.autorizar && v.lancamentoIds.length === 0), { message: "Marque pelo menos um item.", path: ["lancamentoIds"] });
+  /** Observação; nula = não mexer. */
+  observacao: z.string().trim().max(500, "A observação pode ter até 500 caracteres.").nullable().default(null),
+  /** Pagamento extra (fora do Consistem) a incluir na mesma gravação. */
+  extra: esquemaExtra.nullable().default(null),
+});
+
+export type RascunhoMontado = { id: string; codigo: string; criado: boolean; itens: number; extras: number; totalCentavos: number; totalExtrasCentavos: number; caixaCentavos: number | null };
+export type ResultadoMontar = ({ ok: true; aviso: string } & RascunhoMontado) | { ok: false; erro: string };
+
+type LinhaMontada = { id: string; codigo: string; criado: boolean; itens: number; extras: number; total: number | string; total_extras: number | string; caixa_disponivel: number | string | null };
+const lerMontado = (r: LinhaMontada): RascunhoMontado => ({
+  id: r.id, codigo: r.codigo, criado: r.criado, itens: r.itens, extras: r.extras, totalCentavos: centavos(r.total), totalExtrasCentavos: centavos(r.total_extras),
+  caixaCentavos: r.caixa_disponivel === null ? null : centavos(r.caixa_disponivel),
+});
+const descreverMontado = (m: RascunhoMontado) =>
+  `${m.itens} ${m.itens === 1 ? "item" : "itens"} · ${formatarMoeda(m.totalCentavos - m.totalExtrasCentavos)}${m.extras > 0 ? ` + ${m.extras} ${m.extras === 1 ? "extra" : "extras"} · ${formatarMoeda(m.totalExtrasCentavos)}` : ""}`;
 
 /**
- * Gera a autorização de pagamento (função de banco `cap_criar_autorizacao`, numa transação): cabeçalho numerado + cópia dos
- * itens marcados. Operador ou acima monta o rascunho; com `autorizar`, o gestor já autoriza na mesma transação (nasce a
- * pendência "Executar autorização" na Fila do dia).
+ * "Salvar parcial" e "Extras" da tela Autorizar pagamento (função de banco `cap_montar_rascunho`, numa transação): grava os
+ * itens marcados (e o extra, se vier) no rascunho em montagem da empresa — o mais recente em rascunho — ou cria um. A pessoa
+ * continua na tela. Operador ou acima.
  */
-export async function criarAutorizacao(entrada: z.input<typeof esquemaCriar>): Promise<ResultadoCriar> {
+export async function montarRascunho(entrada: z.input<typeof esquemaMontar>): Promise<ResultadoMontar> {
   const sessao = await exigirSessao();
   if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) pode montar uma autorização." };
-  const dados = esquemaCriar.safeParse(entrada);
+  const dados = esquemaMontar.safeParse(entrada);
   if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
-  const { empresaId, lancamentoIds, data, observacao, autorizar, caixaCentavos } = dados.data;
+  const { empresaId, lancamentoIds, data, caixaCentavos, observacao, extra } = dados.data;
+  if (lancamentoIds.length === 0 && !extra && caixaCentavos === null && observacao === null) return { ok: false, erro: "Marque itens ou inclua um pagamento extra." };
+
+  const supabase = await criarClienteServidor();
+  const { data: r, error } = await supabase.rpc("cap_montar_rascunho", {
+    p_empresa: empresaId, p_lancamentos: lancamentoIds, p_caixa: caixaCentavos === null ? null : caixaCentavos / 100, p_observacao: observacao,
+    p_extra: extra ? { descricao: extra.descricao, favorecido: extra.favorecido, valor: extra.valorCentavos / 100 } : null, p_data: data,
+  });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  const m = lerMontado(r as LinhaMontada);
+  revalidatePath(ROTA_CONTAS_PAGAR, "layout");
+  const aviso = extra
+    ? `Pagamento extra incluído no rascunho ${m.codigo}: ${descreverMontado(m)}.`
+    : `Rascunho ${m.codigo} ${m.criado ? "criado" : "salvo"}: ${descreverMontado(m)}. Continue marcando, inclua extras ou gere a autorização.`;
+  return { ok: true, aviso, ...m };
+}
+
+export type ResultadoGerar = { ok: true; id: string; codigo: string; status: "rascunho" | "autorizada"; aviso: string } | { ok: false; erro: string };
+const esquemaGerar = esquemaMontar.omit({ extra: true }).extend({ autorizar: z.boolean().default(false) });
+
+/**
+ * "Gerar autorização": grava o que estiver marcado no rascunho em montagem (ou cria) e, se o gestor pediu, autoriza na
+ * mesma hora (`cap_autorizar`: nasce a pendência na Fila do dia). Devolve o id para abrir a página da autorização.
+ */
+export async function gerarAutorizacao(entrada: z.input<typeof esquemaGerar>): Promise<ResultadoGerar> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) pode montar uma autorização." };
+  const dados = esquemaGerar.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const { empresaId, lancamentoIds, data, caixaCentavos, observacao, autorizar } = dados.data;
   if (autorizar && !temAcesso(sessao.acesso, "financeiro", "gestor")) return { ok: false, erro: "Somente gestor do Financeiro (ou acima) pode autorizar o pagamento." };
 
   const supabase = await criarClienteServidor();
-  const { data: r, error } = await supabase.rpc("cap_criar_autorizacao", {
-    p_empresa: empresaId, p_lancamentos: lancamentoIds, p_observacao: observacao || null, p_data: data, p_autorizar: autorizar,
-    p_caixa: caixaCentavos === null ? null : caixaCentavos / 100,
+  const { data: r, error } = await supabase.rpc("cap_montar_rascunho", {
+    p_empresa: empresaId, p_lancamentos: lancamentoIds, p_caixa: caixaCentavos === null ? null : caixaCentavos / 100, p_observacao: observacao, p_extra: null, p_data: data,
   });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
-  const resultado = r as { id: string; numero: number; codigo: string; itens: number; status: "rascunho" | "autorizada" };
-
+  const m = lerMontado(r as LinhaMontada);
+  if (m.itens + m.extras === 0) {
+    revalidatePath(ROTA_CONTAS_PAGAR, "layout");
+    return { ok: false, erro: `O rascunho ${m.codigo} está vazio: marque itens ou inclua um pagamento extra.` };
+  }
+  let status: "rascunho" | "autorizada" = "rascunho";
+  if (autorizar) {
+    const { error: erroAut } = await supabase.rpc("cap_autorizar", { p_id: m.id });
+    if (erroAut) {
+      revalidatePath(ROTA_CONTAS_PAGAR, "layout");
+      return { ok: false, erro: `O rascunho ${m.codigo} foi salvo, mas não foi autorizado: ${mensagemDeErro(erroAut)}` };
+    }
+    status = "autorizada";
+  }
   revalidatePath(ROTA_CONTAS_PAGAR, "layout");
   revalidatePath("/financeiro/recebiveis/fila");
   return {
-    ok: true, id: resultado.id, numero: resultado.numero, codigo: resultado.codigo, status: resultado.status,
-    aviso: resultado.status === "autorizada"
-      ? `Autorização ${resultado.codigo} gerada e autorizada (${resultado.itens} ${resultado.itens === 1 ? "item" : "itens"}). A pendência de execução está na Fila do dia.`
-      : resultado.itens === 0
-        ? `Rascunho vazio da autorização ${resultado.codigo} criado. Inclua os pagamentos extras na página da autorização.`
-        : `Rascunho da autorização ${resultado.codigo} gerado com ${resultado.itens} ${resultado.itens === 1 ? "item" : "itens"}.`,
+    ok: true, id: m.id, codigo: m.codigo, status,
+    aviso: status === "autorizada"
+      ? `Autorização ${m.codigo} autorizada: ${descreverMontado(m)}. A pendência de execução está na Fila do dia.`
+      : `Autorização ${m.codigo} gerada como rascunho: ${descreverMontado(m)}.`,
   };
 }
 

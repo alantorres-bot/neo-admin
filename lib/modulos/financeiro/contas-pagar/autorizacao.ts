@@ -129,6 +129,33 @@ export function compararComCaixa(totalCentavos: number, caixaCentavos: number | 
   return { caixaCentavos, sobraCentavos: Math.max(diferenca, 0), excedenteCentavos: Math.max(-diferenca, 0), ultrapassa: diferenca < 0 };
 }
 
+// ---------------------------------------------------------------- rascunho em montagem
+
+/** Autorização mais recente da empresa ainda em rascunho: é onde "Salvar parcial" e "Extras" da tela de seleção gravam. */
+export type RascunhoEmMontagem = {
+  id: string;
+  codigo: string;
+  empresaId: string;
+  itens: number;
+  extras: number;
+  /** Total do rascunho (itens + extras). */
+  totalCentavos: number;
+  totalExtrasCentavos: number;
+  caixaCentavos: number | null;
+  observacao: string | null;
+};
+
+/** "Rascunho 111026 em montagem: 3 itens · R$ X + 1 extra · R$ Y" (sem a parte dos extras quando não há). */
+export function descreverRascunho(r: Pick<RascunhoEmMontagem, "codigo" | "itens" | "extras" | "totalCentavos" | "totalExtrasCentavos">): string {
+  const itens = `${r.itens} ${r.itens === 1 ? "item" : "itens"} · ${reais(r.totalCentavos - r.totalExtrasCentavos)}`;
+  const extras = r.extras > 0 ? ` + ${r.extras} ${r.extras === 1 ? "extra" : "extras"} · ${reais(r.totalExtrasCentavos)}` : "";
+  return `Rascunho ${r.codigo} em montagem: ${itens}${extras}`;
+}
+
+/** O que se compara com o caixa na tela de seleção: o rascunho em montagem mais o que está marcado agora. */
+export const totalParaCaixa = (rascunho: Pick<RascunhoEmMontagem, "totalCentavos"> | null, marcadosCentavos: number): number =>
+  (rascunho?.totalCentavos ?? 0) + marcadosCentavos;
+
 // ---------------------------------------------------------------- Slack
 
 export type DadosMensagemSlack = {
