@@ -53,7 +53,7 @@ export default async function PaginaAutorizacoes({ searchParams }: PageProps<"/f
           <Table className="cartoes">
             <TableHeader>
               <TableRow>
-                <TableHead>Nº</TableHead>
+                <TableHead>Código</TableHead>
                 <TableHead>Data</TableHead>
                 <TableHead>Situação</TableHead>
                 <TableHead>Empresa</TableHead>
@@ -69,7 +69,7 @@ export default async function PaginaAutorizacoes({ searchParams }: PageProps<"/f
             <TableBody>
               {linhas.map((a) => (
                 <TableRow key={a.id}>
-                  <TableCell className="font-medium tabular-nums"><Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes/${a.id}`} className="hover:underline">nº {a.numero}</Link></TableCell>
+                  <TableCell className="font-medium tabular-nums"><Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes/${a.id}`} className="hover:underline">{a.codigo}</Link></TableCell>
                   <TableCell className="tabular-nums">{formatarData(a.data)}</TableCell>
                   <TableCell><Badge variant={COR_STATUS[a.status]}>{ROTULO_STATUS[a.status]}</Badge></TableCell>
                   <TableCell>{a.empresa_nome}</TableCell>

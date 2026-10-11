@@ -20,7 +20,7 @@ export type ItemPdf = {
 };
 
 export type DadosPdfAutorizacao = {
-  numero: number;
+  codigo: string;
   data: string; // aaaa-mm-dd
   status: StatusAutorizacao;
   empresaRazaoSocial: string;
@@ -104,7 +104,7 @@ export function DocumentoAutorizacao({ d }: { d: DadosPdfAutorizacao }) {
   const caixa = compararComCaixa(resumo.geral.centavos, d.caixaCentavos);
   const selo = d.status === "rascunho" ? "RASCUNHO — SEM VALIDADE" : d.status === "cancelada" ? `CANCELADA${d.canceladaEm ? ` EM ${d.canceladaEm}` : ""}` : null;
   return (
-    <Document title={`Autorização de pagamento nº ${d.numero}`} author="Neo Admin">
+    <Document title={`Autorização de pagamento ${d.codigo}`} author="Neo Admin">
       <Page size="A4" style={estilos.pagina}>
         <View style={estilos.cabecalho}>
           <View>
@@ -112,7 +112,7 @@ export function DocumentoAutorizacao({ d }: { d: DadosPdfAutorizacao }) {
             <Text>CNPJ {d.empresaCnpj ?? "—"}</Text>
           </View>
           <View>
-            <Text style={estilos.titulo}>Autorização de pagamento nº {d.numero}</Text>
+            <Text style={estilos.titulo}>Autorização de pagamento {d.codigo}</Text>
             <Text style={{ textAlign: "right" }}>Data: {formatarData(d.data)} · Emitido em {d.emitidoEm}</Text>
             {selo && <Text style={estilos.selo}>{selo}</Text>}
           </View>
@@ -152,4 +152,4 @@ export async function gerarPdfAutorizacao(d: DadosPdfAutorizacao): Promise<Uint8
   return new Uint8Array(buffer);
 }
 
-export const nomeArquivoAutorizacao = (numero: number, data: string): string => `autorizacao-pagamento-${String(numero).padStart(4, "0")}-${data}.pdf`;
+export const nomeArquivoAutorizacao = (codigo: string): string => `autorizacao-pagamento-${codigo}.pdf`;

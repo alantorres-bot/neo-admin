@@ -214,3 +214,14 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
   canal em `configuracoes` (`financeiro.contas-pagar.slack_canal_id`, hoje C088FV34S4A; migration `0124_cap_slack.sql`).
   Registro do envio em `cap_autorizacoes.slack_enviada_em/por/permalink` (só a service role grava). Sem token/canal, o diálogo
   oferece o plano B: copiar a mensagem e abrir o canal. **Nada é enviado sem o clique e a confirmação do gestor.**
+- **Código da autorização e Slack só com o PDF (11/10/2026, pedido do Alan):** migration `0125_cap_codigo_slack.sql`.
+  - `cap_autorizacoes.codigo` = **data do pagamento no formato DDMMAA** (ex.: pagamento em 10/10/2026 → `101026`); a segunda
+    autorização da mesma data recebe `101026-2`, a terceira `101026-3`… (`cap_codigo_para_data`). O `numero` sequencial continua
+    por baixo (ordem e prova), mas as telas, o relatório, a pendência ("Executar autorização de pagamento 101026 — R$ X"), o nome
+    do arquivo (`autorizacao-pagamento-101026.pdf`) e os avisos mostram o código. Código imutável depois de criado.
+  - **No Slack vai somente o PDF**, sem texto: título do arquivo "Autorização de pagamento <código> · empresa · data".
+    A função guarda `slack_file_id` e `slack_message_ts` para poder retirar depois.
+  - **Cancelar uma autorização já enviada:** `cap_cancelar` devolve `enviada_slack`; o app chama `cap-enviar-slack` com
+    `acao: "cancelar"`, que apaga o arquivo (`files.delete`) e a mensagem (`chat.delete`) e publica o aviso curto
+    "Autorização de pagamento <código> CANCELADA em dd/mm/aaaa. Motivo: … O relatório anterior não vale mais."; grava
+    `slack_retirada_em`. Se o Slack falhar, a autorização fica cancelada mesmo assim e a tela pede para apagar à mão.

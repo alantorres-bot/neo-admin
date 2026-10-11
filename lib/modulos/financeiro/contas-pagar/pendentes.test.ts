@@ -86,7 +86,7 @@ describe("filtros", () => {
     antecipacao("a", { dataPagamento: "2026-10-15" }),
   ];
   it("mostrar: pendentes esconde quem já está em autorização ativa ou foi tratado; todos inclui", () => {
-    const lista = [item({ id: "livre" }), item({ id: "aut", autorizacao: { id: "a", numero: 3, status: "rascunho" } }), antecipacao("trat", { tratada: { id: "t", motivo: "borderô 1", em: "2026-10-01" } })];
+    const lista = [item({ id: "livre" }), item({ id: "aut", autorizacao: { id: "a", numero: 3, codigo: "101026", status: "rascunho" } }), antecipacao("trat", { tratada: { id: "t", motivo: "borderô 1", em: "2026-10-01" } })];
     expect(aplicarFiltrosPendentes(lista, filtro, HOJE).map((i) => i.id)).toEqual(["livre"]);
     expect(aplicarFiltrosPendentes(lista, { ...filtro, mostrar: "todos" }, HOJE).map((i) => i.id)).toEqual(["livre", "aut", "trat"]);
   });

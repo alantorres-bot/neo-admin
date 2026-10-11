@@ -22,7 +22,7 @@ async function lancamento(tipo: "C" | "A" | "D", valor: number, extra: { vencime
 }
 const criar = (usuario: string, ids: string[], opcoes: { observacao?: string; data?: string; autorizar?: boolean } = {}) =>
   rpc(usuario, `select cap_criar_autorizacao($1, $2::uuid[], $3, $4, $5) as r`, [empresa, ids, opcoes.observacao ?? null, opcoes.data ?? null, opcoes.autorizar ?? false]);
-const status = async (id: string) => (await q(`select status, numero, autorizada_por, cancelada_por, motivo_cancelamento from cap_autorizacoes where id = $1`, [id])).rows[0];
+const status = async (id: string) => (await q(`select status, numero, codigo, autorizada_por, cancelada_por, motivo_cancelamento from cap_autorizacoes where id = $1`, [id])).rows[0];
 const pendencias = async (id: string) => (await q(`select titulo, status, prazo::text as prazo, criticidade, link from pendencias where referencia_tabela = 'cap_autorizacoes' and referencia_id = $1 order by criado_em`, [id])).rows;
 
 beforeAll(async () => {
@@ -42,6 +42,7 @@ describe("criar autorização (rascunho)", () => {
     const a = await lancamento("A", 46728.9, { pagamento: "2026-10-09" });
     const r = (await criar(finOperador, [t, a], { observacao: "Pagamentos da semana" })).rows[0].r;
     expect(r).toMatchObject({ numero: 1, itens: 2, total_titulos: 2525.44, total_antecipacoes: 46728.9, status: "rascunho" });
+    expect(r.codigo).toMatch(/^\d{6}$/); // DDMMAA da data do pagamento (hoje)
     const itens = (await q(`select tipo, cod_lancamento, fornecedor_nome, fornecedor_documento, valor, complemento_historico, ordem from cap_autorizacao_itens where autorizacao_id = $1 order by ordem`, [r.id])).rows;
     expect(itens.map((i) => [i.tipo, i.fornecedor_nome, i.fornecedor_documento, Number(i.valor)])).toEqual([
       ["titulo", "PERFILADOS MULTIACO", "02.019.067/0001-01", 2525.44],
@@ -51,9 +52,11 @@ describe("criar autorização (rascunho)", () => {
     const vw = (await rpc(finConsulta, `select numero, itens, titulos, antecipacoes, total, criado_por_nome, empresa_nome from cap_vw_autorizacoes where id = $1`, [r.id])).rows[0];
     expect(vw).toMatchObject({ numero: 1, itens: 2, titulos: 1, antecipacoes: 1, empresa_nome: "Neo" });
     expect(Number(vw.total)).toBe(49254.34);
-    // o segundo rascunho recebe o número 2
+    // o segundo rascunho do mesmo dia recebe o número 2 e o código com sufixo -2
     const t2 = await lancamento("C", 10);
-    expect((await criar(finOperador, [t2])).rows[0].r.numero).toBe(2);
+    const r2 = (await criar(finOperador, [t2])).rows[0].r;
+    expect(r2.numero).toBe(2);
+    expect(r2.codigo).toBe(`${r.codigo}-2`);
   });
   it("recusa: consulta, lista vazia, crédito (D), lançamento baixado e lançamento já em autorização ativa", async () => {
     const t = await lancamento("C", 10);
@@ -65,7 +68,7 @@ describe("criar autorização (rascunho)", () => {
     await como(db, "service", () => q(`update cap_lancamentos set baixado_em = current_date, valor_atualizado = 0 where id = $1`, [baixado]));
     await expect(criar(finOperador, [baixado])).rejects.toThrow(/já saiu dos abertos/);
     const r = (await criar(finOperador, [t])).rows[0].r;
-    await expect(criar(finOperador, [t])).rejects.toThrow(new RegExp(`já está na autorização nº ${r.numero}`));
+    await expect(criar(finOperador, [t])).rejects.toThrow(new RegExp(`já está na autorização ${r.codigo}`));
   });
   it("a tela lista o pendente com a autorização ativa; o lançamento some da lista quando a autorização é cancelada? não: volta a ficar livre", async () => {
     const t = await lancamento("C", 10);
@@ -86,13 +89,13 @@ describe("autorizar, cancelar e pendência", () => {
     const r = (await criar(finOperador, [t, a])).rows[0].r;
     await expect(rpc(finOperador, `select cap_autorizar($1)`, [r.id])).rejects.toThrow(/Somente gestor/);
     const ok = (await rpc(finGestor, `select cap_autorizar($1) as r`, [r.id])).rows[0].r;
-    expect(ok).toMatchObject({ numero: r.numero, itens: 2, total: 150, prazo: "2099-01-10" });
+    expect(ok).toMatchObject({ codigo: r.codigo, itens: 2, total: 150, prazo: "2099-01-10" });
     const s = await status(r.id);
     expect(s.status).toBe("autorizada");
     expect(s.autorizada_por).toBe(finGestor);
     const p = await pendencias(r.id);
     expect(p).toHaveLength(1);
-    expect(p[0]).toMatchObject({ titulo: `Executar autorização de pagamento nº ${r.numero} — R$ 150,00`, status: "aberta", criticidade: "normal", link: `/financeiro/contas-pagar/autorizacoes/${r.id}` });
+    expect(p[0]).toMatchObject({ titulo: `Executar autorização de pagamento ${r.codigo} — R$ 150,00`, status: "aberta", criticidade: "normal", link: `/financeiro/contas-pagar/autorizacoes/${r.id}` });
     // autorizar de novo não repete
     await expect(rpc(finGestor, `select cap_autorizar($1)`, [r.id])).rejects.toThrow(/já autorizada|não encontrada/);
     expect(await pendencias(r.id)).toHaveLength(1);
@@ -119,7 +122,7 @@ describe("autorizar, cancelar e pendência", () => {
     await rpc(finGestor, `select cap_autorizar($1)`, [r.id]);
     await expect(rpc(finOperador, `select cap_cancelar($1, 'tentando')`, [r.id])).rejects.toThrow(/Só gestor/);
     const c = (await rpc(finGestor, `select cap_cancelar($1, 'Pagamento adiado pela diretoria') as r`, [r.id])).rows[0].r;
-    expect(c).toMatchObject({ numero: r.numero, pendencias_canceladas: 1 });
+    expect(c).toMatchObject({ codigo: r.codigo, pendencias_canceladas: 1, enviada_slack: false });
     const s = await status(r.id);
     expect(s).toMatchObject({ status: "cancelada", cancelada_por: finGestor, motivo_cancelamento: "Pagamento adiado pela diretoria" });
     expect((await pendencias(r.id))[0].status).toBe("cancelada");

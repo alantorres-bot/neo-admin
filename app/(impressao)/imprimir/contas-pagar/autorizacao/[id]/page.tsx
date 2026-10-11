@@ -45,7 +45,7 @@ export default async function PaginaImprimirAutorizacao({ params }: PageProps<"/
             <p className="text-[11px]">CNPJ {a.empresa_cnpj ?? "—"}</p>
           </div>
           <div className="text-right">
-            <p className="text-[16px] font-bold uppercase leading-tight">Autorização de pagamento nº {a.numero}</p>
+            <p className="text-[16px] font-bold uppercase leading-tight">Autorização de pagamento {a.codigo}</p>
             <p className="text-[11px]">Data: {formatarData(a.data)} · Emitido em {quandoEm(new Date().toISOString())}</p>
             {selo && <p className="mt-1 inline-block border-2 border-black px-2 py-0.5 text-[12px] font-bold tracking-wide">{selo}</p>}
           </div>

@@ -48,7 +48,7 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
   const caixaCentavos = a.caixa_disponivel === null ? null : centavos(a.caixa_disponivel);
   const caixa = compararComCaixa(resumo.geral.centavos, caixaCentavos);
   const textoSlack = mensagemSlack({
-    numero: a.numero, data: formatarData(a.data), empresa: a.empresa_nome, status: a.status, titulos: resumo.titulos, antecipacoes: resumo.antecipacoes,
+    codigo: a.codigo, data: formatarData(a.data), empresa: a.empresa_nome, status: a.status, titulos: resumo.titulos, antecipacoes: resumo.antecipacoes,
     totalCentavos: resumo.geral.centavos, caixa, autorizadaPor: a.autorizada_por_nome, observacao: a.observacao, link: `${protocolo}://${host}${ROTA_CONTAS_PAGAR}/autorizacoes/${a.id}`,
   });
   const resumoTexto = `${resumo.titulos.quantidade} ${resumo.titulos.quantidade === 1 ? "título" : "títulos"} (${formatarMoeda(resumo.titulos.centavos)}) e ${resumo.antecipacoes.quantidade} ${resumo.antecipacoes.quantidade === 1 ? "antecipação" : "antecipações"} (${formatarMoeda(resumo.antecipacoes.centavos)}), total ${formatarMoeda(resumo.geral.centavos)}`;
@@ -57,12 +57,13 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold">Autorização de pagamento nº {a.numero} <Badge variant={COR_STATUS[a.status]} className="ml-1 align-middle">{ROTULO_STATUS[a.status]}</Badge></h2>
+          <h2 className="text-xl font-bold">Autorização de pagamento {a.codigo} <Badge variant={COR_STATUS[a.status]} className="ml-1 align-middle">{ROTULO_STATUS[a.status]}</Badge></h2>
           <p className="text-sm text-muted-foreground">
             {a.empresa_nome} · data {formatarData(a.data)} · montada por {a.criado_por_nome ?? "—"} em {quandoEm(a.criado_em)}
             {a.autorizada_em && <> · autorizada por {a.autorizada_por_nome ?? "—"} em {quandoEm(a.autorizada_em)}</>}
             {a.cancelada_em && <> · cancelada por {a.cancelada_por_nome ?? "—"} em {quandoEm(a.cancelada_em)}</>}
-            {a.slack_enviada_em && <> · enviada no Slack por {a.slack_enviada_por_nome ?? "—"} em {quandoEm(a.slack_enviada_em)}{a.slack_permalink ? <> (<a href={a.slack_permalink} target="_blank" rel="noopener" className="text-elo hover:underline">ver mensagem</a>)</> : null}</>}
+            {a.slack_retirada_em && <> · retirada do Slack em {quandoEm(a.slack_retirada_em)}</>}
+            {a.slack_enviada_em && !a.slack_retirada_em && <> · enviada no Slack por {a.slack_enviada_por_nome ?? "—"} em {quandoEm(a.slack_enviada_em)}{a.slack_permalink ? <> (<a href={a.slack_permalink} target="_blank" rel="noopener" className="text-elo hover:underline">ver mensagem</a>)</> : null}</>}
           </p>
           {a.observacao && <p className="mt-1 text-sm">{a.observacao}</p>}
           {a.motivo_cancelamento && <p className="mt-1 text-sm text-destructive">Motivo do cancelamento: {a.motivo_cancelamento}</p>}
@@ -70,10 +71,10 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="ghost" render={<Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes`} />}>Voltar ao histórico</Button>
           <Button variant="outline" render={<a href={rotaImpressao(a.id)} target="_blank" rel="noopener" />}><Printer /> Imprimir / salvar PDF</Button>
-          {a.status !== "cancelada" && <BotaoEnviarSlack id={a.id} mensagem={textoSlack} canalUrl={parametrosModulo.slackCanalUrl} ehGestor={papel.ehGestor} jaEnviadaEm={a.slack_enviada_em ? quandoEm(a.slack_enviada_em) : null} />}
+          {a.status !== "cancelada" && <BotaoEnviarSlack id={a.id} codigo={a.codigo} mensagem={textoSlack} canalUrl={parametrosModulo.slackCanalUrl} ehGestor={papel.ehGestor} jaEnviadaEm={a.slack_enviada_em ? quandoEm(a.slack_enviada_em) : null} />}
           {papel.podeOperar && a.status !== "rascunho" && <AnexarAssinada autorizacaoId={a.id} temAnexo={anexos.length > 0} />}
-          {podeAutorizar(a.status, papel) && <BotaoAutorizar id={a.id} numero={a.numero} resumo={resumoTexto} />}
-          {podeCancelar(a.status, a.criado_por, papel) && a.status !== "cancelada" && <DialogoCancelar id={a.id} numero={a.numero} status={a.status} />}
+          {podeAutorizar(a.status, papel) && <BotaoAutorizar id={a.id} codigo={a.codigo} resumo={resumoTexto} />}
+          {podeCancelar(a.status, a.criado_por, papel) && a.status !== "cancelada" && <DialogoCancelar id={a.id} codigo={a.codigo} status={a.status} enviadaSlack={Boolean(a.slack_enviada_em && !a.slack_retirada_em)} />}
           {a.status === "rascunho" && papel.podeOperar && <DialogoCaixa id={a.id} caixaCentavos={caixaCentavos} />}
         </div>
       </div>

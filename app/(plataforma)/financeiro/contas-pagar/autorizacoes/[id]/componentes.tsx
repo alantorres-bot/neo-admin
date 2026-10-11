@@ -107,7 +107,7 @@ export function AnexarAssinada({ autorizacaoId, temAnexo }: { autorizacaoId: str
 }
 
 /** Autorizar em dois cliques: o botão abre a confirmação com o total. */
-export function BotaoAutorizar({ id, numero, resumo }: { id: string; numero: number; resumo: string }) {
+export function BotaoAutorizar({ id, codigo, resumo }: { id: string; codigo: string; resumo: string }) {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
   const [erro, setErro] = useState<string>();
@@ -133,7 +133,7 @@ export function BotaoAutorizar({ id, numero, resumo }: { id: string; numero: num
         <Dialog open onOpenChange={(v) => { if (!v) setAberto(false); }}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Autorizar a autorização nº {numero}?</DialogTitle>
+              <DialogTitle>Autorizar a autorização {codigo}?</DialogTitle>
               <DialogDescription>{resumo}. A pendência “Executar autorização de pagamento” é aberta na Fila do dia para o financeiro. Depois de autorizada, os itens não mudam mais.</DialogDescription>
             </DialogHeader>
             {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
@@ -148,7 +148,7 @@ export function BotaoAutorizar({ id, numero, resumo }: { id: string; numero: num
   );
 }
 
-export function DialogoCancelar({ id, numero, status }: { id: string; numero: number; status: "rascunho" | "autorizada" }) {
+export function DialogoCancelar({ id, codigo, status, enviadaSlack }: { id: string; codigo: string; status: "rascunho" | "autorizada"; enviadaSlack: boolean }) {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
   const [motivo, setMotivo] = useState("");
@@ -175,10 +175,10 @@ export function DialogoCancelar({ id, numero, status }: { id: string; numero: nu
         <Dialog open onOpenChange={(v) => { if (!v) setAberto(false); }}>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Cancelar a autorização nº {numero}?</DialogTitle>
+              <DialogTitle>Cancelar a autorização {codigo}?</DialogTitle>
               <DialogDescription>
                 {status === "autorizada" ? "Ela já foi autorizada: a pendência de execução será cancelada e " : "O rascunho é cancelado e "}
-                os itens voltam à lista de pendentes. O registro fica no histórico com o motivo.
+                os itens voltam à lista de pendentes. O registro fica no histórico com o motivo.{enviadaSlack ? " O PDF é retirado do canal do Slack e o canal recebe um aviso de cancelamento." : ""}
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-3">
@@ -252,7 +252,7 @@ export function BotaoRemoverItem({ autorizacaoId, itemId, descricao }: { autoriz
  * token do aplicativo do Slack). Só gestor; nada sai sem o clique. Se o aplicativo ainda não estiver configurado, cai no
  * plano B: copia a mensagem e abre o canal para o diretor colar.
  */
-export function BotaoEnviarSlack({ id, mensagem, canalUrl, ehGestor, jaEnviadaEm }: { id: string; mensagem: string; canalUrl: string | null; ehGestor: boolean; jaEnviadaEm: string | null }) {
+export function BotaoEnviarSlack({ id, codigo, mensagem, canalUrl, ehGestor, jaEnviadaEm }: { id: string; codigo: string; mensagem: string; canalUrl: string | null; ehGestor: boolean; jaEnviadaEm: string | null }) {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
   const [erro, setErro] = useState<string>();
@@ -270,7 +270,7 @@ export function BotaoEnviarSlack({ id, mensagem, canalUrl, ehGestor, jaEnviadaEm
 
   function confirmar() {
     iniciar(async () => {
-      const r = await enviarNoSlack({ id, link: `${window.location.origin}/financeiro/contas-pagar/autorizacoes/${id}` });
+      const r = await enviarNoSlack({ id });
       if (r.ok) {
         toast.success(r.aviso);
         setAberto(false);
@@ -292,14 +292,14 @@ export function BotaoEnviarSlack({ id, mensagem, canalUrl, ehGestor, jaEnviadaEm
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Enviar no canal do financeiro?</DialogTitle>
-              <DialogDescription>O Neo Admin publica esta mensagem e o PDF do relatório no canal do financeiro no Slack{jaEnviadaEm ? ` (já enviada em ${jaEnviadaEm})` : ""}.</DialogDescription>
+              <DialogDescription>O Neo Admin publica somente o PDF do relatório (autorização {codigo}) no canal do financeiro no Slack, sem texto{jaEnviadaEm ? ` (já enviada em ${jaEnviadaEm})` : ""}.</DialogDescription>
             </DialogHeader>
-            <pre className="max-h-60 overflow-auto whitespace-pre-wrap rounded-[3px] border border-grade bg-cabecalho p-3 text-xs">{mensagem}</pre>
+            <p className="text-xs text-muted-foreground">Arquivo: autorizacao-pagamento-{codigo}.pdf. Se o aplicativo não estiver configurado, “Só copiar e abrir o Slack” copia um resumo em texto para colar à mão.</p>
             {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
             <div className="flex flex-wrap justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setAberto(false)} disabled={pendente}>Voltar</Button>
               <Button type="button" variant="outline" onClick={planoB} disabled={pendente}>Só copiar e abrir o Slack</Button>
-              <Button type="button" onClick={confirmar} disabled={pendente}>{pendente ? "Enviando…" : "Sim, enviar com o PDF"}</Button>
+              <Button type="button" onClick={confirmar} disabled={pendente}>{pendente ? "Enviando…" : "Sim, enviar o PDF"}</Button>
             </div>
           </DialogContent>
         </Dialog>

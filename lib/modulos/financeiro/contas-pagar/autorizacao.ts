@@ -50,8 +50,8 @@ const reais = (centavos: number) => {
 };
 
 /** Título da pendência da Fila do dia (igual ao gravado por cap_autorizar). */
-export const tituloPendenciaExecucao = (numero: number, totalCentavos: number): string =>
-  `Executar autorização de pagamento nº ${numero} — ${reais(totalCentavos)}`;
+export const tituloPendenciaExecucao = (codigo: string, totalCentavos: number): string =>
+  `Executar autorização de pagamento ${codigo} — ${reais(totalCentavos)}`;
 
 const diasEntre = (a: string, b: string) => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000);
 
@@ -96,7 +96,7 @@ export function compararComCaixa(totalCentavos: number, caixaCentavos: number | 
 // ---------------------------------------------------------------- Slack
 
 export type DadosMensagemSlack = {
-  numero: number;
+  codigo: string;
   data: string; // dd/mm/aaaa
   empresa: string;
   status: StatusAutorizacao;
@@ -112,7 +112,7 @@ export type DadosMensagemSlack = {
 /** Texto que o diretor cola no canal do financeiro. O sistema nunca envia: só copia e abre o Slack. */
 export function mensagemSlack(d: DadosMensagemSlack): string {
   const linhas = [
-    `*Autorização de pagamento nº ${d.numero}* · ${d.empresa} · ${d.data}${d.status !== "autorizada" ? ` · ${ROTULO_STATUS[d.status].toUpperCase()}` : ""}`,
+    `*Autorização de pagamento ${d.codigo}* · ${d.empresa} · ${d.data}${d.status !== "autorizada" ? ` · ${ROTULO_STATUS[d.status].toUpperCase()}` : ""}`,
     `Títulos: ${d.titulos.quantidade} (${reais(d.titulos.centavos)}) · Antecipações: ${d.antecipacoes.quantidade} (${reais(d.antecipacoes.centavos)})`,
     `*Total autorizado: ${reais(d.totalCentavos)}*`,
   ];

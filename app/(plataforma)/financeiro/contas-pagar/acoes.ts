@@ -61,7 +61,7 @@ export async function atualizarDoConsistem(modo: ModoAtualizacao): Promise<Resul
 
 // ---------------------------------------------------------------- autorização (Fase 2)
 
-export type ResultadoCriar = { ok: true; id: string; numero: number; status: "rascunho" | "autorizada"; aviso: string } | { ok: false; erro: string };
+export type ResultadoCriar = { ok: true; id: string; numero: number; codigo: string; status: "rascunho" | "autorizada"; aviso: string } | { ok: false; erro: string };
 
 const esquemaCriar = z.object({
   empresaId: z.string().uuid(),
@@ -92,15 +92,15 @@ export async function criarAutorizacao(entrada: z.input<typeof esquemaCriar>): P
     p_caixa: caixaCentavos === null ? null : caixaCentavos / 100,
   });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
-  const resultado = r as { id: string; numero: number; itens: number; status: "rascunho" | "autorizada" };
+  const resultado = r as { id: string; numero: number; codigo: string; itens: number; status: "rascunho" | "autorizada" };
 
   revalidatePath(ROTA_CONTAS_PAGAR, "layout");
   revalidatePath("/financeiro/recebiveis/fila");
   return {
-    ok: true, id: resultado.id, numero: resultado.numero, status: resultado.status,
+    ok: true, id: resultado.id, numero: resultado.numero, codigo: resultado.codigo, status: resultado.status,
     aviso: resultado.status === "autorizada"
-      ? `Autorização nº ${resultado.numero} gerada e autorizada (${resultado.itens} ${resultado.itens === 1 ? "item" : "itens"}). A pendência de execução está na Fila do dia.`
-      : `Rascunho da autorização nº ${resultado.numero} gerado com ${resultado.itens} ${resultado.itens === 1 ? "item" : "itens"}.`,
+      ? `Autorização ${resultado.codigo} gerada e autorizada (${resultado.itens} ${resultado.itens === 1 ? "item" : "itens"}). A pendência de execução está na Fila do dia.`
+      : `Rascunho da autorização ${resultado.codigo} gerado com ${resultado.itens} ${resultado.itens === 1 ? "item" : "itens"}.`,
   };
 }
 

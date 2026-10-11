@@ -138,7 +138,7 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas }:
                   <TableCell className={atraso > 0 && pendente ? "font-medium text-red-700" : estaPaga(i) ? "text-emerald-700" : "text-muted-foreground"}>
                     {i.autorizacao ? (
                       <Link href={`/financeiro/contas-pagar/autorizacoes/${i.autorizacao.id}`} className="hover:underline">
-                        Na autorização nº {i.autorizacao.numero} ({ROTULO_STATUS[i.autorizacao.status].toLowerCase()})
+                        Na autorização {i.autorizacao.codigo} ({ROTULO_STATUS[i.autorizacao.status].toLowerCase()})
                       </Link>
                     ) : i.tratada ? (
                       <span title={i.tratada.motivo}>Paga fora do Neo Admin</span>

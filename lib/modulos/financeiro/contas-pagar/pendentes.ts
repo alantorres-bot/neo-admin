@@ -9,7 +9,7 @@ export const POR_PAGINA = 100;
 export type TipoItem = "titulo" | "antecipacao";
 export const ROTULO_TIPO: Record<TipoItem, string> = { titulo: "Título", antecipacao: "Antecipação" };
 
-export type AutorizacaoAtiva = { id: string; numero: number; status: "rascunho" | "autorizada" };
+export type AutorizacaoAtiva = { id: string; numero: number; codigo: string; status: "rascunho" | "autorizada" };
 export type Tratada = { id: string; motivo: string; em: string };
 
 export type ItemPendente = {

@@ -36,8 +36,8 @@ describe("totais e textos", () => {
     expect(r).toEqual({ titulos: { quantidade: 1, centavos: 1_000 }, antecipacoes: { quantidade: 1, centavos: 2_000 }, geral: { quantidade: 2, centavos: 3_000 }, baixados: 1, removidos: 1 });
   });
   it("título da pendência igual ao do banco", () => {
-    expect(tituloPendenciaExecucao(12, 48_391_044)).toBe("Executar autorização de pagamento nº 12 — R$ 483.910,44");
-    expect(tituloPendenciaExecucao(1, 50)).toBe("Executar autorização de pagamento nº 1 — R$ 0,50");
+    expect(tituloPendenciaExecucao("101026", 48_391_044)).toBe("Executar autorização de pagamento 101026 — R$ 483.910,44");
+    expect(tituloPendenciaExecucao("101026-2", 50)).toBe("Executar autorização de pagamento 101026-2 — R$ 0,50");
   });
   it("prazo = menor data, nunca no passado; criticidade alta até 3 dias", () => {
     expect(prazoExecucao(["2026-10-20", null, "2026-10-12"], "2026-10-09")).toBe("2026-10-12");
@@ -73,11 +73,11 @@ describe("caixa disponível", () => {
 describe("mensagem para o Slack", () => {
   it("monta o texto com totais, caixa e link", () => {
     const texto = mensagemSlack({
-      numero: 4, data: "10/10/2026", empresa: "NEO FORMAS", status: "autorizada", titulos: { quantidade: 2, centavos: 300_000 }, antecipacoes: { quantidade: 1, centavos: 50_000 },
+      codigo: "101026", data: "10/10/2026", empresa: "NEO FORMAS", status: "autorizada", titulos: { quantidade: 2, centavos: 300_000 }, antecipacoes: { quantidade: 1, centavos: 50_000 },
       totalCentavos: 350_000, caixa: compararComCaixa(350_000, 300_000), autorizadaPor: "Diretor", observacao: "Semana 41", link: "https://neo.exemplo/financeiro/contas-pagar/autorizacoes/x",
     });
     expect(texto.split("\n")).toEqual([
-      "*Autorização de pagamento nº 4* · NEO FORMAS · 10/10/2026",
+      "*Autorização de pagamento 101026* · NEO FORMAS · 10/10/2026",
       "Títulos: 2 (R$ 3.000,00) · Antecipações: 1 (R$ 500,00)",
       "*Total autorizado: R$ 3.500,00*",
       "Caixa disponível: R$ 3.000,00 · *Ultrapassa em R$ 500,00*",
@@ -87,7 +87,7 @@ describe("mensagem para o Slack", () => {
     ]);
   });
   it("rascunho vai marcado e sem caixa não há linha de caixa", () => {
-    const texto = mensagemSlack({ numero: 5, data: "10/10/2026", empresa: "NEO", status: "rascunho", titulos: { quantidade: 1, centavos: 100 }, antecipacoes: { quantidade: 0, centavos: 0 }, totalCentavos: 100, caixa: null, autorizadaPor: null, observacao: null, link: "l" });
+    const texto = mensagemSlack({ codigo: "101026-2", data: "10/10/2026", empresa: "NEO", status: "rascunho", titulos: { quantidade: 1, centavos: 100 }, antecipacoes: { quantidade: 0, centavos: 0 }, totalCentavos: 100, caixa: null, autorizadaPor: null, observacao: null, link: "l" });
     expect(texto).toContain("· RASCUNHO");
     expect(texto).not.toContain("Caixa");
   });

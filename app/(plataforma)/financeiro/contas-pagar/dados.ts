@@ -12,7 +12,7 @@ type LinhaPendente = {
   categoria_doc: string | null; cod_banco: string | null; complemento_historico: string | null; data_emissao: string | null; data_vencimento: string | null;
   data_pagamento: string | null; valor_documento: number | string; valor_atualizado: number | string; tem_bordero: boolean | null; bordero_visto_em: string | null;
   fornecedor_nome: string | null; fornecedor_documento: string | null;
-  autorizacao_id: string | null; autorizacao_numero: number | null; autorizacao_status: "rascunho" | "autorizada" | null;
+  autorizacao_id: string | null; autorizacao_numero: number | null; autorizacao_codigo: string | null; autorizacao_status: "rascunho" | "autorizada" | null;
   tratada_id: string | null; tratada_motivo: string | null; tratada_em: string | null;
 };
 
@@ -46,7 +46,7 @@ export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
   const [linhas, { data: configs }, { data: ultimas }, { data: empresas }] = await Promise.all([
     lerTudo<LinhaPendente>((de, ate) =>
       supabase.from("cap_vw_pendentes")
-        .select("id, empresa_id, cod_lancamento, tipo_lancamento, cod_fornecedor, num_documento, categoria_doc, cod_banco, complemento_historico, data_emissao, data_vencimento, data_pagamento, valor_documento, valor_atualizado, tem_bordero, bordero_visto_em, fornecedor_nome, fornecedor_documento, autorizacao_id, autorizacao_numero, autorizacao_status, tratada_id, tratada_motivo, tratada_em")
+        .select("id, empresa_id, cod_lancamento, tipo_lancamento, cod_fornecedor, num_documento, categoria_doc, cod_banco, complemento_historico, data_emissao, data_vencimento, data_pagamento, valor_documento, valor_atualizado, tem_bordero, bordero_visto_em, fornecedor_nome, fornecedor_documento, autorizacao_id, autorizacao_numero, autorizacao_codigo, autorizacao_status, tratada_id, tratada_motivo, tratada_em")
         .order("id").range(de, ate), "os lançamentos"),
     supabase.from("configuracoes").select("chave, valor").in("chave", [...CHAVES_CONTAS_PAGAR]),
     supabase.from("importacoes").select("criado_em, linhas_novas, linhas_alteradas, linhas_baixadas")
@@ -71,7 +71,7 @@ export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
     complemento: l.complemento_historico ?? "",
     codBanco: l.cod_banco ?? "",
     categoria: l.categoria_doc ?? "",
-    autorizacao: l.autorizacao_id && l.autorizacao_numero !== null && l.autorizacao_status ? { id: l.autorizacao_id, numero: l.autorizacao_numero, status: l.autorizacao_status } : null,
+    autorizacao: l.autorizacao_id && l.autorizacao_numero !== null && l.autorizacao_status ? { id: l.autorizacao_id, numero: l.autorizacao_numero, codigo: l.autorizacao_codigo ?? String(l.autorizacao_numero), status: l.autorizacao_status } : null,
     tratada: l.tratada_id ? { id: l.tratada_id, motivo: l.tratada_motivo ?? "", em: l.tratada_em ?? "" } : null,
     temBordero: l.tem_bordero,
     borderoVistoEm: l.bordero_visto_em ? quandoEm(l.bordero_visto_em) : null,
@@ -93,10 +93,10 @@ export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
 // ---------------------------------------------------------------- autorizações
 
 export type LinhaAutorizacao = {
-  id: string; numero: number; empresa_id: string; data: string; status: "rascunho" | "autorizada" | "cancelada"; observacao: string | null;
+  id: string; numero: number; codigo: string; empresa_id: string; data: string; status: "rascunho" | "autorizada" | "cancelada"; observacao: string | null;
   criado_por: string | null; criado_em: string; autorizada_por: string | null; autorizada_em: string | null; cancelada_por: string | null; cancelada_em: string | null;
   motivo_cancelamento: string | null; caixa_disponivel: number | string | null; excedente: number | string | null;
-  slack_enviada_em: string | null; slack_enviada_por: string | null; slack_enviada_por_nome: string | null; slack_permalink: string | null; empresa_nome: string; empresa_razao_social: string; empresa_cnpj: string | null;
+  slack_enviada_em: string | null; slack_enviada_por: string | null; slack_enviada_por_nome: string | null; slack_permalink: string | null; slack_file_id: string | null; slack_message_ts: string | null; slack_retirada_em: string | null; empresa_nome: string; empresa_razao_social: string; empresa_cnpj: string | null;
   criado_por_nome: string | null; autorizada_por_nome: string | null; cancelada_por_nome: string | null;
   itens: number; titulos: number; antecipacoes: number; total_titulos: number | string; total_antecipacoes: number | string; total: number | string; baixados: number;
 };
@@ -110,7 +110,7 @@ export type LinhaItemAutorizacao = {
   tem_bordero: boolean | null;
 };
 
-const COLUNAS_AUTORIZACAO = "id, numero, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados";
+const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados";
 
 export async function listarAutorizacoes(supabase: Cliente, filtro: { status: string | null; pagina: number; porPagina: number }): Promise<{ linhas: LinhaAutorizacao[]; total: number }> {
   let consulta = supabase.from("cap_vw_autorizacoes").select(COLUNAS_AUTORIZACAO, { count: "exact" }).order("numero", { ascending: false })
