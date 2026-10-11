@@ -108,11 +108,9 @@ function TabelaImpressa({ titulo, lista, colunaData, subtotal }: { titulo: strin
               <tr key={i.id} className="border-b border-gray-300 align-top">
                 <td className="py-1 pr-2">
                   <span className="block">{i.fornecedor_nome}</span>
-                  <span className="block text-[10px]">{i.fornecedor_documento ?? (i.cod_fornecedor ? `cód. ${i.cod_fornecedor}` : "")}</span>
                 </td>
                 <td className="py-1 pr-2 tabular-nums">
                   <span className="block">{i.num_documento || "—"}</span>
-                  <span className="block text-[10px]">lanç. {i.cod_lancamento}</span>
                 </td>
                 <td className="py-1 pr-2 tabular-nums">{formatarData(i.tipo === "titulo" ? i.data_vencimento : i.data_pagamento) || "—"}</td>
                 <td className="py-1 pr-2">{i.complemento_historico || "—"}</td>

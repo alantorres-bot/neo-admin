@@ -79,11 +79,9 @@ function Tabela({ titulo, itens, rotuloData, subtotal }: { titulo: string; itens
             <View key={i.codLancamento} style={estilos.linha} wrap={false}>
               <View style={estilos.cFornecedor}>
                 <Text>{i.fornecedorNome}</Text>
-                <Text style={estilos.pequeno}>{i.fornecedorDocumento ?? (i.codFornecedor ? `cód. ${i.codFornecedor}` : "")}</Text>
               </View>
               <View style={estilos.cDocumento}>
                 <Text>{i.numDocumento || "—"}</Text>
-                <Text style={estilos.pequeno}>lanç. {i.codLancamento}</Text>
               </View>
               <Text style={estilos.cData}>{formatarData(i.tipo === "titulo" ? i.dataVencimento : i.dataPagamento) || "—"}</Text>
               <Text style={estilos.cHistorico}>{i.complemento || "—"}</Text>
