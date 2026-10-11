@@ -11,7 +11,9 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { compararComCaixa, descreverRascunho, parseReais, ROTULO_STATUS, totalParaCaixa, type RascunhoEmMontagem } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
-import { descreverSituacao, diasAtraso, estaPaga, estaPendente, ROTULO_TIPO, type ItemPendente } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
+import { descreverSituacao, estaPaga, estaPendente, ROTA_CONTAS_PAGAR, ROTULO_TIPO, type ItemPendente } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
+import { alternarOrdem, type ColunaPendentes, type Ordem } from "@/lib/modulos/financeiro/contas-pagar/ordenacao";
+import { CabecalhoOrdenavel } from "./cabecalho-ordenavel";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { desfazerAntecipacaoTratada, gerarAutorizacao, marcarAntecipacaoTratada, montarRascunho } from "./acoes";
 import { DialogoExtra } from "./dialogo-extra";
@@ -25,6 +27,9 @@ type Props = {
   empresas: { id: string; nome: string }[];
   /** Rascunho em montagem por empresa (o mais recente em rascunho). */
   rascunhos: RascunhoEmMontagem[];
+  /** Ordenação atual (pela URL) e a consulta sem ordem/página, para montar os links dos títulos das colunas. */
+  ordem: Ordem<ColunaPendentes> | null;
+  consultaBase: string;
 };
 
 /** Texto do resumo caixa × selecionado. */
@@ -42,8 +47,16 @@ function ResumoCaixa({ totalCentavos, caixaCentavos }: { totalCentavos: number; 
  * aqui), "Extras" (pagamento fora do Consistem direto no rascunho) e "Gerar autorização" (fecha o rascunho). Linhas que já
  * estão numa autorização ativa, pagas (borderô) ou marcadas como pagas fora aparecem apagadas e sem caixa.
  */
-export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, rascunhos }: Props) {
+export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, rascunhos, ordem, consultaBase }: Props) {
   const router = useRouter();
+  const direcaoDe = (coluna: ColunaPendentes) => (ordem?.coluna === coluna ? ordem.direcao : null);
+  const hrefOrdem = (coluna: ColunaPendentes) => {
+    const proxima = alternarOrdem(ordem, coluna);
+    const qs = new URLSearchParams(consultaBase);
+    qs.set("ordem", proxima.coluna);
+    qs.set("dir", proxima.direcao);
+    return `${ROTA_CONTAS_PAGAR}?${qs}`;
+  };
   const [marcadas, setMarcadas] = useState<Set<string>>(new Set());
   const [dialogo, setDialogo] = useState(false);
   const [salvando, iniciarSalvar] = useTransition();
@@ -150,21 +163,18 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, r
                   <input type="checkbox" className="size-4" aria-label="Marcar todos desta página" checked={todasMarcadas} onChange={() => alternar(idsSelecionaveis)} disabled={idsSelecionaveis.length === 0} />
                 </TableHead>
               )}
-              <TableHead>Tipo</TableHead>
-              <TableHead>Fornecedor</TableHead>
-              <TableHead>Documento</TableHead>
-              <TableHead>Emissão</TableHead>
-              <TableHead>Vencimento</TableHead>
-              <TableHead>Situação</TableHead>
-              <TableHead className="text-right">Valor</TableHead>
-              <TableHead className="text-right">Saldo</TableHead>
-              <TableHead>Histórico</TableHead>
+              <TableHead><CabecalhoOrdenavel rotulo="Tipo" direcao={direcaoDe("tipo")} href={hrefOrdem("tipo")} /></TableHead>
+              <TableHead><CabecalhoOrdenavel rotulo="Fornecedor" direcao={direcaoDe("fornecedor")} href={hrefOrdem("fornecedor")} /></TableHead>
+              <TableHead><CabecalhoOrdenavel rotulo="Documento" direcao={direcaoDe("documento")} href={hrefOrdem("documento")} /></TableHead>
+              <TableHead><CabecalhoOrdenavel rotulo="Vencimento" direcao={direcaoDe("vencimento")} href={hrefOrdem("vencimento")} /></TableHead>
+              <TableHead className="text-right"><CabecalhoOrdenavel rotulo="Valor" direcao={direcaoDe("valor")} href={hrefOrdem("valor")} alinharDireita /></TableHead>
+              <TableHead className="text-right"><CabecalhoOrdenavel rotulo="Saldo" direcao={direcaoDe("saldo")} href={hrefOrdem("saldo")} alinharDireita /></TableHead>
+              <TableHead><CabecalhoOrdenavel rotulo="Histórico" direcao={direcaoDe("historico")} href={hrefOrdem("historico")} /></TableHead>
               {podeOperar && <TableHead />}
             </TableRow>
           </TableHeader>
           <TableBody>
             {itens.map((i) => {
-              const atraso = diasAtraso(i, hoje);
               const pendente = estaPendente(i);
               return (
                 <TableRow key={i.id} className={pendente ? undefined : "opacity-60"}>
@@ -174,28 +184,23 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, r
                     </TableCell>
                   )}
                   <TableCell><Badge variant={i.tipo === "antecipacao" ? "default" : "outline"}>{ROTULO_TIPO[i.tipo]}</Badge></TableCell>
-                  <TableCell className="max-w-72">
+                  <TableCell className="max-w-80">
                     <span className="block truncate" title={i.fornecedor}>{i.fornecedor}</span>
-                    <span className="block text-[11px] text-muted-foreground">{i.documentoFornecedor ?? `cód. ${i.codFornecedor || "—"}`}</span>
+                    {!pendente && (
+                      <span className="block text-[11px] text-muted-foreground">
+                        {i.autorizacao ? (
+                          <Link href={`/financeiro/contas-pagar/autorizacoes/${i.autorizacao.id}`} className="hover:underline">na autorização {i.autorizacao.codigo} ({ROTULO_STATUS[i.autorizacao.status].toLowerCase()})</Link>
+                        ) : i.tratada ? (
+                          <span title={i.tratada.motivo}>paga fora do Neo Admin</span>
+                        ) : estaPaga(i) ? "paga (borderô no Consistem)" : descreverSituacao(i, hoje)}
+                      </span>
+                    )}
                   </TableCell>
-                  <TableCell className="tabular-nums">
-                    {i.numDocumento || "—"}
-                    <span className="block text-[11px] text-muted-foreground">lanç. {i.codLancamento}</span>
-                  </TableCell>
-                  <TableCell className="tabular-nums">{formatarData(i.emissao) || "—"}</TableCell>
+                  <TableCell className="tabular-nums">{i.numDocumento || "—"}</TableCell>
                   <TableCell className="tabular-nums">{i.tipo === "titulo" ? formatarData(i.vencimento) || "—" : (i.dataPagamento ? formatarData(i.dataPagamento) : "—")}</TableCell>
-                  <TableCell className={atraso > 0 && pendente ? "font-medium text-red-700" : estaPaga(i) ? "text-emerald-700" : "text-muted-foreground"}>
-                    {i.autorizacao ? (
-                      <Link href={`/financeiro/contas-pagar/autorizacoes/${i.autorizacao.id}`} className="hover:underline">
-                        Na autorização {i.autorizacao.codigo} ({ROTULO_STATUS[i.autorizacao.status].toLowerCase()})
-                      </Link>
-                    ) : i.tratada ? (
-                      <span title={i.tratada.motivo}>Paga fora do Neo Admin</span>
-                    ) : descreverSituacao(i, hoje)}
-                  </TableCell>
                   <TableCell className="text-right tabular-nums text-muted-foreground">{formatarMoeda(i.valorDocumentoCentavos)}</TableCell>
                   <TableCell className="text-right font-medium tabular-nums">{formatarMoeda(i.saldoCentavos)}</TableCell>
-                  <TableCell className="max-w-64 truncate text-xs text-muted-foreground" title={i.complemento}>{i.complemento || "—"}</TableCell>
+                  <TableCell className="max-w-72 truncate text-xs text-muted-foreground" title={i.complemento}>{i.complemento || "—"}</TableCell>
                   {podeOperar && (
                     <TableCell className="text-right">
                       {i.tipo === "antecipacao" && pendente && <DialogoTratar item={i} />}

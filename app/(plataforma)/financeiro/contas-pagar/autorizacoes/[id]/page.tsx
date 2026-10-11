@@ -7,15 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Printer } from "lucide-react";
-import { compararComCaixa, mensagemSlack, podeAutorizar, podeCancelar, podeEditarExtras, podeRemoverItem, resumirItens, ROTULO_STATUS, rotaImpressao, situacaoDoItem, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { compararComCaixa, mensagemSlack, podeAutorizar, podeCancelar, podeEditarExtras, podeRemoverItem, resumirItens, ROTULO_STATUS, rotaImpressao, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { CHAVES_CONTAS_PAGAR, lerParametrosContasPagar } from "@/lib/modulos/financeiro/contas-pagar/parametros";
 import { ROTA_CONTAS_PAGAR, ROTULO_TIPO } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { lerAutorizacao, quandoEm, type LinhaExtraAutorizacao, type LinhaItemAutorizacao } from "../../dados";
-import { AnexarAssinada, BotaoAutorizar, BotaoEnviarSlack, BotaoRemoverExtra, BotaoRemoverItem, DialogoCaixa, DialogoCancelar, DialogoExtraAutorizacao } from "./componentes";
+import { lerAutorizacao, quandoEm, type LinhaExtraAutorizacao } from "../../dados";
+import { AnexarAssinada, BotaoAutorizar, BotaoEnviarSlack, BotaoRemoverExtra, DialogoCaixa, DialogoCancelar, DialogoExtraAutorizacao } from "./componentes";
+import { SecaoItens } from "./secao-itens";
 
 export const metadata: Metadata = { title: "Autorização de pagamento" };
 
@@ -213,60 +214,6 @@ function SecaoExtras({ lista, total, totalAutorizacao, caixaCentavos, autorizaca
                   <TableCell className="text-xs text-muted-foreground">{x.criado_por_nome ?? "—"}<span className="block">{quandoEm(x.criado_em)}</span></TableCell>
                   {podeEditar && (
                     <TableCell className="text-right"><BotaoRemoverExtra autorizacaoId={autorizacaoId} extraId={x.id} descricao={`${x.descricao} · ${x.favorecido} · ${formatarMoeda(centavos(x.valor))}`} /></TableCell>
-                  )}
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-    </section>
-  );
-}
-
-function SecaoItens({ titulo, lista, total, autorizacaoId, podeRemover }: { titulo: string; lista: LinhaItemAutorizacao[]; total: number; autorizacaoId: string; podeRemover: boolean }) {
-  return (
-    <section className="space-y-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="text-base font-bold">{titulo}</h3>
-        <span className="text-sm tabular-nums">{lista.length} {lista.length === 1 ? "item" : "itens"} · <strong>{formatarMoeda(total)}</strong></span>
-      </div>
-      {lista.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-4 text-center text-sm text-muted-foreground">Nenhum.</p>
-      ) : (
-        <div className="overflow-x-auto rounded-[3px] border border-grade">
-          <Table className="cartoes">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Fornecedor</TableHead>
-                <TableHead>Documento</TableHead>
-                <TableHead>Emissão</TableHead>
-                <TableHead>{titulo === "Antecipações" ? "Pagamento programado" : "Vencimento"}</TableHead>
-                <TableHead>Histórico</TableHead>
-                <TableHead className="text-right">Valor</TableHead>
-                <TableHead>No Consistem</TableHead>
-                {podeRemover && <TableHead />}
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {lista.map((i) => (
-                <TableRow key={i.id}>
-                  <TableCell className="max-w-72">
-                    <span className="block truncate" title={i.fornecedor_nome}>{i.fornecedor_nome}</span>
-                    <span className="block text-[11px] text-muted-foreground">{i.fornecedor_documento ?? `cód. ${i.cod_fornecedor ?? "—"}`}</span>
-                  </TableCell>
-                  <TableCell className="tabular-nums">{i.num_documento || "—"}<span className="block text-[11px] text-muted-foreground">lanç. {i.cod_lancamento}</span></TableCell>
-                  <TableCell className="tabular-nums">{formatarData(i.data_emissao) || "—"}</TableCell>
-                  <TableCell className="tabular-nums">{formatarData(i.tipo === "titulo" ? i.data_vencimento : i.data_pagamento) || "—"}</TableCell>
-                  <TableCell className="max-w-64 truncate text-xs text-muted-foreground" title={i.complemento_historico ?? ""}>{i.complemento_historico || "—"}</TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">{formatarMoeda(centavos(i.valor))}</TableCell>
-                  <TableCell className={i.tipo === "antecipacao" && i.tem_bordero === true && !i.baixado_consistem_em ? "font-medium text-red-700" : i.baixado_consistem_em ? "text-emerald-700" : "text-muted-foreground"}>
-                    {i.tipo === "antecipacao" && i.tem_bordero === true && !i.baixado_consistem_em
-                      ? "já paga (tem borderô no Consistem)"
-                      : <>{situacaoDoItem({ removido: false, baixadoConsistemEm: i.baixado_consistem_em, tipo: i.tipo })}{i.baixado_consistem_em ? ` em ${formatarData(i.baixado_consistem_em)}` : ""}</>}
-                  </TableCell>
-                  {podeRemover && (
-                    <TableCell className="text-right"><BotaoRemoverItem autorizacaoId={autorizacaoId} itemId={i.id} descricao={`${i.fornecedor_nome} · ${i.num_documento || i.cod_lancamento} · ${formatarMoeda(centavos(i.valor))}`} /></TableCell>
                   )}
                 </TableRow>
               ))}

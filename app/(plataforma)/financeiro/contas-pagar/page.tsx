@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
-  aplicarCorteAntecipacoes, aplicarFiltrosPendentes, ATALHOS, ehAtalho, ehDataIso, ehFiltroMostrar, ehFiltroSituacao, ehFiltroTipo, estaPaga, estaPendente,
-  ordenarPendentes, paginar, periodoDoAtalho, ROTA_CONTAS_PAGAR, totalizar, type FiltrosPendentes,
+  aplicarCorteAntecipacoes, aplicarFiltrosPendentes, ATALHOS, dataReferencia, ehAtalho, ehDataIso, ehFiltroMostrar, ehFiltroSituacao, ehFiltroTipo, estaPaga, estaPendente,
+  ordenarPendentes, paginar, periodoDoAtalho, ROTA_CONTAS_PAGAR, ROTULO_TIPO, totalizar, type FiltrosPendentes,
 } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { descreverRascunho } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { ehColunaPendentes, ehDirecao, ordenar, type ColunaPendentes, type Ordem } from "@/lib/modulos/financeiro/contas-pagar/ordenacao";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { sanitizarBusca } from "@/lib/nucleo/erros";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
@@ -50,6 +51,9 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
   };
   const consultou = primeiro(parametros.consultar) === "1" || atalho !== null;
   const paginaPedida = Number.parseInt(primeiro(parametros.pagina), 10) || 1;
+  const colunaPedida = primeiro(parametros.ordem);
+  const dirPedida = primeiro(parametros.dir);
+  const ordem: Ordem<ColunaPendentes> | null = ehColunaPendentes(colunaPedida) ? { coluna: colunaPedida, direcao: ehDirecao(dirPedida) ? dirPedida : "asc" } : null;
 
   const { itens: todos, parametros: param, ultima, empresas, rascunhos } = await pendentesDaRequisicao();
   const avisoRascunhos = rascunhos.length > 0 && (
@@ -133,7 +137,18 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
   }
 
   const emAberto = aplicarCorteAntecipacoes(todos, param.corteAntecipacoes);
-  const filtrados = ordenarPendentes(aplicarFiltrosPendentes(emAberto, filtros, hoje));
+  // Ordem padrão (vencidos primeiro) e, se a pessoa clicou num título de coluna, a ordem pedida — sobre a lista inteira, antes de paginar.
+  const filtrados = ordenar(ordenarPendentes(aplicarFiltrosPendentes(emAberto, filtros, hoje)), ordem, (i, coluna) => {
+    switch (coluna) {
+      case "tipo": return ROTULO_TIPO[i.tipo];
+      case "fornecedor": return i.fornecedor;
+      case "documento": return i.numDocumento || null;
+      case "vencimento": return dataReferencia(i);
+      case "valor": return i.valorDocumentoCentavos;
+      case "saldo": return i.saldoCentavos;
+      case "historico": return i.complemento || null;
+    }
+  });
   const pendentesFiltrados = filtrados.filter(estaPendente);
   const totais = totalizar(pendentesFiltrados, hoje);
   const pagasNoRecorte = filtrados.filter(estaPaga).length;
@@ -141,7 +156,7 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
   const descricaoPeriodo = filtros.vencDe && filtros.vencAte ? `de ${formatarData(filtros.vencDe)} a ${formatarData(filtros.vencAte)}`
     : filtros.vencAte ? `vencidos até ${formatarData(filtros.vencAte)}` : filtros.vencDe ? `a partir de ${formatarData(filtros.vencDe)}` : "sem período";
 
-  const link = (p: number) => {
+  const consultaBase = (() => {
     const qs = new URLSearchParams();
     qs.set("consultar", "1");
     if (atalho) qs.set("atalho", atalho);
@@ -153,6 +168,14 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
     if (filtros.tipo !== "todos") qs.set("tipo", filtros.tipo);
     if (filtros.situacao !== "todos") qs.set("situacao", filtros.situacao);
     if (filtros.mostrar !== "pendentes") qs.set("mostrar", filtros.mostrar);
+    return qs.toString();
+  })();
+  const link = (p: number) => {
+    const qs = new URLSearchParams(consultaBase);
+    if (ordem) {
+      qs.set("ordem", ordem.coluna);
+      qs.set("dir", ordem.direcao);
+    }
     if (p > 1) qs.set("pagina", String(p));
     return `${ROTA_CONTAS_PAGAR}?${qs}`;
   };
@@ -199,7 +222,7 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
             {todos.length === 0 ? "Nenhum lançamento em aberto. Use “Atualizar do Consistem” para trazer a lista." : "Nenhum item pendente nesse período e filtros."}
           </p>
         ) : (
-          <TabelaPendentes itens={itens} podeOperar={podeOperar} ehGestor={ehGestor} hoje={hoje} empresas={empresas} rascunhos={rascunhos} />
+          <TabelaPendentes itens={itens} podeOperar={podeOperar} ehGestor={ehGestor} hoje={hoje} empresas={empresas} rascunhos={rascunhos} ordem={ordem} consultaBase={consultaBase} />
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">

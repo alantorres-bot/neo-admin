@@ -100,9 +100,9 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
 ## 7. Telas (rota `/financeiro/contas-pagar`, menu Financeiro > Contas a pagar)
 | Tela | O que mostra |
 | --- | --- |
-| **Autorizar pagamento** (`/financeiro/contas-pagar`) | Três cartões (Títulos, Antecipações, Total: quantidade e R$); filtros (fornecedor/documento, tipo, vencimento de/até, mostrar já autorizados); tabela unificada com caixa de marcação, selo Título/Antecipação, fornecedor, documento, emissão, vencimento (antecipação: pagamento programado), valor, histórico, situação ("Na autorização nº N — rascunho/autorizada", "Tratada"); barra fixa "N itens · R$ X" + caixa disponível + rascunho em montagem + botões **Salvar parcial · Extras · Gerar autorização** (diálogo: data (só ao criar), caixa, observação; gestor vê "Autorizar agora"); "Atualizado do Consistem em …" + Simular/Atualizar |
+| **Autorizar pagamento** (`/financeiro/contas-pagar`) | Três cartões (Títulos, Antecipações, Total: quantidade e R$); filtros (fornecedor/documento, tipo, vencimento de/até, mostrar já autorizados); tabela unificada com caixa de marcação e **títulos de coluna clicáveis para ordenar** (crescente ↔ decrescente): Tipo, Fornecedor, Documento, Vencimento (antecipação: pagamento programado), Valor, Saldo, Histórico — sem CNPJ, código do lançamento, emissão ou situação (linhas não pendentes ficam apagadas com uma linha pequena "na autorização X", "paga (borderô)" ou "paga fora"); barra fixa "N itens · R$ X" + caixa disponível + rascunho em montagem + botões **Salvar parcial · Extras · Gerar autorização** (diálogo: data (só ao criar), caixa, observação; gestor vê "Autorizar agora"); "Atualizado do Consistem em …" + Simular/Atualizar |
 | **Autorizações** (`/autorizacoes`) | Histórico: nº, data, status, itens, total títulos, total antecipações, montada por, autorizada por, baixados no Consistem X/N; filtro por status |
-| **Autorização nº N** (`/autorizacoes/[id]`) | Cabeçalho e status; seção Títulos e seção Antecipações com totais; por item "baixado no Consistem em" ou "em aberto"; botões Autorizar (gestor), Cancelar (motivo), Remover item (só rascunho), Imprimir / salvar PDF |
+| **Autorização** (`/autorizacoes/[id]`) | Cabeçalho e status; seção Títulos e seção Antecipações com totais, colunas Fornecedor · Documento · Vencimento/Pagamento programado · Histórico · Valor, ordenáveis pelo título (sob o valor, só quando há algo a dizer: "baixado no Consistem em dd/mm" ou "já paga (tem borderô)"); seção Pagamentos extras; botões Autorizar (gestor), Cancelar (motivo), Remover item (só rascunho), Imprimir / salvar PDF |
 | **Impressão** (`/imprimir/contas-pagar/autorizacao/[id]`) | O relatório da seção 6, sem a moldura do sistema |
 | **Antecipações** e **Parâmetros** (Fase 4) | Todas as antecipações com saldo e sua situação; data de corte com prévia |
 
@@ -255,3 +255,8 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
   `criarAutorizacao`); barra fixa com Salvar parcial · Extras · Gerar autorização e a linha do rascunho em montagem; aviso do
   rascunho acima dos filtros; diálogo de extra compartilhado (`dialogo-extra.tsx`) entre a tela de seleção e a página da
   autorização; botão "Novo rascunho só com extras" retirado do histórico.
+- **Grades mais limpas e ordenáveis (11/10/2026, Fase 4c parte 3, pedido do Alan):** nas duas grades (lista "Autorizar
+  pagamento" e Títulos/Antecipações da autorização) saem as colunas Situação/Emissão, o CNPJ sob o fornecedor e o "lanç. N" sob
+  o documento; clicar no título da coluna ordena (crescente ↔ decrescente; nulos por último). Lista de pendentes: ordem pela URL
+  (`?ordem=fornecedor&dir=asc`), aplicada sobre a lista inteira antes de paginar (`lib/.../ordenacao.ts`, `cabecalho-ordenavel.tsx`);
+  autorização: estado local (`autorizacoes/[id]/secao-itens.tsx`). Vencido sem destaque na linha (o filtro "Só vencidos" basta).
