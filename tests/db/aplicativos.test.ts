@@ -20,7 +20,7 @@ describe("aplicativos externos (migration 0006)", () => {
     expect((await q(`select codigo from areas where codigo = 'producao'`)).rows).toHaveLength(1);
     const apps = await q(`select codigo, area, abrir, ativo from aplicativos order by codigo`);
     expect(apps.rows).toEqual([
-      { codigo: "neocontrol", area: "rh", abrir: "embutido", ativo: true },
+      { codigo: "neocontrol", area: "estoques", abrir: "embutido", ativo: true }, // movido de RH para Estoques (0090)
       { codigo: "vigilancia_fiscal", area: "fiscal", abrir: "embutido", ativo: true },
     ]);
   });

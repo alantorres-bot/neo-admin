@@ -13,6 +13,7 @@ export const ICONE_DA_AREA: Record<string, LucideIcon> = {
   rh: ShieldCheck,
   administrativo: ClipboardList,
   producao: Factory,
+  estoques: Package,
 };
 
 // Módulos que têm ícone próprio (os demais usam o da área); assim Cobrança e Recebíveis, ambos do Financeiro, não ficam iguais.
