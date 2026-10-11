@@ -25,11 +25,16 @@ function base64ParaBytes(b64: string): Uint8Array {
   return bytes;
 }
 
-async function slack(metodo: string, token: string, corpo: Record<string, unknown>): Promise<Record<string, unknown>> {
+/** Chamada à Web API. `files.getUploadURLExternal` só aceita formulário (x-www-form-urlencoded); os demais aceitam JSON. */
+async function slack(metodo: string, token: string, corpo: Record<string, unknown>, formato: "json" | "form" = "json"): Promise<Record<string, unknown>> {
+  const form = new URLSearchParams();
+  if (formato === "form") for (const [k, v] of Object.entries(corpo)) form.set(k, String(v));
   const r = await fetch(`https://slack.com/api/${metodo}`, {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json; charset=utf-8" },
-    body: JSON.stringify(corpo),
+    headers: formato === "form"
+      ? { Authorization: `Bearer ${token}`, "Content-Type": "application/x-www-form-urlencoded; charset=utf-8" }
+      : { Authorization: `Bearer ${token}`, "Content-Type": "application/json; charset=utf-8" },
+    body: formato === "form" ? form.toString() : JSON.stringify(corpo),
   });
   const json = (await r.json()) as Record<string, unknown>;
   if (!json.ok) throw new Error(`Slack ${metodo}: ${String(json.error ?? "falha")}`);
@@ -81,7 +86,7 @@ Deno.serve(async (req) => {
   try {
     const pdf = base64ParaBytes(pdfBase64);
     // Upload em 3 passos (files.uploadV2): pede URL, envia bytes, conclui no canal com a mensagem.
-    const passo1 = await slack("files.getUploadURLExternal", tokenSlack, { filename: nomeArquivo, length: pdf.length });
+    const passo1 = await slack("files.getUploadURLExternal", tokenSlack, { filename: nomeArquivo, length: pdf.length }, "form");
     const conteudo = pdf.buffer.slice(pdf.byteOffset, pdf.byteOffset + pdf.byteLength) as ArrayBuffer;
     const envio = await fetch(passo1.upload_url as string, { method: "POST", body: new Blob([conteudo], { type: "application/pdf" }) });
     if (!envio.ok) throw new Error(`Slack upload: HTTP ${envio.status}`);
