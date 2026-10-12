@@ -16,6 +16,8 @@
 // Regras:
 //   - A API devolve a vida inteira e ignora `situacao`: em aberto = valorAtualizado > 0. Só C, A e D são gravados.
 //   - Lançamento gravado que sumiu dos abertos (ou voltou com saldo zero) recebe `baixado_em` (não é apagado).
+//   - Confirmação (CCFFB014): lida pelo filtro dinâmico `docConfirmado = 1`; anotada em cap_lancamentos.confirmado_consistem e
+//     em cap_autorizacao_itens.confirmado_consistem_em. A API não permite confirmar: só leitura.
 //   - Se a API devolver nenhum lançamento em aberto mas há abertos no banco, nada é alterado (provável falha).
 //   - Nunca escreve no Consistem.
 //
@@ -25,6 +27,7 @@
 // Deploy: npx supabase functions deploy cap-sincronizar-consistem
 import { createClient, type SupabaseClient } from "jsr:@supabase/supabase-js@2";
 import {
+  addDias,
   BASE_URL_PADRAO,
   buscarObjeto,
   buscarTodasPaginas,
@@ -34,9 +37,13 @@ import {
   type ConfigConsistem,
 } from "../_shared/consistem-receber.ts";
 import {
+  DIAS_CONFIRMACAO_A_FRENTE,
+  DIAS_CONFIRMACAO_ATRAS,
   FILTRO_BORDERO,
+  FILTRO_CONFIRMADO,
   janelasDeDatas,
   LIMITE_DETALHES_POR_RODADA,
+  planejarConfirmacoes,
   normalizarDetalheLancamento,
   normalizarFornecedorApi,
   normalizarLancamentoPagar,
@@ -46,6 +53,7 @@ import {
   ROTA_FORNECEDORES,
   type FornecedorApi,
   type LancamentoBanco,
+  type LancamentoCoberto,
   type LancamentoPagarApi,
   type PlanoPagar,
   type TipoGravado,
@@ -328,6 +336,87 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
     resumo.avisoBorderos = `Borderôs das antecipações não verificados: ${e instanceof Error ? e.message.slice(0, 200) : "falha"}`;
   }
 
+  // 6d) Confirmação no Consistem (tela CCFFB014). A API não devolve nem grava o campo, mas o filtro dinâmico `docConfirmado = 1`
+  // devolve só os documentos confirmados. Universo: lançamentos em autorização ativa (sempre) + abertos com vencimento na janela
+  // [hoje − 45, hoje + 30]. Títulos por janelas de vencimento; antecipações (sem vencimento) por janelas de emissão.
+  // Depois anota nos itens das autorizações ativas. Falha aqui não derruba a rodada.
+  try {
+    type LinhaConf = { id: string; cod_lancamento: string; tipo_lancamento: TipoGravado; data_vencimento: string | null; data_emissao: string | null; confirmado_consistem: boolean | null };
+    const inicioConf = Date.now();
+    const { data: autsAtivas, error: erroAuts } = await banco.from("cap_autorizacoes").select("id").eq("empresa_id", empresa.id).in("status", ["rascunho", "autorizada"]);
+    if (erroAuts) throw new Error(erroAuts.message);
+    const idsAuts = (autsAtivas ?? []).map((a) => a.id as string);
+    type LinhaItem = { id: string; lancamento_id: string; confirmado_consistem_em: string | null };
+    const itensAtivos = idsAuts.length === 0 ? [] : await lerTudo<LinhaItem>((de, ate) =>
+      banco.from("cap_autorizacao_itens").select("id, lancamento_id, confirmado_consistem_em").in("autorizacao_id", idsAuts).is("removido_em", null).order("id").range(de, ate));
+    const emAutorizacao = new Set(itensAtivos.map((i) => i.lancamento_id));
+    const abertos = await lerTudo<LinhaConf>((de, ate) =>
+      banco.from("cap_lancamentos").select("id, cod_lancamento, tipo_lancamento, data_vencimento, data_emissao, confirmado_consistem")
+        .eq("empresa_id", empresa.id).in("tipo_lancamento", ["C", "A"]).is("baixado_em", null).gt("valor_atualizado", 0).order("id").range(de, ate));
+    const deVenc = addDias(hoje, -DIAS_CONFIRMACAO_ATRAS);
+    const ateVenc = addDias(hoje, DIAS_CONFIRMACAO_A_FRENTE);
+    const universo = abertos.filter((l) => emAutorizacao.has(l.id) || (l.data_vencimento !== null && l.data_vencimento >= deVenc && l.data_vencimento <= ateVenc));
+    const comVencimento = universo.filter((l) => l.data_vencimento !== null);
+    const semVencimento = universo.filter((l) => l.data_vencimento === null && l.data_emissao !== null);
+    const janelasVenc = janelasDeDatas(comVencimento.map((l) => l.data_vencimento as string));
+    const janelasEmi = janelasDeDatas(semVencimento.map((l) => l.data_emissao as string));
+    const confirmadosApi = new Set<string>();
+    let chamadas = 0;
+    const colher = (regs: Record<string, unknown>[]) => {
+      for (const r of regs) {
+        const cod = r.codLancamento === null || r.codLancamento === undefined ? "" : String(r.codLancamento).trim();
+        if (cod) confirmadosApi.add(cod);
+      }
+    };
+    for (const j of janelasVenc) {
+      colher(await buscarTodasPaginas(buscar, cfg, ROTA_CONTAS_PAGAR, { ...FILTRO_CONFIRMADO, dataVencimentoIni: j.ini, dataVencimentoFim: j.fim, paginacao: PAGINACAO }));
+      chamadas++;
+    }
+    for (const j of janelasEmi) {
+      colher(await buscarTodasPaginas(buscar, cfg, ROTA_CONTAS_PAGAR, { ...FILTRO_CONFIRMADO, dataEmissaoIni: j.ini, dataEmissaoFim: j.fim, paginacao: PAGINACAO }));
+      chamadas++;
+    }
+    const dentro = (d: string, janelas: { ini: string; fim: string }[]) => janelas.some((j) => d >= j.ini && d <= j.fim);
+    const cobertos: LancamentoCoberto[] = [
+      ...comVencimento.filter((l) => dentro(l.data_vencimento as string, janelasVenc)),
+      ...semVencimento.filter((l) => dentro(l.data_emissao as string, janelasEmi)),
+    ].map((l) => ({ id: l.id, codLancamento: l.cod_lancamento, confirmadoAtual: l.confirmado_consistem }));
+    const planoConf = planejarConfirmacoes(cobertos, confirmadosApi);
+    for (const [valor, ids] of [[true, planoConf.confirmar], [false, planoConf.desconfirmar]] as const) {
+      for (const lote of lotes(ids)) {
+        const { error } = await banco.from("cap_lancamentos").update({ confirmado_consistem: valor, confirmacao_vista_em: agora }).in("id", lote);
+        if (error) throw new Error(error.message);
+      }
+    }
+    // Quem não mudou também foi verificado agora.
+    const mudaram = new Set([...planoConf.confirmar, ...planoConf.desconfirmar]);
+    for (const lote of lotes(cobertos.filter((c) => !mudaram.has(c.id)).map((c) => c.id))) {
+      const { error } = await banco.from("cap_lancamentos").update({ confirmacao_vista_em: agora }).in("id", lote);
+      if (error) throw new Error(error.message);
+    }
+    // Itens das autorizações ativas: anota a data em que o lançamento foi visto confirmado; limpa se deixou de constar.
+    const confirmadoDe = new Map<string, boolean>();
+    for (const c of cobertos) confirmadoDe.set(c.id, confirmadosApi.has(c.codLancamento));
+    const marcar = itensAtivos.filter((i) => confirmadoDe.get(i.lancamento_id) === true && i.confirmado_consistem_em === null).map((i) => i.id);
+    const limpar = itensAtivos.filter((i) => confirmadoDe.get(i.lancamento_id) === false && i.confirmado_consistem_em !== null).map((i) => i.id);
+    for (const lote of lotes(marcar)) {
+      const { error } = await banco.from("cap_autorizacao_itens").update({ confirmado_consistem_em: hoje }).in("id", lote);
+      if (error) throw new Error(error.message);
+    }
+    for (const lote of lotes(limpar)) {
+      const { error } = await banco.from("cap_autorizacao_itens").update({ confirmado_consistem_em: null }).in("id", lote);
+      if (error) throw new Error(error.message);
+    }
+    resumo.confirmacoes = {
+      janelas: janelasVenc.length + janelasEmi.length, chamadas, segundos: Math.round((Date.now() - inicioConf) / 100) / 10,
+      verificados: cobertos.length, confirmados: cobertos.filter((c) => confirmadosApi.has(c.codLancamento)).length,
+      naoConfirmados: cobertos.filter((c) => !confirmadosApi.has(c.codLancamento)).length, naoVerificados: universo.length - cobertos.length,
+      itensMarcados: marcar.length, itensLimpos: limpar.length,
+    };
+  } catch (e) {
+    resumo.avisoConfirmacoes = `Confirmações no Consistem não verificadas: ${e instanceof Error ? e.message.slice(0, 200) : "falha"}`;
+  }
+
   // 7) Detalhe das antecipações (data de pagamento programada, portador, código de barras, Pix): um GET por lançamento,
   // só para as que ainda não têm detalhe, com teto por rodada. Falha aqui não derruba a rodada.
   try {
@@ -369,6 +458,7 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
       recusados: recusados.slice(0, 20), duplicadosApi: plano.duplicadosApi.slice(0, 20), ignorados: plano.ignorados, encerradosNaApi: plano.encerradosNaApi,
       fornecedoresNovos, avisoFornecedores: resumo.avisoFornecedores ?? null, detalhesLidos: resumo.detalhesLidos ?? 0, avisoDetalhe: resumo.avisoDetalhe ?? null,
       avisoAutorizacoes: resumo.avisoAutorizacoes ?? null, borderos: resumo.borderos ?? null, avisoBorderos: resumo.avisoBorderos ?? null,
+      confirmacoes: resumo.confirmacoes ?? null, avisoConfirmacoes: resumo.avisoConfirmacoes ?? null,
     },
     linhas_novas: plano.novos.length,
     linhas_alteradas: plano.alterados.length,

@@ -27,6 +27,39 @@ export const LIMITE_DETALHES_POR_RODADA = 150;
  */
 export const FILTRO_BORDERO = { campoFiltroDinamico: "codBordero", valorFiltroDinamico: "%" } as const;
 
+/**
+ * Confirmação (tela CCFFB014 do Consistem): o Contas a Pagar da Neo Formas usa controle de liberação (CCFFB000), e só documento
+ * confirmado entra no borderô (CCFFE065). A API não tem operação de confirmar nem devolve o campo, mas a coluna `docConfirmado`
+ * da mesma tabela responde ao filtro dinâmico: 1 = confirmado, 0 = verificado e não confirmado, nulo = nunca passou pela tela
+ * (medido em 12/10/2026, vencimentos de out/2026: 396 / 108 / 175). Funciona junto com dataVencimentoIni/Fim e dataEmissaoIni/Fim.
+ */
+export const FILTRO_CONFIRMADO = { campoFiltroDinamico: "docConfirmado", valorFiltroDinamico: "1" } as const;
+
+/**
+ * Janela de vencimento que a verificação de confirmação cobre a cada rodada (além dos lançamentos em autorização ativa, que entram
+ * sempre): de 45 dias atrás a 30 dias à frente. Ler a vida inteira custaria ~27 mil registros por rodada; quem a diretoria autoriza
+ * está quase sempre nessa faixa, e o que estiver em autorização entra de qualquer jeito.
+ */
+export const DIAS_CONFIRMACAO_ATRAS = 45;
+export const DIAS_CONFIRMACAO_A_FRENTE = 30;
+
+export type LancamentoCoberto = { id: string; codLancamento: string; confirmadoAtual: boolean | null };
+
+/**
+ * Decide o que muda em `confirmado_consistem` depois de consultar a API com FILTRO_CONFIRMADO: quem está na resposta é confirmado;
+ * quem foi coberto pela consulta e não veio é "não confirmado". Devolve só os ids que precisam ser gravados.
+ */
+export function planejarConfirmacoes(cobertos: readonly LancamentoCoberto[], confirmadosApi: ReadonlySet<string>): { confirmar: string[]; desconfirmar: string[] } {
+  const confirmar: string[] = [];
+  const desconfirmar: string[] = [];
+  for (const l of cobertos) {
+    const agora = confirmadosApi.has(l.codLancamento);
+    if (agora && l.confirmadoAtual !== true) confirmar.push(l.id);
+    if (!agora && l.confirmadoAtual !== false) desconfirmar.push(l.id);
+  }
+  return { confirmar, desconfirmar };
+}
+
 const addDiasIso = (iso: string, dias: number): string => new Date(Date.parse(`${iso}T00:00:00Z`) + dias * 86_400_000).toISOString().slice(0, 10);
 const diasEntreIso = (a: string, b: string): number => Math.round((Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000);
 

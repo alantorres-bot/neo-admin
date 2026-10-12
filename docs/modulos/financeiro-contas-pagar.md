@@ -1,6 +1,6 @@
 # Módulo: Financeiro / Contas a pagar
 
-Status: em construção — especificação aprovada em 09/10/2026; **Fases 1 a 3 entregues (09–10/10/2026)** (sincronização + lista unificada; autorização, histórico e pendência; impressão/PDF)
+Status: em construção — especificação aprovada em 09/10/2026; **Fases 1 a 3 entregues (09–10/10/2026)** (sincronização + lista unificada; autorização, histórico e pendência; impressão/PDF); **Fase 4d (12/10/2026)**: leitura da confirmação dos documentos no Consistem (seção 16)
 
 ## 1. Objetivo
 Reunir numa única tela os **títulos a pagar** e as **antecipações a fornecedor** que estão em aberto no Consistem, para a
@@ -19,7 +19,7 @@ Frequência: a cada rodada de autorização (diária/semanal, conforme a diretor
 ## 3. Escopo
 | Entra | Fica fora |
 | --- | --- |
-| Lista unificada do que está em aberto no Consistem: títulos (tipo C) e antecipações (tipo A), com filtros e totais por tipo; seleção e geração da autorização; histórico de autorizações (rascunho → autorizada → cancelada); pendência "Executar autorização" na Fila do dia; relatório para impressão/PDF; marcar antecipação como "já paga fora do Neo Admin"; data de corte para antecipações antigas | Pagar, dar baixa ou alterar qualquer coisa no Consistem (o Neo Admin só lê o ERP); "marcar como pago" no Neo Admin; conciliação da fatura do cartão (módulo futuro `financeiro.pagar_cartao`); projeções (tipo P) e baixas de antecipação (tipo B); autorização parcial de um título |
+| Lista unificada do que está em aberto no Consistem: títulos (tipo C) e antecipações (tipo A), com filtros e totais por tipo; seleção e geração da autorização; histórico de autorizações (rascunho → autorizada → cancelada); pendência "Executar autorização" na Fila do dia; relatório para impressão/PDF; marcar antecipação como "já paga fora do Neo Admin"; data de corte para antecipações antigas | Pagar, dar baixa ou alterar qualquer coisa no Consistem (o Neo Admin só lê o ERP); "marcar como pago" no Neo Admin; conciliação da fatura do cartão (módulo `financeiro.cartao`, `financeiro-cartao.md`); projeções (tipo P) e baixas de antecipação (tipo B); autorização parcial de um título; **confirmar documentos no Consistem (CCFFB014) a partir daqui** — a API não tem essa operação (seção 16): o Neo Admin só lê a confirmação e mostra o que falta |
 
 ## 4. Entradas
 Tudo vem da **API REST do Consistem** (mesma ligação de Recebíveis: base `https://erp.neoformas.com.br/api`, cabeçalhos
@@ -32,6 +32,7 @@ Testado ao vivo em 09/10/2026:
 | `GET financeiro/v10/lancamentoContasPagar` (lista) | **HTTP 500** no servidor (bug do Consistem; reportar ao suporte) | não usar |
 | `GET financeiro/v10/lancamentoContasPagar/{id}` | Funciona | Detalhe de um lançamento: portador, código de barras, Pix, `dataPagamento`, `valorPago` |
 | `GET cadastrosgerais/v10/fornecedor?situacao=1` e `=0` | Funciona | Nome, nome fantasia e CPF/CNPJ do fornecedor (a lista de títulos só traz o código) |
+| `GET financeiro/v10/contasPagar?campoFiltroDinamico=docConfirmado&valorFiltroDinamico=1` (+ `dataVencimentoIni/Fim` ou `dataEmissaoIni/Fim`) | Funciona (12/10/2026) | Só os documentos **confirmados** na tela CCFFB014. Valores da coluna: `1` confirmado, `0` verificado e não confirmado, nulo nunca avaliado. O campo **não** vem na resposta da lista nem dos detalhes; só o filtro enxerga. Nome inventado dá HTTP 400 |
 
 Campos da lista: `codLancamento, codFornecedor, numDocumento, categoriaDoc, codBanco, codHistorico, complementoHistorico,
 dataEmissao, dataEntrada, dataVencimento, tipoLancamento, valorDocumento, valorOriginal, valorAtualizado, codOrigem`.
@@ -136,10 +137,12 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
 4. Cabeçalho do relatório usa razão social + CNPJ (o cadastro de empresas não tem endereço).
 5. Tempo da leitura completa da API (~27 mil registros): medir na Fase 1; se passar de ~60 s, leitura incremental por janelas de emissão/vencimento.
 6. Bug da listagem `lancamentoContasPagar` (HTTP 500): reportar à Consistem; o módulo não depende dele.
+7. **Escrita da confirmação (CCFFB014) pela API depende da Consistem**: texto do chamado na seção 16. Enquanto isso, a confirmação é lida e cobrada na autorização (Fase 4d).
+8. Semântica de `docConfirmado` confirmada por inferência (1/0/nulo) e pelos manuais; **conferir com o Alan** no CCFFB014 ("Visualizar Documentos Confirmados = Sim", vencimento 01–31/10/2026) se os 30 títulos abertos que a API devolveu com `1` são os confirmados lá.
 
 ## 11. Fases
 0. Especificação (aprovada 09/10/2026). 1. Sincronização + lista unificada só leitura (**feita**). 2. Autorização, histórico e pendência (**feita**).
-3. Relatório/impressão (**feita**). 4. Extras (abas Antecipações e Parâmetros, fornecedores como contrapartes, crédito D, agendamento).
+3. Relatório/impressão (**feita**). 4. Extras (abas Antecipações e Parâmetros, fornecedores como contrapartes, crédito D, agendamento). 4d. Confirmação no Consistem: leitura (**feita, 12/10/2026**); escrita quando a Consistem entregar a API (4d-2).
 
 ## 12. Fase 1 — o que foi feito (09/10/2026)
 - Migration `0121_cap_base.sql` (aplicada em produção em 09/10/2026): módulo `financeiro.contas-pagar` ativo, parâmetro
@@ -265,3 +268,76 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
   gestor: migration `0128_cap_excluir_da_lista.sql` (`excluida_em/por`, `motivo_exclusao`; `cap_excluir_da_lista`; gatilho
   permite só essa mudança numa cancelada, uma vez). Nada é apagado: a autorização some do histórico (`listarAutorizacoes`
   filtra `excluida_em is null`) e fica no banco com quem excluiu, quando e o motivo.
+
+## 16. Fase 4d — confirmação dos documentos no Consistem (12/10/2026)
+
+### Por que
+No Consistem da Neo Formas o Contas a Pagar trabalha com **controle de liberação** (CCFFB000, campo "Controla Apresentação Documento"
+= controle simples/rígido): cada documento precisa ser **confirmado** na tela **Confirmação de Documentos a Pagar (CCFFB014)** para
+poder entrar no borderô (CCFFE065 → liberação CCFFE035 → remessa CCFFE100) e ser baixado. A diretoria autoriza no Neo Admin e o
+financeiro repetia a marcação, documento por documento, no ERP. O pedido do Alan foi: dá para confirmar no Consistem a partir daqui?
+
+### O que a API permite (análise de 12/10/2026)
+- **Documentação oficial** (ajuda.consistem.com.br, Consistem API > Financeiro v1.0) e **Swagger ao vivo** do ambiente
+  (`https://erp.neoformas.com.br/api/`, módulo Financeiro, v1.0.15): Contas a Pagar tem `GET/PUT /contasPagar`,
+  `GET/PUT/DELETE /contasPagar/{id}`, `GET/PUT /lancamentoContasPagar`, `GET/PUT/DELETE /lancamentoContasPagar/{id}`. **Nenhuma
+  operação de confirmação**; nenhum campo de confirmação/situação nos corpos `ContaPagarPut`, `novoLancamentoContaPagar` e
+  `LancamentoContaPagarPut`. Os PUT são "Não Gera Contabilização" e reescrevem o documento: não servem para marcar confirmação.
+  Os outros serviços do módulo (Cobrança Escritural, Integração Bancos, Administração Financeira) não tratam de contas a pagar.
+- **Leitura**: a coluna `docConfirmado` da tabela por trás da listagem responde ao `campoFiltroDinamico` (como `codBordero`).
+  Sondagem somente leitura em 12/10/2026, vencimentos de out/2026: 679 lançamentos; `docConfirmado = 1` → 396 (30 títulos C em
+  aberto); `= 0` → 108 (todos em aberto); nulo → 175 (138 títulos C em aberto). `GET /contasPagar/{id}` e
+  `GET /lancamentoContasPagar/{id}` não devolvem o campo. Interpretação: **1 = confirmado no CCFFB014**, 0 = passou pela tela e não
+  foi marcado, nulo = nunca passou pela tela.
+- **Conclusão**: escrever **não dá** hoje; ler dá. Decisão do Alan: entregar a leitura agora e pedir a escrita à Consistem.
+
+### O que foi feito
+- Migration `0129_cap_confirmacao.sql`: `cap_lancamentos.confirmado_consistem` (true/false/nulo = não verificado) e
+  `confirmacao_vista_em`; `cap_autorizacao_itens.confirmado_consistem_em` (anotado/limpo pela sincronização; o gatilho de
+  imutabilidade dos itens passa a aceitar essa coluna da service role, além de `baixado_consistem_em`); `cap_vw_pendentes` com as
+  duas colunas; `cap_vw_autorizacoes` com `confirmados` (itens confirmados **e ainda não baixados**); `cap_autorizar` devolve
+  `confirmados` e a pendência diz "confirme os documentos no Consistem (CCFFB014), monte o borderô, faça os pagamentos e dê baixa".
+- Edge Function `cap-sincronizar-consistem`, passo **6d** (depois do borderô, antes do detalhe): universo = lançamentos em
+  autorização ativa (sempre) + abertos C/A com vencimento em [hoje − 45, hoje + 30] (`DIAS_CONFIRMACAO_ATRAS/A_FRENTE`); títulos
+  consultados por janelas de **vencimento** e antecipações (sem vencimento) por janelas de **emissão** (`janelasDeDatas`), sempre com
+  `FILTRO_CONFIRMADO`; `planejarConfirmacoes` decide o que muda; anota `confirmado_consistem_em` nos itens das autorizações ativas.
+  Resultado em `importacoes.mapeamento.confirmacoes` (janelas, chamadas, segundos, verificados, confirmados, não confirmados, não
+  verificados, itens marcados/limpos). Falha vira `avisoConfirmacoes`; a rodada segue. **Nada é escrito no Consistem.**
+- Telas: página da autorização ganhou o cartão **"Confirmados no Consistem X de N"** (N = itens não baixados; legenda "CCFFB014 ·
+  verificado em …"), o aviso âmbar (só em autorização **autorizada**) "N documentos ainda não estão confirmados no Consistem" com o
+  botão **Copiar lista** (uma linha por documento: fornecedor · documento · vencimento · valor, para marcar no CCFFB014) e, sob o
+  valor de cada item, "confirmado no Consistem em dd/mm" (verde) ou "falta confirmar no Consistem (CCFFB014)" (âmbar). Histórico:
+  coluna "Confirmados no Consistem". Lista Autorizar pagamento: o título pendente já confirmado mostra a linha verde "confirmado no Consistem (CCFFB014)" sob o
+  fornecedor, e a situação dos não pendentes ganha o sufixo " · confirmado no Consistem" (só informação; não muda o que é pendente). PDF e impressão não mudam (confirmação é operação, não prova).
+- Regras puras: `FILTRO_CONFIRMADO`, `planejarConfirmacoes` (`consistem-pagar.ts`); `resumirItens` com `confirmados` e
+  `faltaConfirmar`, `situacaoDoItem`, `textoFaltaConfirmar` (`autorizacao.ts`); `descreverSituacao` (`pendentes.ts`). Testes nos
+  três `.test.ts` e em `tests/db/cap-confirmacao.test.ts` (view, gatilho, contagem, pendência).
+- **Publicado em 12/10/2026** (migration 0129 aplicada e registrada; função publicada). A primeira publicação quebrou na
+  inicialização (`DIAS_CONFIRMACAO_ATRAS` faltava no módulo compartilhado: a função não sobe, não grava rodada nem pendência, e a
+  tela só diz "Não foi possível atualizar do Consistem"). Lição: rodar `npx -y deno check supabase/functions/<função>/index.ts`
+  antes de todo `functions deploy` (o `tsc` do app não cobre as funções).
+- **Medição da primeira rodada (12/10/2026, 15:04 UTC):** leitura da API 20,7 s; borderôs 16 janelas/16 chamadas; **confirmação
+  3 janelas, 3 chamadas, 2 s**, 416 títulos verificados (66 confirmados, 350 não confirmados, 0 não verificados). Os 30 títulos
+  abertos de out/2026 com `docConfirmado = 1` da sondagem batem com o espelho. Antecipações (48 abertas) ficam "não verificadas"
+  até entrarem numa autorização ativa (sem vencimento, só entram por essa via); não havia autorização ativa nessa rodada.
+
+### Chamado à Consistem (texto para o Alan enviar)
+> **Assunto:** API REST Financeiro v1.0 — confirmar documento do Contas a Pagar (CCFFB014) por API
+>
+> Usamos a API REST (`/api/financeiro/v10`, ambiente erp.neoformas.com.br, Swagger v1.0.15) para ler o Contas a Pagar e montamos
+> fora do ERP a autorização de pagamento da diretoria. Nosso Contas a Pagar usa controle de liberação (CCFFB000), então cada
+> documento autorizado precisa ser confirmado no CCFFB014 antes de entrar no borderô (CCFFE065). Hoje isso é redigitado.
+>
+> Pedido: uma forma de **confirmar/desconfirmar um documento por API**, por exemplo `PUT /financeiro/v10/contasPagar/{id}/confirmacao`
+> (ou o campo `docConfirmado` aceito em `LancamentoContaPagarPut`), equivalente ao Gravar do CCFFB014, respeitando as mesmas regras de
+> senha/usuário do controle rígido (CCFFB000F/CCFFB110). Observamos que a coluna `docConfirmado` já é visível pelo
+> `campoFiltroDinamico` do `GET /contasPagar` (1/0/nulo), mas não é devolvida no `GET /{id}` nem aceita nos PUT.
+>
+> Enquanto isso: (1) há previsão para isso no roadmap da API? (2) existe no CCFFB014 ou em outra rotina uma importação de arquivo com
+> os documentos a confirmar? (3) o `GET /lancamentoContasPagar` (lista) devolve HTTP 500 ("UNDEFINED … paginacao") no nosso ambiente
+> desde 09/10/2026 — podem verificar?
+
+### Fica para a 4d-2 (quando a Consistem responder)
+Confirmação disparada por `cap_autorizar` (Edge Function `cap-confirmar-consistem`, item a item, com registro de sucesso/falha em
+`cap_autorizacao_itens` e reprocesso pela sincronização). Descartado por ora: testar escrita não documentada via
+`PUT /contasPagar/{id}` + `dadosCustomizados`.

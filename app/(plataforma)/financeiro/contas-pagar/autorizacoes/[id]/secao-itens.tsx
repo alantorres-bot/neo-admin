@@ -14,9 +14,10 @@ const centavos = (v: number | string | null) => (v === null ? 0 : Math.round(Num
 /**
  * Tabela de Títulos ou de Antecipações da autorização: Fornecedor · Documento · Vencimento/Pagamento programado · Histórico
  * · Valor (· Remover em rascunho). Clicar no título da coluna ordena (estado local). Sob o valor, uma linha pequena só quando
- * há algo a dizer: "baixado no Consistem em dd/mm" ou "já paga (tem borderô)".
+ * há algo a dizer: "baixado no Consistem em dd/mm", "já paga (tem borderô)", "confirmado no Consistem em dd/mm" ou, em autorização
+ * autorizada (`cobrarConfirmacao`), "falta confirmar no Consistem (CCFFB014)".
  */
-export function SecaoItens({ titulo, lista, total, autorizacaoId, podeRemover }: { titulo: string; lista: LinhaItemAutorizacao[]; total: number; autorizacaoId: string; podeRemover: boolean }) {
+export function SecaoItens({ titulo, lista, total, autorizacaoId, podeRemover, cobrarConfirmacao }: { titulo: string; lista: LinhaItemAutorizacao[]; total: number; autorizacaoId: string; podeRemover: boolean; cobrarConfirmacao: boolean }) {
   const [ordem, setOrdem] = useState<Ordem<ColunaItens> | null>(null);
   const antecipacoes = titulo === "Antecipações";
   const dataDe = (i: LinhaItemAutorizacao) => (i.tipo === "titulo" ? i.data_vencimento : i.data_pagamento);
@@ -67,6 +68,8 @@ export function SecaoItens({ titulo, lista, total, autorizacaoId, podeRemover }:
                       {formatarMoeda(centavos(i.valor))}
                       {jaPaga && <span className="block text-[11px] font-normal text-red-700">já paga (tem borderô)</span>}
                       {!jaPaga && i.baixado_consistem_em && <span className="block text-[11px] font-normal text-emerald-700">{situacaoDoItem({ removido: false, baixadoConsistemEm: i.baixado_consistem_em, tipo: i.tipo })} em {formatarData(i.baixado_consistem_em)}</span>}
+                      {!jaPaga && !i.baixado_consistem_em && i.confirmado_consistem_em && <span className="block text-[11px] font-normal text-emerald-700">confirmado no Consistem em {formatarData(i.confirmado_consistem_em)}</span>}
+                      {!jaPaga && !i.baixado_consistem_em && !i.confirmado_consistem_em && cobrarConfirmacao && <span className="block text-[11px] font-normal text-amber-700">falta confirmar no Consistem (CCFFB014)</span>}
                     </TableCell>
                     {podeRemover && (
                       <TableCell className="text-right"><BotaoRemoverItem autorizacaoId={autorizacaoId} itemId={i.id} descricao={`${i.fornecedor_nome} · ${i.num_documento || i.cod_lancamento} · ${formatarMoeda(centavos(i.valor))}`} /></TableCell>

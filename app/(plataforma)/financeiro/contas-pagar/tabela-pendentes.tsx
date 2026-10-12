@@ -195,6 +195,9 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, r
                         ) : estaPaga(i) ? "paga (borderô no Consistem)" : descreverSituacao(i, hoje)}
                       </span>
                     )}
+                    {pendente && i.confirmadoConsistem === true && (
+                      <span className="block text-[11px] text-emerald-700" title={i.confirmacaoVistaEm ? `Verificado em ${i.confirmacaoVistaEm}` : undefined}>confirmado no Consistem (CCFFB014)</span>
+                    )}
                   </TableCell>
                   <TableCell className="tabular-nums">{i.numDocumento || "—"}</TableCell>
                   <TableCell className="tabular-nums">{i.tipo === "titulo" ? formatarData(i.vencimento) || "—" : (i.dataPagamento ? formatarData(i.dataPagamento) : "—")}</TableCell>

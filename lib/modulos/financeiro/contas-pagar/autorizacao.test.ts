@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compararComCaixa, criticidadeExecucao, mensagemSlack, parseReais, podeAutorizar, podeCancelar, podeEditarExtras, podeRemoverItem, prazoExecucao, resumirItens, situacaoDoItem, tituloPendenciaExecucao, totalParaCaixa, validarExtra, descreverRascunho } from "./autorizacao";
+import { compararComCaixa, criticidadeExecucao, mensagemSlack, parseReais, podeAutorizar, podeCancelar, podeEditarExtras, podeRemoverItem, prazoExecucao, resumirItens, situacaoDoItem, textoFaltaConfirmar, tituloPendenciaExecucao, totalParaCaixa, validarExtra, descreverRascunho } from "./autorizacao";
 
 const gestor = { podeOperar: true, ehGestor: true, userId: "g" };
 const operador = { podeOperar: true, ehGestor: false, userId: "o" };
@@ -33,7 +33,28 @@ describe("totais e textos", () => {
       { tipo: "titulo", valorCentavos: 500, removido: true, baixadoConsistemEm: null },
       { tipo: "antecipacao", valorCentavos: 2_000, removido: false, baixadoConsistemEm: null },
     ]);
-    expect(r).toEqual({ titulos: { quantidade: 1, centavos: 1_000 }, antecipacoes: { quantidade: 1, centavos: 2_000 }, extras: { quantidade: 0, centavos: 0 }, lancamentos: { quantidade: 2, centavos: 3_000 }, geral: { quantidade: 2, centavos: 3_000 }, baixados: 1, removidos: 1 });
+    expect(r).toEqual({ titulos: { quantidade: 1, centavos: 1_000 }, antecipacoes: { quantidade: 1, centavos: 2_000 }, extras: { quantidade: 0, centavos: 0 }, lancamentos: { quantidade: 2, centavos: 3_000 }, geral: { quantidade: 2, centavos: 3_000 }, baixados: 1, confirmados: 0, faltaConfirmar: 1, removidos: 1 });
+  });
+  it("conta confirmados no Consistem (não baixados) e o que falta confirmar; baixado não conta em nenhum dos dois", () => {
+    const r = resumirItens([
+      { tipo: "titulo", valorCentavos: 100, removido: false, baixadoConsistemEm: null, confirmadoConsistemEm: "2026-10-12" },
+      { tipo: "titulo", valorCentavos: 100, removido: false, baixadoConsistemEm: "2026-10-12", confirmadoConsistemEm: "2026-10-11" },
+      { tipo: "antecipacao", valorCentavos: 100, removido: false, baixadoConsistemEm: null, confirmadoConsistemEm: null },
+      { tipo: "titulo", valorCentavos: 100, removido: true, baixadoConsistemEm: null, confirmadoConsistemEm: null },
+    ]);
+    expect([r.baixados, r.confirmados, r.faltaConfirmar, r.removidos]).toEqual([1, 1, 1, 1]);
+  });
+  it("lista para confirmar no CCFFB014: só ativos, não baixados e sem confirmação, por fornecedor e documento", () => {
+    const base = { tipo: "titulo" as const, vencimento: "2026-10-20", dataPagamento: null, valorCentavos: 123_456, removido: false, baixadoConsistemEm: null, confirmadoConsistemEm: null };
+    expect(textoFaltaConfirmar([
+      { ...base, fornecedor: "Beta Ltda", numDocumento: "10/2", codLancamento: "2" },
+      { ...base, fornecedor: "Acofer", numDocumento: "99", codLancamento: "1" },
+      { ...base, fornecedor: "Acofer", numDocumento: null, codLancamento: "7", tipo: "antecipacao", vencimento: null, dataPagamento: "2026-10-30" },
+      { ...base, fornecedor: "Zeta", numDocumento: "1", codLancamento: "3", confirmadoConsistemEm: "2026-10-12" },
+      { ...base, fornecedor: "Zeta", numDocumento: "2", codLancamento: "4", baixadoConsistemEm: "2026-10-12" },
+      { ...base, fornecedor: "Zeta", numDocumento: "3", codLancamento: "5", removido: true },
+    ])).toBe("Acofer · antecipação lanç. 7 · 30/10/2026 · R$ 1.234,56\nAcofer · 99 · 20/10/2026 · R$ 1.234,56\nBeta Ltda · 10/2 · 20/10/2026 · R$ 1.234,56");
+    expect(textoFaltaConfirmar([])).toBe("");
   });
   it("título da pendência igual ao do banco", () => {
     expect(tituloPendenciaExecucao("101026", 48_391_044)).toBe("Executar autorização de pagamento 101026 — R$ 483.910,44");
@@ -51,6 +72,8 @@ describe("totais e textos", () => {
     expect(situacaoDoItem({ removido: false, baixadoConsistemEm: "2026-10-10", tipo: "titulo" })).toBe("baixado no Consistem");
     expect(situacaoDoItem({ removido: false, baixadoConsistemEm: "2026-10-10", tipo: "antecipacao" })).toBe("abatida por NF no Consistem");
     expect(situacaoDoItem({ removido: false, baixadoConsistemEm: null, tipo: "titulo" })).toBe("em aberto no Consistem");
+    expect(situacaoDoItem({ removido: false, baixadoConsistemEm: null, tipo: "titulo", confirmadoConsistemEm: "2026-10-12" })).toBe("confirmado no Consistem");
+    expect(situacaoDoItem({ removido: false, baixadoConsistemEm: "2026-10-13", tipo: "titulo", confirmadoConsistemEm: "2026-10-12" })).toBe("baixado no Consistem");
   });
 });
 

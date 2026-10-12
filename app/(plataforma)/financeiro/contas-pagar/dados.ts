@@ -12,6 +12,7 @@ type LinhaPendente = {
   id: string; empresa_id: string; cod_lancamento: string; tipo_lancamento: "C" | "A"; cod_fornecedor: string | null; num_documento: string | null;
   categoria_doc: string | null; cod_banco: string | null; complemento_historico: string | null; data_emissao: string | null; data_vencimento: string | null;
   data_pagamento: string | null; valor_documento: number | string; valor_atualizado: number | string; tem_bordero: boolean | null; bordero_visto_em: string | null;
+  confirmado_consistem: boolean | null; confirmacao_vista_em: string | null;
   fornecedor_nome: string | null; fornecedor_documento: string | null;
   autorizacao_id: string | null; autorizacao_numero: number | null; autorizacao_codigo: string | null; autorizacao_status: "rascunho" | "autorizada" | null;
   tratada_id: string | null; tratada_motivo: string | null; tratada_em: string | null;
@@ -54,7 +55,7 @@ export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
   const [linhas, { data: configs }, { data: ultimas }, { data: empresas }, { data: rascunhosBrutos }] = await Promise.all([
     lerTudo<LinhaPendente>((de, ate) =>
       supabase.from("cap_vw_pendentes")
-        .select("id, empresa_id, cod_lancamento, tipo_lancamento, cod_fornecedor, num_documento, categoria_doc, cod_banco, complemento_historico, data_emissao, data_vencimento, data_pagamento, valor_documento, valor_atualizado, tem_bordero, bordero_visto_em, fornecedor_nome, fornecedor_documento, autorizacao_id, autorizacao_numero, autorizacao_codigo, autorizacao_status, tratada_id, tratada_motivo, tratada_em")
+        .select("id, empresa_id, cod_lancamento, tipo_lancamento, cod_fornecedor, num_documento, categoria_doc, cod_banco, complemento_historico, data_emissao, data_vencimento, data_pagamento, valor_documento, valor_atualizado, tem_bordero, bordero_visto_em, confirmado_consistem, confirmacao_vista_em, fornecedor_nome, fornecedor_documento, autorizacao_id, autorizacao_numero, autorizacao_codigo, autorizacao_status, tratada_id, tratada_motivo, tratada_em")
         .order("id").range(de, ate), "os lançamentos"),
     supabase.from("configuracoes").select("chave, valor").in("chave", [...CHAVES_CONTAS_PAGAR]),
     supabase.from("importacoes").select("criado_em, linhas_novas, linhas_alteradas, linhas_baixadas")
@@ -96,6 +97,8 @@ export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
     tratada: l.tratada_id ? { id: l.tratada_id, motivo: l.tratada_motivo ?? "", em: l.tratada_em ?? "" } : null,
     temBordero: l.tem_bordero,
     borderoVistoEm: l.bordero_visto_em ? quandoEm(l.bordero_visto_em) : null,
+    confirmadoConsistem: l.confirmado_consistem,
+    confirmacaoVistaEm: l.confirmacao_vista_em ? quandoEm(l.confirmacao_vista_em) : null,
   }));
 
   const u = ultimas?.[0] as { criado_em: string; linhas_novas: number | null; linhas_alteradas: number | null; linhas_baixadas: number | null } | undefined;
@@ -121,6 +124,8 @@ export type LinhaAutorizacao = {
   slack_enviada_em: string | null; slack_enviada_por: string | null; slack_enviada_por_nome: string | null; slack_permalink: string | null; slack_file_id: string | null; slack_message_ts: string | null; slack_retirada_em: string | null; empresa_nome: string; empresa_razao_social: string; empresa_cnpj: string | null;
   criado_por_nome: string | null; autorizada_por_nome: string | null; cancelada_por_nome: string | null;
   itens: number; titulos: number; antecipacoes: number; total_titulos: number | string; total_antecipacoes: number | string; total: number | string; baixados: number;
+  /** Itens ainda não baixados que constam confirmados no Consistem (CCFFB014). */
+  confirmados: number;
   /** Pagamentos extras (fora do Consistem) ativos e sua soma; `total` já inclui. */
   extras: number; total_extras: number | string;
   excluida_em: string | null; excluida_por_nome: string | null; motivo_exclusao: string | null;
@@ -137,11 +142,13 @@ export type LinhaItemAutorizacao = {
   num_documento: string | null; categoria_doc: string | null; data_emissao: string | null; data_vencimento: string | null; data_pagamento: string | null;
   valor: number | string; valor_original: number | string | null; complemento_historico: string | null; cod_banco: string | null; cod_portador: string | null;
   cod_barras: string | null; qrcode_pix: string | null; ordem: number; removido_em: string | null; motivo_remocao: string | null; baixado_consistem_em: string | null;
+  /** Data em que a sincronização viu o documento confirmado no Consistem (CCFFB014). */
+  confirmado_consistem_em: string | null;
   /** Do lançamento de origem: antecipação com borderô no Consistem (paga) — preenchido na leitura. */
   tem_bordero: boolean | null;
 };
 
-const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados, extras, total_extras, excluida_em, excluida_por_nome, motivo_exclusao";
+const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados, confirmados, extras, total_extras, excluida_em, excluida_por_nome, motivo_exclusao";
 
 export async function listarAutorizacoes(supabase: Cliente, filtro: { status: string | null; pagina: number; porPagina: number }): Promise<{ linhas: LinhaAutorizacao[]; total: number }> {
   let consulta = supabase.from("cap_vw_autorizacoes").select(COLUNAS_AUTORIZACAO, { count: "exact" }).is("excluida_em", null).order("numero", { ascending: false })
@@ -154,11 +161,11 @@ export async function listarAutorizacoes(supabase: Cliente, filtro: { status: st
 
 export type AnexoAutorizacao = { id: string; nome: string; enviadoEm: string; url: string | null };
 
-export async function lerAutorizacao(supabase: Cliente, id: string): Promise<{ autorizacao: LinhaAutorizacao; itens: LinhaItemAutorizacao[]; extras: LinhaExtraAutorizacao[]; anexos: AnexoAutorizacao[] } | null> {
+export async function lerAutorizacao(supabase: Cliente, id: string): Promise<{ autorizacao: LinhaAutorizacao; itens: LinhaItemAutorizacao[]; extras: LinhaExtraAutorizacao[]; anexos: AnexoAutorizacao[]; confirmacaoVistaEm: string | null } | null> {
   const [{ data: a, error: erroA }, { data: itens, error: erroI }, { data: extrasBrutos, error: erroX }, { data: anexosBrutos }] = await Promise.all([
     supabase.from("cap_vw_autorizacoes").select(COLUNAS_AUTORIZACAO).eq("id", id).maybeSingle(),
     supabase.from("cap_autorizacao_itens")
-      .select("id, lancamento_id, tipo, cod_lancamento, cod_fornecedor, fornecedor_nome, fornecedor_documento, num_documento, categoria_doc, data_emissao, data_vencimento, data_pagamento, valor, valor_original, complemento_historico, cod_banco, cod_portador, cod_barras, qrcode_pix, ordem, removido_em, motivo_remocao, baixado_consistem_em")
+      .select("id, lancamento_id, tipo, cod_lancamento, cod_fornecedor, fornecedor_nome, fornecedor_documento, num_documento, categoria_doc, data_emissao, data_vencimento, data_pagamento, valor, valor_original, complemento_historico, cod_banco, cod_portador, cod_barras, qrcode_pix, ordem, removido_em, motivo_remocao, baixado_consistem_em, confirmado_consistem_em")
       .eq("autorizacao_id", id).order("ordem").limit(1000),
     supabase.from("cap_autorizacao_extras").select("id, descricao, favorecido, valor, ordem, criado_por, criado_em, removido_em, motivo_remocao").eq("autorizacao_id", id).order("ordem").limit(200),
     supabase.from("anexos").select("id, arquivo_path, nome_arquivo, enviado_em")
@@ -179,16 +186,22 @@ export async function lerAutorizacao(supabase: Cliente, id: string): Promise<{ a
   // Link assinado de 15 min para cada anexo (o bucket é privado; a RLS do Storage decide).
   // Antecipação do item já tem borderô (paga) no espelho? Aviso na página: o item deveria sair do rascunho.
   const lista = (itens ?? []) as unknown as LinhaItemAutorizacao[];
-  const idsLanc = lista.filter((i) => i.tipo === "antecipacao").map((i) => i.lancamento_id);
+  // Também a última verificação da confirmação no Consistem (legenda "verificado em …" do cartão Confirmados).
+  const idsLanc = lista.map((i) => i.lancamento_id);
   const borderoDe = new Map<string, boolean | null>();
+  let confirmacaoVistaEm: string | null = null;
   if (idsLanc.length > 0) {
-    const { data: lancs } = await supabase.from("cap_lancamentos").select("id, tem_bordero").in("id", idsLanc);
-    for (const l of lancs ?? []) borderoDe.set(l.id as string, (l.tem_bordero as boolean | null) ?? null);
+    const { data: lancs } = await supabase.from("cap_lancamentos").select("id, tipo_lancamento, tem_bordero, confirmacao_vista_em").in("id", idsLanc);
+    for (const l of lancs ?? []) {
+      if (l.tipo_lancamento === "A") borderoDe.set(l.id as string, (l.tem_bordero as boolean | null) ?? null);
+      const vista = l.confirmacao_vista_em as string | null;
+      if (vista && (!confirmacaoVistaEm || vista > confirmacaoVistaEm)) confirmacaoVistaEm = vista;
+    }
   }
   for (const i of lista) i.tem_bordero = borderoDe.get(i.lancamento_id) ?? null;
   const anexos: AnexoAutorizacao[] = await Promise.all((anexosBrutos ?? []).map(async (x) => {
     const r = await urlAssinadaAnexo(supabase, x.arquivo_path as string, 900);
     return { id: x.id as string, nome: x.nome_arquivo as string, enviadoEm: quandoEm(x.enviado_em as string), url: r.ok ? r.url : null };
   }));
-  return { autorizacao: a as unknown as LinhaAutorizacao, itens: lista, extras, anexos };
+  return { autorizacao: a as unknown as LinhaAutorizacao, itens: lista, extras, anexos, confirmacaoVistaEm: confirmacaoVistaEm ? quandoEm(confirmacaoVistaEm) : null };
 }

@@ -5,7 +5,9 @@ import {
   diaSeguinte,
   estaEmAberto,
   FILTRO_BORDERO,
+  FILTRO_CONFIRMADO,
   janelasDeDatas,
+  planejarConfirmacoes,
   normalizarDetalheLancamento,
   normalizarFornecedorApi,
   normalizarLancamentoPagar,
@@ -122,6 +124,22 @@ describe("janelas de datas para a consulta de borderô", () => {
     expect(janelasDeDatas(["0", "", "2026-10-09"])).toEqual([{ ini: "2026-10-09", fim: "2026-10-09" }]);
     expect(diaSeguinte("2026-12-31")).toBe("2027-01-01");
     expect(FILTRO_BORDERO).toEqual({ campoFiltroDinamico: "codBordero", valorFiltroDinamico: "%" });
+    expect(FILTRO_CONFIRMADO).toEqual({ campoFiltroDinamico: "docConfirmado", valorFiltroDinamico: "1" });
+  });
+});
+
+describe("confirmação no Consistem (docConfirmado)", () => {
+  it("quem veio na resposta vira confirmado; quem foi coberto e não veio vira não confirmado; só grava o que muda", () => {
+    const cobertos = [
+      { id: "a", codLancamento: "1479", confirmadoAtual: null },   // confirmado agora: grava true
+      { id: "b", codLancamento: "1480", confirmadoAtual: true },   // continua confirmado: nada
+      { id: "c", codLancamento: "1481", confirmadoAtual: true },   // deixou de constar: grava false
+      { id: "d", codLancamento: "1482", confirmadoAtual: null },   // verificado e não confirmado: grava false
+      { id: "e", codLancamento: "1483", confirmadoAtual: false },  // continua não confirmado: nada
+      { id: "f", codLancamento: "1484", confirmadoAtual: false },  // passou a confirmado: grava true
+    ];
+    expect(planejarConfirmacoes(cobertos, new Set(["1479", "1480", "1484", "9999"]))).toEqual({ confirmar: ["a", "f"], desconfirmar: ["c", "d"] });
+    expect(planejarConfirmacoes([], new Set(["1"]))).toEqual({ confirmar: [], desconfirmar: [] });
   });
 });
 
