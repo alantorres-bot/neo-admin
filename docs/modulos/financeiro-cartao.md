@@ -110,6 +110,17 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     como **sem efeito**, com aviso na tela; não é apagada.
 25. Nada é apagado: desfazer grava quem, quando e o motivo. Mês fechado ou pago não aceita decisão nova nem desfazer (reabrir antes).
     A planilha ganha a coluna "Decisão" e a aba "Decisões"; a foto do fechamento guarda as decisões aplicadas.
+26. **Regra fornecedor → cartão** (Fase 3): o cadastro é **só no Neo Fiscal** (`fornecedor_cartao`, com vigência). O Neo Admin
+    guarda uma cópia em `crt_regras_fornecedor`, atualizada pela Edge Function `crt-sincronizar-regras` (botão "Atualizar do Neo
+    Fiscal" na aba Cartões e pg_cron diário às 07:15), que chama a função `cartao-regras` do Neo Fiscal com o segredo compartilhado
+    (`NEO_FISCAL_SEGREDO` aqui = `NEO_ADMIN_SEGREDO` lá). Resposta vazia com cópia cheia não apaga nada (trava).
+27. Na seleção dos títulos, vale a regra **vigente na emissão** do título (ou no vencimento, sem emissão): título sem a marca
+    "CARTÃO" no complemento entra na fatura quando a regra do fornecedor é este cartão ("pela regra"); título que cita outro
+    cartão mas cuja regra é este cartão aparece em "Outros títulos de cartão" com o aviso de provável cartão trocado.
+28. Título que cita este cartão mas cuja regra é **outro** cartão conta como **cartão divergente** (alerta nos conciliados;
+    causa "a regra do fornecedor no Neo Fiscal é o cartão X" nas divergências).
+29. Título que entrou só pela regra e ficou sem linha na fatura: causa "fornecedor pago neste cartão pela regra, mas sem linha —
+    confirmar se esta compra foi no cartão" (pode ter sido paga por boleto; registrar a decisão).
 
 Exemplo numérico (ciclo correto, como a calibração da skill): fatura R$ 1.736,70 com 12 linhas (2 pares compensados; 4 pedágios de
 R$ 20) × 5 títulos (um de R$ 120,00 para linha de R$ 120,01) → 4 exatos + 1 agrupamento, diferença apurada R$ 0,01 = arredondamento,
@@ -257,5 +268,16 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
   Contas a pagar), botão "Imprimir / salvar PDF" na página do mês. Conferido com a Sicredi PF 10/2026.
 - **Aviso de fechamento do cartão:** já entregue na Fase 2 (pendência "Importar fatura").
 - **Leitores Itaú PJ e Nubank PF:** aguardando uma fatura de cada na pasta do Drive (o PDF da pasta ITAÚ PJ é da Unicred).
-- **Regra fornecedor → cartão do Neo Fiscal:** o Neo Fiscal é outro projeto Supabase (`ycokizsmegdwntcsstfh`, tabela
-  `fornecedor_cartao` com vigência). A forma de ligar os dois sistemas depende de decisão do Alan.
+- **Regra fornecedor → cartão do Neo Fiscal: feita no Neo Admin** (decisão do Alan: função pública de leitura no Neo Fiscal).
+  Migration `0136_crt_regras_fornecedor.sql` (aplicada e registrada em produção; job `crt-sincronizar-regras-diario` ativo),
+  Edge Function `crt-sincronizar-regras` (publicada; lógica pura em `_shared/regras-cartao.ts`), segredos `NEO_FISCAL_SEGREDO`
+  e `NEO_FISCAL_REGRAS_URL` (gravados; o valor do segredo fica em `C:\Users\alant\.neo-admin\neo-fiscal-integracao.env`, fora
+  do Git), `regraVigente` em `cartoes.ts`, seleção com `opcoes.regras`, seção de regras na aba Cartões, marca "pela regra".
+  A Edge Function do contas a pagar passou a devolver `data_emissao` em `titulos_vencimento` (republicada).
+  Testes: `regras.test.ts` (vigência, seleção, causa, validação e plano do espelho) e `tests/db/crt-regras.test.ts`.
+  **Lado do Neo Fiscal:** função `cartao-regras` (só leitura) commitada no repositório `alantorres-bot/neo-fiscal-navigator`
+  (commit "Cartão: função cartao-regras (só leitura) para o Neo Admin"); falta enviar ao GitHub, pedir ao Lovable para
+  publicar a função e gravar o segredo `NEO_ADMIN_SEGREDO` no Lovable Cloud. Até lá, "Atualizar do Neo Fiscal" responde erro
+  e a conciliação segue sem a regra (como antes).
+- Observação: a pasta local `C:\dev\neo-fiscal-navigator` é um worktree cujo repositório principal foi movido para
+  `C:\dev\_arquivo` (git não funciona nela) e difere do GitHub em arquivos de NFS-e; o trabalho foi feito num clone do GitHub.
