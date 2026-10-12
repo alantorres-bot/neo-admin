@@ -434,3 +434,6 @@ verify_jwt = false
 
 [functions.cap-enviar-slack]
 verify_jwt = false
+
+[functions.crt-sincronizar-regras]
+verify_jwt = false

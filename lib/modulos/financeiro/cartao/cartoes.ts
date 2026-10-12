@@ -181,3 +181,23 @@ export function montarComplemento(cartao: Pick<CartaoInfo, "nome">, parcelas: nu
   const completo = `${prefixo} — ${desc}`;
   return completo.length <= MAX_COMPLEMENTO ? completo : completo.slice(0, MAX_COMPLEMENTO).trimEnd();
 }
+
+// ------------------------------------------------------------------ regra fornecedor → cartão (do Neo Fiscal)
+
+export interface RegraCartao {
+  codFornecedor: string;
+  cartao: string;
+  parcelasPadrao: number;
+  /** 'AAAA-MM-DD'. */
+  vigenciaIni: string;
+  /** 'AAAA-MM-DD' ou null (em aberto). */
+  vigenciaFim: string | null;
+}
+
+/** Regra do fornecedor vigente numa data ('AAAA-MM-DD'); a de início mais recente vence se houver mais de uma. */
+export function regraVigente(regras: readonly RegraCartao[], codFornecedor: string | null | undefined, data: string | null | undefined): RegraCartao | undefined {
+  if (!codFornecedor || !data) return undefined;
+  return regras
+    .filter((r) => r.codFornecedor === codFornecedor && r.vigenciaIni <= data && (r.vigenciaFim === null || r.vigenciaFim >= data))
+    .sort((a, b) => (a.vigenciaIni < b.vigenciaIni ? 1 : -1))[0];
+}

@@ -4,7 +4,7 @@
 // (banco + PF/PJ, ou desempate pelo dia do vencimento). Títulos de cartão na janela que citam OUTRO cartão (ou ficaram
 // ambíguos) vão para "outros", base do alerta de cartão trocado. Valor: saldo (`valor_atualizado`) enquanto aberto; valor
 // do documento quando já baixado no Consistem.
-import { identificarCartaoDoTitulo, type CartaoInfo } from "./cartoes";
+import { identificarCartaoDoTitulo, regraVigente, type CartaoInfo, type RegraCartao } from "./cartoes";
 import { JANELA_VENCIMENTO, type TituloPagar } from "./conciliacao";
 import { diasEntre, normalizar } from "./texto";
 
@@ -20,11 +20,15 @@ export type LancamentoEspelho = {
   valor_documento: number | string;
   valor_atualizado: number | string;
   baixado_em: string | null;
+  /** Data de emissão (para a vigência da regra do fornecedor). */
+  data_emissao?: string | null;
   /** Lido da API: o título está num borderô (no fechamento do cartão, os títulos da fatura entram num borderô e ficam sem saldo). */
   tem_bordero?: boolean | null;
 };
 
 export type OutroTitulo = { titulo: TituloPagar; situacao: "outro_cartao" | "ambiguo" | "so_marca"; detalhe: string };
+/** Opções da seleção: regras fornecedor → cartão do Neo Fiscal (cópia em crt_regras_fornecedor). */
+export type OpcoesSelecao = { janela?: number; totalCentavos?: number | null; regras?: readonly RegraCartao[] };
 export type SelecaoTitulos = {
   doCartao: TituloPagar[];
   outros: OutroTitulo[];
@@ -50,6 +54,7 @@ export function paraTitulo(l: LancamentoEspelho): TituloPagar {
     // Sem saldo (baixado, ou no borderô do fechamento do cartão): vale o valor do documento.
     valorCentavos: centavos(l.baixado_em || Number(l.valor_atualizado) <= 0 ? l.valor_documento : l.valor_atualizado),
     emBordero: l.tem_bordero === true,
+    codFornecedor: l.cod_fornecedor,
   };
 }
 
@@ -67,8 +72,12 @@ function ehTituloDaFatura(titulo: TituloPagar, cartao: CartaoInfo, cartoes: read
 }
 
 export function selecionarTitulos(
-  lancamentos: readonly LancamentoEspelho[], cartao: CartaoInfo, cartoes: readonly CartaoInfo[], vencimento: string, janela = JANELA_VENCIMENTO, totalCentavos: number | null = null,
+  lancamentos: readonly LancamentoEspelho[], cartao: CartaoInfo, cartoes: readonly CartaoInfo[], vencimento: string, janelaOuOpcoes: number | OpcoesSelecao = JANELA_VENCIMENTO, totalLegado: number | null = null,
 ): SelecaoTitulos {
+  const opcoes: OpcoesSelecao = typeof janelaOuOpcoes === "number" ? { janela: janelaOuOpcoes, totalCentavos: totalLegado } : janelaOuOpcoes;
+  const janela = opcoes.janela ?? JANELA_VENCIMENTO;
+  const totalCentavos = opcoes.totalCentavos ?? null;
+  const regras = opcoes.regras ?? [];
   const doCartao: TituloPagar[] = [];
   const outros: OutroTitulo[] = [];
   let tituloDaFatura: TituloPagar | null = null;
@@ -76,13 +85,19 @@ export function selecionarTitulos(
     if (!naJanela(l.data_vencimento, vencimento, janela)) continue;
     const titulo = paraTitulo(l);
     if (!tituloDaFatura && ehTituloDaFatura(titulo, cartao, cartoes, totalCentavos)) { tituloDaFatura = titulo; continue; }
+    const regra = regraVigente(regras, l.cod_fornecedor, l.data_emissao ?? l.data_vencimento);
+    if (regra) titulo.cartaoDaRegra = regra.cartao;
+    const daRegra = regra?.cartao === cartao.codigo;
     const id = identificarCartaoDoTitulo({ complemento: titulo.complemento, vencimento: titulo.vencimento }, cartoes);
     if (id.situacao === "cartao") {
       if (id.cartao!.codigo === cartao.codigo) doCartao.push(titulo);
-      else outros.push({ titulo, situacao: "outro_cartao", detalhe: `Cita o cartão ${id.cartao!.nome}` });
+      else outros.push({ titulo, situacao: "outro_cartao", detalhe: `Cita o cartão ${id.cartao!.nome}${daRegra ? `, mas a regra do fornecedor no Neo Fiscal é ${cartao.nome}: provável cartão trocado` : ""}` });
     } else if (id.situacao === "ambiguo") {
       if (id.candidatos.some((c) => c.codigo === cartao.codigo)) doCartao.push(titulo); // mesmo banco, PF/PJ indefinido: entra
+      else if (daRegra) doCartao.push({ ...titulo, porRegra: true });
       else outros.push({ titulo, situacao: "ambiguo", detalhe: `Cita ${id.candidatos.map((c) => c.nome).join(" ou ")}` });
+    } else if (daRegra) {
+      doCartao.push({ ...titulo, porRegra: true });   // complemento sem a marca do cartão, mas o fornecedor é pago neste cartão
     } else if (id.soMarca) {
       outros.push({ titulo, situacao: "so_marca", detalhe: "Diz CARTÃO sem o banco" });
     }

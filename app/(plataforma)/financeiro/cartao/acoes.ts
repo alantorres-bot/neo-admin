@@ -304,3 +304,24 @@ export async function desfazerDecisao(entrada: z.input<typeof esquemaDesfazerDec
   return { ok: true, aviso: "Decisão desfeita. O item volta a ser calculado pelo cruzamento automático." };
 }
 
+// ---------------------------------------------------------------- regras fornecedor → cartão (Neo Fiscal)
+
+/** Copia do Neo Fiscal as regras fornecedor → cartão (Edge Function crt-sincronizar-regras). Operador ou acima. */
+export async function atualizarRegrasNeoFiscal(): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) atualiza as regras." };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.functions.invoke("crt-sincronizar-regras", { body: { acao: "sincronizar" } });
+  if (error) {
+    let mensagem = "Não foi possível atualizar do Neo Fiscal.";
+    const resposta = (error as { context?: Response }).context;
+    if (resposta && typeof resposta.json === "function") {
+      try { mensagem = ((await resposta.json()) as { erro?: string }).erro ?? mensagem; } catch { /* mantém */ }
+    }
+    return { ok: false, erro: mensagem };
+  }
+  const r = data as { recebidas?: number; novas?: number; alteradas?: number; removidas?: number } | null;
+  revalidatePath(ROTA_CARTAO, "layout");
+  return { ok: true, aviso: `Regras do Neo Fiscal: ${r?.recebidas ?? 0} recebidas · ${r?.novas ?? 0} novas · ${r?.alteradas ?? 0} alteradas · ${r?.removidas ?? 0} removidas.` };
+}
+

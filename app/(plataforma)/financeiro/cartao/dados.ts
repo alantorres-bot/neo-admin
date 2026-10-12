@@ -1,6 +1,6 @@
 // Leituras do módulo Cartão de crédito (RLS de quem chama; nada é gravado aqui).
 import { cache } from "react";
-import type { CartaoInfo } from "@/lib/modulos/financeiro/cartao/cartoes";
+import type { CartaoInfo, RegraCartao } from "@/lib/modulos/financeiro/cartao/cartoes";
 import { conciliar, type DecisaoItem, type Estabelecimento, type LinhaFatura, type ResultadoConciliacao, type TipoDecisao, type TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { MODULO_CARTAO, type CodigoLeitor } from "@/lib/modulos/financeiro/cartao/modulo";
 import { selecionarTitulos, type LancamentoEspelho, type OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
@@ -106,7 +106,7 @@ export async function lerTitulosDoConsistem(supabase: Cliente, empresaId: string
 /** Títulos (tipo C) do espelho com vencimento na janela da fatura, com o nome do fornecedor (plano B). */
 export async function lerLancamentosDaJanela(supabase: Cliente, empresaId: string, vencimento: string): Promise<LancamentoEspelho[]> {
   const { data, error } = await supabase.from("cap_lancamentos")
-    .select("id, cod_lancamento, num_documento, cod_fornecedor, complemento_historico, categoria_doc, data_vencimento, valor_documento, valor_atualizado, baixado_em")
+    .select("id, cod_lancamento, num_documento, cod_fornecedor, complemento_historico, categoria_doc, data_emissao, data_vencimento, valor_documento, valor_atualizado, baixado_em")
     .eq("empresa_id", empresaId).eq("tipo_lancamento", "C")
     .gte("data_vencimento", somarDias(vencimento, -JANELA_VENCIMENTO)).lte("data_vencimento", somarDias(vencimento, JANELA_VENCIMENTO))
     .order("data_vencimento").limit(3000);
@@ -154,7 +154,7 @@ export const conciliacaoDaRequisicao = cache(async (id: string): Promise<Concili
   const lida = await lerFatura(supabase, id);
   if (!lida) return null;
   const { fatura, linhas } = lida;
-  const [cartoes, dicionario, lancamentos, { data: ultima }, { data: decisoesBrutas, error: erroDecisoes }] = await Promise.all([
+  const [cartoes, dicionario, lancamentos, { data: ultima }, { data: decisoesBrutas, error: erroDecisoes }, regras] = await Promise.all([
     lerCartoes(supabase), lerEstabelecimentos(supabase),
     lerTitulosDoConsistem(supabase, fatura.empresa_id, fatura.vencimento)
       .then((l) => ({ lista: l, origem: "consistem" as const, aviso: null as string | null }))
@@ -162,13 +162,16 @@ export const conciliacaoDaRequisicao = cache(async (id: string): Promise<Concili
     supabase.from("importacoes").select("criado_em").eq("modulo", "financeiro.contas-pagar").eq("arquivo", "api:consistem").order("criado_em", { ascending: false }).limit(1),
     supabase.from("crt_vw_decisoes").select("id, tipo, linhas, titulos, categoria, conta_fluxo, motivo, criado_por_nome, criado_em, desfeito_por_nome, desfeito_em, motivo_desfazer")
       .eq("fatura_id", id).order("criado_em").limit(1000),
+    lerRegras(supabase),
   ]);
   if (erroDecisoes) throw new Error(`Falha ao ler as decisões da fatura: ${erroDecisoes.message}`);
   const decisoesHistorico = (decisoesBrutas ?? []) as DecisaoLinha[];
   const cartao = cartoes.find((c) => c.codigo === fatura.cartao);
   if (!cartao) throw new Error(`Cartão ${fatura.cartao} não encontrado no cadastro.`);
   const infos = cartoes.map(paraCartaoInfo);
-  const selecao = selecionarTitulos(lancamentos.lista, paraCartaoInfo(cartao), infos, fatura.vencimento, JANELA_VENCIMENTO, centavos(fatura.total_informado));
+  const selecao = selecionarTitulos(lancamentos.lista, paraCartaoInfo(cartao), infos, fatura.vencimento, {
+    janela: JANELA_VENCIMENTO, totalCentavos: centavos(fatura.total_informado), regras: regras.map(paraRegraCartao),
+  });
   const linhasUteis: LinhaFatura[] = linhas.filter((l) => !l.descartada).map((l) => ({
     id: l.id, ordem: l.ordem, dataCompra: l.data_compra, descricao: l.descricao, valorCentavos: centavos(l.valor), parcelaNum: l.parcela_num, parcelaTotal: l.parcela_total,
   }));
@@ -182,6 +185,38 @@ export const conciliacaoDaRequisicao = cache(async (id: string): Promise<Concili
   return { fatura, linhas, cartao, resultado, outros: selecao.outros, tituloDaFatura: selecao.tituloDaFatura, ultimaSincronizacao: u ? quandoEm(u.criado_em) : null,
     origemTitulos: lancamentos.origem, avisoOrigem: lancamentos.aviso, decisoesHistorico };
 });
+
+// ---------------------------------------------------------------- regras fornecedor → cartão (cópia do Neo Fiscal)
+
+export type RegraLinha = { id: string; cod_fornecedor: string; cartao: string; parcelas_padrao: number; vigencia_ini: string; vigencia_fim: string | null; sincronizado_em: string };
+
+export async function lerRegras(supabase: Cliente): Promise<RegraLinha[]> {
+  const { data, error } = await supabase.from("crt_regras_fornecedor").select("id, cod_fornecedor, cartao, parcelas_padrao, vigencia_ini, vigencia_fim, sincronizado_em")
+    .order("cod_fornecedor").order("vigencia_ini").limit(5000);
+  // Sem a migration 0136 a tabela não existe: a conciliação segue sem a regra.
+  if (error) return [];
+  return (data ?? []) as RegraLinha[];
+}
+export const paraRegraCartao = (r: RegraLinha): RegraCartao => ({
+  codFornecedor: r.cod_fornecedor, cartao: r.cartao, parcelasPadrao: r.parcelas_padrao, vigenciaIni: r.vigencia_ini, vigenciaFim: r.vigencia_fim,
+});
+
+/** Nomes dos fornecedores (espelho do contas a pagar) para a lista de regras. */
+export async function nomesDosFornecedores(supabase: Cliente, codigos: string[]): Promise<Map<string, string>> {
+  const nomes = new Map<string, string>();
+  for (let i = 0; i < codigos.length; i += 200) {
+    const { data } = await supabase.from("cap_fornecedores").select("cod_fornecedor, nome").in("cod_fornecedor", codigos.slice(i, i + 200));
+    for (const f of data ?? []) nomes.set(f.cod_fornecedor as string, f.nome as string);
+  }
+  return nomes;
+}
+
+export async function ultimaSincronizacaoRegras(supabase: Cliente): Promise<{ quando: string; novas: number; alteradas: number; removidas: number } | null> {
+  const { data } = await supabase.from("importacoes").select("criado_em, linhas_novas, linhas_alteradas, linhas_baixadas")
+    .eq("modulo", MODULO_CARTAO).eq("tipo", "regras_fornecedor_cartao").order("criado_em", { ascending: false }).limit(1);
+  const u = data?.[0] as { criado_em: string; linhas_novas: number | null; linhas_alteradas: number | null; linhas_baixadas: number | null } | undefined;
+  return u ? { quando: quandoEm(u.criado_em), novas: u.linhas_novas ?? 0, alteradas: u.linhas_alteradas ?? 0, removidas: u.linhas_baixadas ?? 0 } : null;
+}
 
 // ---------------------------------------------------------------- ciclos (cartão × mês)
 

@@ -6,7 +6,9 @@ import { ROTA_CARTAO, ROTULO_LEITOR } from "@/lib/modulos/financeiro/cartao/modu
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { lerCartoes } from "../dados";
+import { lerCartoes, lerRegras, nomesDosFornecedores, ultimaSincronizacaoRegras } from "../dados";
+import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
+import { BotaoAtualizarRegras } from "./regras";
 import { DialogoCartao } from "./form-cartao";
 
 export const metadata: Metadata = { title: "Cartões de crédito" };
@@ -14,7 +16,11 @@ export const metadata: Metadata = { title: "Cartões de crédito" };
 export default async function PaginaCartoes() {
   const sessao = await exigirSessao();
   const ehGestor = temAcesso(sessao.acesso, "financeiro", "gestor");
-  const cartoes = await lerCartoes(await criarClienteServidor());
+  const supabase = await criarClienteServidor();
+  const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
+  const [cartoes, regras, ultima] = await Promise.all([lerCartoes(supabase), lerRegras(supabase), ultimaSincronizacaoRegras(supabase)]);
+  const nomes = await nomesDosFornecedores(supabase, [...new Set(regras.map((r) => r.cod_fornecedor))]);
+  const nomeCartao = new Map(cartoes.map((c) => [c.codigo, c.nome]));
 
   return (
     <div className="space-y-4">
@@ -45,6 +51,37 @@ export default async function PaginaCartoes() {
           ))}
         </TableBody>
       </Table>
+      <div className="space-y-2 pt-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-base font-bold">Regras fornecedor → cartão (do Neo Fiscal)</h2>
+            <p className="text-sm text-muted-foreground">
+              Cópia da regra cadastrada no Neo Fiscal (tela Cartões de lá; o cadastro é só lá). A conciliação usa a regra para incluir na fatura o título de fornecedor pago no cartão mesmo quando o complemento não cita o cartão, e para apontar título lançado no cartão errado. Atualiza sozinha todo dia às 07:15.
+              {ultima ? ` Última atualização: ${ultima.quando} (${ultima.novas} novas · ${ultima.alteradas} alteradas · ${ultima.removidas} removidas).` : " Ainda não foi atualizada."}
+            </p>
+          </div>
+          {podeOperar && <BotaoAtualizarRegras />}
+        </div>
+        {regras.length === 0 ? (
+          <p className="rounded-[3px] border border-grade bg-cabecalho p-3 text-sm text-muted-foreground">Nenhuma regra copiada ainda.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow><TableHead>Fornecedor</TableHead><TableHead>Cartão</TableHead><TableHead className="text-right">Parcelas</TableHead><TableHead>Vigência</TableHead></TableRow>
+            </TableHeader>
+            <TableBody>
+              {regras.map((r) => (
+                <TableRow key={r.id} className={r.vigencia_fim ? "text-muted-foreground" : ""}>
+                  <TableCell>{nomes.get(r.cod_fornecedor) ?? "—"} <span className="text-xs text-muted-foreground">({r.cod_fornecedor})</span></TableCell>
+                  <TableCell>{nomeCartao.get(r.cartao) ?? r.cartao}</TableCell>
+                  <TableCell className="text-right tabular-nums">{r.parcelas_padrao}</TableCell>
+                  <TableCell className="tabular-nums">desde {formatarData(r.vigencia_ini)}{r.vigencia_fim ? ` até ${formatarData(r.vigencia_fim)}` : " (em aberto)"}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </div>
     </div>
   );
 }

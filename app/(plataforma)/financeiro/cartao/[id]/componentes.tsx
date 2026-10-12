@@ -100,7 +100,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
             <TableBody>
               {r.divergencias.map((d) => (
                 <TableRow key={d.titulo.id}>
-                  <TableCell className="tabular-nums">{d.titulo.numeroTitulo}</TableCell><TableCell>{d.titulo.fornecedor}</TableCell>
+                  <TableCell className="tabular-nums">{d.titulo.numeroTitulo}{d.titulo.porRegra && <Badge variant="outline" className="ml-1">pela regra</Badge>}</TableCell><TableCell>{d.titulo.fornecedor}</TableCell>
                   <TableCell className="tabular-nums">{formatarData(d.titulo.vencimento)}</TableCell><TableCell className="text-right tabular-nums">{formatarMoeda(d.titulo.valorCentavos)}</TableCell>
                   <TableCell className="text-xs">{d.titulo.complemento}</TableCell><TableCell className="text-amber-800">{d.causa}</TableCell>
                   <TableCell className="min-w-40 space-y-1">
@@ -125,7 +125,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
                   <TableCell className="tabular-nums">{formatarData(c.linhas[0].dataCompra)}</TableCell>
                   <TableCell>{c.linhas[0].descricao}{c.linhas.length > 1 && <span className="text-muted-foreground"> ({c.linhas.length} lançamentos)</span>}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatarMoeda(c.linhas.reduce((s, l) => s + l.valorCentavos, 0))}</TableCell>
-                  <TableCell className="tabular-nums">{c.titulo.numeroTitulo}{c.titulo.emBordero && <Badge variant="outline" className="ml-1">borderô</Badge>}</TableCell>
+                  <TableCell className="tabular-nums">{c.titulo.numeroTitulo}{c.titulo.emBordero && <Badge variant="outline" className="ml-1">borderô</Badge>}{c.titulo.porRegra && <Badge variant="outline" className="ml-1" title="Entrou pela regra do fornecedor no Neo Fiscal (o complemento não cita o cartão)">pela regra</Badge>}</TableCell>
                   <TableCell className="text-xs">{c.titulo.complemento}</TableCell>
                   <TableCell>
                     {c.modo === "Arredondamento" ? `Arredondamento (${formatarMoeda(c.diferencaCentavos)})` : c.modo === "Manual" ? `À mão (diferença ${formatarMoeda(c.diferencaCentavos)})` : c.modo}

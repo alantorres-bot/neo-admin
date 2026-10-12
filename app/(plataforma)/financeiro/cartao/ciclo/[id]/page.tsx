@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Download, Upload } from "lucide-react";
+import { ArrowLeft, Download, Printer, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { bloqueioDoFechamento, CLASSE_SITUACAO, ROTULO_SITUACAO, rotuloCompetencia } from "@/lib/modulos/financeiro/cartao/ciclos";
@@ -69,6 +69,9 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
           )}
           {vigente?.planilha_url && (
             <Button variant="outline" render={<a href={vigente.planilha_url} />}><Download /> Planilha do fechamento</Button>
+          )}
+          {(fatura || vigente) && (
+            <Button variant="outline" render={<a href={`/imprimir/cartao/ciclo/${ciclo.id}`} target="_blank" rel="noopener" />}><Printer /> Imprimir / salvar PDF</Button>
           )}
           {podeCancelarFatura && fatura && <BotaoCancelarFatura id={fatura.id} />}
           {ciclo.situacao === "em_conciliacao" && ehGestor && <BotaoFechar id={ciclo.id} rotulo={rotulo} bloqueio={bloqueio} />}

@@ -40,6 +40,12 @@ export type TituloPagar = {
   valorCentavos: number;
   /** O título está no borderô do fechamento do cartão (lido da API). */
   emBordero?: boolean;
+  /** Código do fornecedor no Consistem. */
+  codFornecedor?: string | null;
+  /** Entrou na fatura só pela regra do fornecedor no Neo Fiscal (o complemento não cita o cartão). */
+  porRegra?: boolean;
+  /** Cartão da regra do fornecedor no Neo Fiscal na data da compra, quando há regra. */
+  cartaoDaRegra?: string | null;
 };
 
 export type Estabelecimento = { padrao: string; categoria: string; contaFluxo: string | null };
@@ -252,7 +258,8 @@ export function classificar(linha: LinhaFatura, dicionario: readonly Estabelecim
 }
 
 /** O complemento do título cita um cartão diferente do conciliado (tolerante a grafia: "NUBANCK" não é cartão trocado). */
-export function cartaoDivergente(titulo: Pick<TituloPagar, "complemento" | "vencimento">, cartao: CartaoInfo, cartoes: readonly CartaoInfo[]): boolean {
+export function cartaoDivergente(titulo: Pick<TituloPagar, "complemento" | "vencimento" | "cartaoDaRegra">, cartao: CartaoInfo, cartoes: readonly CartaoInfo[]): boolean {
+  if (titulo.cartaoDaRegra && titulo.cartaoDaRegra !== cartao.codigo) return true;   // a regra do Neo Fiscal manda outro cartão
   const id = identificarCartaoDoTitulo({ complemento: titulo.complemento, vencimento: titulo.vencimento }, cartoes);
   if (id.situacao === "cartao") return id.cartao!.codigo !== cartao.codigo;
   if (id.situacao === "ambiguo") return !id.candidatos.some((c) => c.codigo === cartao.codigo);
@@ -262,7 +269,9 @@ export function cartaoDivergente(titulo: Pick<TituloPagar, "complemento" | "venc
 const diasEntre = (a: string, b: string) => Math.round((Date.UTC(+b.slice(0, 4), +b.slice(5, 7) - 1, +b.slice(8, 10)) - Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, +a.slice(8, 10))) / 86_400_000);
 
 export function causaDivergencia(titulo: TituloPagar, cartao: CartaoInfo, cartoes: readonly CartaoInfo[], vencimento: string, titulos: readonly TituloPagar[]): string {
+  if (titulo.cartaoDaRegra && titulo.cartaoDaRegra !== cartao.codigo) return `A regra do fornecedor no Neo Fiscal é o cartão ${titulo.cartaoDaRegra} — possível cartão trocado`;
   if (cartaoDivergente(titulo, cartao, cartoes)) return "Complemento cita cartão diferente — possível cartão trocado";
+  if (titulo.porRegra) return "Fornecedor pago neste cartão pela regra do Neo Fiscal, mas sem linha na fatura — confirmar se esta compra foi no cartão";
   if (titulos.filter((t) => t.valorCentavos === titulo.valorCentavos).length > 1) return "Outro título de mesmo valor no ciclo — possível duplicidade";
   if (titulo.vencimento && Math.abs(diasEntre(titulo.vencimento, vencimento)) > JANELA_VENCIMENTO) return "Vencimento fora da janela do vencimento da fatura";
   return "Sem correspondência na fatura — apurar antes de qualquer exclusão";

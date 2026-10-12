@@ -599,7 +599,7 @@ Deno.serve(async (req) => {
           titulos: titulos.map((t) => ({
             cod_lancamento: t.codLancamento, num_documento: t.numDocumento || null, cod_fornecedor: t.codFornecedor || null,
             fornecedor_nome: nomes.get(t.codFornecedor) ?? null, complemento_historico: t.complemento || null, categoria_doc: t.categoriaDoc || null,
-            data_vencimento: t.vencimento, valor_documento: reais(t.valorDocumentoCentavos),
+            data_vencimento: t.vencimento, data_emissao: t.emissao, valor_documento: reais(t.valorDocumentoCentavos),
             valor_original: t.valorOriginalCentavos === null ? null : reais(t.valorOriginalCentavos), valor_atualizado: reais(t.saldoCentavos),
             tem_bordero: comBordero.has(t.codLancamento),
           })),

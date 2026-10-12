@@ -128,6 +128,7 @@ zero a lançar, zero divergências (`conciliacao.test.ts`). Detecção: tirando 
 | **Meses** (`/financeiro/cartao/meses`, entrada do módulo) | Grade cartão × mês (6 meses, navegação para trás) com a situação de cada mês, o total, itens a lançar ou data de pagamento; contadores por situação |
 | **Mês do cartão** (`/ciclo/[id]`) | Cabeçalho (fechamento, vencimento, situação), linha do tempo (fechou · importada · fechada · paga), Importar fatura (aguardando), conciliação ao vivo (em conciliação) ou resultado congelado (fechada/paga), Fechar o mês (gestor; desabilitado com o motivo), Reabrir (gestor), planilha do fechamento, histórico de fechamentos |
 | **Histórico do cartão** (`/historico?cartao=`) | Todos os meses de um cartão: situação, total, a lançar, quem fechou e quando, data de pagamento (link também na aba Cartões) |
+| **Relatório** (`/imprimir/cartao/ciclo/[id]`, botão "Imprimir / salvar PDF" no mês) | Folha A4 sem a moldura: empresa e CNPJ, cartão e mês, fechamento/vencimento/situação, quadro de conciliação, itens sem título (com a decisão ou PENDENTE), títulos sem linha, conciliados, compensados, decisões, fechamento (versões e reaberturas) e pagamento. Mês fechado/pago imprime o resultado congelado; em conciliação, o cálculo do momento com o selo "SEM VALIDADE — MÊS NÃO FECHADO" |
 | **Faturas** (`/financeiro/cartao/faturas`) | Faturas importadas por empresa/cartão/vencimento (total, linhas, status, quem importou, link para o mês) + "Importar fatura avulsa" |
 | **Importar fatura** (`/nova`) | Empresa, cartão, vencimento efetivo, total da fatura, arquivo (PDF/CSV), senha do PDF (opcional) → **pré-visualização** das linhas lidas (data, descrição, parcela, valor, descartadas), soma × total, vencimento e total impressos pelo emissor, avisos do leitor. "Confirmar importação" só com a soma batendo |
 | **Conciliação** (`/[id]`) | Cartões: total da fatura, títulos, diferença apurada, **diferença não justificada** (vermelho se ≠ 0), conciliados com cartão divergente; abas A lançar · Divergências · Conciliados · Compensados · Quadro · Linhas da fatura · Outros títulos de cartão na janela; botões Baixar planilha, Cancelar fatura (motivo); rodapé "Não gerar o borderô enquanto houver diferença não justificada" |
@@ -250,3 +251,11 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
 - **Testado ao vivo (12/10/2026)** na Sicredi PF 10/2026: compensar anuidade + crédito da anuidade levou "A lançar" de 3 para 1
   pendente, Compensados 1, diferença não justificada R$ 0,00; desfeito em seguida pela aba Decisões (registro fica como
   "desfeita", com motivo). A decisão real sobre esse par ficou para o financeiro.
+
+## 15. Fase 3 — andamento (12/10/2026)
+- **Relatório de impressão: feito.** Página `app/(impressao)/imprimir/cartao/ciclo/[id]/page.tsx` (reusa o botão de impressão do
+  Contas a pagar), botão "Imprimir / salvar PDF" na página do mês. Conferido com a Sicredi PF 10/2026.
+- **Aviso de fechamento do cartão:** já entregue na Fase 2 (pendência "Importar fatura").
+- **Leitores Itaú PJ e Nubank PF:** aguardando uma fatura de cada na pasta do Drive (o PDF da pasta ITAÚ PJ é da Unicred).
+- **Regra fornecedor → cartão do Neo Fiscal:** o Neo Fiscal é outro projeto Supabase (`ycokizsmegdwntcsstfh`, tabela
+  `fornecedor_cartao` com vigência). A forma de ligar os dois sistemas depende de decisão do Alan.
