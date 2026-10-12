@@ -32,6 +32,8 @@ export type LinhaAkf = {
   /** Linha que é uma PARTE antecipada de um título (antecipação parcial): o id da parte e o do título. */
   parteId?: string;
   tituloId?: string;
+  /** Título que já está numa solicitação de antecipação em aberto (rascunho ou solicitada à AKF). */
+  solicitacao?: { id: string; numero: number; rotulo: string } | null;
 };
 
 /** Botão "Encerrar parte" de uma linha da lista (motivo obrigatório, fica no histórico do título). */
@@ -197,6 +199,11 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
                 <TableCell className="font-medium tabular-nums">
                   <Link href={`/financeiro/recebiveis/${l.tituloId ?? l.id}`} className="hover:underline">{l.documento}</Link>
                   {l.unidade === "contagem" && <Badge variant="outline" className="ml-1.5 align-middle">Contagem</Badge>}
+                  {l.solicitacao && (
+                    <span className="block text-[11px] font-normal text-muted-foreground">
+                      <Link href={`/financeiro/akf/solicitacoes/${l.solicitacao.id}`} className="hover:underline">na solicitação nº {l.solicitacao.numero} ({l.solicitacao.rotulo})</Link>
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className="max-w-72 truncate" title={l.cliente}>
                   {l.clienteId ? <Link href={`/financeiro/recebiveis/clientes/${l.clienteId}`} className="hover:underline">{l.cliente}</Link> : l.cliente}

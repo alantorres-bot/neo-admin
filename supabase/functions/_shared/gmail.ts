@@ -71,7 +71,10 @@ export type AnexoEmail = { nome: string; tipo: string; bytes: Uint8Array };
 
 export type DadosEmail = {
   de: string;
-  para: string;
+  /** Um e-mail, ou vários separados por vírgula (ou uma lista). */
+  para: string | readonly string[];
+  /** Cópias (Cc), opcional: um e-mail, vários separados por vírgula, ou uma lista. */
+  cc?: string | readonly string[] | null;
   assunto: string;
   corpo: string;
   anexos?: readonly AnexoEmail[];
@@ -79,17 +82,26 @@ export type DadosEmail = {
   limite?: string;
 };
 
-/** Mensagem completa (ASCII puro: texto e anexos vão em base64). Lança GmailErro se o endereço for inválido. */
+/** Lista de e-mails (string com vírgulas/ponto e vírgula ou array), limpa e sem repetição. */
+export function listaDeEmails(v: string | readonly string[] | null | undefined): string[] {
+  const partes = (Array.isArray(v) ? v : String(v ?? "").split(/[,;]/)).map((e) => limparCabecalho(String(e)));
+  return [...new Set(partes.filter((e) => e !== ""))];
+}
+
+/** Mensagem completa (ASCII puro: texto e anexos vão em base64). Lança GmailErro se algum endereço for inválido. */
 export function montarMime(d: DadosEmail): string {
   const de = limparCabecalho(d.de);
-  const para = limparCabecalho(d.para);
+  const para = listaDeEmails(d.para);
+  const cc = listaDeEmails(d.cc);
   if (!emailValido(de)) throw new GmailErro("Remetente (GMAIL_REMETENTE) inválido.");
-  if (!emailValido(para)) throw new GmailErro("O destinatário não tem um e-mail válido.");
+  if (para.length === 0 || !para.every(emailValido)) throw new GmailErro("O destinatário não tem um e-mail válido.");
+  if (!cc.every(emailValido)) throw new GmailErro("Um dos e-mails em cópia (Cc) é inválido.");
 
   const limite = d.limite ?? `neo-admin-${crypto.randomUUID()}`;
   const cabecalhos = [
     `From: ${de}`,
-    `To: ${para}`,
+    `To: ${para.join(", ")}`,
+    ...(cc.length > 0 ? [`Cc: ${cc.join(", ")}`] : []),
     `Subject: ${codificarAssunto(d.assunto)}`,
     "MIME-Version: 1.0",
   ];

@@ -89,6 +89,18 @@ describe("montarMime", () => {
     expect(m).not.toContain("Bcc:");
   });
 
+  it("vários destinatários e cópias: To e Cc com vírgula, sem repetição; Cc inválido recusa", () => {
+    const m = montarMime({ ...base, para: ["andre@akf.com.br", "kayza@akf.com.br", "andre@akf.com.br"], cc: "rodrigo@neo.com.br; financeiro@neo.com.br" });
+    const cab = m.split("\r\n\r\n")[0];
+    expect(cab).toContain("To: andre@akf.com.br, kayza@akf.com.br");
+    expect(cab).toContain("Cc: rodrigo@neo.com.br, financeiro@neo.com.br");
+    expect(montarMime({ ...base, para: "a@b.com,c@d.com" }).split("\r\n\r\n")[0]).toContain("To: a@b.com, c@d.com");
+    expect(montarMime(base).split("\r\n\r\n")[0]).not.toContain("Cc:");
+    expect(() => montarMime({ ...base, cc: "isso não é e-mail" })).toThrow(/cópia/);
+    expect(() => montarMime({ ...base, para: [] })).toThrow(/destinatário/);
+    expect(() => montarMime({ ...base, para: "a@b.com, ruim" })).toThrow(/destinatário/);
+  });
+
   it("recusa remetente ou destinatário inválido e não deixa injetar cabeçalho pelo assunto ou pelo destinatário", () => {
     expect(() => montarMime({ ...base, para: "isso não é e-mail" })).toThrow(GmailErro);
     expect(() => montarMime({ ...base, de: "" })).toThrow(/Remetente/);

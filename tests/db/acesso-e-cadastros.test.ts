@@ -135,7 +135,7 @@ describe("contrapartes e contatos", () => {
 
   it("colaborador só é visível para quem tem a área rh (inclui tipos mistos)", async () => {
     const nomes = async (quem: string) =>
-      (await como(db, quem, () => q(`select nome from contrapartes order by nome`))).rows.map((x) => x.nome);
+      (await como(db, quem, () => q(`select nome from contrapartes where nome <> 'AKF Securitizadora' order by nome`))).rows.map((x) => x.nome); // a AKF vem da migration 0130
     expect(await nomes(finConsulta)).toEqual(["Construtora Alfa"]);
     expect(await nomes(fiscalConsulta)).toEqual(["Construtora Alfa"]);
     expect(await nomes(rhConsulta)).toEqual(["Construtora Alfa", "João Silva", "Maria Souza"]);
@@ -164,7 +164,7 @@ describe("contrapartes e contatos", () => {
       await q(`insert into contatos (contraparte_id, nome, whatsapp) values ($1, 'João', '+5565999999999')`, [colaborador]);
     });
     const nomes = async (quem: string) =>
-      (await como(db, quem, () => q(`select nome from contatos order by nome`))).rows.map((x) => x.nome);
+      (await como(db, quem, () => q(`select k.nome from contatos k join contrapartes c on c.id = k.contraparte_id where c.nome <> 'AKF Securitizadora' order by k.nome`))).rows.map((x) => x.nome); // André/Kayza vêm da migration 0130
     expect(await nomes(finConsulta)).toEqual(["Ana (financeiro)"]);
     expect(await nomes(rhConsulta)).toEqual(["Ana (financeiro)", "João"]);
     await como(db, finConsulta, async () => {

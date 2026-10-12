@@ -9,12 +9,21 @@ describe("normalizarTexto e clienteSemBoleto", () => {
   it("tira acento, maiúsculas e espaços repetidos", () => {
     expect(normalizarTexto("  Construtora  Capão  ")).toBe("CONSTRUTORA CAPAO");
   });
-  it("casa por trecho do nome (termos da lista do Gestor AKF)", () => {
-    const termos = ["MIP", "MB", "JANEIRO", "CAPARAO", "HOUSE GARDEN", "QRTZ 39"];
+  it("casa por palavra inteira do nome (termos da lista de clientes sem boleto)", () => {
+    const termos = ["MIP", "MB", "JANEIRO", "CAPARAO", "HOUSE GARDEN", "QRTZ 39", "J.MIRO"];
     expect(clienteSemBoleto("MIP ENGENHARIA LTDA", termos)).toBe(true);
     expect(clienteSemBoleto("Caparaó Empreendimentos", ["CAPARAO"])).toBe(true);
     expect(clienteSemBoleto("HOUSE   GARDEN SPE", termos)).toBe(true);
+    expect(clienteSemBoleto("CONSTRUTORA MB", termos)).toBe(true);
+    expect(clienteSemBoleto("J.MIRO ENGENHARIA", termos)).toBe(true);
+    expect(clienteSemBoleto("QRTZ 39 SPE", termos)).toBe(true);
     expect(clienteSemBoleto("LUZAY EMPREENDIMENTOS", termos)).toBe(false);
+  });
+  it("não casa trecho dentro de outra palavra (AMBIENTAL não é MB; QRTZ 390 não é QRTZ 39)", () => {
+    expect(clienteSemBoleto("AMBIENTAL LTDA", ["MB"])).toBe(false);
+    expect(clienteSemBoleto("EMBALAGENS SUL", ["MB"])).toBe(false);
+    expect(clienteSemBoleto("QRTZ 390 SPE", ["QRTZ 39"])).toBe(false);
+    expect(clienteSemBoleto("JXMIRO", ["J.MIRO"])).toBe(false);
   });
   it("termo vazio nunca casa", () => {
     expect(clienteSemBoleto("QUALQUER", ["", "  "])).toBe(false);

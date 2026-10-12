@@ -40,7 +40,9 @@ describe("módulo e parâmetros", () => {
     const c = Object.fromEntries((await q(`select chave, valor from configuracoes where chave like 'financeiro.akf.%'`)).rows.map((r) => [r.chave, r.valor]));
     expect(c["financeiro.akf.taxa_referencia_am"]).toBe(0.0218);
     expect(c["financeiro.akf.multa_recompra"]).toBe(0.02);
-    expect(c["financeiro.akf.clientes_sem_boleto"]).toEqual(["MIP", "MB", "JANEIRO", "CAPARAO", "HOUSE GARDEN", "QRTZ 39"]);
+    // a lista começa com os 6 da Fase 1; a migration 0130 (Fase 2) acrescenta Raja, ROCCA, JBL, Leandro, J.Miró e BF Ótica
+    expect(c["financeiro.akf.clientes_sem_boleto"].slice(0, 3)).toEqual(["MIP", "MB", "JANEIRO"]);
+    expect(c["financeiro.akf.clientes_sem_boleto"]).toContain("QRTZ 39");
   });
   it("quem só tem a área fiscal não enxerga o módulo AKF do financeiro", async () => {
     const r = await como(db, semAcesso, () => q(`select tem_acesso_modulo('financeiro.akf', 'consulta') as ok`));

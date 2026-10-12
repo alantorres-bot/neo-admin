@@ -10,12 +10,17 @@ export function normalizarTexto(texto: string): string {
   return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
 }
 
-/** O cliente é "sem boleto de factoring"? Casa por trecho do nome normalizado (como no Gestor AKF). */
+const escaparRegex = (t: string) => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * O cliente é "sem boleto de factoring"? Casa por PALAVRA inteira no nome normalizado: "MB" marca "MB ENGENHARIA" e
+ * "CONSTRUTORA MB", não "AMBIENTAL". Termos com espaço ("HOUSE GARDEN"), ponto ("J.MIRO") ou número ("QRTZ 39") funcionam.
+ */
 export function clienteSemBoleto(nomeCliente: string, termos: readonly string[]): boolean {
   const alvo = normalizarTexto(nomeCliente);
   return termos.some((t) => {
     const termo = normalizarTexto(t);
-    return termo !== "" && alvo.includes(termo);
+    return termo !== "" && new RegExp(`(?<![A-Z0-9])${escaparRegex(termo)}(?![A-Z0-9])`).test(alvo);
   });
 }
 

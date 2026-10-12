@@ -16,6 +16,7 @@ import {
 } from "@/supabase/functions/_shared/akf";
 import { ROTULO_UNIDADE, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import { ListaPartes, TabelaAkf, type LinhaAkf, type LinhaParte } from "./componentes";
+import { ROTULO_STATUS_SOLICITACAO, ehStatusSolicitacao } from "@/lib/modulos/financeiro/akf/solicitacao";
 
 export const metadata: Metadata = { title: "AKF" };
 
@@ -196,13 +197,26 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
   const idsClLoc = [...new Set(loc.map((t) => t.contraparte_id))];
   const idsClientesPartes = [...new Set([...tituloDaParte.values()].map((t) => t.contraparte_id))];
 
-  // Onda 3: nomes dos clientes (da lista, da busca e das partes) e antecipações parciais dos títulos da página e da busca.
-  const [nomes, partesDaPagina, nomesLoc, partesLoc, nomesPartes] = await Promise.all([
+  // Solicitações de antecipação em aberto (rascunho ou solicitada) dos títulos da página: "na solicitação nº N".
+  const lerSolicitadas = async (ids: string[]) => {
+    const m = new Map<string, { id: string; numero: number; rotulo: string }>();
+    if (ids.length === 0) return m;
+    const { data } = await supabase.from("akf_vw_titulos_solicitados").select("titulo_id, operacao_id, numero, status").in("titulo_id", ids.slice(0, 200));
+    for (const s of data ?? []) {
+      const status = String(s.status);
+      m.set(s.titulo_id as string, { id: s.operacao_id as string, numero: Number(s.numero), rotulo: ehStatusSolicitacao(status) ? ROTULO_STATUS_SOLICITACAO[status].toLowerCase() : status });
+    }
+    return m;
+  };
+
+  // Onda 3: nomes dos clientes (da lista, da busca e das partes), antecipações parciais e solicitações abertas dos títulos da página e da busca.
+  const [nomes, partesDaPagina, nomesLoc, partesLoc, nomesPartes, solicitadas] = await Promise.all([
     lerNomes(idsDaPagina),
     lerPartes(supabase, visao === "disponiveis" ? titulos.map((t) => t.id) : []),
     lerNomes(idsClLoc),
     lerPartes(supabase, loc.map((t) => t.id)),
     lerNomes(idsClientesPartes),
+    lerSolicitadas(visao === "disponiveis" ? titulos.map((t) => t.id) : []),
   ]);
 
   const paraLinha = (t: LinhaTitulo, cliente: string, parte: Awaited<ReturnType<typeof lerPartes>> extends Map<string, infer P> ? P | undefined : never, comSemBoleto: boolean): LinhaAkf => {
@@ -223,6 +237,7 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
       vencimentoIso: t.vencimento,
       restante: parte ? formatarMoeda(parte.restanteCentavos) : null,
       naAkfParcial: parte ? formatarMoeda(parte.akfCentavos) : null,
+      solicitacao: solicitadas.get(t.id) ?? null,
     };
   };
   let linhas: LinhaAkf[] = titulos.map((t) => paraLinha(t, nomes.get(t.contraparte_id) ?? "—", partesDaPagina.get(t.id), visao === "disponiveis"));
@@ -310,6 +325,8 @@ export default async function PaginaAkf({ searchParams }: PageProps<"/financeiro
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-semibold tracking-tight">AKF</h1>
           <div className="flex flex-wrap gap-2">
+            {podeOperar && <Button size="sm" render={<Link href="/financeiro/akf/solicitar" />}>Solicitar antecipação</Button>}
+            <Button variant="outline" size="sm" render={<Link href="/financeiro/akf/solicitacoes" />}>Solicitações</Button>
             <Button variant="outline" size="sm" render={<Link href="/financeiro/akf/conferencia" />}>Conferir com a planilha da AKF</Button>
             <Button variant="outline" size="sm" render={<Link href="/financeiro/recebiveis/clientes" />}>Clientes e contatos</Button>
           </div>
