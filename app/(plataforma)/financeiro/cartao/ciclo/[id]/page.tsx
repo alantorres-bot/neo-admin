@@ -37,7 +37,7 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
   const aoVivo = ciclo.situacao === "em_conciliacao" && ciclo.fatura_id ? await conciliacaoDaRequisicao(ciclo.fatura_id) : null;
   if (aoVivo) await registrarApuracao(supabase, ciclo.id, aoVivo);
   const linhasCongeladas = !aoVivo && vigente ? (await lerFatura(supabase, vigente.fatura_id))?.linhas ?? [] : [];
-  const bloqueio = aoVivo ? (aoVivo.origemTitulos !== "consistem" ? "Os títulos não foram lidos do Consistem agora; recarregue para tentar de novo." : bloqueioDoFechamento({ itensALancar: aoVivo.resultado.aLancar.length, residuoCentavos: aoVivo.resultado.residuoCentavos })) : null;
+  const bloqueio = aoVivo ? (aoVivo.origemTitulos !== "consistem" ? "Os títulos não foram lidos do Consistem agora; recarregue para tentar de novo." : bloqueioDoFechamento({ itensALancar: aoVivo.resultado.pendentes, residuoCentavos: aoVivo.resultado.residuoCentavos })) : null;
   const podeCancelarFatura = fatura?.status === "importada" && ciclo.situacao === "em_conciliacao" && (ehGestor || (podeOperar && fatura.importado_por === sessao.userId));
 
   const etapas: { rotulo: string; quando: string | null; detalhe?: string }[] = [
@@ -100,7 +100,8 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
               : <><strong className="text-amber-800">Não foi possível consultar o Consistem ({aoVivo.avisoOrigem}).</strong> Títulos do espelho, que não tem os do borderô: recarregue para tentar de novo.</>}
             {" "}<Link href={`${ROTA_CARTAO}/${aoVivo.fatura.id}`} className="text-elo hover:underline">Abrir só a fatura</Link>
           </p>
-          <PainelConciliacao resultado={aoVivo.resultado} outros={aoVivo.outros} linhas={aoVivo.linhas} tituloDaFatura={aoVivo.tituloDaFatura} podeOperar={podeOperar} />
+          <PainelConciliacao resultado={aoVivo.resultado} outros={aoVivo.outros} linhas={aoVivo.linhas} tituloDaFatura={aoVivo.tituloDaFatura} podeOperar={podeOperar}
+            faturaId={aoVivo.fatura.id} decisoesHistorico={aoVivo.decisoesHistorico} />
         </>
       )}
 

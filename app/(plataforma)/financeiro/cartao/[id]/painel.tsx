@@ -3,10 +3,13 @@
 import type { ResultadoConciliacao, TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import type { OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import type { LinhaFaturaBanco } from "../dados";
+import type { DecisaoLinha, LinhaFaturaBanco } from "../dados";
 import { AbasConciliacao } from "./componentes";
 
-export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false }: {
+export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false, faturaId = null, decisoesHistorico = [] }: {
+  /** Fatura que aceita decisões (em conciliação); nulo = só leitura. */
+  faturaId?: string | null;
+  decisoesHistorico?: DecisaoLinha[];
   resultado: ResultadoConciliacao;
   outros: OutroTitulo[];
   linhas: LinhaFaturaBanco[];
@@ -21,7 +24,7 @@ export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
         <Cartao rotulo="Total da fatura" valor={formatarMoeda(r.totalInformadoCentavos)} nota={r.integridadeOk ? `${r.contagens.linhas} linhas de despesa` : `Soma lida ${formatarMoeda(r.somaLinhasCentavos)} — conferir`} ruim={!r.integridadeOk} />
         <Cartao rotulo="Títulos no Contas a Pagar" valor={formatarMoeda(r.totalTitulosCentavos)} nota={`${r.contagens.titulos} títulos · ${r.contagens.conciliados} conciliados · ${r.contagens.agrupamentos} agrupados`} />
-        <Cartao rotulo="Diferença apurada" valor={formatarMoeda(r.diferencaCentavos)} nota={`${r.contagens.aLancar} a lançar · ${r.contagens.divergencias} sem correspondência`} />
+        <Cartao rotulo="Diferença apurada" valor={formatarMoeda(r.diferencaCentavos)} nota={`${r.pendentes ?? r.contagens.aLancar} pendentes${(r.pendentes ?? r.contagens.aLancar) !== r.contagens.aLancar ? ` (${r.contagens.aLancar - (r.pendentes ?? r.contagens.aLancar)} justificados)` : ""} · ${r.contagens.divergencias} sem correspondência`} />
         <Cartao rotulo="Diferença não justificada" valor={formatarMoeda(r.residuoCentavos)} ruim={!residuoZero} nota={residuoZero ? "Conciliação fecha" : "Deve ser zero antes do borderô"} />
         <Cartao rotulo="Cartão divergente" valor={String(r.contagens.cartaoDivergente)} ruim={r.contagens.cartaoDivergente > 0} nota={outros.length > 0 ? `${outros.length} outros títulos de cartão na janela` : "Conciliados citando outro cartão"} />
       </div>
@@ -32,14 +35,14 @@ export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura
           É o provisório do fechamento (os títulos do cartão vão para o borderô e ele é excluído após o pagamento): fica fora do cruzamento linha a linha. Quando ele sair do Consistem, o mês fechado passa a <strong>Paga</strong> sozinho.
         </p>
       )}
-      <AbasConciliacao resultado={r} outros={outros} linhas={linhas} podeOperar={podeOperar && !congelado} />
+      <AbasConciliacao resultado={r} outros={outros} linhas={linhas} podeOperar={podeOperar && !congelado} faturaId={congelado ? null : faturaId} decisoesHistorico={decisoesHistorico} />
 
       {!congelado && (
         <p className={`rounded-[3px] border p-3 text-sm font-medium ${residuoZero ? "border-grade bg-cabecalho" : "border-red-300 bg-red-50 text-red-800"}`}>
           {residuoZero
-            ? r.aLancar.length > 0
-              ? "Diferença não justificada igual a zero. Lance no Consistem o que está em “A lançar”; quando não houver mais nada, o gestor fecha o mês."
-              : "Nada a lançar e diferença não justificada zero: o mês pode ser fechado pelo gestor."
+            ? (r.pendentes ?? r.aLancar.length) > 0
+              ? "Diferença não justificada igual a zero. Lance no Consistem o que está pendente em “A lançar” (ou registre a decisão: justificar, casar, compensar); quando não houver pendência, o gestor fecha o mês."
+              : "Nada pendente e diferença não justificada zero: o mês pode ser fechado pelo gestor."
             : "Não gerar o borderô enquanto houver diferença não justificada. Apure os itens não identificados com o portador do cartão e os títulos sem correspondência."}
         </p>
       )}

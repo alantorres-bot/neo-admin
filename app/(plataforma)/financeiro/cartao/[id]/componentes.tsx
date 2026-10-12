@@ -10,28 +10,50 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { CONFERIR, type ResultadoConciliacao } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { chaveTitulo, CONFERIR, ROTULO_DECISAO, type ResultadoConciliacao } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { ROTA_CARTAO } from "@/lib/modulos/financeiro/cartao/modulo";
 import type { OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { cancelarFatura } from "../acoes";
-import type { LinhaFaturaBanco } from "../dados";
+import type { DecisaoLinha, LinhaFaturaBanco } from "../dados";
+import { DialogoDecidir, ListaDecisoes, SeloDecisao, type Candidatos } from "./decisoes";
 
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
 const Conferir = ({ texto }: { texto: string }) => (texto === CONFERIR ? <span className="font-bold text-amber-700">{texto}</span> : <>{texto}</>);
 
-export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar }: { resultado: ResultadoConciliacao; outros: OutroTitulo[]; linhas: LinhaFaturaBanco[]; podeOperar: boolean }) {
+export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, faturaId = null, decisoesHistorico = [] }: {
+  resultado: ResultadoConciliacao; outros: OutroTitulo[]; linhas: LinhaFaturaBanco[]; podeOperar: boolean;
+  /** Fatura editável (decisões permitidas); nulo = só leitura (mês fechado ou resultado congelado). */
+  faturaId?: string | null;
+  decisoesHistorico?: DecisaoLinha[];
+}) {
   const rotulo = (nome: string, n: number) => `${nome} (${n})`;
+  const decide = podeOperar && faturaId !== null;
+  const candidatos: Candidatos = {
+    linhas: r.aLancar,
+    titulos: [...r.divergencias.filter((d) => !d.justificativa).map((d) => d.titulo), ...outros.map((o) => o.titulo)],
+  };
+  const rotuloLinha = Object.fromEntries(linhas.map((l) => [l.id, `${l.descricao} · ${formatarMoeda(centavos(l.valor))}`]));
+  const todosTitulos = [...r.conciliados.flatMap((c) => [c.titulo, ...(c.titulosExtras ?? [])]), ...r.divergencias.map((d) => d.titulo), ...outros.map((o) => o.titulo)];
+  const rotuloTitulo = Object.fromEntries(todosTitulos.map((t) => [chaveTitulo(t), `título ${t.numeroTitulo} · ${t.fornecedor} · ${formatarMoeda(t.valorCentavos)}`]));
+  const ativas = decisoesHistorico.filter((d) => !d.desfeito_em).length;
   return (
+    <div className="space-y-2">
+    {(r.decisoesSemEfeito ?? []).length > 0 && (
+      <ul className="list-disc space-y-1 rounded-[3px] border border-amber-300 bg-amber-50 p-3 pl-7 text-sm">
+        {(r.decisoesSemEfeito ?? []).map((s) => <li key={s.decisao.id}><strong>{ROTULO_DECISAO[s.decisao.tipo]} sem efeito</strong> ({s.decisao.motivo}): {s.motivo} Veja a aba Decisões.</li>)}
+      </ul>
+    )}
     <Tabs defaultValue={r.aLancar.length > 0 ? "lancar" : "quadro"}>
       <TabsList variant="line" className="flex-wrap">
-        <TabsTrigger value="lancar">{rotulo("A lançar", r.aLancar.length)}</TabsTrigger>
+        <TabsTrigger value="lancar">{(r.pendentes ?? r.aLancar.length) === r.aLancar.length ? rotulo("A lançar", r.aLancar.length) : `A lançar (${r.pendentes} pendentes de ${r.aLancar.length})`}</TabsTrigger>
         <TabsTrigger value="divergencias">{rotulo("Divergências", r.divergencias.length)}</TabsTrigger>
         <TabsTrigger value="conciliados">{rotulo("Conciliados", r.conciliados.length)}</TabsTrigger>
         <TabsTrigger value="compensados">{rotulo("Compensados", r.compensados.length)}</TabsTrigger>
         <TabsTrigger value="quadro">Quadro de conciliação</TabsTrigger>
         <TabsTrigger value="linhas">{rotulo("Linhas da fatura", linhas.length)}</TabsTrigger>
         <TabsTrigger value="outros">{rotulo("Outros títulos de cartão", outros.length)}</TabsTrigger>
+        <TabsTrigger value="decisoes">{rotulo("Decisões", ativas)}</TabsTrigger>
       </TabsList>
 
       <TabsContent value="lancar" className="space-y-2">
@@ -40,11 +62,11 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar }: { 
           <Table>
             <TableHeader><TableRow>
               <TableHead>Data</TableHead><TableHead>Descrição na fatura</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Natureza</TableHead>
-              <TableHead>Categoria</TableHead><TableHead>Conta de fluxo</TableHead><TableHead className="text-right">Parcelas</TableHead><TableHead>Vencimento</TableHead><TableHead>Complemento sugerido</TableHead>
+              <TableHead>Categoria</TableHead><TableHead>Conta de fluxo</TableHead><TableHead className="text-right">Parcelas</TableHead><TableHead>Vencimento</TableHead><TableHead>Complemento sugerido</TableHead><TableHead>Decisão</TableHead>
             </TableRow></TableHeader>
             <TableBody>
               {r.aLancar.map((a) => (
-                <TableRow key={a.linha.id}>
+                <TableRow key={a.linha.id} className={a.justificativa ? "bg-emerald-50/50" : ""}>
                   <TableCell className="tabular-nums">{formatarData(a.linha.dataCompra)}</TableCell>
                   <TableCell>{a.linha.descricao}</TableCell>
                   <TableCell className={`text-right tabular-nums ${a.linha.valorCentavos < 0 ? "text-red-700" : ""}`}>{formatarMoeda(a.linha.valorCentavos)}</TableCell>
@@ -59,6 +81,10 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar }: { 
                   <TableCell className="text-right tabular-nums">{a.parcelas}</TableCell>
                   <TableCell className="tabular-nums">{formatarData(a.vencimento)}</TableCell>
                   <TableCell className="font-mono text-xs">{a.complementoSugerido}</TableCell>
+                  <TableCell className="min-w-40 space-y-1">
+                    <SeloDecisao justificativa={a.justificativa} classificacao={a.classificacao} observacoes={a.observacoes} />
+                    {decide && <DialogoDecidir faturaId={faturaId!} alvo={{ tipo: "linha", item: a }} candidatos={candidatos} />}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -70,13 +96,17 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar }: { 
         <p className="text-xs text-muted-foreground">Títulos do Contas a Pagar do cartão, no vencimento desta fatura, sem linha correspondente. Nenhum título deve ser excluído sem apurar a causa.</p>
         {r.divergencias.length === 0 ? <Vazio texto="Todos os títulos têm linha na fatura." /> : (
           <Table>
-            <TableHeader><TableRow><TableHead>Nº do título</TableHead><TableHead>Fornecedor</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Complemento</TableHead><TableHead>Causa provável</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Nº do título</TableHead><TableHead>Fornecedor</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Complemento</TableHead><TableHead>Causa provável</TableHead><TableHead>Decisão</TableHead></TableRow></TableHeader>
             <TableBody>
               {r.divergencias.map((d) => (
                 <TableRow key={d.titulo.id}>
                   <TableCell className="tabular-nums">{d.titulo.numeroTitulo}</TableCell><TableCell>{d.titulo.fornecedor}</TableCell>
                   <TableCell className="tabular-nums">{formatarData(d.titulo.vencimento)}</TableCell><TableCell className="text-right tabular-nums">{formatarMoeda(d.titulo.valorCentavos)}</TableCell>
                   <TableCell className="text-xs">{d.titulo.complemento}</TableCell><TableCell className="text-amber-800">{d.causa}</TableCell>
+                  <TableCell className="min-w-40 space-y-1">
+                    <SeloDecisao justificativa={d.justificativa} observacoes={d.observacoes} />
+                    {decide && <DialogoDecidir faturaId={faturaId!} alvo={{ tipo: "titulo", titulo: d.titulo }} candidatos={candidatos} />}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -97,7 +127,11 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar }: { 
                   <TableCell className="text-right tabular-nums">{formatarMoeda(c.linhas.reduce((s, l) => s + l.valorCentavos, 0))}</TableCell>
                   <TableCell className="tabular-nums">{c.titulo.numeroTitulo}{c.titulo.emBordero && <Badge variant="outline" className="ml-1">borderô</Badge>}</TableCell>
                   <TableCell className="text-xs">{c.titulo.complemento}</TableCell>
-                  <TableCell>{c.modo === "Arredondamento" ? `Arredondamento (${formatarMoeda(c.diferencaCentavos)})` : c.modo}</TableCell>
+                  <TableCell>
+                    {c.modo === "Arredondamento" ? `Arredondamento (${formatarMoeda(c.diferencaCentavos)})` : c.modo === "Manual" ? `À mão (diferença ${formatarMoeda(c.diferencaCentavos)})` : c.modo}
+                    {c.decisao && <span className="block text-[11px] text-muted-foreground">{c.decisao.motivo} — {c.decisao.autor}</span>}
+                    {c.titulosExtras && c.titulosExtras.length > 0 && <span className="block text-[11px] text-muted-foreground">+ {c.titulosExtras.map((t) => t.numeroTitulo).join(", ")}</span>}
+                  </TableCell>
                   <TableCell className={c.aderencia.startsWith("ALERTA") ? "font-bold text-red-700" : c.aderencia === "OK" ? "" : "text-amber-800"}>{c.aderencia}</TableCell>
                 </TableRow>
               ))}
@@ -115,7 +149,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar }: { 
               {r.compensados.map((c) => (
                 <TableRow key={c.credito.id}>
                   <TableCell>{c.debito.descricao}</TableCell><TableCell className="text-right tabular-nums">{formatarMoeda(c.debito.valorCentavos)}</TableCell>
-                  <TableCell>{c.credito.descricao}</TableCell><TableCell className="text-right tabular-nums text-red-700">{formatarMoeda(c.credito.valorCentavos)}</TableCell>
+                  <TableCell>{c.credito.descricao}{c.decisao && <span className="block text-[11px] text-muted-foreground">À mão: {c.decisao.motivo} — {c.decisao.autor}</span>}</TableCell><TableCell className="text-right tabular-nums text-red-700">{formatarMoeda(c.credito.valorCentavos)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -170,7 +204,13 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar }: { 
           </Table>
         )}
       </TabsContent>
+
+      <TabsContent value="decisoes" className="space-y-2">
+        <p className="text-xs text-muted-foreground">Decisões das pessoas sobre os itens desta fatura. Nada é apagado: desfazer grava quem, quando e o motivo.{faturaId === null ? " Mês fechado: para mudar decisões, reabra o mês." : ""}</p>
+        <ListaDecisoes decisoes={decisoesHistorico} rotuloLinha={rotuloLinha} rotuloTitulo={rotuloTitulo} podeDesfazer={decide} />
+      </TabsContent>
     </Tabs>
+    </div>
   );
 }
 

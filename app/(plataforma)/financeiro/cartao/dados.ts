@@ -1,7 +1,7 @@
 // Leituras do módulo Cartão de crédito (RLS de quem chama; nada é gravado aqui).
 import { cache } from "react";
 import type { CartaoInfo } from "@/lib/modulos/financeiro/cartao/cartoes";
-import { conciliar, type Estabelecimento, type LinhaFatura, type ResultadoConciliacao, type TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { conciliar, type DecisaoItem, type Estabelecimento, type LinhaFatura, type ResultadoConciliacao, type TipoDecisao, type TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { MODULO_CARTAO, type CodigoLeitor } from "@/lib/modulos/financeiro/cartao/modulo";
 import { selecionarTitulos, type LancamentoEspelho, type OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { somarDias } from "@/lib/modulos/financeiro/cartao/texto";
@@ -134,7 +134,19 @@ export type Conciliacao = {
   origemTitulos: "consistem" | "espelho";
   /** Por que caiu para o espelho, quando caiu. */
   avisoOrigem: string | null;
+  /** Todas as decisões da fatura (ativas e desfeitas), para a aba Decisões. */
+  decisoesHistorico: DecisaoLinha[];
 };
+
+export type DecisaoLinha = {
+  id: string; tipo: TipoDecisao; linhas: string[]; titulos: string[]; categoria: string | null; conta_fluxo: string | null; motivo: string | null;
+  criado_por_nome: string | null; criado_em: string; desfeito_por_nome: string | null; desfeito_em: string | null; motivo_desfazer: string | null;
+};
+
+export const paraDecisaoItem = (d: DecisaoLinha): DecisaoItem => ({
+  id: d.id, tipo: d.tipo, linhas: d.linhas, titulos: d.titulos, categoria: d.categoria, contaFluxo: d.conta_fluxo, motivo: d.motivo,
+  autor: d.criado_por_nome, em: d.criado_em,
+});
 
 /** Conciliação calculada na hora: fatura + linhas + títulos da janela no espelho + dicionário. */
 export const conciliacaoDaRequisicao = cache(async (id: string): Promise<Conciliacao | null> => {
@@ -142,13 +154,17 @@ export const conciliacaoDaRequisicao = cache(async (id: string): Promise<Concili
   const lida = await lerFatura(supabase, id);
   if (!lida) return null;
   const { fatura, linhas } = lida;
-  const [cartoes, dicionario, lancamentos, { data: ultima }] = await Promise.all([
+  const [cartoes, dicionario, lancamentos, { data: ultima }, { data: decisoesBrutas, error: erroDecisoes }] = await Promise.all([
     lerCartoes(supabase), lerEstabelecimentos(supabase),
     lerTitulosDoConsistem(supabase, fatura.empresa_id, fatura.vencimento)
       .then((l) => ({ lista: l, origem: "consistem" as const, aviso: null as string | null }))
       .catch(async (e: Error) => ({ lista: await lerLancamentosDaJanela(supabase, fatura.empresa_id, fatura.vencimento), origem: "espelho" as const, aviso: e.message })),
     supabase.from("importacoes").select("criado_em").eq("modulo", "financeiro.contas-pagar").eq("arquivo", "api:consistem").order("criado_em", { ascending: false }).limit(1),
+    supabase.from("crt_vw_decisoes").select("id, tipo, linhas, titulos, categoria, conta_fluxo, motivo, criado_por_nome, criado_em, desfeito_por_nome, desfeito_em, motivo_desfazer")
+      .eq("fatura_id", id).order("criado_em").limit(1000),
   ]);
+  if (erroDecisoes) throw new Error(`Falha ao ler as decisões da fatura: ${erroDecisoes.message}`);
+  const decisoesHistorico = (decisoesBrutas ?? []) as DecisaoLinha[];
   const cartao = cartoes.find((c) => c.codigo === fatura.cartao);
   if (!cartao) throw new Error(`Cartão ${fatura.cartao} não encontrado no cadastro.`);
   const infos = cartoes.map(paraCartaoInfo);
@@ -160,10 +176,11 @@ export const conciliacaoDaRequisicao = cache(async (id: string): Promise<Concili
   const resultado = conciliar({
     cartao: paraCartaoInfo(cartao), cartoes: infos, vencimento: fatura.vencimento, totalInformadoCentavos: centavos(fatura.total_informado),
     linhas: linhasUteis, titulos: selecao.doCartao, estabelecimentos,
+    decisoes: decisoesHistorico.filter((d) => !d.desfeito_em).map(paraDecisaoItem), titulosExtras: selecao.outros.map((o) => o.titulo),
   });
   const u = ultima?.[0] as { criado_em: string } | undefined;
   return { fatura, linhas, cartao, resultado, outros: selecao.outros, tituloDaFatura: selecao.tituloDaFatura, ultimaSincronizacao: u ? quandoEm(u.criado_em) : null,
-    origemTitulos: lancamentos.origem, avisoOrigem: lancamentos.aviso };
+    origemTitulos: lancamentos.origem, avisoOrigem: lancamentos.aviso, decisoesHistorico };
 });
 
 // ---------------------------------------------------------------- ciclos (cartão × mês)
@@ -240,7 +257,7 @@ export async function lerCiclo(supabase: Cliente, id: string): Promise<{ ciclo: 
 /** Grava a apuração do ciclo em conciliação (mantém as pendências Conciliar/Fechar). Falha não derruba a tela. */
 export async function registrarApuracao(supabase: Cliente, cicloId: string, c: Conciliacao): Promise<void> {
   await supabase.rpc("crt_registrar_apuracao", {
-    p_ciclo: cicloId, p_itens: c.resultado.aLancar.length, p_diferenca: c.resultado.diferencaCentavos / 100, p_residuo: c.resultado.residuoCentavos / 100,
+    p_ciclo: cicloId, p_itens: c.resultado.pendentes, p_diferenca: c.resultado.diferencaCentavos / 100, p_residuo: c.resultado.residuoCentavos / 100,
     p_provisorio: c.tituloDaFatura ? codigoDoLancamento(c.tituloDaFatura) : null,
   });
 }

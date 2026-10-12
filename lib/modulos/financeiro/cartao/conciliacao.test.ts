@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { CARTOES_TESTE } from "./cartoes.test";
-import { assuntoCompensavel, cartaoDivergente, casar, classificar, compensarEstornos, conciliar, type Estabelecimento, type LinhaFatura, type TituloPagar } from "./conciliacao";
+import { assuntoCompensavel, cartaoDivergente, casar, classificar, compensarEstornos, conciliar, type DecisaoItem, type Estabelecimento, type LinhaFatura, type TituloPagar } from "./conciliacao";
 import { selecionarTitulos, type LancamentoEspelho } from "./selecao-titulos";
 
 const NUBANK = CARTOES_TESTE.find((c) => c.codigo === "NUBANK PF")!;
@@ -165,5 +165,75 @@ describe("selecionarTitulos (espelho cap_lancamentos)", () => {
     expect(r.outros.map((o) => o.situacao)).toEqual(["so_marca"]); // "FATURA CARTAO" do Inter: diz CARTÃO sem o banco e não bate com o total
     // sem o total informado, o título único entra como título comum do cartão
     expect(selecionarTitulos(lancs, SICREDI_PF, CARTOES_TESTE, "2026-10-10").doCartao).toHaveLength(2);
+  });
+});
+
+describe("conciliar com decisões por item (Fase 2b)", () => {
+  const SICREDI = CARTOES_TESTE.find((c) => c.codigo === "SICREDI PF")!;
+  const anuidade = linha("Anuidade Diferenc 07/12", 50);
+  const credito = linha("Credito Anuidade Cartao", -50);
+  const ckt = linha("Ckt Assessoria Cpv", 4936.74, { parcelaNum: 1, parcelaTotal: 12 });
+  const belenus = linha("Belenus Belene", 1073.98, { parcelaNum: 1, parcelaTotal: 10 });
+  const shock = linha("Shock Metais", 28013.79, { parcelaNum: 3, parcelaTotal: 3 });
+  const tShock = titulo("CARTÃO SICREDI 3 X;- MATERIA PRIMA", 28013.79, { codLancamento: "461723", vencimento: "2026-10-10" });
+  const tBelenus = titulo("CARTÃO SICREDI PF 10 X", 10739.44, { codLancamento: "658604", vencimento: "2026-10-10" });
+  const tTrocado = titulo("CARTAO INTER - CKT", 4936.74, { codLancamento: "777", vencimento: "2026-10-10" });
+  const linhas = [anuidade, credito, ckt, belenus, shock];
+  const total = 50 - 50 + 4936.74 + 1073.98 + 28013.79;
+  const dec = (tipo: DecisaoItem["tipo"], linhasD: string[], titulosD: string[] = [], extra: Partial<DecisaoItem> = {}): DecisaoItem => ({
+    id: `d${++seq}`, tipo, linhas: linhasD, titulos: titulosD, categoria: null, contaFluxo: null, motivo: "motivo", autor: "operador", em: "2026-10-12", ...extra,
+  });
+  const base = { cartao: SICREDI, cartoes: CARTOES_TESTE, vencimento: "2026-10-10", totalInformadoCentavos: Math.round(total * 100), linhas, estabelecimentos: DICIONARIO };
+
+  it("sem decisões: 4 pendentes (anuidade, crédito, Ckt, Belenus) e o título do Belenus como divergência", () => {
+    const r = conciliar({ ...base, titulos: [tShock, tBelenus], titulosExtras: [tTrocado] });
+    expect(r.pendentes).toBe(4);
+    expect(r.divergencias.map((d) => d.titulo.codLancamento)).toEqual(["658604"]);
+    expect(r.contagens.titulos).toBe(2);   // o título de outro cartão não entra sozinho
+  });
+
+  it("compensar, casar à mão (com título de outro cartão), justificar, classificar e observar", () => {
+    const decisoes = [
+      dec("compensar", [anuidade.id, credito.id]),
+      dec("casar", [ckt.id], ["777"], { motivo: "cartão trocado no lançamento" }),
+      dec("casar", [belenus.id], ["658604"], { motivo: "título pelo total; fatura cobra a parcela 1/10" }),
+      dec("observar", [shock.id], [], { motivo: "conferir NF" }),
+    ];
+    const r = conciliar({ ...base, titulos: [tShock, tBelenus], titulosExtras: [tTrocado], decisoes });
+    expect(r.pendentes).toBe(0);
+    expect(r.aLancar).toHaveLength(0);
+    expect(r.divergencias).toHaveLength(0);
+    expect(r.compensados.find((c) => c.decisao)?.decisao?.tipo).toBe("compensar");
+    expect(r.conciliados.filter((c) => c.modo === "Manual").map((c) => [c.titulo.codLancamento, c.diferencaCentavos])).toEqual([["777", 0], ["658604", 107_398 - 1_073_944]]);
+    expect(r.contagens).toMatchObject({ manuais: 2, titulos: 3 });
+    expect(r.ajusteManualCentavos).toBe(107_398 - 1_073_944);
+    expect(r.residuoCentavos).toBe(0);
+    expect(r.decisoesSemEfeito).toEqual([]);   // a observação na linha casada automaticamente não tem item, mas observação não conta
+  });
+
+  it("justificar linha tira da pendência sem mudar o resíduo; classificar troca categoria e conta", () => {
+    const decisoes = [
+      dec("justificar", [credito.id], [], { motivo: "crédito abatido no título da anuidade" }),
+      dec("classificar", [ckt.id], [], { categoria: "Consultoria", contaFluxo: "Serviços de Terceiros" }),
+    ];
+    const sem = conciliar({ ...base, titulos: [tShock] });
+    const com = conciliar({ ...base, titulos: [tShock], decisoes });
+    expect(com.pendentes).toBe(sem.pendentes - 1);
+    expect(com.residuoCentavos).toBe(sem.residuoCentavos);
+    const item = com.aLancar.find((a) => a.linha.id === ckt.id)!;
+    expect([item.categoria, item.contaFluxo, item.classificacao?.id]).toEqual(["Consultoria", "Serviços de Terceiros", decisoes[1].id]);
+    expect(com.aLancar.find((a) => a.linha.id === credito.id)?.justificativa?.motivo).toBe("crédito abatido no título da anuidade");
+  });
+
+  it("decisão sem efeito: título fora da janela, compensação que não fecha, justificativa de item já resolvido", () => {
+    const decisoes = [
+      dec("casar", [belenus.id], ["NAO-EXISTE"]),
+      dec("compensar", [anuidade.id, ckt.id]),
+      dec("justificar", [shock.id]),   // o Shock casa sozinho pelo valor
+    ];
+    const r = conciliar({ ...base, titulos: [tShock, tBelenus], decisoes });
+    expect(r.decisoesSemEfeito.map((s) => s.motivo)).toEqual([
+      "As linhas não somam zero.", "Um dos títulos não está mais na janela do vencimento.", "O item já foi resolvido pelo cruzamento (ou não está mais na fatura).",
+    ]);
   });
 });

@@ -47,6 +47,27 @@ export type Estabelecimento = { padrao: string; categoria: string; contaFluxo: s
 export const NATUREZAS = ["Estorno / crédito", "Encargo financeiro", "Parcela não desdobrada", "Despesa sem nota fiscal", "Não identificado"] as const;
 export type Natureza = (typeof NATUREZAS)[number];
 
+// ---------------------------------------------------------------- decisões por item (Fase 2b; tabela crt_decisoes)
+
+export const TIPOS_DECISAO = ["classificar", "justificar", "casar", "compensar", "observar"] as const;
+export type TipoDecisao = (typeof TIPOS_DECISAO)[number];
+export const ROTULO_DECISAO: Record<TipoDecisao, string> = {
+  classificar: "Classificação", justificar: "Justificativa", casar: "Casamento à mão", compensar: "Compensação à mão", observar: "Observação",
+};
+export type DecisaoItem = {
+  id: string;
+  tipo: TipoDecisao;
+  /** Ids das linhas da fatura (crt_fatura_linhas.id). */
+  linhas: string[];
+  /** Códigos dos lançamentos no Consistem. */
+  titulos: string[];
+  categoria: string | null;
+  contaFluxo: string | null;
+  motivo: string | null;
+  autor: string | null;
+  em: string;
+};
+
 export type ItemALancar = {
   linha: LinhaFatura;
   natureza: Natureza;
@@ -55,8 +76,13 @@ export type ItemALancar = {
   parcelas: number;
   vencimento: string;
   complementoSugerido: string;
+  /** Decisão "justificar": a linha não gera título novo e deixa de ser pendente. */
+  justificativa?: DecisaoItem;
+  /** Decisão "classificar" aplicada (categoria/conta trocadas). */
+  classificacao?: DecisaoItem;
+  observacoes?: DecisaoItem[];
 };
-export type Modo = "Exato" | "Arredondamento" | "Agrupado";
+export type Modo = "Exato" | "Arredondamento" | "Agrupado" | "Manual";
 export type Aderencia = "OK" | "Conferir descrição" | "ALERTA: complemento cita outro cartão";
 export type Conciliado = {
   /** Linhas da fatura casadas com o título (uma, ou várias no agrupamento). */
@@ -67,9 +93,14 @@ export type Conciliado = {
   diferencaCentavos: number;
   semelhanca: number;
   aderencia: Aderencia;
+  /** Casamento à mão: os demais títulos do casamento e a decisão. */
+  titulosExtras?: TituloPagar[];
+  decisao?: DecisaoItem;
 };
-export type Divergencia = { titulo: TituloPagar; causa: string };
-export type Compensado = { credito: LinhaFatura; debito: LinhaFatura };
+export type Divergencia = { titulo: TituloPagar; causa: string; justificativa?: DecisaoItem; observacoes?: DecisaoItem[] };
+export type Compensado = { credito: LinhaFatura; debito: LinhaFatura; outras?: LinhaFatura[]; decisao?: DecisaoItem };
+/** Decisão que não teve efeito nesta apuração (o item sumiu, já foi resolvido ou o título saiu da janela). */
+export type DecisaoSemEfeito = { decisao: DecisaoItem; motivo: string };
 export type LinhaQuadro = { rotulo: string; centavos: number; destaque?: boolean };
 
 export type ResultadoConciliacao = {
@@ -84,13 +115,19 @@ export type ResultadoConciliacao = {
   porNatureza: Record<Natureza, number>;
   /** Soma das diferenças dos casamentos com tolerância (fatura − título): acertadas como desconto na baixa. */
   arredondamentoCentavos: number;
+  /** Soma das diferenças dos casamentos à mão (fatura − títulos), justificadas pela decisão. */
+  ajusteManualCentavos: number;
+  /** Itens a lançar SEM justificativa: o que impede o fechamento. */
+  pendentes: number;
+  decisoes: DecisaoItem[];
+  decisoesSemEfeito: DecisaoSemEfeito[];
   orfaosCentavos: number;
   conciliados: Conciliado[];
   compensados: Compensado[];
   aLancar: ItemALancar[];
   divergencias: Divergencia[];
   quadro: LinhaQuadro[];
-  contagens: { linhas: number; compensados: number; titulos: number; conciliados: number; agrupamentos: number; aLancar: number; divergencias: number; cartaoDivergente: number };
+  contagens: { linhas: number; compensados: number; titulos: number; conciliados: number; agrupamentos: number; manuais: number; aLancar: number; pendentes: number; divergencias: number; cartaoDivergente: number };
 };
 
 export type EntradaConciliacao = {
@@ -104,7 +141,14 @@ export type EntradaConciliacao = {
   titulos: readonly TituloPagar[];
   estabelecimentos: readonly Estabelecimento[];
   toleranciaCentavos?: number;
+  /** Decisões ativas da fatura. */
+  decisoes?: readonly DecisaoItem[];
+  /** Títulos da janela que citam outro cartão (ou ambíguos): só entram se uma decisão "casar" os pegar (cartão trocado). */
+  titulosExtras?: readonly TituloPagar[];
 };
+
+/** Chave do título nas decisões: o código do lançamento no Consistem (ou o id, quando não há). */
+export const chaveTitulo = (t: TituloPagar) => t.codLancamento ?? t.id;
 
 // ---------------------------------------------------------------- compensação
 
@@ -228,33 +272,108 @@ export function causaDivergencia(titulo: TituloPagar, cartao: CartaoInfo, cartoe
 
 export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
   const tolerancia = e.toleranciaCentavos ?? TOLERANCIA_PADRAO;
-  const { restantes, compensados } = compensarEstornos(e.linhas);
-  const { casamentos, linhasSemTitulo, titulosSemLinha } = casar(restantes, e.titulos, tolerancia);
+  const decisoes = [...(e.decisoes ?? [])];
+  const semEfeito: DecisaoSemEfeito[] = [];
+  const linhaPorId = new Map(e.linhas.map((l) => [l.id, l]));
+  const usadasL = new Set<string>();
+  const usadosT = new Set<string>();
+  const titulosDoCartao = [...e.titulos];
+  const extrasPorChave = new Map((e.titulosExtras ?? []).map((t) => [chaveTitulo(t), t]));
+
+  // 1) Compensações à mão (linhas que somam zero).
+  const compensadosManuais: Compensado[] = [];
+  for (const d of decisoes.filter((x) => x.tipo === "compensar")) {
+    const ls = d.linhas.map((id) => linhaPorId.get(id));
+    if (ls.some((l) => !l || usadasL.has(l.id))) { semEfeito.push({ decisao: d, motivo: "Uma das linhas não está mais disponível." }); continue; }
+    const lista = ls as LinhaFatura[];
+    if (lista.reduce((s, l) => s + l.valorCentavos, 0) !== 0) { semEfeito.push({ decisao: d, motivo: "As linhas não somam zero." }); continue; }
+    lista.forEach((l) => usadasL.add(l.id));
+    const credito = lista.find((l) => l.valorCentavos < 0) ?? lista[0];
+    const debito = lista.find((l) => l !== credito && l.valorCentavos > 0) ?? lista.find((l) => l !== credito)!;
+    compensadosManuais.push({ credito, debito, outras: lista.filter((l) => l !== credito && l !== debito), decisao: d });
+  }
+
+  // 2) Casamentos à mão (linhas ↔ títulos; o título pode vir dos "outros cartões": cartão trocado).
+  const casamentosManuais: Casamento[] = [];
+  const decisoesCasar: DecisaoItem[] = [];
+  for (const d of decisoes.filter((x) => x.tipo === "casar")) {
+    const ls = d.linhas.map((id) => linhaPorId.get(id));
+    const ts = d.titulos.map((c) => titulosDoCartao.find((t) => chaveTitulo(t) === c) ?? extrasPorChave.get(c));
+    if (ls.some((l) => !l || usadasL.has(l.id))) { semEfeito.push({ decisao: d, motivo: "Uma das linhas não está mais disponível." }); continue; }
+    if (ts.some((t) => !t || usadosT.has(chaveTitulo(t)))) { semEfeito.push({ decisao: d, motivo: "Um dos títulos não está mais na janela do vencimento." }); continue; }
+    const linhasC = ls as LinhaFatura[];
+    const titulosC = ts as TituloPagar[];
+    linhasC.forEach((l) => usadasL.add(l.id));
+    for (const t of titulosC) {
+      usadosT.add(chaveTitulo(t));
+      if (!titulosDoCartao.includes(t)) titulosDoCartao.push(t);   // título de outro cartão casado à mão passa a contar nesta fatura
+    }
+    const diferenca = linhasC.reduce((s, l) => s + l.valorCentavos, 0) - titulosC.reduce((s, t) => s + t.valorCentavos, 0);
+    casamentosManuais.push({ linhas: linhasC, titulo: titulosC[0], modo: "Manual", diferencaCentavos: diferenca, semelhanca: 1 });
+    decisoesCasar.push(d);
+  }
+
+  // 3) Cruzamento automático no que sobrou.
+  const { restantes, compensados: compensadosAuto } = compensarEstornos(e.linhas.filter((l) => !usadasL.has(l.id)));
+  const auto = casar(restantes, titulosDoCartao.filter((t) => !usadosT.has(chaveTitulo(t))), tolerancia);
+  const compensados = [...compensadosManuais, ...compensadosAuto];
+  const casamentos = auto.casamentos;
+  const { linhasSemTitulo, titulosSemLinha } = auto;
+
+  // 4) Decisões sobre os itens que restaram.
+  const ativasPorLinha = (id: string, tipo: TipoDecisao) => decisoes.filter((d) => d.tipo === tipo && d.linhas.includes(id));
+  const ativasPorTitulo = (t: TituloPagar, tipo: TipoDecisao) => decisoes.filter((d) => d.tipo === tipo && d.titulos.includes(chaveTitulo(t)));
 
   const porNatureza = Object.fromEntries(NATUREZAS.map((n) => [n, 0])) as Record<Natureza, number>;
   const aLancar: ItemALancar[] = linhasSemTitulo.map((linha) => {
     const c = classificar(linha, e.estabelecimentos);
     porNatureza[c.natureza] += linha.valorCentavos;
     const parcelas = linha.parcelaTotal ?? 1;
+    const classificacao = ativasPorLinha(linha.id, "classificar").at(-1);
+    const justificativa = ativasPorLinha(linha.id, "justificar")[0];
+    const observacoes = ativasPorLinha(linha.id, "observar");
     return {
-      linha, natureza: c.natureza, categoria: c.categoria || CONFERIR, contaFluxo: c.contaFluxo || CONFERIR, parcelas, vencimento: e.vencimento,
+      linha, natureza: c.natureza,
+      categoria: classificacao?.categoria || c.categoria || CONFERIR, contaFluxo: classificacao?.contaFluxo || c.contaFluxo || CONFERIR,
+      parcelas, vencimento: e.vencimento,
       complementoSugerido: montarComplemento(e.cartao, parcelas, normalizar(linha.descricao).slice(0, 60)),
+      ...(classificacao ? { classificacao } : {}), ...(justificativa ? { justificativa } : {}), ...(observacoes.length ? { observacoes } : {}),
     };
   });
 
-  const conciliados: Conciliado[] = casamentos.map((c) => ({
-    ...c,
-    aderencia: cartaoDivergente(c.titulo, e.cartao, e.cartoes) ? "ALERTA: complemento cita outro cartão" : c.modo === "Agrupado" || c.semelhanca >= LIMIAR_SEMELHANCA ? "OK" : "Conferir descrição",
-  }));
-  const divergencias: Divergencia[] = titulosSemLinha.map((titulo) => ({ titulo, causa: causaDivergencia(titulo, e.cartao, e.cartoes, e.vencimento, e.titulos) }));
+  const conciliados: Conciliado[] = [
+    ...casamentosManuais.map((c, i): Conciliado => {
+      const d = decisoesCasar[i];
+      const todos = d.titulos.map((k) => titulosDoCartao.find((t) => chaveTitulo(t) === k)!);
+      return { ...c, aderencia: "OK", titulosExtras: todos.slice(1), decisao: d };
+    }),
+    ...casamentos.map((c): Conciliado => ({
+      ...c,
+      aderencia: cartaoDivergente(c.titulo, e.cartao, e.cartoes) ? "ALERTA: complemento cita outro cartão" : c.modo === "Agrupado" || c.semelhanca >= LIMIAR_SEMELHANCA ? "OK" : "Conferir descrição",
+    })),
+  ];
+  const divergencias: Divergencia[] = titulosSemLinha.map((titulo) => {
+    const justificativa = ativasPorTitulo(titulo, "justificar")[0];
+    const observacoes = ativasPorTitulo(titulo, "observar");
+    return { titulo, causa: causaDivergencia(titulo, e.cartao, e.cartoes, e.vencimento, titulosDoCartao), ...(justificativa ? { justificativa } : {}), ...(observacoes.length ? { observacoes } : {}) };
+  });
+
+  // Justificativa sem item correspondente (o item foi resolvido pelo cruzamento ou sumiu): sem efeito.
+  for (const d of decisoes.filter((x) => x.tipo === "justificar")) {
+    const alvoLinha = d.linhas[0] && aLancar.some((a) => a.linha.id === d.linhas[0]);
+    const alvoTitulo = d.titulos[0] && divergencias.some((v) => chaveTitulo(v.titulo) === d.titulos[0]);
+    if (!alvoLinha && !alvoTitulo) semEfeito.push({ decisao: d, motivo: "O item já foi resolvido pelo cruzamento (ou não está mais na fatura)." });
+  }
 
   const somaLinhasCentavos = e.linhas.reduce((s, l) => s + l.valorCentavos, 0);
-  const totalTitulosCentavos = e.titulos.reduce((s, t) => s + t.valorCentavos, 0);
+  const totalTitulosCentavos = titulosDoCartao.reduce((s, t) => s + t.valorCentavos, 0);
   const diferencaCentavos = e.totalInformadoCentavos - totalTitulosCentavos;
   const orfaosCentavos = titulosSemLinha.reduce((s, t) => s + t.valorCentavos, 0);
   const justificado = NATUREZAS.reduce((s, n) => s + porNatureza[n], 0);
   const arredondamentoCentavos = casamentos.reduce((s, c) => s + c.diferencaCentavos, 0);
-  const residuoCentavos = diferencaCentavos - justificado - arredondamentoCentavos + orfaosCentavos;
+  const ajusteManualCentavos = casamentosManuais.reduce((s, c) => s + c.diferencaCentavos, 0);
+  const residuoCentavos = diferencaCentavos - justificado - arredondamentoCentavos - ajusteManualCentavos + orfaosCentavos;
+  const pendentes = aLancar.filter((a) => !a.justificativa).length;
   const cartaoDivergenteN = conciliados.filter((c) => c.aderencia.startsWith("ALERTA")).length;
 
   const quadro: LinhaQuadro[] = [
@@ -263,18 +382,20 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
     { rotulo: "(=) Diferença apurada", centavos: diferencaCentavos, destaque: true },
     ...NATUREZAS.map((n) => ({ rotulo: `Justificativa: ${n.toLowerCase()}`, centavos: porNatureza[n] })),
     { rotulo: "Justificativa: arredondamento de desdobramento (acertar como desconto na baixa)", centavos: arredondamentoCentavos },
+    { rotulo: "Justificativa: diferença de casamentos à mão (decisão registrada)", centavos: ajusteManualCentavos },
     { rotulo: "(–) Títulos sem correspondência na fatura", centavos: orfaosCentavos },
     { rotulo: "(=) DIFERENÇA NÃO JUSTIFICADA — deve ser zero", centavos: residuoCentavos, destaque: true },
   ];
 
   return {
     cartao: e.cartao, vencimento: e.vencimento, totalInformadoCentavos: e.totalInformadoCentavos, somaLinhasCentavos,
-    integridadeOk: somaLinhasCentavos === e.totalInformadoCentavos, totalTitulosCentavos, diferencaCentavos, residuoCentavos, porNatureza, arredondamentoCentavos, orfaosCentavos,
+    integridadeOk: somaLinhasCentavos === e.totalInformadoCentavos, totalTitulosCentavos, diferencaCentavos, residuoCentavos, porNatureza, arredondamentoCentavos,
+    ajusteManualCentavos, pendentes, decisoes, decisoesSemEfeito: semEfeito, orfaosCentavos,
     conciliados, compensados, aLancar, divergencias, quadro,
     contagens: {
-      linhas: e.linhas.length, compensados: compensados.length, titulos: e.titulos.length,
+      linhas: e.linhas.length, compensados: compensados.length, titulos: titulosDoCartao.length,
       conciliados: casamentos.filter((c) => c.modo !== "Agrupado").length, agrupamentos: casamentos.filter((c) => c.modo === "Agrupado").length,
-      aLancar: aLancar.length, divergencias: divergencias.length, cartaoDivergente: cartaoDivergenteN,
+      manuais: casamentosManuais.length, aLancar: aLancar.length, pendentes, divergencias: divergencias.length, cartaoDivergente: cartaoDivergenteN,
     },
   };
 }

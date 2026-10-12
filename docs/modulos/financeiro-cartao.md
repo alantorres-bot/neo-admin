@@ -1,6 +1,6 @@
 # Módulo: Financeiro / Cartão de crédito
 
-Status: em construção — especificação aprovada em 12/10/2026 (plano); **Fases 1 e 2 entregues em 12/10/2026** (cadastros, importação da fatura em PDF, cruzamento com o espelho do Contas a Pagar, planilha).
+Status: em construção — especificação aprovada em 12/10/2026 (plano); **Fases 1, 2 e 2b entregues em 12/10/2026** (cadastros, importação da fatura em PDF, cruzamento com o espelho do Contas a Pagar, planilha).
 
 ## 1. Objetivo
 Cruzar a **fatura do cartão de crédito** com os **títulos já lançados no Contas a Pagar do Consistem**, apontar o que falta lançar
@@ -96,7 +96,20 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
 18. **Pendências na Fila do dia** (módulo `financeiro.cartao`, link para o mês): "Importar fatura <CARTÃO> MM/AAAA" (ao nascer o
     mês), "Conciliar fatura …" (enquanto houver item a lançar ou resíduo, na última apuração) e "Fechar a fatura …" (quando zera,
     para o gestor). Prazo = vencimento nominal; criticidade alta a 3 dias ou menos. São só criadas, concluídas ou canceladas.
-19. A apuração (itens a lançar, diferença, resíduo, provisório) é gravada a cada vez que alguém abre o mês em conciliação.
+19. A apuração (itens pendentes, diferença, resíduo, provisório) é gravada a cada vez que alguém abre o mês em conciliação.
+20. **Decisões por item** (Fase 2b, `crt_decisoes`): o operador registra, numa linha a lançar ou num título sem linha, uma de cinco
+    decisões — **classificar** (troca categoria/conta; opcionalmente grava no dicionário), **justificar** (não gera título; motivo),
+    **casar à mão** (linhas ↔ títulos, inclusive título que cita outro cartão; a diferença vira ajuste justificado no quadro),
+    **compensar** (linhas que somam zero) e **observar** (texto livre). Motivo obrigatório em justificar, casar e compensar.
+21. A conciliação aplica primeiro as compensações e os casamentos à mão, depois o cruzamento automático no que sobrou, e por fim
+    classificação, justificativa e observação nos itens que restaram.
+22. **Pendente** = item a lançar sem justificativa. O fechamento exige **zero pendentes** e diferença não justificada zero. Item
+    justificado continua no quadro (o valor justifica a diferença) mas não bloqueia o fechamento.
+23. Uma linha (ou título) só entra numa decisão ativa de justificar/casar/compensar; classificar substitui a anterior da linha.
+24. Decisão que deixa de se aplicar (o item foi resolvido pelo cruzamento, o título saiu da janela, a compensação não fecha) aparece
+    como **sem efeito**, com aviso na tela; não é apagada.
+25. Nada é apagado: desfazer grava quem, quando e o motivo. Mês fechado ou pago não aceita decisão nova nem desfazer (reabrir antes).
+    A planilha ganha a coluna "Decisão" e a aba "Decisões"; a foto do fechamento guarda as decisões aplicadas.
 
 Exemplo numérico (ciclo correto, como a calibração da skill): fatura R$ 1.736,70 com 12 linhas (2 pares compensados; 4 pedágios de
 R$ 20) × 5 títulos (um de R$ 120,00 para linha de R$ 120,01) → 4 exatos + 1 agrupamento, diferença apurada R$ 0,01 = arredondamento,
@@ -132,7 +145,8 @@ zero a lançar, zero divergências (`conciliacao.test.ts`). Detecção: tirando 
 | `crt_ciclos` | Mês do cartão: competência, fechamento, vencimento, situação, fatura vigente, última apuração, provisório, fechada/paga — sem delete; auditoria das mudanças de situação |
 | `crt_fechamentos` | Fechamentos (versão, foto do resultado em jsonb, totais, provisório, quem fechou/reabriu e motivo) — prova; planilha anexada |
 | `crt_vw_ciclos` | View dos meses com nomes e total da fatura |
-| Funções | `crt_importar_fatura` (com `p_ciclo`), `crt_cancelar_fatura`, `crt_salvar_cartao`, `crt_salvar_estabelecimento`, `crt_normalizar`, `crt_gerar_ciclos`, `crt_registrar_apuracao`, `crt_fechar_ciclo`, `crt_reabrir_ciclo`, `crt_calendario`, `crt_competencia_do_vencimento` |
+| `crt_decisoes` / `crt_vw_decisoes` | Decisões por item (tipo, linhas, títulos, categoria/conta, motivo, quem/quando, desfeita por/quando/motivo) — sem delete; auditoria |
+| Funções | `crt_importar_fatura` (com `p_ciclo`), `crt_cancelar_fatura`, `crt_salvar_cartao`, `crt_salvar_estabelecimento`, `crt_normalizar`, `crt_gerar_ciclos`, `crt_registrar_apuracao`, `crt_fechar_ciclo`, `crt_reabrir_ciclo`, `crt_calendario`, `crt_competencia_do_vencimento`, `crt_registrar_decisao`, `crt_desfazer_decisao` |
 | Agendamentos | `crt-gerar-ciclos-diario` (07:00 Cuiabá) e `cap-sincronizar-consistem-diario` (07:30; `cap_chamar_sincronizacao`, mesmo segredo do Vault de Recebíveis) |
 Migration: `0131_crt_base.sql`. Anexo: o PDF/CSV importado vai para o Storage (`anexos`, módulo `financeiro.cartao`, tabela `crt_faturas`).
 Código puro: `lib/modulos/financeiro/cartao/` (`texto`, `cartoes` — porta do motor do Neo Fiscal —, `leitores/`, `fatura-pdf`
@@ -142,7 +156,7 @@ Código puro: `lib/modulos/financeiro/cartao/` (`texto`, `cartoes` — porta do 
 | Nível | Pode |
 | --- | --- |
 | consulta | ver faturas, conciliação, cartões, dicionário; baixar a planilha |
-| operador | importar e cancelar a própria fatura; manter o dicionário |
+| operador | importar e cancelar a própria fatura; manter o dicionário; registrar e desfazer decisões por item |
 | gestor | tudo acima + cancelar qualquer fatura; editar o cadastro de cartões; **fechar e reabrir o mês** |
 
 ## 10. Pontos em aberto
@@ -156,7 +170,7 @@ Código puro: `lib/modulos/financeiro/cartao/` (`texto`, `cartoes` — porta do 
    Arquivamento: `ITAÚ PJ/08.AGOSTO/FATURA INFINITE_Agosto.pdf` é na verdade a **Unicred Visa Infinite** (vence 19/08, débito em
    conta); `INTER PJ/08.AGOSTO/Fatura (20) 012165 - senha.pdf` é a fatura **Inter PF** (vence 28/08).
 4. Ciclos pagos antes de 09/10/2026 não têm títulos no espelho (só o que estava aberto na primeira sincronização).
-5. A skill registrava à mão uma coluna "Observação" por item — na Fase 1 só a causa provável automática; observação livre é Fase 2.
+5. ~~Observação livre por item~~ — feita na Fase 2b (decisão "observar").
 6. O leitor Sicredi junta à descrição o final do cartão quando ele aparece sob a anuidade ("Anuidade Diferenc 07/12 0000"); não atrapalha a classificação (encargo).
 7. ~~Como o fechamento é lançado no Consistem?~~ **Respondido em 12/10/2026** (borderô + título provisório; regra 3). Registro original: No teste ao vivo (Sicredi PF 10/10/2026) o espelho não tinha mais os títulos por
    compra (Shock Metais 461723/3 etc., que a exportação de 10/10 no Drive ainda mostrava em aberto): havia só **um título no valor
@@ -168,7 +182,7 @@ Código puro: `lib/modulos/financeiro/cartao/` (`texto`, `cartoes` — porta do 
 ## 11. Fases
 0. Especificação (plano aprovado em 12/10/2026). 1. Cadastros, importação PDF/CSV, cruzamento e planilha (**feita**).
 2. Ciclo mensal por cartão, fechamento (gestor) com foto e planilha, reabertura, paga automática, pendências, grade e histórico
-   (**feita**). 2b (a fazer): decisões por item (`crt_conciliacao_itens`: reclassificar, casar à mão, justificar, observação livre). 3. Leitores Inter/Itaú/Nubank/Unicred, aviso de fechamento do cartão
+   (**feita**). 2b. Decisões por item: classificar, justificar, casar à mão, compensar, observar (**feita**). 3. Leitores Inter/Itaú/Nubank/Unicred, aviso de fechamento do cartão
    (pendência "Importar fatura"), relatório de impressão, regra fornecedor → cartão compartilhada com o Neo Fiscal.
 
 ## 12. Fase 1 — o que foi feito (12/10/2026)
@@ -222,3 +236,17 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
   fecharam), Sicredi PF em conciliação; Inter PF, Nubank PF e PicPay PF ainda sem mês (fecham depois de hoje). Pendências criadas
   na Fila do dia. Mês Sicredi PF: 3 a lançar, resíduo R$ 0,00, provisório 33392 (título 131026) gravado, "Fechar o mês"
   desabilitado com o motivo. Fechar/reabrir/paga não foram executados no mês real (há itens a lançar); estão cobertos pelos testes.
+
+## 14. Fase 2b — o que foi feito (12/10/2026)
+- Migration `0135_crt_decisoes.sql` (aplicada e registrada em produção): `crt_decisoes` (imutável, sem delete, auditoria), view
+  `crt_vw_decisoes`, `crt_registrar_decisao` (valida tipo, linhas da fatura, soma zero na compensação, motivo, exclusividade,
+  mês aberto) e `crt_desfazer_decisao`. Testes `tests/db/crt-decisoes.test.ts` (5 casos).
+- Motor (`conciliacao.ts`): decisões aplicadas antes e depois do cruzamento; `pendentes`, `ajusteManualCentavos`,
+  `decisoesSemEfeito`; casamento "Manual"; compensação à mão; títulos de outro cartão como candidatos ao casamento.
+  Testes no `conciliacao.test.ts` (cenário da Sicredi PF: anuidade + crédito, cartão trocado, título pelo total).
+- Telas: botão **Decidir** em cada linha de "A lançar" e de "Divergências" (diálogo com as opções do item, soma das linhas e dos
+  títulos e a diferença), selo da decisão na linha, aba **Decisões** com Desfazer, avisos de decisão sem efeito; fechamento e
+  pendências usam os pendentes. Planilha com a coluna Decisão e a aba Decisões.
+- **Testado ao vivo (12/10/2026)** na Sicredi PF 10/2026: compensar anuidade + crédito da anuidade levou "A lançar" de 3 para 1
+  pendente, Compensados 1, diferença não justificada R$ 0,00; desfeito em seguida pela aba Decisões (registro fica como
+  "desfeita", com motivo). A decisão real sobre esse par ficou para o financeiro.

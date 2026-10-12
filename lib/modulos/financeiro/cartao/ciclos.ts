@@ -69,7 +69,7 @@ export type Apuracao = { itensALancar: number; residuoCentavos: number };
 
 /** Regra para fechar o mês: nada a lançar e diferença não justificada zero. Devolve o motivo do bloqueio, ou null. */
 export function bloqueioDoFechamento(a: Apuracao): string | null {
-  if (a.itensALancar > 0) return `Ainda há ${a.itensALancar} ${a.itensALancar === 1 ? "item" : "itens"} da fatura sem título no Consistem.`;
+  if (a.itensALancar > 0) return `Ainda há ${a.itensALancar} ${a.itensALancar === 1 ? "item" : "itens"} da fatura sem título no Consistem e sem justificativa.`;
   if (a.residuoCentavos !== 0) return "A diferença não justificada precisa ser zero.";
   return null;
 }

@@ -59,7 +59,8 @@ export default async function PaginaConciliacao({ params }: PageProps<"/financei
           Esta fatura pertence ao mês do cartão: <Link href={`${ROTA_CARTAO}/ciclo/${fatura.ciclo_id}`} className="font-medium text-elo hover:underline">abrir o mês (situação, fechamento e histórico)</Link>.
         </p>
       )}
-      <PainelConciliacao resultado={r} outros={outros} linhas={c.linhas} tituloDaFatura={c.tituloDaFatura} podeOperar={podeOperar} />
+      <PainelConciliacao resultado={r} outros={outros} linhas={c.linhas} tituloDaFatura={c.tituloDaFatura} podeOperar={podeOperar}
+        faturaId={fatura.status === "importada" ? fatura.id : null} decisoesHistorico={c.decisoesHistorico} />
     </div>
   );
 }

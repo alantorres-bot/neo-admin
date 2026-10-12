@@ -212,13 +212,13 @@ export async function fecharCiclo(entrada: { id: string }): Promise<Resultado> {
   const c = await conciliacaoDaRequisicao(ciclo.fatura_id);
   if (!c) return { ok: false, erro: "Fatura do mês não encontrada." };
   if (c.origemTitulos !== "consistem") return { ok: false, erro: `Não foi possível consultar o Consistem agora (${c.avisoOrigem}); o fechamento precisa dos títulos lidos do ERP. Tente de novo.` };
-  const bloqueio = bloqueioDoFechamento({ itensALancar: c.resultado.aLancar.length, residuoCentavos: c.resultado.residuoCentavos });
+  const bloqueio = bloqueioDoFechamento({ itensALancar: c.resultado.pendentes, residuoCentavos: c.resultado.residuoCentavos });
   if (bloqueio) return { ok: false, erro: bloqueio };
 
   const foto: FotoFechamento = { resultado: c.resultado, outros: c.outros, tituloDaFatura: c.tituloDaFatura, origemTitulos: c.origemTitulos };
   const provisorio = c.tituloDaFatura ? codigoDoLancamento(c.tituloDaFatura) : null;
   const { data: fechamentoId, error } = await supabase.rpc("crt_fechar_ciclo", {
-    p_ciclo: ciclo.id, p_resultado: foto, p_itens: c.resultado.aLancar.length, p_residuo: c.resultado.residuoCentavos / 100,
+    p_ciclo: ciclo.id, p_resultado: foto, p_itens: c.resultado.pendentes, p_residuo: c.resultado.residuoCentavos / 100,
     p_total_fatura: c.resultado.totalInformadoCentavos / 100, p_total_titulos: c.resultado.totalTitulosCentavos / 100, p_provisorio: provisorio,
   });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
@@ -254,3 +254,53 @@ export async function reabrirCiclo(entrada: z.input<typeof esquemaReabrir>): Pro
   revalidatePath(ROTA_CARTAO, "layout");
   return { ok: true, aviso: "Mês reaberto. A conciliação volta a ser calculada ao vivo; feche de novo quando estiver zerada." };
 }
+
+// ---------------------------------------------------------------- decisões por item (Fase 2b)
+
+const esquemaDecisao = z.object({
+  faturaId: z.string().uuid(),
+  tipo: z.enum(["classificar", "justificar", "casar", "compensar", "observar"]),
+  linhas: z.array(z.string().uuid()).max(100).default([]),
+  titulos: z.array(z.string().trim().min(1).max(40)).max(50).default([]),
+  categoria: z.string().trim().max(60).nullable().default(null),
+  contaFluxo: z.string().trim().max(60).nullable().default(null),
+  motivo: z.string().trim().max(500).nullable().default(null),
+  /** Classificar: grava também no dicionário (trecho da descrição como padrão). */
+  lembrar: z.object({ padrao: z.string().trim().min(2).max(60) }).nullable().default(null),
+});
+
+/** Registra a decisão de uma pessoa sobre item(ns) da conciliação (operador ou acima). O banco valida as regras. */
+export async function registrarDecisao(entrada: z.input<typeof esquemaDecisao>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) registra decisões." };
+  const dados = esquemaDecisao.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const d = dados.data;
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("crt_registrar_decisao", {
+    p_fatura: d.faturaId, p_tipo: d.tipo, p_linhas: d.linhas, p_titulos: d.titulos, p_categoria: d.categoria, p_conta_fluxo: d.contaFluxo, p_motivo: d.motivo,
+  });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  let aviso = "Decisão registrada.";
+  if (d.tipo === "classificar" && d.lembrar && d.categoria) {
+    const { error: erroDic } = await supabase.rpc("crt_salvar_estabelecimento", { p_padrao: d.lembrar.padrao, p_categoria: d.categoria, p_conta_fluxo: d.contaFluxo, p_ativo: true });
+    aviso = erroDic ? `Decisão registrada, mas o dicionário não foi atualizado: ${mensagemDeErro(erroDic)}` : "Decisão registrada e estabelecimento gravado no dicionário.";
+  }
+  revalidatePath(ROTA_CARTAO, "layout");
+  return { ok: true, aviso };
+}
+
+const esquemaDesfazerDecisao = z.object({ id: z.string().uuid(), motivo: z.string().trim().min(3, "Informe o motivo para desfazer.").max(300) });
+
+export async function desfazerDecisao(entrada: z.input<typeof esquemaDesfazerDecisao>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) desfaz decisões." };
+  const dados = esquemaDesfazerDecisao.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("crt_desfazer_decisao", { p_decisao: dados.data.id, p_motivo: dados.data.motivo });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidatePath(ROTA_CARTAO, "layout");
+  return { ok: true, aviso: "Decisão desfeita. O item volta a ser calculado pelo cruzamento automático." };
+}
+
