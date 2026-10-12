@@ -127,3 +127,18 @@ export async function cancelarSolicitacao(entrada: { id: string; motivo: string 
   revalidar();
   return { ok: true, aviso: "Solicitação cancelada." };
 }
+
+/** Tira da lista uma solicitação CANCELADA (só gestor; função de banco `akf_excluir_solicitacao`). Nada é apagado. */
+export async function excluirSolicitacao(entrada: { id: string; motivo: string }): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "gestor")) return { ok: false, erro: "Somente gestor do Financeiro (ou acima) pode excluir uma solicitação da lista." };
+  const dados = z.object({ id: z.string().uuid(), motivo: z.string().trim().max(300, "O motivo pode ter até 300 caracteres.").default("") }).safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.rpc("akf_excluir_solicitacao", { p_id: dados.data.id, p_motivo: dados.data.motivo || null });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidar();
+  const r = (data ?? {}) as { numero?: number };
+  return { ok: true, aviso: `Solicitação nº ${r.numero} excluída da lista.` };
+}

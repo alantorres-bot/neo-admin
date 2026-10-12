@@ -193,3 +193,29 @@ describe("akf_marcar_solicitada e akf_cancelar_solicitacao", () => {
     expect(Number(r2.rows[0].n)).toBeGreaterThan(0);
   });
 });
+
+describe("akf_excluir_solicitacao (0133)", () => {
+  const excluir = (usuario: string, id: string, motivo: string | null = null) => como(db, usuario, () => q(`select akf_excluir_solicitacao($1::uuid, $2) as r`, [id, motivo]));
+
+  it("só cancelada e só gestor; fica gravada com quem, quando e motivo; nada é apagado", async () => {
+    const a = await titulo(1000);
+    const r = (await criar(finOperador, [{ titulo_id: a }])).rows[0].r;
+    await expect(excluir(finGestor, r.id)).rejects.toThrow(/Só solicitação cancelada/);
+    await cancelar(finOperador, r.id, "Montada por engano.");
+    await expect(excluir(finOperador, r.id)).rejects.toThrow(/Somente gestor/);
+    const ok = (await excluir(finGestor, r.id, "  limpeza  ")).rows[0].r;
+    expect(ok.numero).toBe(r.numero);
+    const o = (await q(`select status, excluida_por, motivo_exclusao, excluida_em is not null as excluida from akf_vw_operacoes where id = $1`, [r.id])).rows[0];
+    expect(o).toEqual({ status: "cancelada", excluida_por: finGestor, motivo_exclusao: "limpeza", excluida: true });
+    expect(Number((await q(`select count(*) as n from akf_operacao_titulos where operacao_id = $1`, [r.id])).rows[0].n)).toBe(1);
+    await expect(excluir(finGestor, r.id)).rejects.toThrow(/já excluída/);
+  });
+
+  it("sem motivo grava 'Excluída da lista'; ao excluir nada mais muda", async () => {
+    const r = (await criar(finOperador, [{ titulo_id: await titulo(1000) }])).rows[0].r;
+    await cancelar(finOperador, r.id, "Não vai mais.");
+    await expect(como(db, finGestor, () => q(`update akf_operacoes set excluida_em = now(), observacao = 'x' where id = $1`, [r.id]))).rejects.toThrow(/nada mais/);
+    await excluir(finGestor, r.id);
+    expect((await q(`select motivo_exclusao from akf_operacoes where id = $1`, [r.id])).rows[0].motivo_exclusao).toBe("Excluída da lista");
+  });
+});

@@ -13,7 +13,7 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { lerSolicitacao, montarEmailDaSolicitacao } from "../dados";
 import { corpoSolicitacaoParaHtml } from "@/supabase/functions/_shared/akf-email";
-import { BotaoCancelar, BotaoRascunhoGmail } from "./componentes";
+import { BotaoCancelar, BotaoExcluir, BotaoRascunhoGmail } from "./componentes";
 
 export const metadata: Metadata = { title: "Solicitação de antecipação" };
 
@@ -25,6 +25,7 @@ export default async function PaginaSolicitacao({ params }: PageProps<"/financei
   const modulo = sessao.modulos.find((m) => m.codigo === "financeiro.akf");
   if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro")) notFound();
   const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
+  const ehGestor = temAcesso(sessao.acesso, "financeiro", "gestor");
 
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
@@ -66,6 +67,7 @@ export default async function PaginaSolicitacao({ params }: PageProps<"/financei
             <BotaoCancelar id={sol.id} numero={sol.numero} />
           </div>
         )}
+        {ehGestor && sol.status === "cancelada" && <BotaoExcluir id={sol.id} numero={sol.numero} />}
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">

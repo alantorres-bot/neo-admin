@@ -155,7 +155,8 @@ export async function lerSolicitacao(supabase: SupabaseClient, id: string): Prom
   ]);
   if (error) throw new Error(`Falha ao ler a solicitação: ${error.message}`);
   if (erroItens) throw new Error(`Falha ao ler os títulos da solicitação: ${erroItens.message}`);
-  if (!o || !ehStatusSolicitacao(o.status as string)) return null;
+  // Excluída da lista (0133) some das telas; continua no banco.
+  if (!o || o.excluida_em || !ehStatusSolicitacao(o.status as string)) return null;
   const lista: ItemSolicitacao[] = (itens ?? []).map((i) => ({
     id: i.id as string, tituloId: i.titulo_id as string, clienteId: (i.contraparte_id as string | null) ?? null,
     documento: i.documento as string, cliente: i.cliente_nome as string, vencimento: i.vencimento as string,
@@ -184,6 +185,7 @@ export type LinhaSolicitacao = {
 export async function listarSolicitacoes(supabase: SupabaseClient, opcoes: { status: StatusSolicitacao | null; pagina: number; porPagina: number }): Promise<{ linhas: LinhaSolicitacao[]; total: number }> {
   let consulta = supabase.from("akf_vw_operacoes")
     .select("id, numero, data, status, itens, total, parciais, sem_boleto, criado_por_nome, solicitada_em, rascunho_gmail", { count: "exact" })
+    .is("excluida_em", null)
     .order("numero", { ascending: false })
     .range((opcoes.pagina - 1) * opcoes.porPagina, opcoes.pagina * opcoes.porPagina - 1);
   if (opcoes.status) consulta = consulta.eq("status", opcoes.status);
