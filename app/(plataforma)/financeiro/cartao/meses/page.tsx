@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { CLASSE_SITUACAO, competenciasAte, ROTULO_SITUACAO, rotuloCompetencia, somarMeses, type SituacaoCiclo } from "@/lib/modulos/financeiro/cartao/ciclos";
+import { cicloDaCompetencia, CLASSE_SITUACAO, ROTULO_SITUACAO, rotuloCompetencia, somarMeses, type SituacaoCiclo } from "@/lib/modulos/financeiro/cartao/ciclos";
 import { ROTA_CARTAO } from "@/lib/modulos/financeiro/cartao/modulo";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
@@ -14,23 +14,33 @@ const MESES_NA_GRADE = 6;
 const primeiro = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 const centavos = (v: number | string | null) => (v === null ? null : Math.round(Number(v) * 100));
 
+const INICIO_PADRAO = "2026-10-01";
+
 /**
- * Grade cartão × mês: a situação de cada fechamento (aguardando fatura, em conciliação, fechada, paga). A página chama a
- * geração dos ciclos (idempotente; a mesma função roda todo dia às 07:00) para nunca mostrar um mês que já fechou sem linha.
+ * Grade cartão × mês: a situação de cada fechamento (aguardando fatura, em conciliação, fechada, paga) e, nos meses que ainda não
+ * fecharam, a PREVISÃO (fechamento e vencimento pela Planilha Cartões). Começa no mês inicial do módulo
+ * (`financeiro.cartao.ciclos_a_partir_de`) ou dois meses antes do atual, o que for mais recente; nunca mostra meses anteriores ao
+ * início. A página chama a geração dos ciclos (idempotente; a mesma função roda todo dia às 07:00).
  */
 export default async function PaginaMeses({ searchParams }: PageProps<"/financeiro/cartao/meses">) {
   await exigirSessao();
   const parametros = await searchParams;
   const hoje = hojeEmCuiaba();
-  const ateParam = primeiro(parametros.ate);
-  const ate = /^\d{4}-\d{2}$/.test(ateParam) ? `${ateParam}-01` : `${hoje.slice(0, 7)}-01`;
-  const competencias = competenciasAte(ate, MESES_NA_GRADE);
-  const ultima = competencias[competencias.length - 1];
   const mesAtual = `${hoje.slice(0, 7)}-01`;
-  const anterior = somarMeses(ultima, -MESES_NA_GRADE).slice(0, 7);
-  const seguinte = (somarMeses(ultima, MESES_NA_GRADE) > mesAtual ? mesAtual : somarMeses(ultima, MESES_NA_GRADE)).slice(0, 7);
 
   const supabase = await criarClienteServidor();
+  const { data: config } = await supabase.from("configuracoes").select("valor").eq("chave", "financeiro.cartao.ciclos_a_partir_de").maybeSingle();
+  const inicioConfig = typeof config?.valor === "string" && /^\d{4}-\d{2}/.test(config.valor) ? `${config.valor.slice(0, 7)}-01` : INICIO_PADRAO;
+  const maior = (a: string, b: string) => (a > b ? a : b);
+  const deParam = primeiro(parametros.de);
+  const primeiraPadrao = maior(inicioConfig, somarMeses(mesAtual, -2));
+  const primeiraPedida = /^\d{4}-\d{2}$/.test(deParam) ? `${deParam}-01` : primeiraPadrao;
+  const limiteFuturo = somarMeses(mesAtual, 12);
+  const primeira = maior(inicioConfig, primeiraPedida > limiteFuturo ? limiteFuturo : primeiraPedida);
+  const competencias = Array.from({ length: MESES_NA_GRADE }, (_, i) => somarMeses(primeira, i));
+  const anterior = primeira > inicioConfig ? maior(inicioConfig, somarMeses(primeira, -MESES_NA_GRADE)).slice(0, 7) : null;
+  const seguinte = somarMeses(primeira, MESES_NA_GRADE) <= limiteFuturo ? somarMeses(primeira, MESES_NA_GRADE).slice(0, 7) : null;
+
   const erroGerar = await gerarCiclos(supabase);
   const [cartoes, ciclos] = await Promise.all([
     lerCartoes(supabase),
@@ -45,12 +55,13 @@ export default async function PaginaMeses({ searchParams }: PageProps<"/financei
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          Um mês por cartão (pelo vencimento). Cada mês nasce “Aguardando fatura” no dia seguinte ao fechamento do cartão, passa a “Em conciliação” com a fatura importada, é fechado pelo gestor quando não há nada a lançar e a diferença é zero, e vira “Paga” sozinho quando o título provisório sai do Consistem.
+          Um mês por cartão (pelo vencimento). Os meses que ainda não fecharam aparecem como “Previsto”, com o fechamento e o vencimento da Planilha Cartões. Cada mês nasce “Aguardando fatura” no dia seguinte ao fechamento do cartão, passa a “Em conciliação” com a fatura importada, é fechado pelo gestor quando não há nada a lançar e a diferença é zero, e vira “Paga” sozinho quando o título provisório sai do Consistem.
         </p>
         <div className="flex items-center gap-2 text-sm">
-          <Link href={`${ROTA_CARTAO}/meses?ate=${anterior}`} className="text-elo hover:underline">‹ anteriores</Link>
+          {anterior && <Link href={`${ROTA_CARTAO}/meses?de=${anterior}`} className="text-elo hover:underline">‹ anteriores</Link>}
           <span className="text-muted-foreground">{rotuloCompetencia(competencias[0])} a {rotuloCompetencia(competencias[competencias.length - 1])}</span>
-          {ultima < mesAtual && <Link href={`${ROTA_CARTAO}/meses?ate=${seguinte}`} className="text-elo hover:underline">seguintes ›</Link>}
+          {seguinte && <Link href={`${ROTA_CARTAO}/meses?de=${seguinte}`} className="text-elo hover:underline">seguintes ›</Link>}
+          {primeira !== primeiraPadrao && <Link href={`${ROTA_CARTAO}/meses`} className="text-elo hover:underline">hoje</Link>}
         </div>
       </div>
       {erroGerar && <p role="alert" className="rounded-[3px] border border-amber-300 bg-amber-50 p-2 text-sm">Não foi possível criar os meses novos agora ({erroGerar}). A grade mostra o que já existe.</p>}
@@ -78,7 +89,18 @@ export default async function PaginaMeses({ searchParams }: PageProps<"/financei
                 </th>
                 {competencias.map((comp) => {
                   const c = porChave.get(`${k.codigo}|${comp}`);
-                  if (!c) return <td key={comp} className="border border-grade px-2 py-1.5 text-center text-[11px] text-muted-foreground">—</td>;
+                  if (!c) {
+                    // Mês que ainda não fechou: previsão pela Planilha Cartões.
+                    const prev = cicloDaCompetencia({ diaFechamento: k.dia_fechamento, diaVencimento: k.dia_vencimento }, comp);
+                    return (
+                      <td key={comp} className="border border-grade p-1">
+                        <span className="block rounded-[3px] border border-dashed border-grade px-2 py-1 text-muted-foreground">
+                          <span className="block font-bold">Previsto</span>
+                          <span className="block text-[11px]">fecha {formatarData(prev.fechamento)} · vence {formatarData(prev.vencimento)}</span>
+                        </span>
+                      </td>
+                    );
+                  }
                   return (
                     <td key={comp} className="border border-grade p-1">
                       <Link href={`${ROTA_CARTAO}/ciclo/${c.id}`} className={`block rounded-[3px] border px-2 py-1 hover:opacity-80 ${CLASSE_SITUACAO[c.situacao]}`}>
