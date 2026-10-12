@@ -11,6 +11,7 @@
 //
 // Deploy: npx supabase functions deploy akf-rascunho-gmail
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { corpoSolicitacaoParaHtml } from "../_shared/akf-email.ts";
 import { criarRascunho, GmailErro, lerCredenciais, montarMime, obterAccessToken } from "../_shared/gmail.ts";
 
 const MODULO = "financeiro.akf";
@@ -74,6 +75,7 @@ Deno.serve(async (req) => {
     const mime = montarMime({
       de: cred.credenciais.remetente, para: mensagem.destinatario as string, cc: (mensagem.cc as string | null) ?? null,
       assunto: (mensagem.assunto as string | null) ?? "", corpo: mensagem.corpo as string,
+      html: corpoSolicitacaoParaHtml(mensagem.corpo as string), // os títulos em tabela
     });
     const acesso = await obterAccessToken(buscar, cred.credenciais);
     rascunho = await criarRascunho(buscar, acesso, mime);

@@ -101,6 +101,21 @@ describe("montarMime", () => {
     expect(() => montarMime({ ...base, para: "a@b.com, ruim" })).toThrow(/destinatário/);
   });
 
+  it("com HTML: multipart/alternative com o texto simples e o HTML; com anexo, dentro do multipart/mixed", () => {
+    const m = montarMime({ ...base, html: "<table><tr><td>NF 1</td></tr></table>", limite: "L" });
+    expect(m).toContain('Content-Type: multipart/alternative; boundary="L-alt"');
+    expect(m).toContain("Content-Type: text/plain; charset=UTF-8");
+    expect(m).toContain("Content-Type: text/html; charset=UTF-8");
+    expect(m.trimEnd().endsWith("--L-alt--")).toBe(true);
+    const html = m.split("Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n")[1].split("\r\n--L-alt--")[0];
+    expect(decodificar(html)).toBe("<table><tr><td>NF 1</td></tr></table>");
+    const comAnexo = montarMime({ ...base, html: "<b>oi</b>", limite: "M", anexos: [{ nome: "a.pdf", tipo: "application/pdf", bytes: new Uint8Array([1]) }] });
+    expect(comAnexo).toContain('Content-Type: multipart/mixed; boundary="M"');
+    expect(comAnexo).toContain('Content-Type: multipart/alternative; boundary="M-alt"');
+    expect(comAnexo.endsWith("--M--\r\n")).toBe(true);
+    expect(montarMime(base)).not.toContain("multipart/alternative");
+  });
+
   it("recusa remetente ou destinatário inválido e não deixa injetar cabeçalho pelo assunto ou pelo destinatário", () => {
     expect(() => montarMime({ ...base, para: "isso não é e-mail" })).toThrow(GmailErro);
     expect(() => montarMime({ ...base, de: "" })).toThrow(/Remetente/);

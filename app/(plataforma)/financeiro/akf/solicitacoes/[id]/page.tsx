@@ -12,6 +12,7 @@ import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { lerSolicitacao, montarEmailDaSolicitacao } from "../dados";
+import { corpoSolicitacaoParaHtml } from "@/supabase/functions/_shared/akf-email";
 import { BotaoCancelar, BotaoRascunhoGmail } from "./componentes";
 
 export const metadata: Metadata = { title: "Solicitação de antecipação" };
@@ -129,7 +130,8 @@ export default async function PaginaSolicitacao({ params }: PageProps<"/financei
           <dt className="font-medium text-muted-foreground">Cc</dt><dd>{cc || "—"}</dd>
           <dt className="font-medium text-muted-foreground">Assunto</dt><dd>{assunto ?? "—"}</dd>
         </dl>
-        <pre className="whitespace-pre-wrap rounded-[3px] border border-grade bg-cabecalho p-4 font-sans text-sm">{corpo ?? "—"}</pre>
+        {/* Mesmo HTML que vai para o Gmail (todo o texto é escapado em corpoSolicitacaoParaHtml). */}
+        <div className="overflow-x-auto rounded-[3px] border border-grade bg-white p-4" dangerouslySetInnerHTML={{ __html: corpo ? corpoSolicitacaoParaHtml(corpo) : "—" }} />
         <p className="text-xs text-muted-foreground">
           {sol.status === "rascunho"
             ? "A saudação (bom dia/boa tarde) é a da hora em que o rascunho for criado. O e-mail termina em “Atenciosamente,”; a assinatura é a do Gmail. Nada é enviado pelo Neo Admin: o rascunho fica na caixa autorizada para conferir, anexar as NFs se precisar e enviar."

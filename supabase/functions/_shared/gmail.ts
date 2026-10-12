@@ -77,6 +77,8 @@ export type DadosEmail = {
   cc?: string | readonly string[] | null;
   assunto: string;
   corpo: string;
+  /** Versão HTML do corpo (opcional). Com ela, o e-mail vai como multipart/alternative: texto simples + HTML. */
+  html?: string | null;
   anexos?: readonly AnexoEmail[];
   /** Para teste: fixa o separador das partes. */
   limite?: string;
@@ -105,12 +107,28 @@ export function montarMime(d: DadosEmail): string {
     `Subject: ${codificarAssunto(d.assunto)}`,
     "MIME-Version: 1.0",
   ];
-  const corpoParte = [
+  const parteTexto = [
     "Content-Type: text/plain; charset=UTF-8",
     "Content-Transfer-Encoding: base64",
     "",
     quebrarBase64(textoParaBase64(d.corpo.replace(/\r?\n/g, "\r\n"))),
   ];
+  // Com HTML: multipart/alternative (o leitor mostra o HTML; quem não lê HTML vê o texto simples).
+  const limiteAlt = `${limite}-alt`;
+  const corpoParte = d.html
+    ? [
+      `Content-Type: multipart/alternative; boundary="${limiteAlt}"`,
+      "",
+      `--${limiteAlt}`,
+      ...parteTexto,
+      `--${limiteAlt}`,
+      "Content-Type: text/html; charset=UTF-8",
+      "Content-Transfer-Encoding: base64",
+      "",
+      quebrarBase64(textoParaBase64(d.html)),
+      `--${limiteAlt}--`,
+    ]
+    : parteTexto;
 
   const anexos = d.anexos ?? [];
   if (anexos.length === 0) return [...cabecalhos, ...corpoParte, ""].join("\r\n");
