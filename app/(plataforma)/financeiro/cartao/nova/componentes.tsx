@@ -52,7 +52,7 @@ export function ImportarFatura({ cartoes, empresas, ciclo }: { cartoes: CartaoOp
 
   return (
     <div className="space-y-5">
-      <form ref={formulario} onSubmit={(e) => { e.preventDefault(); enviar(false); }} onChange={() => setPrevia(null)} className="grid gap-3 rounded-[3px] border border-grade bg-cabecalho p-4 sm:grid-cols-2 lg:grid-cols-3">
+      <form ref={formulario} autoComplete="off" onSubmit={(e) => { e.preventDefault(); enviar(false); }} onChange={() => setPrevia(null)} className="grid gap-3 rounded-[3px] border border-grade bg-cabecalho p-4 sm:grid-cols-2 lg:grid-cols-3">
         <label className="grid gap-1 text-[13px]">
           <span className="font-medium">Empresa</span>
           {ciclo && <input type="hidden" name="ciclo" value={ciclo.id} />}
@@ -76,7 +76,7 @@ export function ImportarFatura({ cartoes, empresas, ciclo }: { cartoes: CartaoOp
         </label>
         <label className="grid gap-1 text-[13px]">
           <span className="font-medium">Total da fatura (R$)</span>
-          <Input name="total" inputMode="decimal" placeholder="R$ 0,00" required className="w-44 text-right tabular-nums" />
+          <Input name="total" inputMode="decimal" placeholder="R$ 0,00" required autoComplete="off" data-1p-ignore data-lpignore="true" className="w-44 text-right tabular-nums" />
         </label>
         <label className="grid gap-1 text-[13px]">
           <span className="font-medium">Arquivo da fatura (PDF ou CSV, até 8 MB)</span>
@@ -84,7 +84,8 @@ export function ImportarFatura({ cartoes, empresas, ciclo }: { cartoes: CartaoOp
         </label>
         <label className="grid gap-1 text-[13px]">
           <span className="font-medium">Senha do PDF {precisaSenha ? <span className="text-destructive">(obrigatória para este arquivo)</span> : "(se houver)"}</span>
-          <Input type="password" name="senha" autoComplete="off" className="w-44" />
+          {/* Campo de texto mascarado (não "password"): assim o gerenciador de senhas do navegador não coloca a senha do login aqui. */}
+          <Input name="senha" autoComplete="off" spellCheck={false} data-1p-ignore data-lpignore="true" style={{ WebkitTextSecurity: "disc" } as React.CSSProperties} className="w-44" />
           <span className="text-xs text-muted-foreground">Usada só para abrir o arquivo; não é guardada.</span>
         </label>
         <label className="grid gap-1 text-[13px] sm:col-span-2 lg:col-span-3">
