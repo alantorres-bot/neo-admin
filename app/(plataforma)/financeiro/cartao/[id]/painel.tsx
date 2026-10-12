@@ -1,0 +1,58 @@
+// Painel da conciliação (cartões de resumo, aviso do título provisório, abas e rodapé). Usado pela página da fatura e pela
+// página do mês do cartão — ao vivo (em conciliação) ou congelado (resultado gravado no fechamento).
+import type { ResultadoConciliacao, TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import type { OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
+import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
+import type { LinhaFaturaBanco } from "../dados";
+import { AbasConciliacao } from "./componentes";
+
+export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false }: {
+  resultado: ResultadoConciliacao;
+  outros: OutroTitulo[];
+  linhas: LinhaFaturaBanco[];
+  tituloDaFatura: TituloPagar | null;
+  podeOperar: boolean;
+  /** Resultado gravado no fechamento (não recalculado). */
+  congelado?: boolean;
+}) {
+  const residuoZero = r.residuoCentavos === 0;
+  return (
+    <div className="space-y-5">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <Cartao rotulo="Total da fatura" valor={formatarMoeda(r.totalInformadoCentavos)} nota={r.integridadeOk ? `${r.contagens.linhas} linhas de despesa` : `Soma lida ${formatarMoeda(r.somaLinhasCentavos)} — conferir`} ruim={!r.integridadeOk} />
+        <Cartao rotulo="Títulos no Contas a Pagar" valor={formatarMoeda(r.totalTitulosCentavos)} nota={`${r.contagens.titulos} títulos · ${r.contagens.conciliados} conciliados · ${r.contagens.agrupamentos} agrupados`} />
+        <Cartao rotulo="Diferença apurada" valor={formatarMoeda(r.diferencaCentavos)} nota={`${r.contagens.aLancar} a lançar · ${r.contagens.divergencias} sem correspondência`} />
+        <Cartao rotulo="Diferença não justificada" valor={formatarMoeda(r.residuoCentavos)} ruim={!residuoZero} nota={residuoZero ? "Conciliação fecha" : "Deve ser zero antes do borderô"} />
+        <Cartao rotulo="Cartão divergente" valor={String(r.contagens.cartaoDivergente)} ruim={r.contagens.cartaoDivergente > 0} nota={outros.length > 0 ? `${outros.length} outros títulos de cartão na janela` : "Conciliados citando outro cartão"} />
+      </div>
+
+      {tituloDaFatura && (
+        <p className="rounded-[3px] border border-amber-300 bg-amber-50 p-3 text-sm">
+          <strong>Título provisório da fatura:</strong> o título {tituloDaFatura.numeroTitulo} ({tituloDaFatura.fornecedor}, vencimento {formatarData(tituloDaFatura.vencimento)}, complemento “{tituloDaFatura.complemento}”) tem exatamente o total da fatura ({formatarMoeda(tituloDaFatura.valorCentavos)}).
+          É o provisório do fechamento (os títulos do cartão vão para o borderô e ele é excluído após o pagamento): fica fora do cruzamento linha a linha. Quando ele sair do Consistem, o mês fechado passa a <strong>Paga</strong> sozinho.
+        </p>
+      )}
+      <AbasConciliacao resultado={r} outros={outros} linhas={linhas} podeOperar={podeOperar && !congelado} />
+
+      {!congelado && (
+        <p className={`rounded-[3px] border p-3 text-sm font-medium ${residuoZero ? "border-grade bg-cabecalho" : "border-red-300 bg-red-50 text-red-800"}`}>
+          {residuoZero
+            ? r.aLancar.length > 0
+              ? "Diferença não justificada igual a zero. Lance no Consistem o que está em “A lançar”; quando não houver mais nada, o gestor fecha o mês."
+              : "Nada a lançar e diferença não justificada zero: o mês pode ser fechado pelo gestor."
+            : "Não gerar o borderô enquanto houver diferença não justificada. Apure os itens não identificados com o portador do cartão e os títulos sem correspondência."}
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function Cartao({ rotulo, valor, nota, ruim }: { rotulo: string; valor: string; nota?: string; ruim?: boolean }) {
+  return (
+    <div className={`rounded-[3px] border p-3 ${ruim ? "border-red-300 bg-red-50" : "border-grade bg-card"}`}>
+      <p className="text-xs text-muted-foreground">{rotulo}</p>
+      <p className={`text-lg font-bold tabular-nums ${ruim ? "text-red-700" : ""}`}>{valor}</p>
+      {nota && <p className="text-xs text-muted-foreground">{nota}</p>}
+    </div>
+  );
+}

@@ -23,6 +23,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: CABECALHOS_DE_SEGURANCA }];
   },
+  // Server actions recebem arquivos (fatura de cartão em PDF, até 8 MB em lib/modulos/financeiro/cartao/modulo.ts; o padrão é 1 MB).
+  experimental: {
+    serverActions: { bodySizeLimit: "10mb" },
+  },
 };
 
 export default nextConfig;

@@ -341,3 +341,7 @@ financeiro repetia a marcação, documento por documento, no ERP. O pedido do Al
 Confirmação disparada por `cap_autorizar` (Edge Function `cap-confirmar-consistem`, item a item, com registro de sucesso/falha em
 `cap_autorizacao_itens` e reprocesso pela sincronização). Descartado por ora: testar escrita não documentada via
 `PUT /contasPagar/{id}` + `dadosCustomizados`.
+- **Sincronização diária agendada (12/10/2026, migration `0134_crt_ciclos.sql`):** o pg_cron `cap-sincronizar-consistem-diario`
+  chama a Edge Function todos os dias às 07:30 de Cuiabá (`cap_chamar_sincronizacao`, mesmo segredo do Vault do agendamento de
+  Recebíveis). Necessário para o módulo Cartão de crédito detectar sozinho o pagamento da fatura (o título provisório some).
+  A mesma Edge Function ganhou a ação só de leitura `titulos_vencimento` (nível consulta), usada pela conciliação do cartão.

@@ -12,6 +12,11 @@
 //   sincronizar { simular?: boolean }   lê a API e grava; com simular=true só devolve o que faria
 //   medir                               lê a API e devolve tempo, páginas e contagens por tipo (sem valores por fornecedor)
 //   amostra                             devolve os NOMES e tipos dos campos da API (sem valores) para conferência
+//   titulos_vencimento { empresaId, ini, fim }
+//                                       SÓ LEITURA, nível CONSULTA: títulos (C) com vencimento em [ini, fim] direto da API, com
+//                                       qualquer saldo, marcando quem está em borderô. Usado pela conciliação do cartão: no
+//                                       fechamento o financeiro põe os títulos do cartão num borderô (saldo zero) e lança um título
+//                                       PROVISÓRIO contra o banco; esses títulos nunca chegam ao espelho (que só guarda saldo > 0).
 //
 // Regras:
 //   - A API devolve a vida inteira e ignora `situacao`: em aberto = valorAtualizado > 0. Só C, A e D são gravados.
@@ -496,6 +501,15 @@ Deno.serve(async (req) => {
   const segredoRecebido = req.headers.get("x-sincronizacao-segredo") ?? "";
   if (!autorizacao && !segredoRecebido) return responder({ erro: "Não autenticado." }, 401);
 
+  let corpo: Record<string, unknown>;
+  try {
+    corpo = await req.json();
+  } catch {
+    return responder({ erro: "Corpo inválido." }, 400);
+  }
+  // Consulta só de leitura (conciliação do cartão) pede nível consulta; o resto continua exigindo operador.
+  const soLeitura = corpo.acao === "titulos_vencimento";
+
   const url = Deno.env.get("SUPABASE_URL");
   const chaveAnonima = Deno.env.get("SUPABASE_ANON_KEY");
   const chaveServico = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
@@ -516,20 +530,15 @@ Deno.serve(async (req) => {
       const comoUsuario = createClient(url, chaveAnonima, { global: { headers: { Authorization: autorizacao } } });
       const { data: quem, error: erroUsuario } = await comoUsuario.auth.getUser();
       if (erroUsuario || !quem.user) return responder({ erro: "Sessão inválida." }, 401);
-      const { data: permitido, error: erroPermissao } = await comoUsuario.rpc("tem_acesso_modulo", { p_modulo: MODULO, p_minimo: "operador" });
-      if (erroPermissao || permitido !== true) return responder({ erro: "Somente operador do Financeiro (ou acima) pode atualizar o contas a pagar." }, 403);
+      const { data: permitido, error: erroPermissao } = await comoUsuario.rpc("tem_acesso_modulo", { p_modulo: MODULO, p_minimo: soLeitura ? "consulta" : "operador" });
+      if (erroPermissao || permitido !== true) {
+        return responder({ erro: soLeitura ? "Sem acesso ao Financeiro." : "Somente operador do Financeiro (ou acima) pode atualizar o contas a pagar." }, 403);
+      }
       usuarioId = quem.user.id;
     }
   }
 
   if (token.trim().length < 50) return responder({ erro: "O segredo CONSISTEM_API_KEY não está configurado neste projeto." }, 500);
-
-  let corpo: Record<string, unknown>;
-  try {
-    corpo = await req.json();
-  } catch {
-    return responder({ erro: "Corpo inválido." }, 400);
-  }
 
   const banco: Banco = createClient(url, chaveServico, { auth: { autoRefreshToken: false, persistSession: false } });
   const cfgBase = { baseUrl: Deno.env.get("CONSISTEM_BASE_URL") || BASE_URL_PADRAO, token };
@@ -556,6 +565,44 @@ Deno.serve(async (req) => {
         return responder({
           ok: true, empresa: e.nome_curto, segundosApi, paginas: Math.ceil(registros.length / PAGINACAO), registrosNaApi: registros.length, recusados: recusados.length,
           abertos: Object.fromEntries(Object.entries(plano.abertosPorTipo).map(([t, v]) => [t, resumoTipo(v)])),
+        });
+      }
+      case "titulos_vencimento": {
+        const ini = String(corpo.ini ?? "");
+        const fim = String(corpo.fim ?? "");
+        const dataOk = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d);
+        if (!dataOk(ini) || !dataOk(fim) || ini > fim || (Date.parse(fim) - Date.parse(ini)) / 86_400_000 > 31) {
+          return responder({ erro: "Período de vencimento inválido (até 31 dias)." }, 400);
+        }
+        const e = (empresas as Empresa[]).find((x) => x.id === corpo.empresaId);
+        if (!e) return responder({ erro: "Empresa inválida ou sem código do Consistem." }, 400);
+        const cfg: ConfigConsistem = { ...cfgBase, empresa: e.codigo_erp };
+        const filtro = { dataVencimentoIni: ini, dataVencimentoFim: fim, paginacao: PAGINACAO };
+        const [registros, comBorderoRegs] = await Promise.all([
+          buscarTodasPaginas(buscar, cfg, ROTA_CONTAS_PAGAR, filtro),
+          buscarTodasPaginas(buscar, cfg, ROTA_CONTAS_PAGAR, { ...FILTRO_BORDERO, ...filtro }),
+        ]);
+        const comBordero = new Set(comBorderoRegs.map((r) => (r.codLancamento === null || r.codLancamento === undefined ? "" : String(r.codLancamento).trim())));
+        const titulos: LancamentoPagarApi[] = [];
+        for (const r of registros) {
+          const n = normalizarLancamentoPagar(r);
+          if (n.ok && n.lancamento.tipo === "C") titulos.push(n.lancamento);
+        }
+        const codigos = [...new Set(titulos.map((t) => t.codFornecedor).filter(Boolean))];
+        const nomes = new Map<string, string>();
+        for (const lote of lotes(codigos)) {
+          const { data } = await banco.from("cap_fornecedores").select("cod_fornecedor, nome").eq("empresa_id", e.id).in("cod_fornecedor", lote);
+          for (const f of data ?? []) nomes.set(f.cod_fornecedor as string, f.nome as string);
+        }
+        return responder({
+          ok: true,
+          titulos: titulos.map((t) => ({
+            cod_lancamento: t.codLancamento, num_documento: t.numDocumento || null, cod_fornecedor: t.codFornecedor || null,
+            fornecedor_nome: nomes.get(t.codFornecedor) ?? null, complemento_historico: t.complemento || null, categoria_doc: t.categoriaDoc || null,
+            data_vencimento: t.vencimento, valor_documento: reais(t.valorDocumentoCentavos),
+            valor_original: t.valorOriginalCentavos === null ? null : reais(t.valorOriginalCentavos), valor_atualizado: reais(t.saldoCentavos),
+            tem_bordero: comBordero.has(t.codLancamento),
+          })),
         });
       }
       case "sincronizar": {
