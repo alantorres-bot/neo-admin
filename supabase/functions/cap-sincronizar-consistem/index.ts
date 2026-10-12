@@ -17,6 +17,9 @@
 //                                       qualquer saldo, marcando quem está em borderô. Usado pela conciliação do cartão: no
 //                                       fechamento o financeiro põe os títulos do cartão num borderô (saldo zero) e lança um título
 //                                       PROVISÓRIO contra o banco; esses títulos nunca chegam ao espelho (que só guarda saldo > 0).
+//                                       Também devolve as ANTECIPAÇÕES (A) com data de pagamento em [ini, fim] (antecipação paga no
+//                                       cartão: o complemento quase nunca cita o cartão). A data de pagamento vem do espelho ou do
+//                                       detalhe (lancamentoContasPagar/{id}); procura as emitidas até 60 dias antes do início.
 //
 // Regras:
 //   - A API devolve a vida inteira e ignora `situacao`: em aberto = valorAtualizado > 0. Só C, A e D são gravados.
@@ -588,6 +591,33 @@ Deno.serve(async (req) => {
           const n = normalizarLancamentoPagar(r);
           if (n.ok && n.lancamento.tipo === "C") titulos.push(n.lancamento);
         }
+        // Antecipações pagas na janela: emitidas de ini−60 a fim; data de pagamento do espelho ou do detalhe (até 80 consultas).
+        const iniEmissao = new Date(Date.parse(ini) - 60 * 86_400_000).toISOString().slice(0, 10);
+        const regsA = await buscarTodasPaginas(buscar, cfg, ROTA_CONTAS_PAGAR, { dataEmissaoIni: iniEmissao, dataEmissaoFim: fim, paginacao: PAGINACAO });
+        const antecipacoes: LancamentoPagarApi[] = [];
+        for (const r of regsA) {
+          const n = normalizarLancamentoPagar(r);
+          if (n.ok && n.lancamento.tipo === "A") antecipacoes.push(n.lancamento);
+        }
+        const pagamentoDe = new Map<string, string | null>();
+        for (const lote of lotes(antecipacoes.map((a) => a.codLancamento))) {
+          const { data } = await banco.from("cap_lancamentos").select("cod_lancamento, data_pagamento").eq("empresa_id", e.id).in("cod_lancamento", lote);
+          for (const l of data ?? []) if (l.data_pagamento) pagamentoDe.set(l.cod_lancamento as string, l.data_pagamento as string);
+        }
+        let consultasDetalhe = 0;
+        for (const a of antecipacoes) {
+          if (pagamentoDe.has(a.codLancamento) || consultasDetalhe >= 80) continue;
+          consultasDetalhe++;
+          try {
+            const d = normalizarDetalheLancamento(await buscarObjeto(buscar, cfg, `${ROTA_DETALHE_LANCAMENTO}/${encodeURIComponent(a.codLancamento)}`));
+            pagamentoDe.set(a.codLancamento, d.dataPagamento);
+          } catch { /* sem detalhe: fica de fora */ }
+        }
+        const antecipacoesNaJanela = antecipacoes.filter((a) => {
+          const pg = pagamentoDe.get(a.codLancamento);
+          return !!pg && pg >= ini && pg <= fim;
+        });
+        titulos.push(...antecipacoesNaJanela);
         const codigos = [...new Set(titulos.map((t) => t.codFornecedor).filter(Boolean))];
         const nomes = new Map<string, string>();
         for (const lote of lotes(codigos)) {
@@ -599,7 +629,9 @@ Deno.serve(async (req) => {
           titulos: titulos.map((t) => ({
             cod_lancamento: t.codLancamento, num_documento: t.numDocumento || null, cod_fornecedor: t.codFornecedor || null,
             fornecedor_nome: nomes.get(t.codFornecedor) ?? null, complemento_historico: t.complemento || null, categoria_doc: t.categoriaDoc || null,
-            data_vencimento: t.vencimento, data_emissao: t.emissao, valor_documento: reais(t.valorDocumentoCentavos),
+            // Antecipação: a "data de vencimento" para a janela da fatura é a data de pagamento.
+            tipo_lancamento: t.tipo, data_vencimento: t.tipo === "A" ? pagamentoDe.get(t.codLancamento) ?? null : t.vencimento,
+            data_emissao: t.emissao, valor_documento: reais(t.valorDocumentoCentavos),
             valor_original: t.valorOriginalCentavos === null ? null : reais(t.valorOriginalCentavos), valor_atualizado: reais(t.saldoCentavos),
             tem_bordero: comBordero.has(t.codLancamento),
           })),

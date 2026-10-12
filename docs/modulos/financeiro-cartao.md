@@ -121,6 +121,12 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     causa "a regra do fornecedor no Neo Fiscal é o cartão X" nas divergências).
 29. Título que entrou só pela regra e ficou sem linha na fatura: causa "fornecedor pago neste cartão pela regra, mas sem linha —
     confirmar se esta compra foi no cartão" (pode ter sido paga por boleto; registrar a decisão).
+30. **Antecipações a fornecedor pagas no cartão** (13/10/2026, caso CPV Digital na Sicredi PF 10/2026): a consulta ao Consistem
+    traz também as antecipações (tipo A) com **data de pagamento** na janela do vencimento (emitidas até 60 dias antes; data de
+    pagamento do espelho ou do detalhe `lancamentoContasPagar/{id}`, mesmo já abatidas por NF). A antecipação entra direto quando
+    o complemento cita este cartão ou a regra do fornecedor é este cartão; senão é **candidata**: casa sozinha só com linha que
+    sobrou do cruzamento e tem o **mesmo valor em centavos** (modo "Antecipação", aderência "conferir" — Inter PJ e Sicredi PF vencem
+    no mesmo dia 10), ou por decisão "casar". Candidata que não casa aparece em "Outros títulos" e não entra no total.
 
 Exemplo numérico (ciclo correto, como a calibração da skill): fatura R$ 1.736,70 com 12 linhas (2 pares compensados; 4 pedágios de
 R$ 20) × 5 títulos (um de R$ 120,00 para linha de R$ 120,01) → 4 exatos + 1 agrupamento, diferença apurada R$ 0,01 = arredondamento,

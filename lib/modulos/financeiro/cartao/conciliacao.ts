@@ -46,6 +46,8 @@ export type TituloPagar = {
   porRegra?: boolean;
   /** Cartão da regra do fornecedor no Neo Fiscal na data da compra, quando há regra. */
   cartaoDaRegra?: string | null;
+  /** Antecipação a fornecedor (tipo A) paga no cartão; `vencimento` é a data de pagamento. */
+  antecipacao?: boolean;
 };
 
 export type Estabelecimento = { padrao: string; categoria: string; contaFluxo: string | null };
@@ -88,8 +90,8 @@ export type ItemALancar = {
   classificacao?: DecisaoItem;
   observacoes?: DecisaoItem[];
 };
-export type Modo = "Exato" | "Arredondamento" | "Agrupado" | "Manual";
-export type Aderencia = "OK" | "Conferir descrição" | "ALERTA: complemento cita outro cartão";
+export type Modo = "Exato" | "Arredondamento" | "Agrupado" | "Manual" | "Antecipação";
+export type Aderencia = "OK" | "Conferir descrição" | "ALERTA: complemento cita outro cartão" | "Conferir: antecipação sem o cartão no texto";
 export type Conciliado = {
   /** Linhas da fatura casadas com o título (uma, ou várias no agrupamento). */
   linhas: LinhaFatura[];
@@ -151,6 +153,11 @@ export type EntradaConciliacao = {
   decisoes?: readonly DecisaoItem[];
   /** Títulos da janela que citam outro cartão (ou ambíguos): só entram se uma decisão "casar" os pegar (cartão trocado). */
   titulosExtras?: readonly TituloPagar[];
+  /**
+   * Antecipações pagas na janela que NÃO citam o cartão nem têm regra do fornecedor: casam sozinhas só com linha da fatura que
+   * sobrou e tem o MESMO valor em centavos (modo "Antecipação", conferir); ou por decisão "casar".
+   */
+  antecipacoes?: readonly TituloPagar[];
 };
 
 /** Chave do título nas decisões: o código do lançamento no Consistem (ou o id, quando não há). */
@@ -287,7 +294,7 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
   const usadasL = new Set<string>();
   const usadosT = new Set<string>();
   const titulosDoCartao = [...e.titulos];
-  const extrasPorChave = new Map((e.titulosExtras ?? []).map((t) => [chaveTitulo(t), t]));
+  const extrasPorChave = new Map([...(e.titulosExtras ?? []), ...(e.antecipacoes ?? [])].map((t) => [chaveTitulo(t), t]));
 
   // 1) Compensações à mão (linhas que somam zero).
   const compensadosManuais: Compensado[] = [];
@@ -327,7 +334,19 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
   const auto = casar(restantes, titulosDoCartao.filter((t) => !usadosT.has(chaveTitulo(t))), tolerancia);
   const compensados = [...compensadosManuais, ...compensadosAuto];
   const casamentos = auto.casamentos;
-  const { linhasSemTitulo, titulosSemLinha } = auto;
+  const { titulosSemLinha } = auto;
+
+  // 3b) Antecipações sem o cartão no texto: só valor idêntico, uma para uma, com linha que sobrou (conferir).
+  const casamentosAntecipacao: Casamento[] = [];
+  const antecipacoesLivres = (e.antecipacoes ?? []).filter((a) => !usadosT.has(chaveTitulo(a)));
+  const linhasSemTitulo: LinhaFatura[] = [];
+  for (const l of auto.linhasSemTitulo) {
+    const a = l.valorCentavos > 0 ? antecipacoesLivres.find((x) => !usadosT.has(chaveTitulo(x)) && x.valorCentavos === l.valorCentavos) : undefined;
+    if (!a) { linhasSemTitulo.push(l); continue; }
+    usadosT.add(chaveTitulo(a));
+    titulosDoCartao.push(a);
+    casamentosAntecipacao.push({ linhas: [l], titulo: a, modo: "Antecipação", diferencaCentavos: 0, semelhanca: semelhanca(l.descricao, a.complemento) });
+  }
 
   // 4) Decisões sobre os itens que restaram.
   const ativasPorLinha = (id: string, tipo: TipoDecisao) => decisoes.filter((d) => d.tipo === tipo && d.linhas.includes(id));
@@ -356,6 +375,7 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
       const todos = d.titulos.map((k) => titulosDoCartao.find((t) => chaveTitulo(t) === k)!);
       return { ...c, aderencia: "OK", titulosExtras: todos.slice(1), decisao: d };
     }),
+    ...casamentosAntecipacao.map((c): Conciliado => ({ ...c, aderencia: "Conferir: antecipação sem o cartão no texto" })),
     ...casamentos.map((c): Conciliado => ({
       ...c,
       aderencia: cartaoDivergente(c.titulo, e.cartao, e.cartoes) ? "ALERTA: complemento cita outro cartão" : c.modo === "Agrupado" || c.semelhanca >= LIMIAR_SEMELHANCA ? "OK" : "Conferir descrição",
@@ -403,7 +423,7 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
     conciliados, compensados, aLancar, divergencias, quadro,
     contagens: {
       linhas: e.linhas.length, compensados: compensados.length, titulos: titulosDoCartao.length,
-      conciliados: casamentos.filter((c) => c.modo !== "Agrupado").length, agrupamentos: casamentos.filter((c) => c.modo === "Agrupado").length,
+      conciliados: casamentos.filter((c) => c.modo !== "Agrupado").length + casamentosAntecipacao.length, agrupamentos: casamentos.filter((c) => c.modo === "Agrupado").length,
       manuais: casamentosManuais.length, aLancar: aLancar.length, pendentes, divergencias: divergencias.length, cartaoDivergente: cartaoDivergenteN,
     },
   };

@@ -74,3 +74,24 @@ describe("sincronização das regras (espelho)", () => {
     });
   });
 });
+
+describe("antecipações pagas no cartão", () => {
+  let k = 0;
+  const ant = (complemento: string, valor: number, cod: string | null, pagamento: string): LancamentoEspelho => ({
+    id: `a${++k}`, cod_lancamento: `9${k}`, num_documento: `9${k}`, cod_fornecedor: cod, fornecedor_nome: `F${cod}`, complemento_historico: complemento,
+    categoria_doc: null, data_vencimento: pagamento, data_emissao: pagamento, valor_documento: valor, valor_atualizado: valor, baixado_em: null, tipo_lancamento: "A",
+  });
+  it("sem cartão no texto vira candidata; com o cartão ou com a regra do fornecedor entra; fora da janela, nada", () => {
+    const r = selecionarTitulos([
+      ant("ANTECIPAÇÃO CPV MKT DIGITAL", 4936.74, "1315", "2026-10-10"),
+      ant("ANTECIPACAO CARTAO SICREDI PF - X", 100, "1", "2026-10-10"),
+      ant("ANTECIPACAO PECAS", 300, "622", "2026-10-09"),             // regra 622 = SICREDI PF desde 01/10
+      ant("ANTECIPACAO VELHA", 50, "1", "2026-09-01"),
+    ], SICREDI_PF, CARTOES_TESTE, "2026-10-10", { regras: REGRAS, totalCentavos: 493_674 });
+    expect(r.antecipacoes.map((a) => a.complemento)).toEqual(["ANTECIPAÇÃO CPV MKT DIGITAL"]);
+    expect(r.doCartao.map((t) => [t.complemento, t.antecipacao, t.porRegra ?? false])).toEqual([
+      ["ANTECIPACAO PECAS", true, true], ["ANTECIPACAO CARTAO SICREDI PF - X", true, false],   // ordem por data de pagamento
+    ]);
+    expect(r.tituloDaFatura).toBeNull();   // antecipação nunca é o provisório, mesmo com o valor igual ao total
+  });
+});

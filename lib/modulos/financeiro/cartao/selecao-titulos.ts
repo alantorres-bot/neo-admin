@@ -22,6 +22,8 @@ export type LancamentoEspelho = {
   baixado_em: string | null;
   /** Data de emissão (para a vigência da regra do fornecedor). */
   data_emissao?: string | null;
+  /** 'C' título; 'A' antecipação (para ela, `data_vencimento` traz a data de pagamento). */
+  tipo_lancamento?: string | null;
   /** Lido da API: o título está num borderô (no fechamento do cartão, os títulos da fatura entram num borderô e ficam sem saldo). */
   tem_bordero?: boolean | null;
 };
@@ -38,6 +40,8 @@ export type SelecaoTitulos = {
    * emissor. Fica fora do cruzamento linha a linha (senão viraria divergência e zeraria a diferença apurada sem explicar nada).
    */
   tituloDaFatura: TituloPagar | null;
+  /** Antecipações pagas na janela que não citam o cartão nem têm regra deste cartão: candidatas (valor idêntico ou decisão). */
+  antecipacoes: TituloPagar[];
 };
 
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
@@ -55,6 +59,7 @@ export function paraTitulo(l: LancamentoEspelho): TituloPagar {
     valorCentavos: centavos(l.baixado_em || Number(l.valor_atualizado) <= 0 ? l.valor_documento : l.valor_atualizado),
     emBordero: l.tem_bordero === true,
     codFornecedor: l.cod_fornecedor,
+    ...(l.tipo_lancamento === "A" ? { antecipacao: true } : {}),
   };
 }
 
@@ -81,14 +86,23 @@ export function selecionarTitulos(
   const doCartao: TituloPagar[] = [];
   const outros: OutroTitulo[] = [];
   let tituloDaFatura: TituloPagar | null = null;
+  const antecipacoes: TituloPagar[] = [];
   for (const l of lancamentos) {
     if (!naJanela(l.data_vencimento, vencimento, janela)) continue;
     const titulo = paraTitulo(l);
-    if (!tituloDaFatura && ehTituloDaFatura(titulo, cartao, cartoes, totalCentavos)) { tituloDaFatura = titulo; continue; }
+    if (!titulo.antecipacao && !tituloDaFatura && ehTituloDaFatura(titulo, cartao, cartoes, totalCentavos)) { tituloDaFatura = titulo; continue; }
     const regra = regraVigente(regras, l.cod_fornecedor, l.data_emissao ?? l.data_vencimento);
     if (regra) titulo.cartaoDaRegra = regra.cartao;
     const daRegra = regra?.cartao === cartao.codigo;
     const id = identificarCartaoDoTitulo({ complemento: titulo.complemento, vencimento: titulo.vencimento }, cartoes);
+    if (titulo.antecipacao) {
+      // Antecipação: entra se cita este cartão ou a regra do fornecedor é este cartão; senão, é candidata (nunca "outros").
+      if ((id.situacao === "cartao" && id.cartao!.codigo === cartao.codigo) || (id.situacao === "ambiguo" && id.candidatos.some((c) => c.codigo === cartao.codigo))) doCartao.push(titulo);
+      else if (daRegra) doCartao.push({ ...titulo, porRegra: true });
+      else if (id.situacao === "cartao") outros.push({ titulo, situacao: "outro_cartao", detalhe: `Antecipação que cita o cartão ${id.cartao!.nome}` });
+      else antecipacoes.push(titulo);
+      continue;
+    }
     if (id.situacao === "cartao") {
       if (id.cartao!.codigo === cartao.codigo) doCartao.push(titulo);
       else outros.push({ titulo, situacao: "outro_cartao", detalhe: `Cita o cartão ${id.cartao!.nome}${daRegra ? `, mas a regra do fornecedor no Neo Fiscal é ${cartao.nome}: provável cartão trocado` : ""}` });
@@ -105,5 +119,6 @@ export function selecionarTitulos(
   const ordenar = (a: TituloPagar, b: TituloPagar) => (a.vencimento ?? "").localeCompare(b.vencimento ?? "") || a.fornecedor.localeCompare(b.fornecedor) || a.numeroTitulo.localeCompare(b.numeroTitulo);
   doCartao.sort(ordenar);
   outros.sort((a, b) => ordenar(a.titulo, b.titulo));
-  return { doCartao, outros, tituloDaFatura };
+  antecipacoes.sort(ordenar);
+  return { doCartao, outros, tituloDaFatura, antecipacoes };
 }

@@ -237,3 +237,26 @@ describe("conciliar com decisões por item (Fase 2b)", () => {
     ]);
   });
 });
+
+describe("conciliar com antecipações candidatas", () => {
+  const SICREDI = CARTOES_TESTE.find((c) => c.codigo === "SICREDI PF")!;
+  const ckt = linha("Ckt Assessoria Cpv", 4936.74, { parcelaNum: 1, parcelaTotal: 12 });
+  const outra = linha("Loja Qualquer", 120);
+  const aCpv = titulo("ANTECIPAÇÃO CPV MKT DIGITAL", 4936.74, { codLancamento: "33377", antecipacao: true, vencimento: "2026-10-10" });
+  const aSobra = titulo("ANTECIPAÇÃO OUTRA", 999, { codLancamento: "33400", antecipacao: true, vencimento: "2026-10-10" });
+  const base = { cartao: SICREDI, cartoes: CARTOES_TESTE, vencimento: "2026-10-10", totalInformadoCentavos: 505_674, linhas: [ckt, outra], titulos: [], estabelecimentos: DICIONARIO };
+  it("casa só por valor idêntico, conta nos títulos e fica para conferir; a que sobra não entra no total", () => {
+    const r = conciliar({ ...base, antecipacoes: [aCpv, aSobra] });
+    const c = r.conciliados.find((x) => x.modo === "Antecipação")!;
+    expect([c.titulo.codLancamento, c.aderencia]).toEqual(["33377", "Conferir: antecipação sem o cartão no texto"]);
+    expect(r.totalTitulosCentavos).toBe(493_674);
+    expect(r.contagens).toMatchObject({ conciliados: 1, titulos: 1, aLancar: 1 });
+    expect(r.aLancar.map((a) => a.linha.descricao)).toEqual(["Loja Qualquer"]);
+  });
+  it("decisão casar pode usar a antecipação candidata", () => {
+    const decisoes: DecisaoItem[] = [{ id: "d-ant", tipo: "casar", linhas: [outra.id], titulos: ["33400"], categoria: null, contaFluxo: null, motivo: "antecipação da loja", autor: "op", em: "2026-10-12" }];
+    const r = conciliar({ ...base, antecipacoes: [aCpv, aSobra], decisoes });
+    expect(r.conciliados.find((x) => x.modo === "Manual")?.titulo.codLancamento).toBe("33400");
+    expect(r.pendentes).toBe(0);
+  });
+});

@@ -103,15 +103,21 @@ export async function lerTitulosDoConsistem(supabase: Cliente, empresaId: string
   return lista.map((t) => ({ ...t, id: `api:${t.cod_lancamento}`, baixado_em: null }));
 }
 
-/** Títulos (tipo C) do espelho com vencimento na janela da fatura, com o nome do fornecedor (plano B). */
+/** Títulos (tipo C) com vencimento e antecipações (tipo A) com pagamento na janela da fatura, do espelho (plano B). */
 export async function lerLancamentosDaJanela(supabase: Cliente, empresaId: string, vencimento: string): Promise<LancamentoEspelho[]> {
-  const { data, error } = await supabase.from("cap_lancamentos")
-    .select("id, cod_lancamento, num_documento, cod_fornecedor, complemento_historico, categoria_doc, data_emissao, data_vencimento, valor_documento, valor_atualizado, baixado_em")
-    .eq("empresa_id", empresaId).eq("tipo_lancamento", "C")
-    .gte("data_vencimento", somarDias(vencimento, -JANELA_VENCIMENTO)).lte("data_vencimento", somarDias(vencimento, JANELA_VENCIMENTO))
-    .order("data_vencimento").limit(3000);
-  if (error) throw new Error(`Falha ao ler os títulos do espelho: ${error.message}`);
-  const lista = (data ?? []) as LancamentoEspelho[];
+  const de = somarDias(vencimento, -JANELA_VENCIMENTO);
+  const ate = somarDias(vencimento, JANELA_VENCIMENTO);
+  const colunas = "id, cod_lancamento, tipo_lancamento, num_documento, cod_fornecedor, complemento_historico, categoria_doc, data_emissao, data_vencimento, data_pagamento, valor_documento, valor_atualizado, baixado_em, tem_bordero";
+  const [{ data, error }, { data: antecipacoes, error: erroA }] = await Promise.all([
+    supabase.from("cap_lancamentos").select(colunas).eq("empresa_id", empresaId).eq("tipo_lancamento", "C").gte("data_vencimento", de).lte("data_vencimento", ate).order("data_vencimento").limit(3000),
+    supabase.from("cap_lancamentos").select(colunas).eq("empresa_id", empresaId).eq("tipo_lancamento", "A").gte("data_pagamento", de).lte("data_pagamento", ate).limit(500),
+  ]);
+  if (error || erroA) throw new Error(`Falha ao ler os títulos do espelho: ${(error ?? erroA)!.message}`);
+  const lista = [
+    ...((data ?? []) as LancamentoEspelho[]),
+    // Antecipação: a data de pagamento faz o papel do vencimento na janela da fatura.
+    ...((antecipacoes ?? []) as (LancamentoEspelho & { data_pagamento: string | null })[]).map((a) => ({ ...a, data_vencimento: a.data_pagamento })),
+  ];
   const codigos = [...new Set(lista.map((l) => l.cod_fornecedor).filter((c): c is string => !!c))];
   const nomes = new Map<string, string>();
   for (let i = 0; i < codigos.length; i += 200) {
@@ -180,9 +186,14 @@ export const conciliacaoDaRequisicao = cache(async (id: string): Promise<Concili
     cartao: paraCartaoInfo(cartao), cartoes: infos, vencimento: fatura.vencimento, totalInformadoCentavos: centavos(fatura.total_informado),
     linhas: linhasUteis, titulos: selecao.doCartao, estabelecimentos,
     decisoes: decisoesHistorico.filter((d) => !d.desfeito_em).map(paraDecisaoItem), titulosExtras: selecao.outros.map((o) => o.titulo),
+    antecipacoes: selecao.antecipacoes,
   });
+  // Antecipações candidatas que não casaram: vão para a aba "Outros títulos" (podem ser casadas à mão).
+  const usadas = new Set(resultado.conciliados.flatMap((c) => [c.titulo, ...(c.titulosExtras ?? [])]).map((t) => t.id));
+  const antecipacoesSobrando: OutroTitulo[] = selecao.antecipacoes.filter((a) => !usadas.has(a.id))
+    .map((titulo) => ({ titulo, situacao: "ambiguo" as const, detalhe: `Antecipação paga em ${titulo.vencimento ? titulo.vencimento.split("-").reverse().join("/") : "?"}, sem o cartão no texto: se for desta fatura, use Decidir › Casar` }));
   const u = ultima?.[0] as { criado_em: string } | undefined;
-  return { fatura, linhas, cartao, resultado, outros: selecao.outros, tituloDaFatura: selecao.tituloDaFatura, ultimaSincronizacao: u ? quandoEm(u.criado_em) : null,
+  return { fatura, linhas, cartao, resultado, outros: [...selecao.outros, ...antecipacoesSobrando], tituloDaFatura: selecao.tituloDaFatura, ultimaSincronizacao: u ? quandoEm(u.criado_em) : null,
     origemTitulos: lancamentos.origem, avisoOrigem: lancamentos.aviso, decisoesHistorico };
 });
 
