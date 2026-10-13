@@ -104,3 +104,15 @@ describe("fornecedores genéricos por tipo (0144)", () => {
     expect((await q(`select count(*)::int as n from crt_estabelecimentos where fornecedor_por_compra`)).rows[0].n).toBe(0);
   });
 });
+
+describe("texto da conta de fluxo (0145)", () => {
+  it("o texto segue a conta codificada, inclusive em alterações", async () => {
+    const txt = async (p: string) => (await q(`select conta_fluxo from crt_estabelecimentos where padrao = $1`, [p])).rows[0].conta_fluxo;
+    expect(await txt("UBER")).toBe("Viagens e Lobby");
+    expect(await txt("SEM PARAR")).toBe("Pedágios");
+    expect(await txt("CORREIOS")).toBe("Correios e Malotes");
+    expect(await txt("MERCADOLIVRE")).toBeNull();
+    await q(`update crt_estabelecimentos set lancamento_erp = lancamento_erp || '{"grupoContaFluxoCaixa": 13, "contaFluxoCaixa": 6}' where padrao = 'UBER'`);
+    expect(await txt("UBER")).toBe("Passagens");
+  });
+});
