@@ -31,8 +31,11 @@ beforeAll(async () => {
 describe("troca do portador da fatura (0162)", () => {
   it("coluna no cartão (só gestor altera) e chave começa desligada", async () => {
     expect((await q(`select valor from configuracoes where chave = 'financeiro.cartao.trocar_portador_no_erp'`)).rows[0].valor).toBe(false);
+    // Códigos carregados pela 0163 (planilha de portadores do Consistem).
+    expect((await q(`select string_agg(codigo || '=' || portador_fatura, ',' order by codigo) as c from crt_cartoes`)).rows[0].c)
+      .toBe("INTER PF=993,INTER PJ=997,ITAU PJ=990,NUBANK PF=991,PICPAY PF=996,SICREDI PF=995,SICREDI PJ=992,UNICRED PF=994");
     await rpc(finOperador, `update crt_cartoes set portador_fatura = 501 where codigo = 'SICREDI PJ'`); // RLS: não altera
-    expect((await q(`select portador_fatura from crt_cartoes where codigo = 'SICREDI PJ'`)).rows[0].portador_fatura).toBeNull();
+    expect((await q(`select portador_fatura from crt_cartoes where codigo = 'SICREDI PJ'`)).rows[0].portador_fatura).toBe(992);
     await expect(q(`update crt_cartoes set portador_fatura = 0 where codigo = 'SICREDI PJ'`)).rejects.toThrow(/portador_fatura_ck/);
     await rpc(finGestor, `update crt_cartoes set portador_fatura = 501 where codigo = 'SICREDI PJ'`);
     expect((await q(`select portador_fatura from crt_cartoes where codigo = 'SICREDI PJ'`)).rows[0].portador_fatura).toBe(501);
