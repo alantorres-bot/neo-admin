@@ -16,6 +16,7 @@ import { buscarFornecedores, lancarCompra, reenviarLote } from "../acoes";
 import type { LancamentoErpLinha, PropostaCompra, QuadroCompras } from "../dados";
 import { BotaoResolver } from "./encargos";
 import { BotaoCadastrarFornecedor } from "../fornecedores";
+import { SeletorContaFluxo } from "../listas";
 
 const ORIGEM = { estabelecimento: "do estabelecimento", cartao: "do cartão", escolher: "escolher" } as const;
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
@@ -102,10 +103,21 @@ export function DialogoLancarCompra({ faturaId, item, proposta, compras }: { fat
               aoEscolher={(cod, nome) => { setCampos((c) => ({ ...c, codFornecedor: cod })); setFornecedorNome(nome); }} />
             <div className="-mt-2 flex justify-end">
               <BotaoCadastrarFornecedor empresaId={compras.empresaId} nomeInicial={proposta.sugestao.padrao ?? proposta.padraoLembrar} cadastro={compras.cadastro}
+                listas={compras.listas} fluxoInicial={{ grupo: campos.grupoContaFluxoCaixa, item: campos.contaFluxoCaixa }}
                 aoCadastrar={(cod, nome) => { setCampos((c) => ({ ...c, codFornecedor: cod })); setFornecedorNome(nome); }} />
             </div>
+            <label className="block space-y-1 text-sm">
+              <span className="block font-medium">Conta de fluxo de caixa</span>
+              <SeletorContaFluxo contas={compras.listas.contasFluxo} grupo={campos.grupoContaFluxoCaixa} item={campos.contaFluxoCaixa}
+                aoMudar={(g, i) => setCampos((c) => {
+                  const n = { ...c };
+                  if (g && i) { n.grupoContaFluxoCaixa = g; n.contaFluxoCaixa = i; } else { delete n.grupoContaFluxoCaixa; delete n.contaFluxoCaixa; }
+                  return n;
+                })} />
+              <span className={`block text-xs ${campos.contaFluxoCaixa === undefined ? "font-medium text-amber-800" : "text-muted-foreground"}`}>{dica("contaFluxoCaixa")}</span>
+            </label>
             <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-4">
-              {CAMPOS_COMPRA.filter((k) => k !== "codFornecedor").map((k) => (
+              {CAMPOS_COMPRA.filter((k) => k !== "codFornecedor" && k !== "grupoContaFluxoCaixa" && k !== "contaFluxoCaixa").map((k) => (
                 <label key={k} className="space-y-1 text-sm">
                   <span className="block font-medium">{ROTULO_CAMPO_COMPRA[k]}</span>
                   <Input value={textos[k]} onChange={(e) => mudar(k, e.target.value)} inputMode="numeric" autoComplete="off" maxLength={9} />

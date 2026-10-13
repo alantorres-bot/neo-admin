@@ -179,6 +179,10 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     fixo; no diálogo de lançar, o operador busca o fornecedor da compra ou **cadastra** um "Outros" com a descrição dela.
 48. **Marketplace** (Mercado Livre, EBAZAR; caixa "marketplace"): a nota é emitida pelo **vendedor**; sem fornecedor próprio e
     **sem botão Lançar** — a conciliação casa pelo **valor** com o título da nota lançada no Consistem.
+50. **Listas do Consistem** (planilhas enviadas pelo Alan em 13/10/2026; migration 0143): `cap_categorias_fornecedor` (27) e
+    `cap_contas_fluxo` (209, grupo × item, ativa/inativa). No fornecedor, **codGrupo = grupo do fluxo** e **item = a conta**
+    (confirmado pelo Alan). Cadastro do fornecedor, diálogo de lançar, estabelecimento e códigos de encargos do cartão usam
+    listas em vez de números. Correções: alimentação 12/6 (era 10/15 Insumos); Mercado Livre sem conta de fluxo.
 49. Cadastro com a mesma regra de envio dos títulos: reserva, envio único, erro (nada criado) ou sem resposta (conferir e
     resolver à mão); cadastrado vai na hora para o espelho `cap_fornecedores`. Prova em `crt_fornecedores_cadastrados`.
 

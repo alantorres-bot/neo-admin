@@ -6,6 +6,7 @@ import { MODULO_CARTAO, type CodigoLeitor } from "@/lib/modulos/financeiro/carta
 import { selecionarTitulos, type LancamentoEspelho, type OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { somarDias } from "@/lib/modulos/financeiro/cartao/texto";
 import { encargosALancar, lerConfigEncargos, montarTituloEncargos, type NovoLancamentoContaPagar, type TituloEncargos } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
+import type { CategoriaFornecedor, ContaFluxo, ListasConsistem } from "@/lib/modulos/financeiro/cartao/listas";
 import { lerCampos, padraoSugerido, sugestaoDaLinha, type EstabelecimentoCodigos, type Sugestao } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
 import { JANELA_VENCIMENTO } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { FUSO } from "@/lib/nucleo/fila";
@@ -280,9 +281,20 @@ export type QuadroCompras = {
   marketplace: Record<string, string>;
   /** Cadastro do fornecedor "Outros" (endereço fixo, categoria e grupo sugeridos); nulo = não configurado. */
   cadastro: CadastroOutros | null;
+  /** Categorias de fornecedor e contas de fluxo (listas). */
+  listas: ListasConsistem;
 };
 
 export type CadastroOutros = { endereco: string; numero: string; bairro: string; cep: string; cidade: string; estado: string; codCategoria: number; codGrupo: number };
+
+/** Categorias de fornecedor e contas do fluxo de caixa do Consistem (listas das telas). */
+export async function lerListasConsistem(supabase: Cliente): Promise<ListasConsistem> {
+  const [{ data: categorias }, { data: contas }] = await Promise.all([
+    supabase.from("cap_categorias_fornecedor").select("codigo, descricao").order("codigo"),
+    supabase.from("cap_contas_fluxo").select("grupo, grupo_descricao, item, descricao, ativa").order("grupo").order("item"),
+  ]);
+  return { categorias: (categorias ?? []) as CategoriaFornecedor[], contasFluxo: (contas ?? []) as ContaFluxo[] };
+}
 
 /** Configuração do fornecedor "Outros" (financeiro.cartao.fornecedor_outros). */
 export async function lerCadastroOutros(supabase: Cliente): Promise<CadastroOutros | null> {
@@ -294,7 +306,7 @@ export async function lerCadastroOutros(supabase: Cliente): Promise<CadastroOutr
 /** Compras sem título que podem ser lançadas no Consistem, a sugestão de cada uma e os lançamentos já feitos no mês. */
 export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<QuadroCompras> {
   const ciclo = c.fatura.ciclo_id;
-  const [{ data: config }, { data: lancs, error }, { data: cic }, estabelecimentos, cadastro] = await Promise.all([
+  const [{ data: config }, { data: lancs, error }, { data: cic }, estabelecimentos, cadastro, listas] = await Promise.all([
     supabase.from("configuracoes").select("valor").eq("chave", CHAVE_LANCAR_NO_ERP).maybeSingle(),
     ciclo
       ? supabase.from("crt_vw_lancamentos_erp").select("id, fatura_id, situacao, valor, complemento, linhas, payload, cod_lancamento_erp, erro, criado_por, criado_por_nome, criado_em, enviado_em, concluido_em, resolvido_por_nome, motivo_resolucao, tipo, lote, linha_origem, linha_descricao, parcela, parcelas, vencimento")
@@ -303,6 +315,7 @@ export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<Qua
     ciclo ? supabase.from("crt_ciclos").select("competencia, situacao").eq("id", ciclo).maybeSingle() : Promise.resolve({ data: null }),
     lerEstabelecimentos(supabase),
     lerCadastroOutros(supabase),
+    lerListasConsistem(supabase),
   ]);
   if (error) throw new Error(`Falha ao ler os lançamentos de compras: ${error.message}`);
   const lancamentos = (lancs ?? []) as LancamentoErpLinha[];
@@ -329,7 +342,7 @@ export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<Qua
   return {
     ligado: (config as { valor: unknown } | null)?.valor === true, mesAberto: cc?.situacao === "em_conciliacao" && c.fatura.status === "importada",
     empresaId: c.fatura.empresa_id, competencia: cc?.competencia ?? null, vencimentoFatura: c.fatura.vencimento, cartao: paraCartaoInfo(c.cartao), propostas, lancamentos,
-    marketplace, cadastro,
+    marketplace, cadastro, listas,
   };
 }
 

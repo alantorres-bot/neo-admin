@@ -6,7 +6,7 @@ import { ROTA_CARTAO, ROTULO_LEITOR } from "@/lib/modulos/financeiro/cartao/modu
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { lerCartoes, lerRegras, nomesDosFornecedores, ultimaSincronizacaoRegras } from "../dados";
+import { lerCartoes, lerListasConsistem, lerRegras, nomesDosFornecedores, ultimaSincronizacaoRegras } from "../dados";
 import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { BotaoAtualizarRegras } from "./regras";
 import { DialogoCartao } from "./form-cartao";
@@ -18,7 +18,7 @@ export default async function PaginaCartoes() {
   const ehGestor = temAcesso(sessao.acesso, "financeiro", "gestor");
   const supabase = await criarClienteServidor();
   const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
-  const [cartoes, regras, ultima] = await Promise.all([lerCartoes(supabase), lerRegras(supabase), ultimaSincronizacaoRegras(supabase)]);
+  const [cartoes, regras, ultima, listas] = await Promise.all([lerCartoes(supabase), lerRegras(supabase), ultimaSincronizacaoRegras(supabase), lerListasConsistem(supabase)]);
   const nomes = await nomesDosFornecedores(supabase, [...new Set(regras.map((r) => r.cod_fornecedor))]);
   const nomeCartao = new Map(cartoes.map((c) => [c.codigo, c.nome]));
 
@@ -28,7 +28,7 @@ export default async function PaginaCartoes() {
         <p className="text-sm text-muted-foreground">
           Fechamento e vencimento vêm da <strong>Planilha Cartões</strong> (fonte oficial). O código vai no complemento do título (“CARTÃO NUBANK PF 3x — …”); o leitor diz como o PDF da fatura é lido.
         </p>
-        {ehGestor && <DialogoCartao />}
+        {ehGestor && <DialogoCartao contasFluxo={listas.contasFluxo} />}
       </div>
       <Table>
         <TableHeader>
@@ -46,7 +46,7 @@ export default async function PaginaCartoes() {
               <TableCell className="text-right tabular-nums">{c.tipo_titulo ?? ""}</TableCell>
               <TableCell>{ROTULO_LEITOR[c.leitor]}</TableCell><TableCell>{c.pasta_faturas ?? ""}</TableCell>
               <TableCell>{c.ativo ? <Badge variant="outline" className="border-marca text-marca">Ativo</Badge> : <Badge variant="outline">Inativo</Badge>}</TableCell>
-              {ehGestor && <TableCell><DialogoCartao cartao={c} /></TableCell>}
+              {ehGestor && <TableCell><DialogoCartao cartao={c} contasFluxo={listas.contasFluxo} /></TableCell>}
             </TableRow>
           ))}
         </TableBody>

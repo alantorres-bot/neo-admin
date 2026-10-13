@@ -5,10 +5,12 @@ import { Pencil, Plus } from "lucide-react";
 import { Campo, DialogoFormulario } from "@/components/formularios/dialogo-formulario";
 import { Input } from "@/components/ui/input";
 import { CAMPOS_COMPRA, ROTULO_CAMPO_COMPRA } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
+import type { ContaFluxo } from "@/lib/modulos/financeiro/cartao/listas";
 import { salvarEstabelecimento } from "../acoes";
+import { CampoContaFluxo } from "../listas";
 import type { EstabelecimentoLinha } from "../dados";
 
-export function DialogoEstabelecimento({ estabelecimento, padraoSugerido, abrirAoCarregar }: { estabelecimento?: EstabelecimentoLinha; padraoSugerido?: string; abrirAoCarregar?: boolean }) {
+export function DialogoEstabelecimento({ estabelecimento, padraoSugerido, abrirAoCarregar, contasFluxo = [] }: { estabelecimento?: EstabelecimentoLinha; padraoSugerido?: string; abrirAoCarregar?: boolean; contasFluxo?: ContaFluxo[] }) {
   const caixa = useRef<HTMLDivElement>(null);
   // Vindo de "Cadastrar" na aba A lançar: abre o diálogo já com o trecho da fatura preenchido.
   useEffect(() => {
@@ -46,7 +48,8 @@ export function DialogoEstabelecimento({ estabelecimento, padraoSugerido, abrirA
           <legend className="px-1 text-sm font-medium">Lançamento no Consistem (sugestão)</legend>
           <p className="text-xs text-muted-foreground">Códigos sugeridos ao lançar a compra deste estabelecimento. Todos opcionais: o que faltar vem do cartão ou o operador escolhe.</p>
           <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-4">
-            {CAMPOS_COMPRA.map((k) => (
+            <CampoContaFluxo contas={contasFluxo} prefixo="erp_" grupo={estabelecimento?.lancamento_erp?.grupoContaFluxoCaixa} conta={estabelecimento?.lancamento_erp?.contaFluxoCaixa} />
+            {CAMPOS_COMPRA.filter((k) => k !== "grupoContaFluxoCaixa" && k !== "contaFluxoCaixa").map((k) => (
               <Campo key={k} id={`erp_${k}`} rotulo={ROTULO_CAMPO_COMPRA[k]}>
                 <Input id={`erp_${k}`} name={`erp_${k}`} defaultValue={estabelecimento?.lancamento_erp?.[k] ?? ""} inputMode="numeric" pattern="\d{0,9}" autoComplete="off" />
               </Campo>

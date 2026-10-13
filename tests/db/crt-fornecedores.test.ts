@@ -10,8 +10,8 @@ const q = (sql: string, p: unknown[] = []) => db.query<Linha>(sql, p);
 const rpc = (usuario: string, sql: string, p: unknown[] = []) => como(db, usuario, () => q(sql, p));
 const servico = (sql: string, p: unknown[] = []) => como(db, "service", () => q(sql, p));
 const estab = async (padrao: string) => (await q(`select id from crt_estabelecimentos where padrao = $1`, [padrao])).rows[0].id as string;
-const reservar = (u: string, nome: string, est: string | null = null, cat = 17, grupo = 22) =>
-  rpc(u, `select crt_reservar_cadastro_fornecedor($1, $2, $3, $4, $5) as id`, [empresa, nome, cat, grupo, est]);
+const reservar = (u: string, nome: string, est: string | null = null, cat = 17, grupo = 22, item = 28) =>
+  rpc(u, `select crt_reservar_cadastro_fornecedor($1, $2, $3, $4, $5, $6) as id`, [empresa, nome, cat, grupo, item, est]);
 
 beforeAll(async () => {
   db = await criarBanco();
@@ -38,14 +38,15 @@ describe("cadastrar fornecedor 'Outros'", () => {
     await expect(reservar(finOperador, "google suite")).rejects.toThrow(/928 · GOOGLE SUITE/);
     await expect(reservar(finOperador, "MERCADO LIVRE", await estab("MERCADOLIVRE"))).rejects.toThrow(/Marketplace/);
     await expect(reservar(finOperador, "X")).rejects.toThrow(/2 a 60/);
-    await expect(reservar(finOperador, "LOJA", null, 0, 22)).rejects.toThrow(/Categoria/);
+    await expect(reservar(finOperador, "LOJA", null, 0, 22)).rejects.toThrow(/categoria/);
+    await expect(reservar(finOperador, "LOJA", null, 17, 22, 13)).rejects.toThrow(/conta de fluxo ativa/);   // 22/13 está inativa
   });
   it("monta o corpo tipo 3 com o endereço fixo; o mesmo nome não entra duas vezes; cadastrado vai para o espelho e para a sugestão", async () => {
     const nuv = await estab("NUVIAGENS");
-    const id = (await reservar(finOperador, "  nuviagens  turismo ", nuv, 13, 16)).rows[0].id;
+    const id = (await reservar(finOperador, "  nuviagens  turismo ", nuv, 18, 13, 6)).rows[0].id;
     const r = (await q(`select nome, payload from crt_fornecedores_cadastrados where id = $1`, [id])).rows[0];
     expect(r.nome).toBe("NUVIAGENS TURISMO");
-    expect(r.payload).toEqual({ nome: "NUVIAGENS TURISMO", nomeFantasia: "NUVIAGENS TURISMO", situacao: 1, classificacao: 3, codCategoria: 13, codGrupo: 16,
+    expect(r.payload).toEqual({ nome: "NUVIAGENS TURISMO", nomeFantasia: "NUVIAGENS TURISMO", situacao: 1, classificacao: 3, codCategoria: 18, codGrupo: 13, item: 6,
       endereco: "RUA CANADA", numero: "277", bairro: "SANTA ROSA", cep: "78040050", cidade: "CUIABA", estado: "MT", inscEstadual: "ISENTO", codIbge: "5103403" });
     await expect(reservar(finOperador, "Nuviagens Turismo")).rejects.toThrow(/já está sendo/);
     await expect(rpc(finOperador, `select crt_iniciar_cadastro_fornecedor($1)`, [id])).rejects.toThrow(/permission denied/);
@@ -86,5 +87,14 @@ describe("próximo código (0142)", () => {
   it("maior código do espelho + 1, só para a service role", async () => {
     expect((await servico(`select crt_proximo_codigo_fornecedor($1) as n`, [empresa])).rows[0].n).toBe(1502);
     await expect(rpc(finOperador, `select crt_proximo_codigo_fornecedor($1)`, [empresa])).rejects.toThrow(/permission denied/);
+  });
+});
+
+describe("listas do Consistem (0143)", () => {
+  it("categorias e contas de fluxo carregadas; alimentação 12/6; marketplace sem conta", async () => {
+    expect((await q(`select count(*)::int as n from cap_categorias_fornecedor`)).rows[0].n).toBe(27);
+    expect((await q(`select descricao from cap_contas_fluxo where grupo = 22 and item = 26`)).rows[0].descricao).toBe("Rep. Locação a Terceiro");
+    expect((await q(`select lancamento_erp from crt_estabelecimentos where padrao = 'PADARIA'`)).rows[0].lancamento_erp).toMatchObject({ grupoContaFluxoCaixa: 12, contaFluxoCaixa: 6 });
+    expect((await q(`select lancamento_erp from crt_estabelecimentos where padrao = 'MERCADOLIVRE'`)).rows[0].lancamento_erp).toBeNull();
   });
 });

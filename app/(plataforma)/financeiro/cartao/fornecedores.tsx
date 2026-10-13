@@ -10,52 +10,52 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { buscarFornecedores, cadastrarFornecedor, ligarFornecedor } from "./acoes";
+import type { ListasConsistem } from "@/lib/modulos/financeiro/cartao/listas";
 import type { CadastroOutros } from "./dados";
+import { SeletorCategoria, SeletorContaFluxo } from "./listas";
 
 /** Formulário de cadastro (nome, categoria, grupo; endereço fixo só para conferir). */
-function FormCadastro({ empresaId, nomeInicial, cadastro, estabelecimentoId, aoCadastrar, aoVoltar }: {
-  empresaId: string; nomeInicial: string; cadastro: CadastroOutros; estabelecimentoId: string | null;
-  aoCadastrar: (cod: number, nome: string) => void; aoVoltar: () => void;
+function FormCadastro({ empresaId, nomeInicial, cadastro, listas, fluxoInicial, estabelecimentoId, aoCadastrar, aoVoltar }: {
+  empresaId: string; nomeInicial: string; cadastro: CadastroOutros; listas: ListasConsistem; fluxoInicial: { grupo?: number | null; item?: number | null };
+  estabelecimentoId: string | null; aoCadastrar: (cod: number, nome: string) => void; aoVoltar: () => void;
 }) {
   const [nome, setNome] = useState(nomeInicial.toUpperCase().slice(0, 60));
-  const [categoria, setCategoria] = useState(String(cadastro.codCategoria));
-  const [grupo, setGrupo] = useState(String(cadastro.codGrupo));
+  const [categoria, setCategoria] = useState<number | null>(cadastro.codCategoria);
+  const [fluxo, setFluxo] = useState<{ grupo: number | null; item: number | null }>({ grupo: fluxoInicial.grupo ?? null, item: fluxoInicial.item ?? null });
   const [erro, setErro] = useState<string>();
   const [pendente, iniciar] = useTransition();
   function enviar() {
     iniciar(async () => {
-      const r = await cadastrarFornecedor({ empresaId, nome, categoria: Number(categoria), grupo: Number(grupo), estabelecimentoId });
+      const r = await cadastrarFornecedor({ empresaId, nome, categoria: categoria ?? 0, grupo: fluxo.grupo ?? 0, item: fluxo.item ?? 0, estabelecimentoId });
       if (r.ok) { toast.success(r.aviso); aoCadastrar(r.codFornecedor, r.nome); } else setErro(r.erro);
     });
   }
-  const so = (v: string, n: number) => v.replace(/\D/g, "").slice(0, n);
   return (
     <div className="grid gap-3">
       <label className="space-y-1 text-sm">
         <span className="block font-medium">Nome do fornecedor (descrição do estabelecimento)</span>
         <Input value={nome} onChange={(e) => setNome(e.target.value.toUpperCase().slice(0, 60))} maxLength={60} autoComplete="off" />
       </label>
-      <div className="grid grid-cols-2 gap-3">
-        <label className="space-y-1 text-sm"><span className="block font-medium">Categoria</span>
-          <Input value={categoria} onChange={(e) => setCategoria(so(e.target.value, 2))} inputMode="numeric" autoComplete="off" /></label>
-        <label className="space-y-1 text-sm"><span className="block font-medium">Grupo</span>
-          <Input value={grupo} onChange={(e) => setGrupo(so(e.target.value, 3))} inputMode="numeric" autoComplete="off" /></label>
-      </div>
+      <label className="space-y-1 text-sm"><span className="block font-medium">Categoria do fornecedor</span>
+        <SeletorCategoria categorias={listas.categorias} valor={categoria} aoMudar={setCategoria} /></label>
+      <label className="space-y-1 text-sm"><span className="block font-medium">Conta de fluxo de caixa (grupo e item do fornecedor)</span>
+        <SeletorContaFluxo contas={listas.contasFluxo} grupo={fluxo.grupo} item={fluxo.item} aoMudar={(grupo, item) => setFluxo({ grupo, item })} /></label>
       <p className="text-xs text-muted-foreground">
         Tipo 3 (Outros), sem CNPJ. Endereço igual para todos: {cadastro.endereco}, {cadastro.numero}, {cadastro.bairro}, {cadastro.cep}, {cadastro.cidade}/{cadastro.estado}.
       </p>
       {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" onClick={aoVoltar} disabled={pendente}>Voltar</Button>
-        <Button type="button" onClick={enviar} disabled={pendente || nome.trim().length < 2 || !categoria || !grupo}>{pendente ? "Cadastrando…" : "Cadastrar no Consistem"}</Button>
+        <Button type="button" onClick={enviar} disabled={pendente || nome.trim().length < 2 || !categoria || !fluxo.grupo || !fluxo.item}>{pendente ? "Cadastrando…" : "Cadastrar no Consistem"}</Button>
       </div>
     </div>
   );
 }
 
 /** Botão + diálogo de cadastro (usado no diálogo de lançar a compra). */
-export function BotaoCadastrarFornecedor({ empresaId, nomeInicial, cadastro, aoCadastrar }: {
-  empresaId: string; nomeInicial: string; cadastro: CadastroOutros | null; aoCadastrar: (cod: number, nome: string) => void;
+export function BotaoCadastrarFornecedor({ empresaId, nomeInicial, cadastro, listas, fluxoInicial, aoCadastrar }: {
+  empresaId: string; nomeInicial: string; cadastro: CadastroOutros | null; listas: ListasConsistem; fluxoInicial: { grupo?: number | null; item?: number | null };
+  aoCadastrar: (cod: number, nome: string) => void;
 }) {
   const [aberto, setAberto] = useState(false);
   if (!cadastro) return null;
@@ -69,7 +69,7 @@ export function BotaoCadastrarFornecedor({ empresaId, nomeInicial, cadastro, aoC
               <DialogTitle>Cadastrar fornecedor no Consistem</DialogTitle>
               <DialogDescription>Fornecedor “Outros” com o nome do estabelecimento desta compra.</DialogDescription>
             </DialogHeader>
-            <FormCadastro empresaId={empresaId} nomeInicial={nomeInicial} cadastro={cadastro} estabelecimentoId={null}
+            <FormCadastro empresaId={empresaId} nomeInicial={nomeInicial} cadastro={cadastro} listas={listas} fluxoInicial={fluxoInicial} estabelecimentoId={null}
               aoCadastrar={(cod, nome) => { setAberto(false); aoCadastrar(cod, nome); }} aoVoltar={() => setAberto(false)} />
           </DialogContent>
         </Dialog>
@@ -79,8 +79,9 @@ export function BotaoCadastrarFornecedor({ empresaId, nomeInicial, cadastro, aoC
 }
 
 /** Aba Estabelecimentos: ligar a um fornecedor que já existe (nome parecido) ou cadastrar um novo. */
-export function BotaoLigarOuCadastrar({ estabelecimento, empresaId, cadastro, podeCadastrar }: {
-  estabelecimento: { id: string; padrao: string }; empresaId: string; cadastro: CadastroOutros | null; podeCadastrar: boolean;
+export function BotaoLigarOuCadastrar({ estabelecimento, empresaId, cadastro, listas, podeCadastrar }: {
+  estabelecimento: { id: string; padrao: string; grupo?: number | null; item?: number | null }; empresaId: string; cadastro: CadastroOutros | null;
+  listas: ListasConsistem; podeCadastrar: boolean;
 }) {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
@@ -132,7 +133,8 @@ export function BotaoLigarOuCadastrar({ estabelecimento, empresaId, cadastro, po
                 </div>
               </div>
             ) : (
-              <FormCadastro empresaId={empresaId} nomeInicial={estabelecimento.padrao} cadastro={cadastro!} estabelecimentoId={estabelecimento.id}
+              <FormCadastro empresaId={empresaId} nomeInicial={estabelecimento.padrao} cadastro={cadastro!} listas={listas}
+                fluxoInicial={{ grupo: estabelecimento.grupo, item: estabelecimento.item }} estabelecimentoId={estabelecimento.id}
                 aoCadastrar={() => { setAberto(false); router.refresh(); }} aoVoltar={() => setModo("ligar")} />
             )}
           </DialogContent>

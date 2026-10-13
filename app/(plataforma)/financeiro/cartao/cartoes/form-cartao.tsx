@@ -7,12 +7,14 @@ import { Textarea } from "@/components/ui/textarea";
 import { CAMPOS_CONFIG_ENCARGOS, ROTULO_CAMPO_CONFIG } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
 import { CAMPOS_PADRAO_CARTAO, ROTULO_CAMPO_COMPRA } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
 import { LEITORES, ROTULO_LEITOR } from "@/lib/modulos/financeiro/cartao/modulo";
+import type { ContaFluxo } from "@/lib/modulos/financeiro/cartao/listas";
 import { salvarCartao } from "../acoes";
+import { CampoContaFluxo } from "../listas";
 import type { CartaoLinha } from "../dados";
 
 const SELECAO = "h-8 rounded-[3px] border border-input bg-white px-2 text-[13px]";
 
-export function DialogoCartao({ cartao }: { cartao?: CartaoLinha }) {
+export function DialogoCartao({ cartao, contasFluxo = [] }: { cartao?: CartaoLinha; contasFluxo?: ContaFluxo[] }) {
   return (
     <DialogoFormulario
       titulo={cartao ? `Editar ${cartao.nome}` : "Novo cartão"}
@@ -63,7 +65,8 @@ export function DialogoCartao({ cartao }: { cartao?: CartaoLinha }) {
         <legend className="px-1 text-sm font-medium">Encargos no Consistem</legend>
         <p className="text-xs text-muted-foreground">Códigos do título de encargos lançado pelo painel (botão “Lançar no Consistem”). Todos preenchidos, ou todos vazios para este cartão não lançar.</p>
         <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-4">
-          {CAMPOS_CONFIG_ENCARGOS.map((k) => (
+          <CampoContaFluxo contas={contasFluxo} prefixo="enc_" grupo={cartao?.lancamento_encargos?.grupoContaFluxoCaixa} conta={cartao?.lancamento_encargos?.contaFluxoCaixa} />
+          {CAMPOS_CONFIG_ENCARGOS.filter((k) => k !== "grupoContaFluxoCaixa" && k !== "contaFluxoCaixa").map((k) => (
             <Campo key={k} id={`enc_${k}`} rotulo={ROTULO_CAMPO_CONFIG[k]}>
               <Input id={`enc_${k}`} name={`enc_${k}`} defaultValue={cartao?.lancamento_encargos?.[k] ?? ""} inputMode="numeric" pattern="\d{0,9}" autoComplete="off" />
             </Campo>

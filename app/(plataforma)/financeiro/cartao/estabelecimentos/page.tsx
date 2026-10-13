@@ -8,7 +8,8 @@ import { sanitizarBusca } from "@/lib/nucleo/erros";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { lerCadastroOutros, lerEmpresas, lerEstabelecimentos } from "../dados";
+import { rotuloContaFluxo } from "@/lib/modulos/financeiro/cartao/listas";
+import { lerCadastroOutros, lerEmpresas, lerEstabelecimentos, lerListasConsistem } from "../dados";
 import { BotaoLigarOuCadastrar } from "../fornecedores";
 import { DialogoEstabelecimento } from "./form-estabelecimento";
 
@@ -23,9 +24,10 @@ export default async function PaginaEstabelecimentos({ searchParams }: PageProps
   const busca = sanitizarBusca(primeiro(parametros.q));
   const padraoSugerido = sanitizarBusca(primeiro(parametros.padrao));
   const supabase = await criarClienteServidor();
-  const [todos, empresas, cadastro, ligado] = await Promise.all([
+  const [todos, empresas, cadastro, ligado, listas] = await Promise.all([
     lerEstabelecimentos(supabase), lerEmpresas(supabase), lerCadastroOutros(supabase),
     supabase.from("configuracoes").select("valor").eq("chave", "financeiro.cartao.lancar_no_erp").maybeSingle().then((r) => (r.data as { valor: unknown } | null)?.valor === true),
+    lerListasConsistem(supabase),
   ]);
   const empresaId = empresas[0]?.id ?? null;
   const codigos = [...new Set(todos.map((e) => e.lancamento_erp?.codFornecedor).filter((c): c is number => typeof c === "number").map(String))];
@@ -48,7 +50,7 @@ export default async function PaginaEstabelecimentos({ searchParams }: PageProps
             <Button type="submit" variant="outline" size="sm">Buscar</Button>
           </form>
         </div>
-        {podeOperar && <DialogoEstabelecimento padraoSugerido={padraoSugerido || undefined} abrirAoCarregar={!!padraoSugerido} />}
+        {podeOperar && <DialogoEstabelecimento padraoSugerido={padraoSugerido || undefined} abrirAoCarregar={!!padraoSugerido} contasFluxo={listas.contasFluxo} />}
       </div>
       <Table>
         <TableHeader>
@@ -63,12 +65,12 @@ export default async function PaginaEstabelecimentos({ searchParams }: PageProps
                 {e.marketplace ? <span className="text-muted-foreground">Marketplace: casa pelo valor da nota</span>
                   : e.fornecedor_por_compra ? <span className="text-muted-foreground">Fornecedor por compra</span>
                   : e.lancamento_erp?.codFornecedor ? <span className="tabular-nums">{e.lancamento_erp.codFornecedor}{nomeForn.get(String(e.lancamento_erp.codFornecedor)) ? ` · ${nomeForn.get(String(e.lancamento_erp.codFornecedor))}` : ""}</span>
-                  : podeOperar && empresaId ? <BotaoLigarOuCadastrar estabelecimento={{ id: e.id, padrao: e.padrao }} empresaId={empresaId} cadastro={cadastro} podeCadastrar={ligado} />
+                  : podeOperar && empresaId ? <BotaoLigarOuCadastrar estabelecimento={{ id: e.id, padrao: e.padrao, grupo: e.lancamento_erp?.grupoContaFluxoCaixa, item: e.lancamento_erp?.contaFluxoCaixa }} empresaId={empresaId} cadastro={cadastro} listas={listas} podeCadastrar={ligado} />
                   : <span className="text-muted-foreground">sem fornecedor</span>}
               </TableCell>
-              <TableCell className="text-xs tabular-nums">{e.lancamento_erp?.contaFluxoCaixa || e.lancamento_erp?.contaContabilDebito ? `${e.lancamento_erp.grupoContaFluxoCaixa ?? "—"}/${e.lancamento_erp.contaFluxoCaixa ?? "—"} · ${e.lancamento_erp.contaContabilDebito ?? "—"}` : <span className="text-muted-foreground">sem sugestão</span>}</TableCell>
+              <TableCell className="text-xs tabular-nums">{e.lancamento_erp?.contaFluxoCaixa || e.lancamento_erp?.contaContabilDebito ? `${rotuloContaFluxo(listas.contasFluxo, e.lancamento_erp.grupoContaFluxoCaixa, e.lancamento_erp.contaFluxoCaixa) || "—"} · contábil ${e.lancamento_erp.contaContabilDebito ?? "—"}` : <span className="text-muted-foreground">sem sugestão</span>}</TableCell>
               <TableCell>{e.ativo ? <Badge variant="outline" className="border-marca text-marca">Ativo</Badge> : <Badge variant="outline">Inativo</Badge>}</TableCell>
-              {podeOperar && <TableCell><DialogoEstabelecimento estabelecimento={e} /></TableCell>}
+              {podeOperar && <TableCell><DialogoEstabelecimento estabelecimento={e} contasFluxo={listas.contasFluxo} /></TableCell>}
             </TableRow>
           ))}
           {lista.length === 0 && <TableRow><TableCell colSpan={7} className="text-muted-foreground">Nenhum estabelecimento encontrado.</TableCell></TableRow>}

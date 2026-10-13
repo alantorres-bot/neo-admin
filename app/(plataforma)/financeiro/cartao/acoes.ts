@@ -538,7 +538,8 @@ const esquemaCadastroFornecedor = z.object({
   empresaId: z.string().uuid(),
   nome: z.string().trim().min(2, "Informe o nome do fornecedor.").max(60),
   categoria: z.number().int().min(1, "Categoria de 1 a 99.").max(99, "Categoria de 1 a 99."),
-  grupo: z.number().int().min(1, "Grupo de 1 a 999.").max(999, "Grupo de 1 a 999."),
+  grupo: z.number({ message: "Escolha a conta de fluxo." }).int().min(1, "Escolha a conta de fluxo.").max(999),
+  item: z.number({ message: "Escolha a conta de fluxo." }).int().min(1, "Escolha a conta de fluxo.").max(999),
   estabelecimentoId: z.string().uuid().nullable(),
 });
 
@@ -551,7 +552,7 @@ export async function cadastrarFornecedor(entrada: z.input<typeof esquemaCadastr
   const d = dados.data;
   const supabase = await criarClienteServidor();
   const { data: id, error } = await supabase.rpc("crt_reservar_cadastro_fornecedor", {
-    p_empresa: d.empresaId, p_nome: d.nome, p_categoria: d.categoria, p_grupo: d.grupo, p_estabelecimento: d.estabelecimentoId,
+    p_empresa: d.empresaId, p_nome: d.nome, p_categoria: d.categoria, p_grupo: d.grupo, p_item: d.item, p_estabelecimento: d.estabelecimentoId,
   });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   const { data, error: erroFuncao } = await supabase.functions.invoke("crt-cadastrar-fornecedor", { body: { id } });
