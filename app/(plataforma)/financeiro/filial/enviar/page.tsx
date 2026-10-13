@@ -5,7 +5,7 @@ import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CHAVE_DESTINATARIOS, MODULO_FILIAL, ROTA_FILIAL } from "@/lib/modulos/financeiro/filial/arquivos";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { CHAVES_AKF } from "../../akf/solicitacoes/dados";
@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "Enviar faturas da filial" };
 export default async function PaginaEnviarFaturas() {
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO_FILIAL);
-  if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro", "operador")) notFound();
+  if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_FILIAL, "operador")) notFound();
 
   const supabase = await criarClienteServidor();
   const { data } = await supabase.from("configuracoes").select("chave, valor").in("chave", [CHAVES_AKF.semBoleto, CHAVE_DESTINATARIOS]);

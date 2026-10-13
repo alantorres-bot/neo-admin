@@ -23,6 +23,8 @@ export type Perfil = {
   id: string; nome: string; email: string; admin_geral: boolean; ativo: boolean;
   /** senha definida pelo admin: o usuário só acessa /conta até trocá-la */
   deve_trocar_senha: boolean;
+  /** Restrito a uma unidade (hoje só 'contagem'): vê só o Faturamento Filial (migration 0152). */
+  unidade_restrita?: string | null;
 };
 
 export type Empresa = {

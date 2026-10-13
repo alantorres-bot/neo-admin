@@ -16,7 +16,15 @@ export const ROTULO_NIVEL: Record<NivelAcesso, string> = {
 export type Acesso = {
   adminGeral: boolean;
   niveis: Readonly<Record<string, NivelAcesso | undefined>>;
+  /**
+   * Usuário restrito a uma unidade (migration 0152): sem nível em área nenhuma (`niveis` vazio) e acesso só ao
+   * Faturamento Filial, com o nível que tem na área do módulo. Espelha tem_acesso_modulo() do banco.
+   */
+  restrito?: { unidade: string; nivel: NivelAcesso } | null;
 };
+
+/** Módulos que o usuário restrito a uma unidade enxerga. */
+export const MODULOS_DA_UNIDADE: readonly string[] = ["financeiro.filial"];
 
 export function nivelAtinge(nivel: NivelAcesso, minimo: NivelAcesso): boolean {
   return NIVEIS.indexOf(nivel) >= NIVEIS.indexOf(minimo);
@@ -33,6 +41,16 @@ export function temAcesso(acesso: Acesso, area: string, minimo: NivelAcesso = "c
 
 export function temAcessoAlgumaArea(acesso: Acesso, areas: readonly Area[], minimo: NivelAcesso = "consulta"): boolean {
   return areas.some((a) => temAcesso(acesso, a.codigo, minimo));
+}
+
+/**
+ * Acesso a um módulo: para o usuário restrito, só os módulos da unidade; para os demais, o nível na área do módulo
+ * (igual a tem_acesso_modulo() no banco).
+ */
+export function temAcessoModulo(acesso: Acesso, modulos: readonly Modulo[], codigo: string, minimo: NivelAcesso = "consulta"): boolean {
+  if (acesso.restrito) return MODULOS_DA_UNIDADE.includes(codigo) && nivelAtinge(acesso.restrito.nivel, minimo);
+  const area = modulos.find((m) => m.codigo === codigo)?.area;
+  return !!area && temAcesso(acesso, area, minimo);
 }
 
 /** Códigos das áreas em que o usuário tem pelo menos `minimo`. */
@@ -73,6 +91,17 @@ export type MenuArea = {
 export function montarMenu(
   areas: readonly Area[], modulos: readonly Modulo[], acesso: Acesso, aplicativos: readonly Aplicativo[] = [], opcoes: { incluirVazias?: boolean } = {},
 ): MenuArea[] {
+  if (acesso.restrito) {
+    // Restrito à unidade: só a área dos módulos da unidade, com esses módulos (ativos).
+    const permitidos = modulos.filter((m) => m.ativo && MODULOS_DA_UNIDADE.includes(m.codigo) && nivelAtinge(acesso.restrito!.nivel, "consulta"));
+    return [...areas]
+      .sort((a, b) => a.ordem - b.ordem)
+      .filter((area) => permitidos.some((m) => m.area === area.codigo))
+      .map((area) => ({
+        area,
+        modulos: permitidos.filter((m) => m.area === area.codigo).map((m): ItemMenu => ({ codigo: m.codigo, nome: m.nome, rota: rotaDoModulo(m.codigo) })),
+      }));
+  }
   return [...areas]
     .sort((a, b) => a.ordem - b.ordem)
     .filter((area) => temAcesso(acesso, area.codigo, "consulta"))

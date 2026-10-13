@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { areasComNivel, montarMenu, modulosComNivel, nivelAtinge, nivelNaArea, rotaDoModulo, temAcesso, type Acesso } from "./permissoes";
+import { areasComNivel, montarMenu, modulosComNivel, nivelAtinge, nivelNaArea, rotaDoModulo, temAcesso, temAcessoModulo, type Acesso } from "./permissoes";
 import type { Aplicativo, Area, Modulo } from "./tipos";
 
 const areas: Area[] = [
@@ -96,5 +96,30 @@ describe("aplicativos externos no menu (super painel)", () => {
 
   it("sem aplicativos o menu é o mesmo de antes", () => {
     expect(montarMenu(areas, modulos, comum, [])).toEqual(montarMenu(areas, modulos, comum));
+  });
+});
+
+describe("usuário restrito à unidade (0152)", () => {
+  const comFilial: Modulo[] = [...modulos, { codigo: "financeiro.filial", area: "financeiro", nome: "Faturamento Filial", ativo: true }];
+  const restrito: Acesso = { adminGeral: false, niveis: {}, restrito: { unidade: "contagem", nivel: "operador" } };
+
+  it("só o módulo da unidade, com o nível do Financeiro", () => {
+    expect(temAcessoModulo(restrito, comFilial, "financeiro.filial", "operador")).toBe(true);
+    expect(temAcessoModulo(restrito, comFilial, "financeiro.filial", "gestor")).toBe(false);
+    expect(temAcessoModulo(restrito, comFilial, "financeiro.recebiveis")).toBe(false);
+    expect(temAcesso(restrito, "financeiro")).toBe(false);
+  });
+
+  it("quem não é restrito: acesso ao módulo = acesso à área dele", () => {
+    expect(temAcessoModulo(comum, comFilial, "financeiro.filial", "operador")).toBe(true);
+    expect(temAcessoModulo(comum, comFilial, "juridico.processos")).toBe(false);
+    expect(temAcessoModulo(comum, comFilial, "nao.existe")).toBe(false);
+  });
+
+  it("menu: só Financeiro > Faturamento Filial", () => {
+    expect(montarMenu(areas, comFilial, restrito, [], { incluirVazias: true })).toEqual([
+      { area: areas[1], modulos: [{ codigo: "financeiro.filial", nome: "Faturamento Filial", rota: "/financeiro/filial" }] },
+    ]);
+    expect(montarMenu(areas, comFilial, { ...restrito, restrito: { unidade: "contagem", nivel: "sem_acesso" } })).toEqual([]);
   });
 });

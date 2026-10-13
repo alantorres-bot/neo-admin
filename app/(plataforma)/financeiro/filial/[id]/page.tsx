@@ -13,7 +13,7 @@ import { divergencias, lerParcelasInformadas } from "@/lib/modulos/financeiro/fi
 import { emCentavos } from "@/lib/modulos/financeiro/recebiveis/carteira";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { urlAssinadaAnexo } from "@/lib/nucleo/anexos";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { AnexarDocumento, BotaoCancelarKit } from "./componentes";
@@ -26,8 +26,8 @@ const ETAPAS: EstagioKit[] = ["recebida", "implantada", "pronta", "enviada"];
 export default async function PaginaKit({ params }: PageProps<"/financeiro/filial/[id]">) {
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO_FILIAL);
-  if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro")) notFound();
-  const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
+  if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_FILIAL)) notFound();
+  const podeOperar = temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_FILIAL, "operador");
 
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
@@ -154,7 +154,7 @@ export default async function PaginaKit({ params }: PageProps<"/financeiro/filia
                     const b = boletoPorTitulo.get(t.id);
                     return (
                       <TableRow key={t.id}>
-                        <TableCell><Link className="underline" href={`/financeiro/recebiveis/${t.id}`}>{t.documento}</Link>{t.cedido && <Badge variant="outline" className="ml-1">AKF</Badge>}</TableCell>
+                        <TableCell>{sessao.acesso.restrito ? t.documento : <Link className="underline" href={`/financeiro/recebiveis/${t.id}`}>{t.documento}</Link>}{t.cedido && <Badge variant="outline" className="ml-1">AKF</Badge>}</TableCell>
                         <TableCell>{formatarData(t.vencimento)}</TableCell>
                         <TableCell className="text-right tabular-nums">{formatarMoeda(emCentavos(t.valor))}</TableCell>
                         <TableCell className="text-[13px]">

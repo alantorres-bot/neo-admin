@@ -83,11 +83,14 @@ export async function salvarUsuario(_anterior: EstadoForm, dados: FormData): Pro
   const ativo = dados.get("ativo") === "on";
 
   if (alvoEhEuMesmo && (!adminGeral || !ativo)) return { erro: "Você não pode remover o seu próprio acesso de administrador nem se desativar." };
+  const restricao = alvoEhEuMesmo ? "" : String(dados.get("unidade_restrita") ?? "");
+  if (restricao !== "" && restricao !== "contagem") return { erro: "Unidade inválida." };
+  if (restricao && adminGeral) return { erro: "Administrador geral não pode ser restrito a uma unidade." };
 
   const permissoes = await supabase.from("permissoes").upsert(linhas, { onConflict: "perfil_id,area" });
   if (permissoes.error) return { erro: mensagemDeErroBanco(permissoes.error) };
 
-  const perfil = await supabase.from("perfis").update({ admin_geral: adminGeral }).eq("id", id.data).select("id, ativo");
+  const perfil = await supabase.from("perfis").update({ admin_geral: adminGeral, unidade_restrita: restricao || null }).eq("id", id.data).select("id, ativo");
   if (perfil.error) return { erro: mensagemDeErroBanco(perfil.error) };
   const atual = perfil.data?.[0];
   if (!atual) return { erro: "Usuário não encontrado." };

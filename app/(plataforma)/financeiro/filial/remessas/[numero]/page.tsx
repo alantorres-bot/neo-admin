@@ -12,7 +12,7 @@ import { lerConfigImplantacao, montarFichaImplantacao } from "@/lib/modulos/fina
 import { divergencias, lerParcelasInformadas, type ParcelaConsistem } from "@/lib/modulos/financeiro/filial/remessa";
 import { emCentavos } from "@/lib/modulos/financeiro/recebiveis/carteira";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { BotaoAvisoCuiaba } from "../../aviso";
@@ -27,8 +27,8 @@ const dataCuiaba = (iso: string) => new Date(iso).toLocaleDateString("sv-SE", { 
 export default async function PaginaRemessa({ params }: PageProps<"/financeiro/filial/remessas/[numero]">) {
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO_FILIAL);
-  if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro")) notFound();
-  const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
+  if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_FILIAL)) notFound();
+  const podeOperar = temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_FILIAL, "operador");
 
   const { numero } = await params;
   if (!/^\d{1,9}$/.test(numero)) notFound();

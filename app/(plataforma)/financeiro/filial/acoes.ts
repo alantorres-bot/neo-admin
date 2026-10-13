@@ -6,7 +6,7 @@ import { extrairPaginasDoPdf } from "@/lib/modulos/financeiro/cartao/fatura-pdf"
 import { MODULO_FILIAL, ROTA_FILIAL, TIPOS_DOCUMENTO_KIT } from "@/lib/modulos/financeiro/filial/arquivos";
 import { lerNotaSyslock, type NotaLida } from "@/lib/modulos/financeiro/filial/leitor-nota";
 import { BUCKET_ANEXOS, enviarAnexo } from "@/lib/nucleo/anexos";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
@@ -18,7 +18,7 @@ const DATA = /^\d{4}-\d{2}-\d{2}$/;
 
 async function exigirOperador(): Promise<string | null> {
   const sessao = await exigirSessao();
-  return temAcesso(sessao.acesso, "financeiro", "operador") ? null : "Somente operador do Financeiro ou acima pode registrar faturas da filial.";
+  return temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_FILIAL, "operador") ? null : "Somente operador do Financeiro ou acima pode registrar faturas da filial.";
 }
 
 const esquemaKit = z.object({
@@ -111,7 +111,7 @@ export async function marcarAvisoAberto(remessaId: string): Promise<void> {
 /** Links de download (15 min, com o nome original) de todos os documentos da filial nos kits da remessa. */
 export async function linksDaRemessa(remessaId: string): Promise<{ ok: true; links: { nome: string; url: string }[] } | { ok: false; erro: string }> {
   const sessao = await exigirSessao();
-  if (!temAcesso(sessao.acesso, "financeiro")) return { ok: false, erro: "Sem acesso." };
+  if (!temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_FILIAL)) return { ok: false, erro: "Sem acesso." };
   if (!z.string().uuid().safeParse(remessaId).success) return { ok: false, erro: "Remessa inválida." };
   const supabase = await criarClienteServidor();
   const { data: kits } = await supabase.from("rec_remessa_kits").select("kit_id").eq("remessa_id", remessaId);

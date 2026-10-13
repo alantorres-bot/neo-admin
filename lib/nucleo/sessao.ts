@@ -30,7 +30,7 @@ export const obterSessao = cache(async (): Promise<Sessao | null> => {
   if (!userId) return null;
 
   const [perfil, permissoes, areas, modulos, aplicativos] = await Promise.all([
-    supabase.from("perfis").select("id, nome, email, admin_geral, ativo, deve_trocar_senha").eq("id", userId).maybeSingle(),
+    supabase.from("perfis").select("id, nome, email, admin_geral, ativo, deve_trocar_senha, unidade_restrita").eq("id", userId).maybeSingle(),
     supabase.from("permissoes").select("area, nivel").eq("perfil_id", userId),
     supabase.from("areas").select("codigo, nome, sensivel, ordem").order("ordem"),
     supabase.from("modulos").select("codigo, area, nome, ativo").order("codigo"),
@@ -53,11 +53,15 @@ export const obterSessao = cache(async (): Promise<Sessao | null> => {
   // A troca pendente só prende quem entrou por senha; pelo Google não há senha a trocar (migration 0007, docs/LOGIN_GOOGLE.md).
   const porSenha = !entrouPorOAuth(auth.claims);
   const liberado = perfil.data.ativo && !(perfil.data.deve_trocar_senha && porSenha);
+  const restrito = liberado && perfil.data.unidade_restrita ? (perfil.data.unidade_restrita as string) : null;
 
   return {
     userId: userId,
     perfil: perfil.data as Perfil,
-    acesso: { adminGeral: perfil.data.admin_geral && liberado, niveis: liberado ? niveis : {} },
+    acesso: restrito
+      // Restrito à unidade: nenhuma área (a RLS também barra) e só o Faturamento Filial, com o nível do Financeiro.
+      ? { adminGeral: false, niveis: {}, restrito: { unidade: restrito, nivel: niveis.financeiro ?? "sem_acesso" } }
+      : { adminGeral: perfil.data.admin_geral && liberado, niveis: liberado ? niveis : {}, restrito: null },
     areas: (areas.data ?? []) as Area[],
     modulos: (modulos.data ?? []) as Modulo[],
     aplicativos: liberado ? ((aplicativos.data ?? []) as Aplicativo[]) : [],

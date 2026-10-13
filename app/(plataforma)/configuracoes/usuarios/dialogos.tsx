@@ -86,6 +86,16 @@ export function DialogoPermissoes({
           <input type="checkbox" name="ativo" defaultChecked={perfil.ativo} disabled={ehOProprio} className="size-4" />
           Usuário ativo
         </label>
+        <label className="grid gap-1 text-sm">
+          <span>
+            Restrito à unidade{" "}
+            <span className="text-xs text-muted-foreground">(vê só o Faturamento Filial, com o nível do Financeiro; não vale para administrador geral)</span>
+          </span>
+          <select name="unidade_restrita" defaultValue={perfil.unidade_restrita ?? ""} disabled={ehOProprio} className="h-8 w-56 rounded-lg border bg-background px-2 text-sm">
+            <option value="">Sem restrição</option>
+            <option value="contagem">Filial Contagem</option>
+          </select>
+        </label>
         {/* checkbox desabilitado não é enviado: no próprio usuário, reenvia os valores atuais */}
         {ehOProprio && (
           <>

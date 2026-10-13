@@ -10,7 +10,7 @@ import {
 } from "@/lib/modulos/financeiro/filial/arquivos";
 import { emCentavos } from "@/lib/modulos/financeiro/recebiveis/carteira";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
@@ -22,8 +22,8 @@ const primeiro = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] 
 export default async function PaginaFilial({ searchParams }: PageProps<"/financeiro/filial">) {
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO_FILIAL);
-  if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro")) notFound();
-  const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
+  if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_FILIAL)) notFound();
+  const podeOperar = temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_FILIAL, "operador");
 
   const pedido = primeiro((await searchParams).estagio);
   const estagio = ehEstagioKit(pedido) ? pedido : null;

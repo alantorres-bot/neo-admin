@@ -483,7 +483,15 @@ Agora cada NF da filial vira um **kit** (menu Financeiro > Faturamento Filial, m
   - **Campos fixos** em `financeiro.filial.implantacao` (tipo 12 — FAT LOCAÇÃO, representante 5 — LUCAS DE MOURA SILVA, condição 1, produto 2.09.002.0024, classificação fiscal **11837 — OUTRAS**, PIS 1,65%, COFINS 7,60%). A regra pura é `montarFichaImplantacao` (`lib/modulos/financeiro/filial/implantacao.ts`).
   - **Emissão e CNPJ/CPF do cliente** são lidos da nota (`lerNotaSyslock`) e conferidos com o Consistem nas notas calibradas. Ficam guardados em `rec_kits.data_emissao` e `cliente_documento`.
   - **Código do cliente** (`rec_kits.cliente_codigo_erp`): vem de `contrapartes`, quando o cliente já tem título, ou da Edge Function `rec-filial-cliente-erp`. Ela consulta `cadastrosgerais/v10/cliente`, só lê, e é chamada ao registrar a remessa e pelo botão "Conferir clientes no Consistem". CNPJ que não está no Consistem gera o alerta "cadastrar antes de implantar".
+- **Acesso restrito à unidade (Fase D, 0152):** é para a filial usar o Neo Admin sem ver o resto.
+  - **Configuração:** em Configurações > Usuários, "Restrito à unidade: Filial Contagem" grava `perfis.unidade_restrita`. Só o admin geral altera. Admin geral não pode ser restrito.
+  - **No banco:**
+    - `nivel_area()` devolve `sem_acesso` em todas as áreas para o restrito. Com isso, todas as políticas por área (Recebíveis, Cobrança, AKF, contas a pagar, cartão, fiscal…) já o barram.
+    - `tem_acesso_modulo()` libera para ele só `financeiro.filial`, com o nível que ele tem no Financeiro.
+    - Tabelas e funções do Faturamento Filial checam o módulo (para os demais usuários é igual a checar a área).
+    - O restrito lê só os títulos da unidade (`rec_titulos_ler_unidade`), os clientes com título na unidade e o boleto dessas parcelas. Não cadastra nem altera cliente ou contato.
+  - **No app:** `Acesso.restrito` (sessão) e `temAcessoModulo` (`lib/nucleo/permissoes.ts`). O menu mostra só Financeiro > Faturamento Filial (e o Início), e Configurações some.
+  - **Para liberar a filial:** criar o usuário, dar Operador no Financeiro e marcar "Restrito à unidade: Filial Contagem".
 - **Próximas fases** (plano aprovado):
   - B: boletos em lote na Cobrança.
   - C: rascunho no Gmail da própria filial, com OAuth por usuário, e "Enviado ao cliente".
-  - D: usuário restrito à unidade contagem. **Até a D, a filial não deve receber acesso ao Financeiro.**
