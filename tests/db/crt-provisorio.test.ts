@@ -27,8 +27,8 @@ beforeAll(async () => {
 });
 
 describe("provisório no fechamento (0154)", () => {
-  it("configuração nasce sem conta de fluxo e contas contábeis (a informar)", async () => {
-    expect((await q(`select valor from configuracoes where chave = 'financeiro.cartao.provisorio'`)).rows[0].valor).toEqual({ codHistorico: 1, categoriaDoc: 17, codPortador: 91, grupoContaFluxoCaixa: 22, contaFluxoCaixa: 24 });
+  it("configuração completa: fluxo 22/24, débito 3251, crédito 2004", async () => {
+    expect((await q(`select valor from configuracoes where chave = 'financeiro.cartao.provisorio'`)).rows[0].valor).toEqual({ codHistorico: 1, categoriaDoc: 17, codPortador: 91, grupoContaFluxoCaixa: 22, contaFluxoCaixa: 24, contaContabilDebito: 3251, contaContabilCredito: 2004 });
   });
   it("só com o mês fechado e para gestor; valor = total da fatura", async () => {
     await expect(reservar(finGestor, 3576.92)).rejects.toThrow(/mês fechado/);
