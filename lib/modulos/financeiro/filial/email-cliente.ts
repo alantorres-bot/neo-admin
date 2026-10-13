@@ -36,13 +36,12 @@ export function textoPeriodo(inicio: string | null, fim: string | null): string 
 
 const emLista = (partes: string[]) => (partes.length === 1 ? partes[0] : `${partes.slice(0, -1).join(", ")} e ${partes.at(-1)}`);
 
-/** "Nota Fatura, boleto, demonstrativo e comodato" (na ordem do e-mail da filial), mais a carta de cessão, se houver. */
+/** "Nota Fatura, boleto e demonstrativo" (na ordem do e-mail da filial), mais a carta de cessão, se houver. */
 export function textoAnexos(documentos: readonly TipoDocumentoKit[], comBoleto = true): string {
   const tem = new Set(documentos);
   const partes = ["Nota Fatura"];
   if (comBoleto) partes.push("boleto");
   if (tem.has("demonstrativo")) partes.push("demonstrativo");
-  if (tem.has("comodato")) partes.push("comodato");
   if (tem.has("carta_cessao")) partes.push("carta de cessão de crédito");
   return emLista(partes);
 }

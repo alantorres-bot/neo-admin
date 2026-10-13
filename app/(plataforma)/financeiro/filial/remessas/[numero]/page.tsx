@@ -109,7 +109,7 @@ export default async function PaginaRemessa({ params, searchParams }: PageProps<
                     {tarefas.map((t) => <div key={t} className="text-muted-foreground">{t}</div>)}
                   </TableCell>
                   <TableCell className="space-x-2 text-[12px]">
-                    <Marca rotulo="NF" ok={l.docs.nota} /><Marca rotulo="Dem" ok={l.docs.demonstrativo} /><Marca rotulo="Com" ok={l.docs.comodato} />
+                    <Marca rotulo="NF" ok={l.docs.nota} /><Marca rotulo="Dem" ok={l.docs.demonstrativo} />
                     <Marca rotulo="Boleto" ok={l.docs.boleto} /><Marca rotulo="Carta" ok={l.docs.carta} />
                   </TableCell>
                   <TableCell className="text-[13px]">

@@ -201,7 +201,7 @@ export function EnvioEmLote({ termosSemBoleto, para, hoje }: { termosSemBoleto: 
         <CardHeader>
           <CardTitle>Arquivos</CardTitle>
           <CardDescription>
-            Escolha de uma vez a nota fatura, o demonstrativo e o comodato de cada NF (PDF). O nome &quot;NF 02351 - CLIENTE.pdf&quot;
+            Escolha de uma vez a nota fatura e o demonstrativo de cada NF (PDF). O nome &quot;NF 02351 - CLIENTE.pdf&quot;
             já preenche a NF e o cliente, e a nota fatura é lida automaticamente (vencimento, valor, obra e período). Confira o que foi lido; o que não for reconhecido, informe abaixo.
           </CardDescription>
         </CardHeader>

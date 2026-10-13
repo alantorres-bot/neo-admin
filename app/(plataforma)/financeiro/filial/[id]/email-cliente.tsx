@@ -13,7 +13,7 @@ import { criarRascunhoKit, desconectarGmail, iniciarConexaoGmail, marcarKitEnvia
 type Sugestao = { para: string; cc: string; assunto: string; corpo: string };
 
 /**
- * E-mail ao cliente (Fase C): o rascunho é criado no Gmail de QUEM CLICA, com a nota fatura, o demonstrativo, o comodato e o
+ * E-mail ao cliente (Fase C): o rascunho é criado no Gmail de QUEM CLICA, com a nota fatura, o demonstrativo e o
  * boleto anexados. A pessoa confere e envia no Gmail; depois marca "Enviado ao cliente". Nada sai sozinho.
  */
 const TITULO: Record<ModoEmailCliente, string> = {

@@ -46,7 +46,7 @@ export function montarAviso(d: { numero: number; data: string; itens: ItemAviso[
   if (semFactoring.length > 0) {
     linhas.push("OBS.: os clientes abaixo não aceitam boleto de factoring:", ...semFactoring.map((i) => `- NF ${nfCurta(i.nota)} - ${i.cliente}`), "");
   }
-  linhas.push(`As notas, demonstrativos e comodatos estão na remessa: ${d.link}`, "", "Atenciosamente,");
+  linhas.push(`As notas e os demonstrativos estão na remessa: ${d.link}`, "", "Atenciosamente,");
   return { para: d.para, assunto: assuntoDaRemessa(d.numero, d.data), corpo: linhas.join("\n") };
 }
 

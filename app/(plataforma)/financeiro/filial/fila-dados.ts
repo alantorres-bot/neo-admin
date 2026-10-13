@@ -22,7 +22,7 @@ export type LinhaFila = {
   cedido: boolean;
   notaEnviada: boolean;
   parcelasNota: ParcelaInformada[];
-  docs: { nota: boolean; demonstrativo: boolean; comodato: boolean; boleto: boolean; carta: boolean | null };
+  docs: { nota: boolean; demonstrativo: boolean; boleto: boolean; carta: boolean | null };
 };
 
 /** Quais NFs: as em andamento, as enviadas ou todas (inclusive canceladas). `ids` restringe a um conjunto (ex.: as de uma remessa). */
@@ -37,7 +37,7 @@ const ESTAGIOS_BANCO: Record<EstagiosFila, string[]> = {
 export async function carregarFila(supabase: SupabaseClient, opcoes: { papel: Papel; hoje: string; estagios: EstagiosFila; ids?: string[] }): Promise<LinhaFila[]> {
   const soEnviadas = opcoes.estagios === "enviadas";
   let consulta = supabase.from("rec_vw_kits")
-    .select("id, nota_fiscal, cliente_nome, obra, estagio, aceita_boleto_factoring, parcelas, valor_total, primeiro_vencimento, cedido, boletos, notas, demonstrativos, comodatos, cartas, exige_carta, enviado_em")
+    .select("id, nota_fiscal, cliente_nome, obra, estagio, aceita_boleto_factoring, parcelas, valor_total, primeiro_vencimento, cedido, boletos, notas, demonstrativos, cartas, exige_carta, enviado_em")
     .in("estagio", ESTAGIOS_BANCO[opcoes.estagios]);
   if (opcoes.ids) consulta = consulta.in("id", opcoes.ids.length ? opcoes.ids : ["00000000-0000-0000-0000-000000000000"]);
   const [{ data: kits, error }, { data: remessas }] = await Promise.all([
@@ -74,7 +74,7 @@ export async function carregarFila(supabase: SupabaseClient, opcoes: { papel: Pa
       acao: proximaAcao(situacao, opcoes.papel, urgencia),
       semBoletoFactoring: !k.aceita_boleto_factoring, cedido: !!k.cedido, notaEnviada: !!e?.nota_enviada_em, parcelasNota: informadas,
       docs: {
-        nota: k.notas > 0, demonstrativo: k.demonstrativos > 0, comodato: k.comodatos > 0,
+        nota: k.notas > 0, demonstrativo: k.demonstrativos > 0,
         boleto: (k.parcelas ?? 0) > 0 && (k.boletos ?? 0) >= (k.parcelas ?? 0), carta: k.exige_carta ? k.cartas > 0 : null,
       },
     };

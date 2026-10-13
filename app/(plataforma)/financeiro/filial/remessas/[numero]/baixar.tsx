@@ -7,7 +7,7 @@ import { linksDaRemessa } from "../../acoes";
 
 const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-/** Baixa, um a um, a nota fatura, o demonstrativo e o comodato de todas as NFs da remessa (o navegador pode pedir permissão). */
+/** Baixa, um a um, a nota fatura e o demonstrativo de todas as NFs da remessa (o navegador pode pedir permissão). */
 export function BotaoBaixarTudo({ remessaId }: { remessaId: string }) {
   const [pendente, iniciar] = useTransition();
 

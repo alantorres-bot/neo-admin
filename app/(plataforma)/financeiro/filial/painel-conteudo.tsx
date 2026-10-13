@@ -167,7 +167,7 @@ export async function ConteudoKit({ kitId, sessao, papel, podeOperar }: { kitId:
       <Card size="sm">
         <CardHeader>
           <CardTitle>Documentos</CardTitle>
-          <CardDescription>Nota fatura, demonstrativo (um ou mais) e comodato vêm da filial; a carta de cessão, de Cuiabá, se o cliente pedir.</CardDescription>
+          <CardDescription>Nota fatura e demonstrativo (um ou mais) vêm da filial; a carta de cessão, de Cuiabá, se o cliente pedir.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
           <ul className="space-y-1 text-[13px]">

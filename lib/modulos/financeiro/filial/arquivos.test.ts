@@ -22,9 +22,9 @@ describe("lerNomeArquivo (nomes reais dos e-mails da filial e de Cuiabá)", () =
     expect(lerNomeArquivo("2353.PDF")).toEqual({ nota: "002353", cliente: null, tipo: null });
     expect(lerNomeArquivo("002331.pdf")).toEqual({ nota: "002331", cliente: null, tipo: null });
   });
-  it("demonstrativo e comodato pelo nome", () => {
+  it("demonstrativo pelo nome; comodato não é documento do kit", () => {
     expect(lerNomeArquivo("DEMONSTRATIVO NF 2351 - QRTZ 39.pdf")).toEqual({ nota: "002351", cliente: "QRTZ 39", tipo: "demonstrativo" });
-    expect(lerNomeArquivo("Comodato NF 02351 - QRTZ 39.pdf")).toEqual({ nota: "002351", cliente: "QRTZ 39", tipo: "comodato" });
+    expect(lerNomeArquivo("Comodato NF 02351 - QRTZ 39.pdf")).toEqual({ nota: "002351", cliente: "QRTZ 39", tipo: null });
   });
   it("carta de cessão sem NF no nome fica para a pessoa informar", () => {
     expect(lerNomeArquivo("CESSÃO NEO FORMAS - CAPANEMA (1).pdf")).toEqual({ nota: null, cliente: null, tipo: "carta_cessao" });
@@ -73,9 +73,9 @@ describe("agruparLote", () => {
 });
 
 describe("pendenciasDoKit", () => {
-  const base = { estagio: "implantada" as const, notas: 1, demonstrativos: 1, comodatos: 1, cartas: 0, parcelas: 1, boletos: 0, exigeCarta: false };
+  const base = { estagio: "implantada" as const, notas: 1, demonstrativos: 1, cartas: 0, parcelas: 1, boletos: 0, exigeCarta: false };
   it("lista o que falta", () => {
-    expect(pendenciasDoKit({ ...base, estagio: "recebida", parcelas: 0, comodatos: 0 })).toEqual(["comodato", "implantação no Consistem"]);
+    expect(pendenciasDoKit({ ...base, estagio: "recebida", parcelas: 0, demonstrativos: 0 })).toEqual(["demonstrativo", "implantação no Consistem"]);
     expect(pendenciasDoKit(base)).toEqual(["boleto"]);
     expect(pendenciasDoKit({ ...base, parcelas: 3, boletos: 1, exigeCarta: true })).toEqual(["boleto (1/3)", "carta de cessão"]);
     expect(pendenciasDoKit({ ...base, boletos: 1 })).toEqual([]);

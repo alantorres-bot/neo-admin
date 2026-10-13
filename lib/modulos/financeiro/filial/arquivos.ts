@@ -10,16 +10,15 @@ export const ROTA_FILIAL = "/financeiro/filial";
 /** Configuração com os e-mails de Cuiabá que recebem o aviso de remessa (migration 0148). */
 export const CHAVE_DESTINATARIOS = "financeiro.filial.aviso_destinatarios";
 
-export const TIPOS_DOCUMENTO_KIT = ["nota_fatura", "demonstrativo", "comodato", "carta_cessao"] as const;
+export const TIPOS_DOCUMENTO_KIT = ["nota_fatura", "demonstrativo", "carta_cessao"] as const;
 export type TipoDocumentoKit = (typeof TIPOS_DOCUMENTO_KIT)[number];
 export const ROTULO_DOCUMENTO_KIT: Record<TipoDocumentoKit, string> = {
   nota_fatura: "Nota fatura",
   demonstrativo: "Demonstrativo",
-  comodato: "Comodato",
   carta_cessao: "Carta de cessão",
 };
 /** Documentos que a filial envia; a carta de cessão é de Cuiabá. */
-export const DOCUMENTOS_DA_FILIAL: readonly TipoDocumentoKit[] = ["nota_fatura", "demonstrativo", "comodato"];
+export const DOCUMENTOS_DA_FILIAL: readonly TipoDocumentoKit[] = ["nota_fatura", "demonstrativo"];
 
 export const ESTAGIOS_KIT = ["recebida", "implantada", "pronta", "enviada", "cancelada"] as const;
 export type EstagioKit = (typeof ESTAGIOS_KIT)[number];
@@ -59,7 +58,6 @@ export type ArquivoLido = {
 export function tipoPeloNome(nome: string): TipoDocumentoKit | null {
   const n = semAcento(nome).toUpperCase();
   if (/DEMONSTRATIVO|DEMONST\b|\bDEMO\b/.test(n)) return "demonstrativo";
-  if (/COMODATO/.test(n)) return "comodato";
   if (/CESSAO/.test(n)) return "carta_cessao";
   if (/^\s*(NF|NOTA)\b/.test(n)) return "nota_fatura";
   return null;
@@ -79,7 +77,7 @@ export function lerNomeArquivo(nome: string): ArquivoLido {
   // Só o número: "2353", "002331"
   const soNumero = /^0*(\d{1,6})$/.exec(base);
   if (soNumero) return { nota: normalizarNota(soNumero[1]), cliente: null, tipo };
-  // Documento identificado pela palavra-chave e um único número solto: "DEMONSTRATIVO 2352", "Comodato 002352 - HERMES"
+  // Documento identificado pela palavra-chave e um único número solto: "DEMONSTRATIVO 2352", "Demonstrativo 002352 - HERMES"
   if (tipo) {
     const numeros = [...base.matchAll(/(?:^|[^\d])(\d{3,6})(?![\d])/g)].map((m) => m[1]);
     if (numeros.length === 1) {
@@ -114,18 +112,17 @@ export function agruparLote<T extends ItemLote>(itens: readonly T[]): { grupos: 
 }
 
 /**
- * O que falta no kit, do ponto de vista de quem confere (filial sobe NF/demonstrativo/comodato; Cuiabá, boleto e carta).
+ * O que falta no kit, do ponto de vista de quem confere (filial sobe NF/demonstrativo; Cuiabá, boleto e carta).
  * A carta de cessão só falta quando há parcela cedida de cliente que a pede (`exige_carta` da view; migration 0147).
  */
 export function pendenciasDoKit(k: {
-  estagio: EstagioKit; notas: number; demonstrativos: number; comodatos: number; cartas: number;
+  estagio: EstagioKit; notas: number; demonstrativos: number; cartas: number;
   parcelas: number; boletos: number; exigeCarta: boolean; parcelasTransferencia?: number;
 }): string[] {
   if (k.estagio === "enviada" || k.estagio === "cancelada") return [];
   const faltas: string[] = [];
   if (k.notas === 0) faltas.push("nota fatura");
   if (k.demonstrativos === 0) faltas.push("demonstrativo");
-  if (k.comodatos === 0) faltas.push("comodato");
   if (k.parcelas === 0) faltas.push("implantação no Consistem");
   else if (k.boletos + (k.parcelasTransferencia ?? 0) < k.parcelas) faltas.push(k.parcelas === 1 ? "boleto" : `boleto (${k.boletos}/${k.parcelas})`);
   if (k.exigeCarta && k.cartas === 0) faltas.push("carta de cessão");

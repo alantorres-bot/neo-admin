@@ -31,7 +31,7 @@ describe("e-mail da filial ao cliente", () => {
   });
 
   it("anexos, período e saudação", () => {
-    expect(textoAnexos(["nota_fatura", "demonstrativo", "comodato", "carta_cessao"])).toBe("Nota Fatura, boleto, demonstrativo, comodato e carta de cessão de crédito");
+    expect(textoAnexos(["nota_fatura", "demonstrativo", "carta_cessao"])).toBe("Nota Fatura, boleto, demonstrativo e carta de cessão de crédito");
     expect(textoPeriodo("2026-12-28", "2027-01-27")).toBe("28/12/2026 a 27/01/2027");
     expect(saudacaoDoDia(18)).toBe("boa noite");
   });
@@ -39,10 +39,10 @@ describe("e-mail da filial ao cliente", () => {
 
 describe("envio antecipado e boleto depois (Fase F)", () => {
   const base = { cliente: "QRTZ 39", nota: "002351", obra: "Exclusive Bon Vivant", periodoInicio: "2026-09-12", periodoFim: "2026-10-11", hora: 9 };
-  it("nota: nota fatura, demonstrativo e comodato, avisando o boleto", () => {
-    const e = montarEmailCliente({ ...base, modo: "nota", documentos: ["nota_fatura", "demonstrativo", "comodato", "carta_cessao"] });
+  it("nota: nota fatura e demonstrativo, avisando o boleto", () => {
+    const e = montarEmailCliente({ ...base, modo: "nota", documentos: ["nota_fatura", "demonstrativo", "carta_cessao"] });
     expect(e.assunto).toBe("Faturamento QRTZ 39 - Exclusive Bon Vivant");
-    expect(e.corpo).toContain("Segue anexo Nota Fatura, demonstrativo e comodato referente ao período de faturamento 12/09 a 11/10/2026.");
+    expect(e.corpo).toContain("Segue anexo Nota Fatura e demonstrativo referente ao período de faturamento 12/09 a 11/10/2026.");
     expect(e.corpo).toContain("O boleto será enviado em seguida, neste mesmo e-mail.");
     expect(e.corpo).not.toContain("boleto,");
     expect(e.corpo.endsWith("Atenciosamente,")).toBe(true);

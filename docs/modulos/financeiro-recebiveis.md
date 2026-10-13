@@ -291,7 +291,7 @@ O Consistem lista os títulos das duas unidades juntos (mesma empresa na API). C
 - **Dado (migration 0109):** coluna calculada `rec_titulos.unidade` (`matriz` ou `contagem`, derivada do documento; não se grava à mão) e a view `rec_vw_titulos` recriada com ela. A regra em TypeScript (`unidadeDoDocumento`, em `_shared/cobranca.ts`) tem teste de paridade com o banco. Mudar a regra exige nova migration.
 - **Carteira:** seletor **Todas as unidades · Matriz · Filial Contagem**, com quantidade e valor de cada uma. Escolhida a unidade, os cartões, o aging, as abas por situação e a lista passam a ser só dela (a escolha vale na busca, na faixa, nas abas e na paginação). Em "Todas", os títulos da Filial levam o selo "Contagem".
 - **Pendências por unidade:** "Cobrar D+n", "Confirmar pagamento" e "Ligar para confirmar pagamento" são abertas por **cliente e unidade**; as da Filial Contagem levam "(Filial Contagem)" no título e uma linha "Unidade: Filial Contagem" na descrição (as da Matriz não mudam). As telas de cobrança e de confirmação mostram a unidade (a confirmação da Filial abre com `?unidade=contagem`), o rascunho de e-mail e o registro do resultado valem para uma unidade por vez, e `rec_registrar_cobranca` e `rec_registrar_confirmacao` recusam parcelas de unidades misturadas e só concluem as pendências da unidade registrada. A ficha do título mostra a unidade de cada parcela.
-- **Ainda igual nas duas:** os textos de mensagem e os marcos da régua (D+1, D+5, D+10). O que muda na cobrança da Filial (textos, prazos, contatos) será definido e entra aqui. O faturamento da Filial (kit NF + demonstrativo + comodato + boleto) está na seção 34.
+- **Ainda igual nas duas:** os textos de mensagem e os marcos da régua (D+1, D+5, D+10). O que muda na cobrança da Filial (textos, prazos, contatos) será definido e entra aqui. O faturamento da Filial (kit NF + demonstrativo + boleto) está na seção 34.
 - **Hoje:** 36 títulos da Filial (R$ 528 mil) e 106 da Matriz (R$ 21,7 mi). O documento `453` (NF 45, Canopus) fica na Matriz.
 
 ## 23. Ocultar vencidos há mais de 90 dias (06/10/2026)
@@ -439,14 +439,14 @@ Na Filial a NF é emitida no **Syslock**. O ciclo, que corria todo por e-mail, e
 1. A filial manda "FATURAS MG - <MÊS> - EMAIL n".
 2. Cuiabá implanta a fatura no Consistem.
 3. Cuiabá decide entre AKF e boleto próprio e devolve o boleto, junto com a carta de cessão quando o título foi cedido.
-4. A filial envia ao cliente a nota fatura, o demonstrativo, o comodato e o boleto.
+4. A filial envia ao cliente a nota fatura, o demonstrativo e o boleto.
 
 Agora cada NF da filial vira um **kit** (menu Financeiro > Faturamento Filial, módulo `financeiro.filial`, migration 0146).
 
 - **Tabelas:**
   - `rec_kits`: uma linha por NF de 6 dígitos, com cliente, obra, período e "aceita boleto de factoring". Um kit vivo por NF; cancela-se com motivo e não há exclusão.
   - `rec_kit_titulos`: liga o kit às parcelas.
-  - Os documentos ficam em `anexos` (`referencia_tabela = 'rec_kits'`, tipo `nota_fatura`, `demonstrativo`, `comodato` ou `carta_cessao`). O boleto continua na parcela (`rec_titulos`, tipo `boleto`), como no restante da Cobrança.
+  - Os documentos ficam em `anexos` (`referencia_tabela = 'rec_kits'`, tipo `nota_fatura`, `demonstrativo` ou `carta_cessao`; o comodato não faz parte do kit, 0163). O boleto continua na parcela (`rec_titulos`, tipo `boleto`), como no restante da Cobrança.
 - **Estágio, calculado pelo banco** (`rec_kit_atualizar_estagio`; não se grava à mão):
   - **Aguardando implantação** (`recebida`).
   - **Aguardando boleto** (`implantada`): existe título ligado.
@@ -457,7 +457,7 @@ Agora cada NF da filial vira um **kit** (menu Financeiro > Faturamento Filial, m
   - "Implantar fatura da filial: NF n — cliente" abre no registro e fecha quando o título aparece.
   - "Enviar kit ao cliente: NF n — cliente" abre quando o kit fica pronto e é cancelada se ele deixar de estar pronto (ex.: o título foi cedido e falta a carta).
 - **Envio em lote** (`/financeiro/filial/enviar`):
-  - A pessoa escolhe vários PDFs de uma vez. `lerNomeArquivo` (`lib/modulos/financeiro/filial/arquivos.ts`) tira do nome a NF, o cliente e o tipo. Exemplos: "NF 02351 - QRTZ 39.pdf", "DEMONSTRATIVO 2352.pdf", "Comodato NF 2351 - …", "2353.PDF".
+  - A pessoa escolhe vários PDFs de uma vez. `lerNomeArquivo` (`lib/modulos/financeiro/filial/arquivos.ts`) tira do nome a NF, o cliente e o tipo. Exemplos: "NF 02351 - QRTZ 39.pdf", "DEMONSTRATIVO 2352.pdf", "2353.PDF".
   - A prévia agrupa por NF. O que não for reconhecido é informado ali.
   - "Aceita boleto de factoring" já vem desmarcado para os clientes da lista `financeiro.akf.clientes_sem_boleto`.
   - Ao confirmar, cada NF chama `rec_kit_registrar`. Se o kit da NF já existe, a função devolve o mesmo, para completar o que faltou. Em seguida sobe um anexo por chamada.
@@ -471,7 +471,7 @@ Agora cada NF da filial vira um **kit** (menu Financeiro > Faturamento Filial, m
     - A prévia mostra "lido da nota" e os avisos: soma das parcelas diferente do total, NF do nome do arquivo diferente da NF do PDF. A pessoa pode corrigir antes de registrar.
     - Calibrado com 9 notas reais (002317 a 002354). Calibração opcional: `NEO_AMOSTRAS_FILIAL=<pasta> npx vitest run lib/modulos/financeiro/filial/calibracao.test.ts`; os PDFs não entram no repositório.
   - O botão **"Abrir e-mail para Cuiabá"** abre o Gmail de quem clica numa aba nova (tela de novo e-mail, `linkGmail`; o mailto foi descartado porque não abre nada sem programa de e-mail padrão no Windows), com: para (`financeiro.filial.aviso_destinatarios`), assunto "FATURAS MG - <MÊS> <ANO> - REMESSA nº N", relação NF/cliente/vencimento/valor, OBS dos clientes sem boleto de factoring e link da remessa. Sem anexos; acima de ~1.900 caracteres leva só o resumo e o link; "Copiar texto" leva a relação inteira. O sistema registra quando o aviso foi aberto (`rec_remessa_marcar_aviso`); quem envia é a pessoa.
-  - Tela da remessa (`/financeiro/filial/remessas/[n]`): "Baixar todas as notas" (nota fatura, demonstrativo e comodato, com o nome original), estágio de cada NF e **conferência com o Consistem**: quando o título chega, compara quantidade de parcelas, total, vencimentos e valores com o que a nota informou (`divergencias`, `lib/modulos/financeiro/filial/remessa.ts`). A ficha do kit mostra o mesmo aviso.
+  - Tela da remessa (`/financeiro/filial/remessas/[n]`): "Baixar todas as notas" (nota fatura e demonstrativo, com o nome original), estágio de cada NF e **conferência com o Consistem**: quando o título chega, compara quantidade de parcelas, total, vencimentos e valores com o que a nota informou (`divergencias`, `lib/modulos/financeiro/filial/remessa.ts`). A ficha do kit mostra o mesmo aviso.
 - **Relatório de implantação (CCFT040, 0149):** na tela da remessa, a seção "Implantar no Consistem" traz um bloco por NF, na ordem do POP "Implantação de Faturas de Locação" (rotina CCFT040):
   - **Cabeçalho:** Data Emissão e Nota Fiscal (sem zeros); Tipo de Nota; Cliente (código no Consistem); Representante; Condição Venda.
   - **Aba Item:** Produto e Classificação Fiscal; Quantidade 1 e Preço (valor da nota).
@@ -501,14 +501,14 @@ Agora cada NF da filial vira um **kit** (menu Financeiro > Faturamento Filial, m
   - Calibração opcional: `NEO_AMOSTRAS_BOLETOS=<pasta com 0023xx.pdf> npx vitest run lib/modulos/financeiro/filial/boleto-pdf.test.ts`.
 - **E-mail ao cliente pelo Gmail de quem prepara (Fase C, 0153):** a ficha do kit pronto tem o bloco "E-mail ao cliente".
   - **Conectar meu Gmail:** cada pessoa autoriza o próprio Gmail uma vez (escopo `gmail.compose`). O refresh token fica no Vault (`gmail_contas` guarda só o e-mail e o id do segredo). Edge Function `nucleo-gmail-conectar`, com `state` de uso único. A conta do Google precisa ser a do usuário. A configuração está em `docs/GMAIL_POR_USUARIO.md`.
-  - **Rascunho:** a Edge Function `rec-kit-rascunho-gmail` cria, no Gmail de quem clica, o e-mail com a nota fatura, o demonstrativo, o comodato, o boleto de cada parcela e a carta de cessão, se houver.
+  - **Rascunho:** a Edge Function `rec-kit-rascunho-gmail` cria, no Gmail de quem clica, o e-mail com a nota fatura, o demonstrativo, o boleto de cada parcela e a carta de cessão, se houver.
     - Texto no modelo da filial (`montarEmailCliente`, `lib/modulos/financeiro/filial/email-cliente.ts`): "Prezado cliente, …", período, obra, "Gentileza confirmar o recebimento deste e-mail." e "Atenciosamente,".
     - Para: o último destinatário usado para o cliente ou os contatos dele. Cc: `financeiro.filial.copia_cliente`.
     - Tudo editável antes. Nada é enviado pelo sistema.
   - **Enviado ao cliente** (`rec_kit_marcar_enviado`): kit "enviada", parcelas com boleto como "boleto enviado", histórico e pendência "Enviar kit ao cliente" concluída. A cobrança segue a régua normal.
 - **Demonstrativos pendentes e envio da nota antes do boleto (Fase F, 0159):**
   - **Demonstrativos:** ao enviar a remessa, se alguma NF estiver sem demonstrativo (cada fatura pode ter um ou mais), abre "Subir demonstrativos da remessa nº N (k NFs)". Ela fecha sozinha quando todas as NFs têm pelo menos um. A remessa tem o bloco **Demonstrativos de faturamento**, com vários PDFs de uma vez, ligados à NF pelo nome do arquivo.
-  - **Envio antecipado:** antes do boleto, com nota fatura e demonstrativo, a filial pode mandar ao cliente a nota, o demonstrativo e o comodato. Na lista aparece o botão "Enviar nota"; na ficha, o bloco "Enviar nota e demonstrativo agora". Depois ela marca "Nota enviada ao cliente" (`rec_kit_marcar_nota_enviada`).
+  - **Envio antecipado:** antes do boleto, com nota fatura e demonstrativo, a filial pode mandar ao cliente a nota e o demonstrativo. Na lista aparece o botão "Enviar nota"; na ficha, o bloco "Enviar nota e demonstrativo agora". Depois ela marca "Nota enviada ao cliente" (`rec_kit_marcar_nota_enviada`).
     - O rascunho ganha um `Message-ID` próprio, e a conversa do Gmail fica gravada no kit (`gmail_thread_id`, `email_message_id`, `email_assunto`).
   - **Boleto depois:** quando o boleto chega, a pendência passa a ser **"Enviar boleto ao cliente"**, não "Enviar kit". O rascunho sai **na mesma conversa**: `threadId`, `In-Reply-To`/`References` e assunto "Re: …". Leva só o boleto e a carta de cessão, se houver.
   - **Peças:** `rec-kit-rascunho-gmail` com `modo` (completo · nota · boleto); `criarRascunho(..., { threadId })` e `montarMime({ messageId, inReplyTo })` em `_shared/gmail.ts`; textos em `montarEmailCliente({ modo })`.
@@ -561,7 +561,7 @@ As abas por etapa e a ficha do kit deram lugar a **uma fila só** em `/financeir
 
 **A tela:**
 - **Filtros na URL (`?ver=`):** Minhas tarefas (padrão) · Críticas e atrasadas · um por estágio, com a contagem · Todas em andamento · Enviadas. Mais o seletor de **remessa** (`?remessa=N`) e a busca por cliente ou NF (`?q=`).
-- **Tabela** ordenada por urgência e vencimento: urgência, remessa (link que filtra), NF, cliente e obra (selos "sem boleto de factoring" e AKF), estágio, documentos (NF · Dem · Com · Boleto · Carta quando exigida), valor e o botão da próxima tarefa de quem vê.
+- **Tabela** ordenada por urgência e vencimento: urgência, remessa (link que filtra), NF, cliente e obra (selos "sem boleto de factoring" e AKF), estágio, documentos (NF · Dem · Boleto · Carta quando exigida), valor e o botão da próxima tarefa de quem vê.
 - **Barra da remessa**, com a remessa filtrada: aviso a Cuiabá, baixar as notas, demonstrativos em lote e, para Cuiabá, o relatório CCFT040 para imprimir.
 - **Painel lateral** (`?nf=<kit>`): situação e tarefas dos dois lados; documentos, com o demonstrativo sugerido quando falta; para Cuiabá, o bloco da CCFT040 e "Anexar boleto" em cada parcela; o e-mail ao cliente; cancelar. Fechar volta à mesma fila.
 - **Envio da nota antes do boleto:** continua possível, mas só como exceção recolhida no painel ("o recomendado é enviar tudo junto").
@@ -577,3 +577,4 @@ As abas por etapa e a ficha do kit deram lugar a **uma fila só** em `/financeir
 - **Links antigos redirecionam para a fila,** inclusive os das pendências gravadas:
   - `[id]` vai para `?ver=todas&nf=`;
   - `a-implantar`, `boletos-a-anexar`, `a-enviar` e `enviadas` vão para o filtro correspondente.
+- **Sem comodato (0163, 13/10/2026):** o comodato não faz parte do kit e não é citado em nenhum lugar: fila, painel, envio em lote, e-mail ao cliente, aviso a Cuiabá, Edge `rec-kit-rascunho-gmail` e textos da pendência "Enviar kit" e do histórico do envio. O histórico já gravado não muda.

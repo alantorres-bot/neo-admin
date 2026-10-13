@@ -1,11 +1,11 @@
 // Edge Function do Faturamento Filial (Fase C): cria, no Gmail de QUEM CHAMA (ex.: a Melina), o RASCUNHO do e-mail ao
-// cliente com a nota fatura, o demonstrativo, o comodato, o boleto de cada parcela e, se houver, a carta de cessão.
+// cliente com a nota fatura, o demonstrativo, o boleto de cada parcela e, se houver, a carta de cessão.
 // Nunca envia: só drafts.create (gmail.compose). A pessoa confere e envia no Gmail; depois marca "Enviado ao cliente".
 //
 // Chamada pela ação de servidor da ficha do kit, depois de gravar a mensagem como `rascunho` com a sessão do usuário.
 // Corpo (JSON): { mensagem_id, kit_id, modo? }
 //   modo "completo" (padrão): kit pronto, todos os documentos e os boletos.
-//   modo "nota": antes do boleto (kit recebida/implantada) — nota fatura, demonstrativos, comodato; grava a conversa no kit.
+//   modo "nota": antes do boleto (kit recebida/implantada) — nota fatura e demonstrativos; grava a conversa no kit.
 //   modo "boleto": kit pronto com a nota já enviada — só os boletos (e a carta de cessão), como resposta na mesma conversa.
 // Quem pode: operador do módulo financeiro.filial (inclui o usuário restrito à unidade), autor da mensagem, com o Gmail
 // conectado (nucleo-gmail-conectar). Segredos: GMAIL_WEB_CLIENT_ID, GMAIL_WEB_CLIENT_SECRET.
@@ -15,7 +15,7 @@ import { criarRascunho, GmailErro, montarMime, obterAccessToken, type AnexoEmail
 
 const MODULO = "financeiro.filial";
 const LIMITE_ANEXOS_BYTES = 20 * 1024 * 1024;
-const TIPOS_KIT = ["nota_fatura", "demonstrativo", "comodato", "carta_cessao"];
+const TIPOS_KIT = ["nota_fatura", "demonstrativo", "carta_cessao"];
 const CABECALHOS = { "Content-Type": "application/json; charset=utf-8" };
 const responder = (corpo: Record<string, unknown>, status = 200) => new Response(JSON.stringify(corpo), { status, headers: CABECALHOS });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

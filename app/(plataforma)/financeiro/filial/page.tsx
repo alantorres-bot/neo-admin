@@ -148,7 +148,7 @@ export default async function PaginaFilaFilial({ searchParams }: PageProps<"/fin
                   </TableCell>
                   <TableCell className="text-[12px]"><Badge variant="secondary">{ROTULO_ESTAGIO_FILA[l.situacao.estagio]}</Badge></TableCell>
                   <TableCell className="space-x-2 text-[12px]">
-                    <Marca rotulo="NF" ok={l.docs.nota} /><Marca rotulo="Dem" ok={l.docs.demonstrativo} /><Marca rotulo="Com" ok={l.docs.comodato} />
+                    <Marca rotulo="NF" ok={l.docs.nota} /><Marca rotulo="Dem" ok={l.docs.demonstrativo} />
                     <Marca rotulo="Boleto" ok={l.docs.boleto} /><Marca rotulo="Carta" ok={l.docs.carta} />
                   </TableCell>
                   <TableCell className="text-right tabular-nums">{formatarMoeda(l.valorCentavos)}</TableCell>

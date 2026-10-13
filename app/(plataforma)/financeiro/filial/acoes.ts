@@ -118,7 +118,7 @@ export async function linksDaRemessa(remessaId: string): Promise<{ ok: true; lin
   const ids = (kits ?? []).map((k) => k.kit_id as string);
   if (ids.length === 0) return { ok: true, links: [] };
   const { data: anexos, error } = await supabase.from("anexos").select("nome_arquivo, arquivo_path")
-    .eq("referencia_tabela", "rec_kits").in("referencia_id", ids).in("tipo", ["nota_fatura", "demonstrativo", "comodato"]).order("enviado_em");
+    .eq("referencia_tabela", "rec_kits").in("referencia_id", ids).in("tipo", ["nota_fatura", "demonstrativo"]).order("enviado_em");
   if (error) return { ok: false, erro: "Não foi possível ler os arquivos da remessa." };
   const links: { nome: string; url: string }[] = [];
   for (const a of anexos ?? []) {
