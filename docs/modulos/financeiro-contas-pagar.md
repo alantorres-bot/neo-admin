@@ -137,8 +137,8 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
 4. Cabeçalho do relatório usa razão social + CNPJ (o cadastro de empresas não tem endereço).
 5. Tempo da leitura completa da API (~27 mil registros): medir na Fase 1; se passar de ~60 s, leitura incremental por janelas de emissão/vencimento.
 6. Bug da listagem `lancamentoContasPagar` (HTTP 500): reportar à Consistem; o módulo não depende dele.
-7. **Escrita da confirmação (CCFFB014) pela API depende da Consistem**: texto do chamado na seção 16. Enquanto isso, a confirmação é lida e cobrada na autorização (Fase 4d).
-8. Semântica de `docConfirmado` confirmada por inferência (1/0/nulo) e pelos manuais; **conferir com o Alan** no CCFFB014 ("Visualizar Documentos Confirmados = Sim", vencimento 01–31/10/2026) se os 30 títulos abertos que a API devolveu com `1` são os confirmados lá.
+7. **Escrita da confirmação (CCFFB014) pela API depende da Consistem**: texto do chamado na seção 16 (ainda não enviado em 13/10/2026; o Alan envia depois). Enquanto isso, a confirmação é lida e cobrada na autorização (Fase 4d).
+8. ~~Semântica de `docConfirmado`~~ **Validada pelo Alan em 13/10/2026**: no CCFFB014 ("Visualizar Documentos Confirmados = Sim", vencimento 01–31/10/2026) aparecem os títulos que a API devolve com `docConfirmado = 1`.
 
 ## 11. Fases
 0. Especificação (aprovada 09/10/2026). 1. Sincronização + lista unificada só leitura (**feita**). 2. Autorização, histórico e pendência (**feita**).
