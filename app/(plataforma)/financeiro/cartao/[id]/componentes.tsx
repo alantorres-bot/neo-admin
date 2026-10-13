@@ -38,6 +38,16 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
   const agrupaveis = lancaCompra ? itensAgrupaveis(r.aLancar, compras!) : [];
   const agrupavel = new Set(agrupaveis.map((i) => i.linha.id));
   const marcar = (id: string, v: boolean) => { const n = new Set(selecionadas); if (v) n.add(id); else n.delete(id); setSelecionadas(n); };
+  const todasMarcadas = agrupaveis.length > 0 && agrupaveis.every((i) => selecionadas.has(i.linha.id));
+  // Por que a linha não entra num agrupado (dica na caixa desabilitada).
+  const motivoFora = (a: (typeof r.aLancar)[number]): string => {
+    if (a.justificativa) return "Já tem decisão (justificada)";
+    if (a.linha.valorCentavos <= 0) return "Estorno: abata do título da compra";
+    if ((a.linha.parcelaTotal ?? 1) > 1) return "Parcelada: lance sozinha (todas as parcelas restantes)";
+    if (a.natureza === "Encargo financeiro") return "Encargo: use o quadro Encargos do mês";
+    if (compras?.marketplace[a.linha.id]) return "Marketplace: casa pelo valor da nota do vendedor";
+    return "Já lançada no Consistem";
+  };
   const candidatos: Candidatos = {
     linhas: r.aLancar,
     titulos: [...r.divergencias.filter((d) => !d.justificativa).map((d) => d.titulo), ...outros.map((o) => o.titulo)],
@@ -71,16 +81,26 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
         {r.aLancar.length === 0 ? <Vazio texto="Nada a lançar: toda linha da fatura tem título." /> : (
           <Table>
             <TableHeader><TableRow>
-              {agrupaveis.length >= 2 && <TableHead className="w-8" />}<TableHead>Data</TableHead><TableHead>Descrição na fatura</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Natureza</TableHead>
+              {agrupaveis.length >= 2 && (
+                <TableHead className="w-16">
+                  <label className="flex items-center gap-1" title="Selecionar todas as linhas que podem ser agrupadas">
+                    <input type="checkbox" className="size-4" checked={todasMarcadas} aria-label="Selecionar todas as linhas que podem ser agrupadas"
+                      onChange={(e) => setSelecionadas(e.target.checked ? new Set(agrupaveis.map((i) => i.linha.id)) : new Set())} />
+                    Agrupar
+                  </label>
+                </TableHead>
+              )}<TableHead>Data</TableHead><TableHead>Descrição na fatura</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Natureza</TableHead>
               <TableHead>Categoria</TableHead><TableHead>Conta de fluxo</TableHead><TableHead className="text-right">Parcelas</TableHead><TableHead>Vencimento</TableHead><TableHead>Complemento sugerido</TableHead><TableHead>Decisão</TableHead>
             </TableRow></TableHeader>
             <TableBody>
               {r.aLancar.map((a) => (
                 <TableRow key={a.linha.id} className={a.justificativa ? "bg-emerald-50/50" : selecionadas.has(a.linha.id) ? "bg-sky-50" : ""}>
                   {agrupaveis.length >= 2 && (
-                    <TableCell>{agrupavel.has(a.linha.id) && (
+                    <TableCell>{agrupavel.has(a.linha.id) ? (
                       <input type="checkbox" className="size-4" aria-label={`Selecionar ${a.linha.descricao} para lançar agrupado`}
                         checked={selecionadas.has(a.linha.id)} onChange={(e) => marcar(a.linha.id, e.target.checked)} />
+                    ) : (
+                      <input type="checkbox" className="size-4 cursor-not-allowed opacity-40" disabled title={motivoFora(a)} aria-label={motivoFora(a)} />
                     )}</TableCell>
                   )}
                   <TableCell className="tabular-nums">{formatarData(a.linha.dataCompra)}</TableCell>

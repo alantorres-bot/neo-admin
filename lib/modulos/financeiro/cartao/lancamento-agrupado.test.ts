@@ -30,7 +30,7 @@ describe("título agrupado", () => {
     expect(iguais).toEqual({ campos: { ...UBER, ...CARTAO }, divergentes: [] });
     const misto = sugestaoDoGrupo([linha("Dl Uberrides", 1), linha("Postoipe", 2)].map(item));
     expect(misto.divergentes).toEqual(["codFornecedor", "grupoContaFluxoCaixa", "contaFluxoCaixa"]);   // o posto do teste não tem débito: o da Uber vale
-    expect(misto.campos.codFornecedor).toBe(1376);
+    expect(misto.campos.codFornecedor).toBeUndefined();   // fornecedores diferentes: o operador escolhe
   });
   it("soma, fechamento e complemento; recusa uma linha só, parcela e campo vazio", () => {
     const ls = [linha("Dl Uberrides", 29.67), linha("99", 160.2), linha("Uber Pending", 26)];
@@ -60,5 +60,16 @@ describe("título agrupado", () => {
     const r = conciliar({ cartao: sicrediPJ, cartoes: CARTOES_TESTE, vencimento: "2026-10-23", totalInformadoCentavos: 18_987, linhas: ls, titulos: [titulo], estabelecimentos: [], decisoes: [casar] });
     expect(r.aLancar).toEqual([]);
     expect(r.residuoCentavos).toBe(0);
+  });
+});
+
+describe("atalhos por categoria", () => {
+  it("o que não forma grupo por fornecedor junta pela categoria do dicionário", () => {
+    const semFornecedor = (d: string, v: number, categoria: string): ItemGrupo => ({ ...item(linha(d, v)), sugestao: { padrao: null, campos: {}, origem: {} as never }, categoria });
+    const g = gruposSugeridos([
+      item(linha("Dl Uberrides", 10)), item(linha("99", 20)),
+      semFornecedor("Restaurante A", 30, "Alimentação"), semFornecedor("Lanchonete B", 40, "Alimentação"), semFornecedor("Loja C", 50, "[CONFERIR]"),
+    ]);
+    expect(g.map((x) => [x.chave, x.linhaIds.length, x.totalCentavos])).toEqual([["c:Alimentação", 2, 7_000], ["f:1376", 2, 3_000]]);
   });
 });

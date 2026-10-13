@@ -21,7 +21,7 @@ import { SeletorFornecedor } from "./compras";
 /** Linhas que podem ir para um agrupado: com proposta de compra e à vista. */
 export function itensAgrupaveis(aLancar: readonly ItemALancar[], compras: QuadroCompras): ItemGrupo[] {
   return aLancar.filter((a) => compras.propostas[a.linha.id] && aVista(a.linha))
-    .map((a) => ({ linha: a.linha, sugestao: compras.propostas[a.linha.id].sugestao, fornecedorNome: compras.propostas[a.linha.id].fornecedorNome }));
+    .map((a) => ({ linha: a.linha, sugestao: compras.propostas[a.linha.id].sugestao, fornecedorNome: compras.propostas[a.linha.id].fornecedorNome, categoria: a.categoria }));
 }
 
 export function BarraAgrupado({ faturaId, itens, compras, selecionadas, setSelecionadas }: {
@@ -32,8 +32,13 @@ export function BarraAgrupado({ faturaId, itens, compras, selecionadas, setSelec
   const total = escolhidos.reduce((s, i) => s + i.linha.valorCentavos, 0);
   if (itens.length < 2) return null;
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-[3px] border border-grade bg-cabecalho p-2 text-sm">
-      <span className="font-medium">Lançar agrupado:</span>
+    <div className="space-y-2 rounded-[3px] border border-grade bg-cabecalho p-2 text-sm">
+      <p>
+        <strong>Lançar agrupado:</strong> marque na coluna “Agrupar” as linhas que quiser juntar num único título — de qualquer fornecedor —
+        e clique em <strong>Lançar agrupado</strong>. O fornecedor e as contas você escolhe no diálogo.
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+      {grupos.length > 0 && <span className="text-muted-foreground">Atalhos:</span>}
       {grupos.map((g) => (
         <Button key={g.chave} type="button" size="sm" variant="outline" onClick={() => setSelecionadas(new Set(g.linhaIds))}>
           Agrupar: {g.rotulo} — {g.linhaIds.length} linhas, {formatarMoeda(g.totalCentavos)}
@@ -42,6 +47,7 @@ export function BarraAgrupado({ faturaId, itens, compras, selecionadas, setSelec
       <span className="ml-auto text-muted-foreground">{escolhidos.length} selecionada{escolhidos.length === 1 ? "" : "s"} · {formatarMoeda(total)}</span>
       {escolhidos.length > 0 && <Button type="button" size="sm" variant="ghost" onClick={() => setSelecionadas(new Set())}>Limpar</Button>}
       <DialogoLancarAgrupado faturaId={faturaId} itens={escolhidos} compras={compras} aoConcluir={() => setSelecionadas(new Set())} />
+      </div>
     </div>
   );
 }
@@ -61,9 +67,9 @@ function DialogoLancarAgrupado({ faturaId, itens, compras, aoConcluir }: { fatur
     setCampos(s.campos);
     setTextos(Object.fromEntries(CAMPOS_COMPRA.map((k) => [k, String(s.campos[k] ?? "")])));
     setDivergentes(s.divergentes);
-    const comFornecedor = itens.find((i) => i.sugestao.campos.codFornecedor === s.campos.codFornecedor && i.fornecedorNome);
+    const comFornecedor = s.campos.codFornecedor ? itens.find((i) => i.sugestao.campos.codFornecedor === s.campos.codFornecedor && i.fornecedorNome) : undefined;
     setFornecedorNome(comFornecedor?.fornecedorNome ?? null);
-    setRotulo(comFornecedor?.fornecedorNome ?? itens.find((i) => i.sugestao.padrao)?.sugestao.padrao ?? "");
+    setRotulo(comFornecedor?.fornecedorNome ?? (s.divergentes.includes("codFornecedor") ? "" : itens.find((i) => i.sugestao.padrao)?.sugestao.padrao ?? ""));
     setErro(undefined);
     setAberto(true);
   }
@@ -82,7 +88,9 @@ function DialogoLancarAgrupado({ faturaId, itens, compras, aoConcluir }: { fatur
   }
   return (
     <>
-      <Button type="button" size="sm" onClick={abrir} disabled={itens.length < 2}>Lançar agrupado</Button>
+      <Button type="button" size="sm" onClick={abrir} disabled={itens.length < 2}>
+        {itens.length < 2 ? "Marque 2 ou mais linhas" : `Lançar agrupado (${itens.length} linhas · ${formatarMoeda(itens.reduce((s, i) => s + i.linha.valorCentavos, 0))})`}
+      </Button>
       {aberto && (
         <Dialog open onOpenChange={(v) => { if (!v && !pendente) setAberto(false); }}>
           <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
@@ -97,8 +105,11 @@ function DialogoLancarAgrupado({ faturaId, itens, compras, aoConcluir }: { fatur
                 </li>
               ))}
             </ul>
-            {divergentes.length > 0 && (
-              <p className="rounded-[3px] border border-amber-300 bg-amber-50 p-2 text-sm">As linhas são de tipos diferentes ({divergentes.map((k) => ROTULO_CAMPO_COMPRA[k].toLowerCase()).join(", ")}): veio a sugestão da primeira. Confira antes de lançar.</p>
+            {divergentes.includes("codFornecedor") && (
+              <p className="rounded-[3px] border border-amber-300 bg-amber-50 p-2 text-sm">As linhas sugerem <strong>fornecedores diferentes</strong>: escolha o fornecedor do título e dê um nome ao grupo.</p>
+            )}
+            {divergentes.some((k) => k !== "codFornecedor") && (
+              <p className="rounded-[3px] border border-amber-300 bg-amber-50 p-2 text-sm">As linhas têm códigos diferentes ({divergentes.filter((k) => k !== "codFornecedor").map((k) => ROTULO_CAMPO_COMPRA[k].toLowerCase()).join(", ")}): veio a sugestão da primeira. Confira antes de lançar.</p>
             )}
             <SeletorFornecedor empresaId={compras.empresaId} cod={campos.codFornecedor} nome={fornecedorNome}
               aoEscolher={(cod, nome) => { setCampos((c) => ({ ...c, codFornecedor: cod })); setTextos((t) => ({ ...t, codFornecedor: String(cod) })); setFornecedorNome(nome); }} />

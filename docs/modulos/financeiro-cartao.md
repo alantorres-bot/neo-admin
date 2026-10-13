@@ -197,7 +197,10 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     e entrada no fechamento, documento DDMM do fechamento + "-" + o menor número de linha, complemento
     `CARTÃO <NOME> 1x — <GRUPO> (<n> LANÇ.)`. Códigos: os comuns às sugestões das linhas (diferentes → aviso). Na aba A lançar:
     caixa de seleção por linha, atalhos "Agrupar: <fornecedor> — n linhas, R$ X" e "Lançar agrupado". Lançado: "casar" liga
-    todas as linhas. Estabelecimento "99" (a fatura traz só "99").
+    todas as linhas. Estabelecimento "99" (a fatura traz só "99"). **Seleção livre** (pedido do Alan): qualquer linha elegível,
+    de qualquer fornecedor — coluna "Agrupar" com "selecionar todas", atalhos por fornecedor e por categoria do dicionário;
+    linha que não pode entrar mostra o motivo (parcelada, estorno, encargo, marketplace, já lançada); com fornecedores
+    diferentes o fornecedor vem vazio para o operador escolher.
 53. **Documento único por fornecedor** (recusa real de 13/10/2026: duas compras da 99 no mesmo dia, documento 0810 no 1376):
     o documento da compra leva o número da linha na fatura (DDMM-ordem, e /k nas parcelas). **Contas contábeis:** o painel recusa
     débito igual ao crédito e débito igual à conta de crédito padrão do cartão (2004, fornecedores) — o título 33626 saiu com
