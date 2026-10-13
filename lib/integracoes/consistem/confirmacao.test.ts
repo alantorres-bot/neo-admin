@@ -22,7 +22,7 @@ const t = (id: string, extra: Partial<TituloConfirmacao> = {}): TituloConfirmaca
 
 describe("pendenciasConfirmacaoObsoletas", () => {
   const grupo = (id: string, extra: Partial<TituloConfirmacao> = {}) =>
-    planejarConfirmacoes([t(id, { valorCentavos: 30_000_00, ...extra })], HOJE)[0];
+    planejarConfirmacoes([t(id, { valorCentavos: 30_000_00, ...extra })], HOJE, undefined, undefined, { confirmarContagem: new Set(["c1"]) })[0];
   const abertaConfirmar = (id: string, cliente: string, titulo: string) => ({ id, referencia_id: cliente, titulo });
 
   it("cliente que saiu da janela (paga, vencida, abaixo do corte): Confirmar e Ligar abertas são canceladas", () => {
@@ -183,8 +183,14 @@ describe("unidades (Matriz e Filial Contagem)", () => {
     expect(grupos).toHaveLength(1); // só a Matriz passa de R$ 25.000
     expect(grupos[0].unidade).toBe("matriz");
   });
+  it("Filial Contagem: só confirma o cliente marcado, sem corte de valor (0158)", () => {
+    const filial = [tit({ unidade: "contagem", valorCentavos: 50_00 }), tit({ id: "b", contraparteId: "c2", unidade: "contagem", valorCentavos: 9_000_000 })];
+    expect(planejarConfirmacoes(filial, "2026-10-08")).toEqual([]);
+    const g = planejarConfirmacoes(filial, "2026-10-08", undefined, undefined, { confirmarContagem: new Set(["c1"]) });
+    expect(g.map((x) => x.contraparteId)).toEqual(["c1"]);
+  });
   it("o título da pendência da Filial leva o sufixo", () => {
-    const [g] = planejarConfirmacoes([tit({ unidade: "contagem" })], "2026-10-08");
+    const [g] = planejarConfirmacoes([tit({ unidade: "contagem" })], "2026-10-08", undefined, undefined, { confirmarContagem: new Set(["c1"]) });
     expect(tituloPendenciaConfirmacao(g)).toBe("Confirmar pagamento: Cliente (Filial Contagem) — vence 12/10");
     expect(tituloPendenciaLigar(g)).toBe("Ligar para confirmar pagamento: Cliente (Filial Contagem) — vence 12/10");
   });

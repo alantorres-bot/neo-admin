@@ -85,9 +85,18 @@ export function agruparPorCliente(titulos: readonly TituloConfirmacao[], hoje: s
   return [...porCliente.values()].map(montarGrupo).sort((a, b) => a.vencimentoMaisProximo.localeCompare(b.vencimentoMaisProximo) || b.totalCentavos - a.totalCentavos);
 }
 
-/** Clientes que passam do corte (soma das parcelas da janela >= mínimo), do vencimento mais próximo e do maior valor. */
-export function planejarConfirmacoes(titulos: readonly TituloConfirmacao[], hoje: string, minimoCentavos = MINIMO_PADRAO_CENTAVOS, janela = DIAS_JANELA_CONFIRMACAO): GrupoConfirmacao[] {
-  return agruparPorCliente(titulos, hoje, janela).filter((g) => g.totalCentavos >= minimoCentavos);
+/**
+ * Clientes a confirmar, do vencimento mais próximo e do maior valor.
+ *  - Matriz: os que passam do corte (soma das parcelas da janela >= mínimo).
+ *  - Filial Contagem: só os clientes marcados "confirmar pagamento" no cadastro (`confirmarContagem`), sem corte de valor;
+ *    em geral os clientes da filial não precisam confirmar (migration 0158).
+ */
+export function planejarConfirmacoes(
+  titulos: readonly TituloConfirmacao[], hoje: string, minimoCentavos = MINIMO_PADRAO_CENTAVOS, janela = DIAS_JANELA_CONFIRMACAO,
+  opcoes: { confirmarContagem?: ReadonlySet<string> } = {},
+): GrupoConfirmacao[] {
+  return agruparPorCliente(titulos, hoje, janela).filter((g) =>
+    g.unidade === "contagem" ? (opcoes.confirmarContagem?.has(g.contraparteId) ?? false) : g.totalCentavos >= minimoCentavos);
 }
 
 /**

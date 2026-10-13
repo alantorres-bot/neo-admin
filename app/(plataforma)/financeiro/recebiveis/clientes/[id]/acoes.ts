@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcesso, temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
@@ -22,4 +22,23 @@ export async function definirCartaCessao(entrada: z.input<typeof esquema>): Prom
   revalidatePath(`/financeiro/recebiveis/clientes/${dados.data.contraparteId}`);
   revalidatePath("/financeiro/filial", "layout");
   return { ok: true, aviso: dados.data.exige ? "Cliente marcado: a carta de cessão entra no kit quando o título for cedido." : "Marca retirada: a carta de cessão deixa de ser exigida." };
+}
+
+const esquemaConfirmacao = z.object({ contraparteId: z.string().uuid(), confirmar: z.boolean() });
+
+/**
+ * Marca o cliente da Filial Contagem que precisa confirmar o pagamento antes do vencimento (0158). Pode Cuiabá (operador do
+ * Financeiro) ou a filial (usuário restrito), para cliente com título na unidade: a função do banco confere.
+ */
+export async function definirConfirmacao(entrada: z.input<typeof esquemaConfirmacao>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.recebiveis", "operador")) return { ok: false, erro: "Somente operador altera o cadastro do cliente." };
+  const dados = esquemaConfirmacao.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: "Dados inválidos." };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("rec_cliente_definir_confirmacao", { p_contraparte: dados.data.contraparteId, p_confirmar: dados.data.confirmar });
+  if (error) return { ok: false, erro: error.code === "P0001" ? error.message : "Não foi possível salvar. Tente novamente." };
+  revalidatePath(`/financeiro/recebiveis/clientes/${dados.data.contraparteId}`);
+  revalidatePath("/financeiro/cobranca", "layout");
+  return { ok: true, aviso: dados.data.confirmar ? "A confirmação de pagamento passa a valer para este cliente." : "Este cliente não precisa mais confirmar o pagamento." };
 }

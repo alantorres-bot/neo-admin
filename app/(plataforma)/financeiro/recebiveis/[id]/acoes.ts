@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { MODULO_RECEBIVEIS, normalizarLinhaDigitavel } from "@/lib/modulos/financeiro/recebiveis/boleto";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { carregarFicha } from "./dados";
@@ -17,7 +17,7 @@ const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P
 
 async function exigirOperador(): Promise<{ ok: true } | { ok: false; erro: string }> {
   const sessao = await exigirSessao();
-  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro ou acima pode fazer isto." };
+  if (!temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.recebiveis", "operador")) return { ok: false, erro: "Somente operador do Financeiro ou acima pode fazer isto." };
   return { ok: true };
 }
 

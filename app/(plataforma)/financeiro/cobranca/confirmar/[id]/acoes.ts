@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
@@ -27,7 +27,7 @@ const ROTULO_CANAL = { whatsapp: "por WhatsApp", telefone: "por telefone", email
  */
 export async function registrarConfirmacao(entrada: z.input<typeof esquema>): Promise<Resultado> {
   const sessao = await exigirSessao();
-  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro ou acima pode registrar a confirmação." };
+  if (!temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.cobranca", "operador")) return { ok: false, erro: "Somente operador do Financeiro ou acima pode registrar a confirmação." };
   const dados = esquema.safeParse(entrada);
   if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
   const { tituloIds, resultado, canal, observacao } = dados.data;

@@ -506,3 +506,31 @@ Agora cada NF da filial vira um **kit** (menu Financeiro > Faturamento Filial, m
     - Para: o último destinatário usado para o cliente ou os contatos dele. Cc: `financeiro.filial.copia_cliente`.
     - Tudo editável antes. Nada é enviado pelo sistema.
   - **Enviado ao cliente** (`rec_kit_marcar_enviado`): kit "enviada", parcelas com boleto como "boleto enviado", histórico e pendência "Enviar kit ao cliente" concluída. A cobrança segue a régua normal.
+
+## 35. Cobrança da Filial pela própria filial — Fase E (13/10/2026)
+
+A filial (usuário restrito à unidade, §34 Fase D) passa a **cobrar os clientes de Contagem** (migration 0158). Cuiabá continua vendo tudo.
+
+**O que a filial vê e faz:**
+- **Menu:** Faturamento Filial, Cobrança e Recebíveis (`MODULOS_DA_UNIDADE` em `lib/nucleo/permissoes.ts`).
+- **Cobrança:** só as abas **A enviar · Confirmar pagamento · Cobrar** (`abasDaCobranca`), já em Contagem, sem o seletor de unidade e sem cadastrar contato. "Boletos a anexar", "Baixas" e "Regra" ficam com Cuiabá.
+- **Recebíveis:** carteira, ficha do título e ficha do cliente, só Contagem. A "Fila do dia" não aparece para ela.
+- **E-mail de cobrança e de boleto:** rascunho no **Gmail dela**. A Edge Function `rec-rascunho-gmail` usa `gmail_contas` quando quem chama é da filial e recusa parcela de outra unidade. Para Cuiabá continua a caixa do projeto.
+
+**Como o banco recorta a unidade:**
+- Os módulos inteiros não são abertos para a filial. Cada liberação é por unidade:
+  - **Histórico (`interacoes`):** só o de título da unidade.
+  - **Pendências:** só as de título da unidade ou com o sufixo "(Filial Contagem)".
+  - **Promessas, partes da AKF e notas de saída:** só as da unidade.
+  - **Mensagens:** só as dela.
+- Ela lê a régua e os modelos de mensagem. Funções de apoio: `tem_acesso_unidade`, `titulo_da_unidade`, `pendencia_da_unidade`.
+- **Títulos:** a filial atualiza os da unidade, mas o gatilho `trg_rec_titulos_zz_campos_unidade` só deixa mudar os campos da cobrança (estágio, pausa da régua, linha digitável, boleto enviado, forma de pagamento, contestado). Por isso as funções de cobrança que já existem funcionam para ela sem reescrita.
+
+**Confirmação de pagamento:**
+- Marca nova **"Confirmar o pagamento antes do vencimento"** no cadastro do cliente (`rec_clientes_config.confirmar_pagamento`), na ficha do cliente, gravada por `rec_cliente_definir_confirmacao`.
+- **Contagem:** só confirma o cliente **marcado**, sem corte de valor; o padrão é não confirmar.
+- **Matriz:** regra de sempre (valor mínimo).
+- Vale na fila do app e nas pendências da sincronização (`planejarConfirmacoes(..., { confirmarContagem })`).
+
+**Correção:** o histórico das telas "Cobrar" e "Confirmar" era lido só do módulo `financeiro.cobranca`, mas as funções gravam em `financeiro.recebiveis`, e por isso ele aparecia vazio. Agora lê os dois.
+

@@ -12,7 +12,7 @@ import {
 } from "@/lib/modulos/financeiro/recebiveis/carteira";
 import { sanitizarBusca } from "@/lib/nucleo/erros";
 import { FUSO, formatarData } from "@/lib/nucleo/fila";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcesso, temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { ROTULO_UNIDADE, type Unidade } from "@/supabase/functions/_shared/cobranca";
@@ -48,7 +48,7 @@ type LinhaTitulo = {
 export default async function PaginaRecebiveis({ searchParams }: PageProps<"/financeiro/recebiveis">) {
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO);
-  if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro")) notFound();
+  if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.recebiveis")) notFound();
   const ehGestor = temAcesso(sessao.acesso, "financeiro", "gestor");
 
   const parametros = await searchParams;
@@ -58,7 +58,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
   const pagina = Math.max(1, Number.parseInt(primeiro(parametros.pagina), 10) || 1);
   // Unidade: Matriz ou Filial Contagem (documento que começa com 400). Sem escolha, mostra as duas.
   const unidadePedida = primeiro(parametros.unidade);
-  const unidade: Unidade | null = unidadePedida === "matriz" || unidadePedida === "contagem" ? unidadePedida : null;
+  const unidade: Unidade | null = sessao.acesso.restrito ? "contagem" : unidadePedida === "matriz" || unidadePedida === "contagem" ? unidadePedida : null;
 
   const supabase = await criarClienteServidor();
 
@@ -223,7 +223,7 @@ export default async function PaginaRecebiveis({ searchParams }: PageProps<"/fin
         </div>
       </div>
 
-      <RecebiveisAbas ativa="carteira" />
+      <RecebiveisAbas ativa="carteira" restrito={!!sessao.acesso.restrito} />
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
       <nav aria-label="Unidade" className="flex flex-wrap gap-px overflow-hidden rounded-[3px] border border-grade bg-grade sm:w-fit">

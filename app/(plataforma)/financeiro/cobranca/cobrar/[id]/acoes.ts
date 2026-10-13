@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { MODULO_RECEBIVEIS } from "@/lib/modulos/financeiro/recebiveis/boleto";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { emailCobranca } from "@/supabase/functions/_shared/cobranca";
@@ -32,7 +32,7 @@ const esquema = z.object({
  */
 export async function registrarCobranca(entrada: z.input<typeof esquema>): Promise<Resultado> {
   const sessao = await exigirSessao();
-  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro ou acima pode registrar a cobrança." };
+  if (!temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.cobranca", "operador")) return { ok: false, erro: "Somente operador do Financeiro ou acima pode registrar a cobrança." };
   const dados = esquema.safeParse(entrada);
   if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
   const { tituloIds, marco, resultado, canal, data, observacao } = dados.data;
@@ -60,7 +60,7 @@ export async function registrarCobranca(entrada: z.input<typeof esquema>): Promi
  */
 export async function criarRascunhoCobranca(clienteId: string, marco: number, unidade: "matriz" | "contagem"): Promise<ResultadoRascunho> {
   const sessao = await exigirSessao();
-  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro ou acima cria rascunhos de e-mail." };
+  if (!temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.cobranca", "operador")) return { ok: false, erro: "Somente operador do Financeiro ou acima cria rascunhos de e-mail." };
   if (!z.string().uuid().safeParse(clienteId).success) return { ok: false, erro: "Cliente inválido." };
 
   const supabase = await criarClienteServidor();

@@ -12,10 +12,10 @@ const ABAS: { chave: AbaRecebiveis; rotulo: string; href: string }[] = [
  * Barra de seções de Recebíveis (Carteira, Fila do dia e Clientes e contatos; o trabalho de cobrança fica em Financeiro > Cobrança). A aba ativa vem da página que a
  * desenha; o número ao lado do rótulo só aparece onde a página já o calculou.
  */
-export function RecebiveisAbas({ ativa, contagens = {} }: { ativa: AbaRecebiveis; contagens?: Partial<Record<AbaRecebiveis, number>> }) {
+export function RecebiveisAbas({ ativa, contagens = {}, restrito = false }: { ativa: AbaRecebiveis; contagens?: Partial<Record<AbaRecebiveis, number>>; restrito?: boolean }) {
   return (
     <nav aria-label="Seções do contas a receber" className="flex gap-1 overflow-x-auto border-b">
-      {ABAS.map((a) => {
+      {ABAS.filter((a) => !restrito || a.chave !== "fila").map((a) => {
         const n = contagens[a.chave];
         return (
           <Link

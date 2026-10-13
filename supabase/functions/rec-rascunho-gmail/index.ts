@@ -12,7 +12,7 @@
 //
 // Deploy: npx supabase functions deploy rec-rascunho-gmail
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { criarRascunho, GmailErro, lerCredenciais, montarMime, obterAccessToken, type AnexoEmail } from "../_shared/gmail.ts";
+import { criarRascunho, GmailErro, lerCredenciais, montarMime, obterAccessToken, type AnexoEmail, type CredenciaisGmail } from "../_shared/gmail.ts";
 
 const MODULO = "financeiro.recebiveis";
 const LIMITE_ANEXOS_BYTES = 20 * 1024 * 1024;
@@ -37,12 +37,13 @@ Deno.serve(async (req) => {
   const chaveServico = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !chaveAnonima || !chaveServico) return responder({ erro: "Função mal configurada." }, 500);
 
-  // 1) Quem chama: operador do Financeiro logado.
+  // 1) Quem chama: operador do Financeiro logado, ou operador da filial (usuário restrito à unidade, migration 0158).
   const comoUsuario = createClient(url, chaveAnonima, { global: { headers: { Authorization: autorizacao } } });
   const { data: quem, error: erroUsuario } = await comoUsuario.auth.getUser();
   if (erroUsuario || !quem.user) return responder({ erro: "Sessão inválida." }, 401);
-  const { data: permitido, error: erroPermissao } = await comoUsuario.rpc("tem_acesso_modulo", { p_modulo: MODULO, p_minimo: "operador" });
-  if (erroPermissao || permitido !== true) return responder({ erro: "Somente operador do Financeiro ou acima cria rascunhos de e-mail." }, 403);
+  const { data: permitido } = await comoUsuario.rpc("tem_acesso_modulo", { p_modulo: MODULO, p_minimo: "operador" });
+  const { data: daFilial } = permitido === true ? { data: false } : await comoUsuario.rpc("tem_acesso_unidade", { p_minimo: "operador" });
+  if (permitido !== true && daFilial !== true) return responder({ erro: "Somente operador do Financeiro ou acima cria rascunhos de e-mail." }, 403);
   const usuarioId = quem.user.id;
 
   let corpo: { mensagem_id?: unknown; titulo_ids?: unknown; modo?: unknown };
@@ -59,13 +60,29 @@ Deno.serve(async (req) => {
     return responder({ erro: "Mensagem ou parcelas inválidas." }, 400);
   }
 
-  // 2) Credenciais do Gmail (antes de qualquer trabalho): faltando, diz só os NOMES.
-  const cred = lerCredenciais((n) => Deno.env.get(n));
-  if (!cred.ok) {
-    return responder({ erro: `O Gmail ainda não está configurado neste projeto (faltam: ${cred.faltando.join(", ")}). Rode scripts/gmail-autorizar.mjs.` }, 500);
-  }
-
   const banco = createClient(url, chaveServico, { auth: { autoRefreshToken: false, persistSession: false } });
+
+  // 2) Credenciais do Gmail (antes de qualquer trabalho). Cuiabá: a caixa do projeto (segredos GMAIL_*). Filial: o Gmail da
+  // própria pessoa (gmail_contas, docs/GMAIL_POR_USUARIO.md), e só para títulos da unidade dela.
+  let credenciais: CredenciaisGmail;
+  if (daFilial === true) {
+    const { data: perfil } = await banco.from("perfis").select("unidade_restrita").eq("id", usuarioId).maybeSingle();
+    const { data: titulosDaUnidade } = await banco.from("rec_titulos").select("id").in("id", tituloIds).eq("unidade", perfil?.unidade_restrita ?? "");
+    if (!perfil?.unidade_restrita || (titulosDaUnidade ?? []).length !== tituloIds.length) return responder({ erro: "Há parcela fora da sua unidade." }, 403);
+    const clientId = Deno.env.get("GMAIL_WEB_CLIENT_ID") ?? "";
+    const clientSecret = Deno.env.get("GMAIL_WEB_CLIENT_SECRET") ?? "";
+    if (!clientId || !clientSecret) return responder({ erro: "O Gmail por usuário ainda não está configurado neste projeto." }, 500);
+    const { data: conta } = await banco.rpc("gmail_refresh_token", { p_perfil: usuarioId });
+    const c = conta as { email: string; refresh_token: string } | null;
+    if (!c?.refresh_token) return responder({ erro: "Conecte o seu Gmail antes (no Faturamento Filial, ficha de um kit: \"Conectar meu Gmail\")." }, 409);
+    credenciais = { clientId, clientSecret, refreshToken: c.refresh_token, remetente: c.email };
+  } else {
+    const cred = lerCredenciais((n) => Deno.env.get(n));
+    if (!cred.ok) {
+      return responder({ erro: `O Gmail ainda não está configurado neste projeto (faltam: ${cred.faltando.join(", ")}). Rode scripts/gmail-autorizar.mjs.` }, 500);
+    }
+    credenciais = cred.credenciais;
+  }
 
   // 3) A mensagem: do usuário, e-mail, ainda rascunho e sem rascunho já criado.
   const { data: mensagem } = await banco.from("mensagens")
@@ -102,8 +119,8 @@ Deno.serve(async (req) => {
   const buscar = (u: string, init: { method: string; headers: Record<string, string>; body?: string | Uint8Array }) => fetch(u, init as RequestInit);
   let rascunho;
   try {
-    const mime = montarMime({ de: cred.credenciais.remetente, para: mensagem.destinatario as string, assunto: (mensagem.assunto as string | null) ?? "", corpo: mensagem.corpo as string, anexos: arquivos });
-    const acesso = await obterAccessToken(buscar, cred.credenciais);
+    const mime = montarMime({ de: credenciais.remetente, para: mensagem.destinatario as string, assunto: (mensagem.assunto as string | null) ?? "", corpo: mensagem.corpo as string, anexos: arquivos });
+    const acesso = await obterAccessToken(buscar, credenciais);
     rascunho = await criarRascunho(buscar, acesso, mime);
   } catch (e) {
     const texto = e instanceof GmailErro ? e.message : "Falha inesperada ao criar o rascunho.";

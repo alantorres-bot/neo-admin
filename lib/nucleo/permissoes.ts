@@ -24,7 +24,7 @@ export type Acesso = {
 };
 
 /** Módulos que o usuário restrito a uma unidade enxerga. */
-export const MODULOS_DA_UNIDADE: readonly string[] = ["financeiro.filial"];
+export const MODULOS_DA_UNIDADE: readonly string[] = ["financeiro.filial", "financeiro.cobranca", "financeiro.recebiveis"];
 
 export function nivelAtinge(nivel: NivelAcesso, minimo: NivelAcesso): boolean {
   return NIVEIS.indexOf(nivel) >= NIVEIS.indexOf(minimo);

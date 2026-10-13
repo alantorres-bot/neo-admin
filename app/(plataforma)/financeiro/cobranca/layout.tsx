@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { AbasCobrancaComNumeros, AbasCobrancaSemNumeros } from "./abas-cobranca";
 import { MODULO_COBRANCA } from "./fila";
@@ -8,7 +8,7 @@ import { MODULO_COBRANCA } from "./fila";
 export default async function LayoutCobranca({ children }: LayoutProps<"/financeiro/cobranca">) {
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO_COBRANCA);
-  if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro")) notFound();
+  if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.cobranca")) notFound();
 
   return (
     <div className="space-y-6">
@@ -18,8 +18,8 @@ export default async function LayoutCobranca({ children }: LayoutProps<"/finance
           O trabalho do contas a receber, por etapa. As listas são calculadas na hora a partir da situação dos títulos: ao fazer a tarefa, o item sai da lista sozinho.
         </p>
       </div>
-      <Suspense fallback={<AbasCobrancaSemNumeros />}>
-        <AbasCobrancaComNumeros />
+      <Suspense fallback={<AbasCobrancaSemNumeros restrito={!!sessao.acesso.restrito} />}>
+        <AbasCobrancaComNumeros restrito={!!sessao.acesso.restrito} />
       </Suspense>
       {children}
     </div>

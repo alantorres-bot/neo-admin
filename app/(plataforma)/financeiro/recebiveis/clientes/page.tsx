@@ -11,7 +11,7 @@ import { emCentavos, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/c
 import { DIAS_ESCOPO_CADASTRO, titulaNoEscopoDeCadastro } from "@/lib/modulos/financeiro/recebiveis/clientes";
 import { formatarWhatsapp } from "@/lib/nucleo/documentos";
 import { sanitizarBusca } from "@/lib/nucleo/erros";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { ROTULO_UNIDADE } from "@/supabase/functions/_shared/cobranca";
@@ -42,7 +42,7 @@ type LinhaCliente = {
 export default async function PaginaClientes({ searchParams }: PageProps<"/financeiro/recebiveis/clientes">) {
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO);
-  if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro")) notFound();
+  if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.recebiveis")) notFound();
 
   const parametros = await searchParams;
   const abaPedida = primeiro(parametros.aba);
@@ -128,7 +128,7 @@ export default async function PaginaClientes({ searchParams }: PageProps<"/finan
         </p>
       </div>
 
-      <RecebiveisAbas ativa="clientes" contagens={{ clientes: contagens.cadastrar }} />
+      <RecebiveisAbas ativa="clientes" contagens={{ clientes: contagens.cadastrar }} restrito={!!sessao.acesso.restrito} />
 
       <nav aria-label="Lista" className="flex flex-wrap gap-px overflow-hidden rounded-[3px] border border-grade bg-grade">
         {ABAS.map((a) => {

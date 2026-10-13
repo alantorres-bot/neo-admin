@@ -12,13 +12,13 @@ import { descreverAtraso, formatarMoeda, formatarValor, grupoDaSituacao, ROTULO_
 import { clienteNoEscopoDeCadastro, DIAS_ESCOPO_CADASTRO } from "@/lib/modulos/financeiro/recebiveis/clientes";
 import { formatarWhatsapp } from "@/lib/nucleo/documentos";
 import { FUSO, formatarData } from "@/lib/nucleo/fila";
-import { temAcesso, temAcessoAlgumaArea } from "@/lib/nucleo/permissoes";
+import { temAcesso, temAcessoAlgumaArea, temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { ROTULO_CANAL, ROTULO_TIPO_CONTRAPARTE } from "@/lib/nucleo/rotulos";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import type { Contato, Contraparte } from "@/lib/nucleo/tipos";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { ROTULO_UNIDADE } from "@/supabase/functions/_shared/cobranca";
-import { MarcaCartaCessao } from "./carta-cessao";
+import { MarcaCartaCessao, MarcaConfirmacao } from "./carta-cessao";
 import { finalidadesDesconhecidas, normalizarFinalidade, ROTULO_FINALIDADE, temContatoUtil, type Finalidade } from "@/supabase/functions/_shared/contatos";
 
 export const metadata: Metadata = { title: "Cliente" };
@@ -37,7 +37,7 @@ export default async function PaginaCliente({ params }: PageProps<"/financeiro/r
   if (!UUID.test(id)) notFound();
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO);
-  if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro")) notFound();
+  if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.recebiveis")) notFound();
   const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador") && temAcessoAlgumaArea(sessao.acesso, sessao.areas, "operador");
   const podeColaborador = temAcesso(sessao.acesso, "rh", "operador");
 
@@ -50,7 +50,7 @@ export default async function PaginaCliente({ params }: PageProps<"/financeiro/r
     supabase.from("contatos").select("id, contraparte_id, nome, funcao, email, whatsapp, telefone, canal_preferido, finalidades, ativo").eq("contraparte_id", id).order("ativo", { ascending: false }).order("nome"),
     supabase.from("rec_vw_titulos").select("id, documento, parcela, vencimento, valor, dias_atraso, faixa, estagio, cedido, contestado, unidade").eq("contraparte_id", id).neq("faixa", "encerrado").order("vencimento").limit(500),
     supabase.from("interacoes").select("id, referencia_id, tipo, descricao, criado_em, usuario_id").eq("contraparte_id", id).in("modulo", [MODULO, "financeiro.akf"]).order("criado_em", { ascending: false }).limit(30),
-    supabase.from("rec_clientes_config").select("exige_carta_cessao").eq("contraparte_id", id).maybeSingle(),
+    supabase.from("rec_clientes_config").select("exige_carta_cessao, confirmar_pagamento").eq("contraparte_id", id).maybeSingle(),
   ]);
   const contatos = (contatosBrutos ?? []) as Contato[];
   const titulos = (titulosBrutos ?? []) as TituloAberto[];
@@ -88,7 +88,13 @@ export default async function PaginaCliente({ params }: PageProps<"/financeiro/r
             {titulos.length} {titulos.length === 1 ? "título em aberto" : "títulos em aberto"} · {formatarMoeda(total)}
             {unidades.length > 0 && <> · {unidades.map((u) => ROTULO_UNIDADE[u]).join(" e ")}</>}
           </p>
-          <div className="mt-2"><MarcaCartaCessao contraparteId={cliente.id} exige={!!config?.exige_carta_cessao} podeOperar={podeOperar} /></div>
+          <div className="mt-2 space-y-1">
+            {!sessao.acesso.restrito && <MarcaCartaCessao contraparteId={cliente.id} exige={!!config?.exige_carta_cessao} podeOperar={podeOperar} />}
+            {porUnidade("contagem").length > 0 && (
+              <MarcaConfirmacao contraparteId={cliente.id} confirmar={!!config?.confirmar_pagamento}
+                podeOperar={temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.recebiveis", "operador")} />
+            )}
+          </div>
         </div>
         {podeOperar && <DialogoContraparte contraparte={cliente} podeColaborador={podeColaborador} />}
       </div>

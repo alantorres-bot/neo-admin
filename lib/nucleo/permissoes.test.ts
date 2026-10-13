@@ -106,7 +106,8 @@ describe("usuário restrito à unidade (0152)", () => {
   it("só o módulo da unidade, com o nível do Financeiro", () => {
     expect(temAcessoModulo(restrito, comFilial, "financeiro.filial", "operador")).toBe(true);
     expect(temAcessoModulo(restrito, comFilial, "financeiro.filial", "gestor")).toBe(false);
-    expect(temAcessoModulo(restrito, comFilial, "financeiro.recebiveis")).toBe(false);
+    expect(temAcessoModulo(restrito, comFilial, "financeiro.recebiveis")).toBe(true); // Fase E (0158): cobrança da filial
+    expect(temAcessoModulo(restrito, comFilial, "juridico.processos")).toBe(false);
     expect(temAcesso(restrito, "financeiro")).toBe(false);
   });
 
@@ -116,9 +117,12 @@ describe("usuário restrito à unidade (0152)", () => {
     expect(temAcessoModulo(comum, comFilial, "nao.existe")).toBe(false);
   });
 
-  it("menu: só Financeiro > Faturamento Filial", () => {
+  it("menu: só Financeiro, com Recebíveis e Faturamento Filial (os módulos da unidade que estão ativos)", () => {
     expect(montarMenu(areas, comFilial, restrito, [], { incluirVazias: true })).toEqual([
-      { area: areas[1], modulos: [{ codigo: "financeiro.filial", nome: "Faturamento Filial", rota: "/financeiro/filial" }] },
+      { area: areas[1], modulos: [
+        { codigo: "financeiro.recebiveis", nome: "Recebíveis", rota: "/financeiro/recebiveis" },
+        { codigo: "financeiro.filial", nome: "Faturamento Filial", rota: "/financeiro/filial" },
+      ] },
     ]);
     expect(montarMenu(areas, comFilial, { ...restrito, restrito: { unidade: "contagem", nivel: "sem_acesso" } })).toEqual([]);
   });

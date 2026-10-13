@@ -14,7 +14,7 @@ import { marcoDoAtraso, nomeDoMarco, ROTULO_UNIDADE } from "@/supabase/functions
 import { ESTAGIOS_CONFIRMAVEIS } from "@/supabase/functions/_shared/confirmacao";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { FUSO } from "@/lib/nucleo/fila";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { BaixaManual } from "@/app/(plataforma)/financeiro/cobranca/baixas/componentes";
@@ -41,8 +41,8 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
   if (!UUID.test(id)) notFound();
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO_RECEBIVEIS);
-  if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro")) notFound();
-  const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
+  if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.recebiveis")) notFound();
+  const podeOperar = temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.recebiveis", "operador");
   const parametros = await searchParams;
 
   const supabase = await criarClienteServidor();

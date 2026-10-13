@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { FUSO, hojeEmCuiaba } from "@/lib/nucleo/fila";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { carregarRegra } from "@/lib/modulos/financeiro/recebiveis/regra";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
@@ -35,12 +35,13 @@ type Contato = { id: string; nome: string; funcao: string | null; whatsapp: stri
 export default async function PaginaConfirmacao({ params, searchParams }: PageProps<"/financeiro/cobranca/confirmar/[id]">) {
   const { id } = await params;
   const pedida = (await searchParams).unidade;
-  const unidade = (Array.isArray(pedida) ? pedida[0] : pedida) === "contagem" ? "contagem" : "matriz";
   if (!UUID.test(id)) notFound();
   const sessao = await exigirSessao();
+  // O usuário restrito à unidade só vê a dele.
+  const unidade = sessao.acesso.restrito ? "contagem" : (Array.isArray(pedida) ? pedida[0] : pedida) === "contagem" ? "contagem" : "matriz";
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO);
-  if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro")) notFound();
-  const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
+  if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.cobranca")) notFound();
+  const podeOperar = temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.cobranca", "operador");
 
   const supabase = await criarClienteServidor();
   const { data: cliente } = await supabase.from("contrapartes").select("nome, codigo_erp").eq("id", id).maybeSingle();
@@ -53,7 +54,7 @@ export default async function PaginaConfirmacao({ params, searchParams }: PagePr
     supabase.from("rec_titulos").select("id, documento, parcela, vencimento, valor, estagio, cedido, contestado").eq("contraparte_id", id).eq("unidade", unidade)
       .in("estagio", ["importado", "aguardando_boleto", "boleto_enviado", "confirmado_cliente"]).gte("vencimento", hoje).order("vencimento").limit(200),
     supabase.from("contatos").select("id, nome, funcao, whatsapp, email, telefone, finalidades, canal_preferido, ativo").eq("contraparte_id", id).eq("ativo", true).order("nome"),
-    supabase.from("interacoes").select("id, referencia_id, canal, tipo, descricao, criado_em, usuario_id").eq("contraparte_id", id).eq("modulo", MODULO)
+    supabase.from("interacoes").select("id, referencia_id, canal, tipo, descricao, criado_em, usuario_id").eq("contraparte_id", id).in("modulo", ["financeiro.recebiveis", MODULO])
       .in("tipo", ["confirmacao", "sem_resposta_confirmacao"]).order("criado_em", { ascending: false }).limit(10),
   ]);
   const linhas = (linhasBrutas ?? []) as Linha[];

@@ -13,7 +13,7 @@ import {
 import { formatarWhatsapp } from "@/lib/nucleo/documentos";
 import { sanitizarBusca } from "@/lib/nucleo/erros";
 import { descreverPrazo } from "@/lib/nucleo/fila";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { carregarRegra } from "@/lib/modulos/financeiro/recebiveis/regra";
 import { exigirSessao } from "@/lib/nucleo/sessao";
@@ -38,13 +38,14 @@ type ParametrosBusca = Promise<Record<string, string | string[] | undefined>>;
 export async function PaginaFila({ filas, caminho, searchParams }: { filas: readonly Fila[]; caminho: string; searchParams: ParametrosBusca }) {
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO_COBRANCA);
-  if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro")) notFound();
-  const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
+  if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.cobranca")) notFound();
+  const podeOperar = temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.cobranca", "operador");
 
   const parametros = await searchParams;
   const busca = sanitizarBusca(primeiro(parametros.q));
   const unidadePedida = primeiro(parametros.unidade);
-  const unidade: Unidade | null = unidadePedida === "matriz" || unidadePedida === "contagem" ? unidadePedida : null;
+  const restrito = !!sessao.acesso.restrito;
+  const unidade: Unidade | null = restrito ? "contagem" : unidadePedida === "matriz" || unidadePedida === "contagem" ? unidadePedida : null;
   const abaPedida = primeiro(parametros.aba);
   const paginaPedida = Number.parseInt(primeiro(parametros.pagina), 10) || 1;
 
@@ -78,7 +79,7 @@ export async function PaginaFila({ filas, caminho, searchParams }: { filas: read
       return (
         <span className="flex flex-wrap items-center gap-1">
           <Badge variant="outline" className="border-marca text-marca">Sem contato</Badge>
-          {podeOperar && <DialogoContato contraparteId={clienteId} finalidadesIniciais={["confirmacao", "cobranca"]} rotuloBotao="Cadastrar" />}
+          {podeOperar && !restrito && <DialogoContato contraparteId={clienteId} finalidadesIniciais={["confirmacao", "cobranca"]} rotuloBotao="Cadastrar" />}
         </span>
       );
     }
@@ -191,7 +192,7 @@ export async function PaginaFila({ filas, caminho, searchParams }: { filas: read
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-        <nav aria-label="Unidade" className="flex flex-wrap gap-px overflow-hidden rounded-[3px] border border-grade bg-grade sm:w-fit">
+        {!restrito && <nav aria-label="Unidade" className="flex flex-wrap gap-px overflow-hidden rounded-[3px] border border-grade bg-grade sm:w-fit">
           {([{ u: null, rotulo: "Todas as unidades" }, { u: "matriz", rotulo: ROTULO_UNIDADE.matriz }, { u: "contagem", rotulo: ROTULO_UNIDADE.contagem }] as { u: Unidade | null; rotulo: string }[]).map((o) => {
             const ativa = o.u === unidade;
             return (
@@ -203,7 +204,7 @@ export async function PaginaFila({ filas, caminho, searchParams }: { filas: read
               </Link>
             );
           })}
-        </nav>
+        </nav>}
         <form method="get" className="flex flex-wrap items-center gap-2" role="search">
           {filas.length > 1 && <input type="hidden" name="aba" value={aba} />}
           {unidade && <input type="hidden" name="unidade" value={unidade} />}

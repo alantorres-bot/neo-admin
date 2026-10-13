@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { FUSO } from "@/lib/nucleo/fila";
-import { temAcesso } from "@/lib/nucleo/permissoes";
+import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import {
@@ -30,13 +30,13 @@ export default async function PaginaCobranca({ params }: PageProps<"/financeiro/
   if (!UUID.test(id)) notFound();
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO);
-  if (!modulo || !modulo.ativo || !temAcesso(sessao.acesso, "financeiro")) notFound();
-  const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
+  if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.cobranca")) notFound();
+  const podeOperar = temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.cobranca", "operador");
 
   const supabase = await criarClienteServidor();
   const dados = await carregarCobranca(supabase, id);
   if (!dados) notFound();
-  const { data: historico } = await supabase.from("interacoes").select("id, tipo, descricao, criado_em").eq("contraparte_id", id).eq("modulo", MODULO)
+  const { data: historico } = await supabase.from("interacoes").select("id, tipo, descricao, criado_em").eq("contraparte_id", id).in("modulo", ["financeiro.recebiveis", MODULO])
     .in("tipo", ["cobranca", "promessa", "contestacao", "rascunho_gmail"]).order("criado_em", { ascending: false }).limit(15);
 
   const { hoje, grupos, contatoWhatsapp, contatoEmail, foraDaRegua } = dados;

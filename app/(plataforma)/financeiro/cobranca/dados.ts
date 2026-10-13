@@ -63,12 +63,15 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     }
     return todos;
   };
-  const [abertos, { parametros: regra, marcos }, { data: baixasPend }, { data: ligarPend }] = await Promise.all([
+  const [abertos, { parametros: regra, marcos }, { data: baixasPend }, { data: ligarPend }, { data: marcadosConfirmar }] = await Promise.all([
     lerAbertos(),
     carregarRegra(supabase),
     supabase.from("pendencias").select("referencia_id").eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "rec_titulos").like("titulo", "Possível baixa:%").in("status", ["aberta", "em_andamento"]).limit(1000),
     supabase.from("pendencias").select("referencia_id, titulo").eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "contrapartes").like("titulo", "Ligar para confirmar pagamento:%").in("status", ["aberta", "em_andamento"]).limit(1000),
+    // Filial Contagem: só confirma o cliente marcado "confirmar pagamento" (0158).
+    supabase.from("rec_clientes_config").select("contraparte_id").eq("confirmar_pagamento", true).limit(5000),
   ]);
+  const confirmarContagem = new Set((marcadosConfirmar ?? []).map((c) => c.contraparte_id as string));
   const emAberto = abertos.filter((t) => !ENCERRADOS.includes(t.estagio));
   const corte = regra.reguaAPartirDe;
   const minimoCentavos = regra.minimoConfirmacaoCentavos;
@@ -120,7 +123,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
       id: t.id, contraparteId: t.contraparte_id, nomeCliente: "", documento: t.documento, parcela: t.parcela, vencimento: t.vencimento,
       valorCentavos: valorRestante(t), estagio: t.estagio, cedido: t.cedido, contestado: t.contestado, unidade: unidadeDe(t),
     })),
-    hoje, minimoCentavos, regra.janelaConfirmacaoDias,
+    hoje, minimoCentavos, regra.janelaConfirmacaoDias, { confirmarContagem },
   );
   const gruposCobranca = corte
     ? planejarCobrancas(

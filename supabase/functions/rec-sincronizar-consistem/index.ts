@@ -542,6 +542,9 @@ async function sincronizarEmpresa(
       .eq("empresa_id", empresa.id).in("estagio", [...ESTAGIOS_CONFIRMAVEIS])
       .gte("vencimento", hoje).lte("vencimento", addDias(hoje, regra.janelaConfirmacaoDias)).order("id").range(de, ate));
   const restanteConfirmacao = await lerRestantes(banco, candidatas.map((l) => l.id));
+  // Filial Contagem: só confirma o cliente marcado "confirmar pagamento" no cadastro (0158).
+  const { data: marcadosConfirmar } = await banco.from("rec_clientes_config").select("contraparte_id").eq("confirmar_pagamento", true);
+  const confirmarContagem = new Set((marcadosConfirmar ?? []).map((c) => c.contraparte_id as string));
   const gruposConfirmacao = planejarConfirmacoes(
     candidatas.map((l): TituloConfirmacao => ({
       id: l.id, contraparteId: l.contraparte_id, nomeCliente: (Array.isArray(l.contrapartes) ? l.contrapartes[0] : l.contrapartes)?.nome ?? "",
@@ -551,6 +554,7 @@ async function sincronizarEmpresa(
     hoje,
     minimoCentavos,
     regra.janelaConfirmacaoDias,
+    { confirmarContagem },
   );
   let pendenciasConfirmacao = 0;
   if (gruposConfirmacao.length > 0) {
