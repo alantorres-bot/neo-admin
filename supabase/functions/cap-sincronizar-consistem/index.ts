@@ -559,6 +559,7 @@ Deno.serve(async (req) => {
             tem_bordero: comBordero.has(t.codLancamento),
             // Banco/portador atual: o fechamento do cartão troca o dos títulos da fatura (0162) e pula quem já está no código.
             cod_banco: t.codBanco || null,
+            cod_historico: t.codHistorico || null,
           })),
         });
       }

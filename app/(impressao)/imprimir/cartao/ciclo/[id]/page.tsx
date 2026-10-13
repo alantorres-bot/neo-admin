@@ -133,7 +133,7 @@ export default async function PaginaImprimirCiclo({ params }: PageProps<"/imprim
             <p className="font-bold">Pagamento</p>
             <p>{ciclo.paga_em ? `Paga em ${formatarData(ciclo.paga_em)} (título provisório ${ciclo.paga_por_cod_lancamento ?? ""} saiu do Consistem)` : "Não pago."}</p>
             {trocas.length > 0 && (
-              <p>Banco da fatura no Consistem: {trocados.length} de {trocas.length} {trocas.length === 1 ? "título" : "títulos"} no banco {trocas[0].portador_novo}
+              <p>Marcas da fatura no Consistem: {trocados.length} de {trocas.length} {trocas.length === 1 ? "título" : "títulos"} com banco {trocas[0].portador_novo}{trocas[0].historico_novo ? ` e histórico ${trocas[0].historico_novo}` : ""}
                 {trocados.length < trocas.length ? ` (com erro: ${trocas.filter((t) => t.situacao !== "trocado").map((t) => t.cod_lancamento).join(", ")})` : ""}.</p>
             )}
           </div>

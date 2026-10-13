@@ -47,10 +47,11 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
       : `O provisório não será criado (${provisorio.ligado ? (provisorio.titulo.ok ? "" : provisorio.titulo.erro) : "lançamento no Consistem desligado"}): fica a pendência "Criar o provisório".`
     : null;
   const trocas = ciclo.situacao !== "aguardando_fatura" ? await lerTrocas(supabase, ciclo) : null;
+  const alvo = trocas?.portador ? `banco ${trocas.portador}${trocas.historico ? ` e histórico ${trocas.historico}` : ""}` : "";
   const previaPortador = aoVivo && trocas?.portador
     ? trocas.ligado
-      ? ` Os títulos conciliados passarão para o banco ${trocas.portador} no Consistem (filtro do borderô).`
-      : ` A troca do banco dos títulos para ${trocas.portador} no Consistem está desligada.`
+      ? ` Os títulos conciliados passarão para ${alvo} no Consistem (filtro do borderô).`
+      : ` A troca dos títulos para ${alvo} no Consistem está desligada.`
     : "";
   const trocados = trocas?.trocas.filter((t) => t.situacao === "trocado").length ?? 0;
   const comErro = trocas?.trocas.filter((t) => t.situacao === "erro") ?? [];
@@ -125,15 +126,15 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
         <section className={`space-y-2 rounded-[3px] border p-3 text-sm ${comErro.length ? "border-amber-300 bg-amber-50" : "border-grade bg-card"}`}>
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div>
-              <h3 className="font-bold">Banco da fatura no Consistem{trocas.portador ? `: ${trocas.portador}` : ""}</h3>
+              <h3 className="font-bold">Marcas da fatura no Consistem{alvo ? `: ${alvo}` : ""}</h3>
               <p className="text-xs text-muted-foreground">
                 {trocas.trocas.length
-                  ? `${trocados} de ${trocas.trocas.length} ${trocas.trocas.length === 1 ? "título" : "títulos"} da fatura no banco ${trocas.portador ?? trocas.trocas[0].portador_novo}: no borderô (CCFFE065), filtre por esse banco.`
+                  ? `${trocados} de ${trocas.trocas.length} ${trocas.trocas.length === 1 ? "título" : "títulos"} da fatura com ${alvo || `banco ${trocas.trocas[0].portador_novo}`}${trocas.historico ? `: no borderô (CCFFE065), filtre pelo histórico ${trocas.historico}.` : "."}`
                   : "Nenhum título da fatura teve o banco trocado ainda."}
                 {!trocas.ligado && " A troca no Consistem está desligada (financeiro.cartao.trocar_portador_no_erp)."}
               </p>
             </div>
-            {podeOperar && trocas.ligado && trocas.portador && (comErro.length > 0 || trocas.trocas.length === 0) && <BotaoTrocarPortador cicloId={ciclo.id} />}
+            {podeOperar && trocas.ligado && trocas.portador && (comErro.length > 0 || trocas.trocas.length === 0 || (!!trocas.historico && trocas.trocas.some((t) => t.historico_novo !== trocas.historico))) && <BotaoTrocarPortador cicloId={ciclo.id} />}
           </div>
           {comErro.map((t) => (
             <p key={t.id} className="text-xs text-amber-900">

@@ -219,7 +219,8 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     `cap_fornecedores.cod_categoria` (gravado pela sincronização) dá a categoria; compra, agrupado, encargos e provisório usam a
     do fornecedor (o servidor aplica ao enviar; os diálogos mostram "do fornecedor"). Os títulos 33626, 33627, 33628, 33629 e
     33633 saíram com 17 e ficaram assim (decisão do Alan).
-56. **Banco da fatura nos títulos** (pedido do Alan, 13/10/2026; migration 0162): com o Consistem em "Sem Controle" (CCFFB000,
+56. **Banco e histórico da fatura nos títulos** (pedido do Alan, 13/10/2026; migrations 0162 e 0164 — o borderô filtra pelo
+    **histórico**, `crt_cartoes.historico_fatura`; o portador ficou como marca extra): com o Consistem em "Sem Controle" (CCFFB000,
     13/10/2026), o borderô (CCFFE065) mostra todos os títulos em aberto e os da fatura ficavam misturados (antes se destacavam por
     serem os confirmados no CCFFB014). Cada cartão tem um **código de banco/portador próprio**, cadastrado no Consistem
     (`crt_cartoes.portador_fatura`, gestor edita no cadastro; vazio = não troca). A API não gera borderô (catálogo v1.0.15,
@@ -468,6 +469,12 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
   **Ligar** no painel. A chave `financeiro.cartao.lancar_no_erp` fica ligada (decisão do Alan).
 
 ## 19. Banco da fatura nos títulos do Consistem — o que foi feito (13/10/2026)
+> **Atualização (13/10/2026, migration 0164):** no primeiro uso real o borderô (CCFFE065) **não filtrou pelo portador**; filtra pelo
+> **histórico**. Cada cartão ganhou também `crt_cartoes.historico_fatura` (80 = CARTÃO SICREDI PJ; os demais o Alan cadastra no
+> Consistem e informa). Decisões: um histórico por cartão; a troca do portador continua (marca extra); o histórico é só
+> descritivo. O mesmo PUT leva `{ codPortador, codHistorico }`; a conferência exige os dois; compra/agrupado/encargos já nascem com
+> os dois; título já trocado só de portador volta à fila quando o alvo muda (o "Trocar de novo" do Sicredi PJ 10/2026 aplica o 80).
+> `crt_trocas_portador` ganhou `historico_anterior`/`historico_novo` e guarda o primeiro "antes" (não sobrescreve ao repetir).
 - Pedido do Alan: com o CCFFB000 em "Sem Controle", o borderô mistura os títulos da fatura com os demais; trocar o código do banco
   dos títulos da fatura para filtrar o borderô por ele. Decisões: um código por cartão, troca ao fechar a fatura, nunca volta,
   lançados pelo painel já nascem com o código (regras 56 a 60).

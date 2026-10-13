@@ -77,19 +77,23 @@ export async function incluir(enviar: Enviar, cfg: Cfg, rota: string, campoCodig
   }
 }
 
-// ---------------------------------------------------------------- alteração do portador (cartão, migration 0162)
-// PUT financeiro/v10/lancamentoContasPagar/{id} só com { codPortador }: troca o banco do título da fatura do cartão (filtro do
-// borderô). Trocar o portador é idempotente: quem chama SEMPRE lê o detalhe depois e decide pelo que está no Consistem.
+// ---------------------------------------------------------------- alteração do portador e do histórico (cartão, 0162/0164)
+// PUT financeiro/v10/lancamentoContasPagar/{id} só com { codPortador, codHistorico }: marca o título da fatura do cartão (o
+// borderô CCFFE065 filtra pelo histórico). É idempotente: quem chama SEMPRE lê o detalhe depois e decide pelo que está no Consistem.
+
+/** O que a troca grava no título: o portador e, quando o cartão tem, o histórico da fatura. */
+export type MarcasFatura = { codPortador: number; codHistorico?: number | null };
 
 export type ResultadoAlteracao =
   | { tipo: "ok"; resposta: unknown }
   | { tipo: "erro"; mensagem: string; resposta: unknown }
   | { tipo: "incerto"; mensagem: string; resposta: unknown };
 
-/** Envia a troca do portador UMA vez e interpreta a resposta (2xx = aceito; 4xx = recusado; 5xx/sem resposta = incerto). */
-export async function alterarPortador(enviar: Enviar, cfg: Cfg, codLancamento: string, codPortador: number, opcoes: { tempoMs?: number } = {}): Promise<ResultadoAlteracao> {
+/** Envia a troca UMA vez e interpreta a resposta (2xx = aceito; 4xx = recusado; 5xx/sem resposta = incerto). */
+export async function alterarPortador(enviar: Enviar, cfg: Cfg, codLancamento: string, marcas: MarcasFatura, opcoes: { tempoMs?: number } = {}): Promise<ResultadoAlteracao> {
   if (!/^\d{1,12}$/.test(codLancamento)) return { tipo: "erro", mensagem: `Código de lançamento inválido: ${codLancamento}.`, resposta: null };
-  const r = await incluir(enviar, cfg, `${ROTA_INCLUSAO_LANCAMENTO}/${codLancamento}`, "codLancamento", { codPortador }, opcoes);
+  const corpo = marcas.codHistorico ? { codPortador: marcas.codPortador, codHistorico: marcas.codHistorico } : { codPortador: marcas.codPortador };
+  const r = await incluir(enviar, cfg, `${ROTA_INCLUSAO_LANCAMENTO}/${codLancamento}`, "codLancamento", corpo, opcoes);
   // 2xx: aceito (com ou sem o código na resposta; a conferência é pelo detalhe lido depois).
   if (r.tipo === "lancado" || (r.tipo === "incerto" && /respondeu 2\d\d sem o código/.test(r.mensagem))) return { tipo: "ok", resposta: r.resposta };
   return r.tipo === "erro" ? r : { tipo: "incerto", mensagem: r.mensagem.replace(CONFERIR, "a troca é conferida pelo detalhe do título"), resposta: r.resposta };
@@ -98,26 +102,35 @@ export async function alterarPortador(enviar: Enviar, cfg: Cfg, codLancamento: s
 /** Campos que mudam sozinhos numa alteração (data/usuário da alteração): fora da conferência. */
 const VOLATEIS = /alterac|atualiz|usuario|hora|^data(Ult|Ultima)/i;
 
+/** O título já está com as marcas da fatura (nada a enviar)? */
+export function jaMarcado(d: Record<string, unknown>, marcas: MarcasFatura): boolean {
+  return Number(d.codPortador) === marcas.codPortador && (!marcas.codHistorico || Number(d.codHistorico) === marcas.codHistorico);
+}
+
 /**
- * Confere a troca pelo detalhe do lançamento lido antes e depois do PUT: o portador tem de ser o novo e TODO o resto igual
+ * Confere a troca pelo detalhe do lançamento lido antes e depois do PUT: portador (e histórico) novos e TODO o resto igual
  * (valor, vencimento, fornecedor, documento, contas…). Diferença = o PUT mexeu em mais do que devia.
  */
-export function conferirTroca(antes: Record<string, unknown>, depois: Record<string, unknown>, portadorNovo: number):
+export function conferirTroca(antes: Record<string, unknown>, depois: Record<string, unknown>, marcas: MarcasFatura):
   { ok: true } | { ok: false; mensagem: string; diferencas: string[] } {
   const diferencas: string[] = [];
+  const trocados = marcas.codHistorico ? ["codPortador", "codHistorico"] : ["codPortador"];
   for (const k of Object.keys(antes)) {
-    if (k === "codPortador" || VOLATEIS.test(k)) continue;
+    if (trocados.includes(k) || VOLATEIS.test(k)) continue;
     // Na primeira alteração o Consistem grava o vencimento original (vazio → o próprio vencimento): o vencimento não muda.
     if (k === "dataVencimentoOriginal" && !antes[k] && depois[k] === antes.dataVencimento) continue;
     const a = JSON.stringify(antes[k] ?? null);
     const d = JSON.stringify(depois[k] ?? null);
     if (a !== d) diferencas.push(`${k}: ${a.slice(0, 80)} → ${d.slice(0, 80)}`);
   }
-  if (Number(depois.codPortador) !== portadorNovo) {
-    return { ok: false, mensagem: `O Consistem aceitou, mas o portador continua ${String(depois.codPortador ?? "vazio")} (esperado ${portadorNovo}).`, diferencas };
+  if (Number(depois.codPortador) !== marcas.codPortador) {
+    return { ok: false, mensagem: `O Consistem aceitou, mas o portador continua ${String(depois.codPortador ?? "vazio")} (esperado ${marcas.codPortador}).`, diferencas };
+  }
+  if (marcas.codHistorico && Number(depois.codHistorico) !== marcas.codHistorico) {
+    return { ok: false, mensagem: `O Consistem aceitou, mas o histórico continua ${String(depois.codHistorico ?? "vazio")} (esperado ${marcas.codHistorico}).`, diferencas };
   }
   if (diferencas.length) {
-    return { ok: false, mensagem: `O portador mudou, mas outros campos também mudaram no Consistem (corrija lá): ${diferencas.join("; ")}`, diferencas };
+    return { ok: false, mensagem: `As marcas da fatura mudaram, mas outros campos também mudaram no Consistem (corrija lá): ${diferencas.join("; ")}`, diferencas };
   }
   return { ok: true };
 }

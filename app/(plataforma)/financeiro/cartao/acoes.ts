@@ -19,7 +19,7 @@ import { CAMPOS_CONFIG_ENCARGOS, ROTULO_CAMPO_CONFIG } from "@/lib/modulos/finan
 import { CAMPOS_COMPRA, CAMPOS_PADRAO_CARTAO, conferirContas, lerCampos, montarTitulosCompra, ROTULO_CAMPO_COMPRA } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
 import { CONFERIR, type LinhaFatura } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { montarTituloAgrupado } from "@/lib/modulos/financeiro/cartao/lancamento-agrupado";
-import { comPortadorDaFatura, titulosParaTrocar } from "@/lib/modulos/financeiro/cartao/portador-fatura";
+import { comMarcasDaFatura, titulosParaTrocar } from "@/lib/modulos/financeiro/cartao/portador-fatura";
 import type { ResultadoConciliacao } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { normalizar } from "@/lib/modulos/financeiro/cartao/texto";
 import { categoriasDosFornecedores, codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerCompras, lerEncargos, lerEstabelecimentos, lerProvisorio, paraCartaoInfo, type FotoFechamento } from "./dados";
@@ -204,6 +204,8 @@ export async function salvarCartao(_anterior: EstadoForm, dados: FormData): Prom
   if (!compras.ok) return { erro: compras.erro };
   const portadorBruto = texto(dados, "portadorFatura");
   if (portadorBruto !== "" && (!/^\d{1,9}$/.test(portadorBruto) || Number(portadorBruto) <= 0)) return { erro: "Banco da fatura no Consistem: informe o código (número), ou deixe vazio." };
+  const historicoBruto = texto(dados, "historicoFatura");
+  if (historicoBruto !== "" && (!/^\d{1,9}$/.test(historicoBruto) || Number(historicoBruto) <= 0)) return { erro: "Histórico da fatura no Consistem: informe o código (número), ou deixe vazio." };
   const d = v.data;
   const supabase = await criarClienteServidor();
   const { error } = await supabase.rpc("crt_salvar_cartao", {
@@ -211,7 +213,7 @@ export async function salvarCartao(_anterior: EstadoForm, dados: FormData): Prom
     p_tipo_titulo: d.tipoTitulo, p_leitor: d.leitor, p_pasta_faturas: d.pastaFaturas || null, p_ativo: d.ativo, p_observacao: d.observacao || null,
   });
   if (error) return { erro: mensagemDeErro(error) };
-  const { error: erroCodigos } = await supabase.from("crt_cartoes").update({ lancamento_encargos: codigos.valor, lancamento_compras: compras.valor, portador_fatura: portadorBruto ? Number(portadorBruto) : null }).eq("codigo", d.codigo);
+  const { error: erroCodigos } = await supabase.from("crt_cartoes").update({ lancamento_encargos: codigos.valor, lancamento_compras: compras.valor, portador_fatura: portadorBruto ? Number(portadorBruto) : null, historico_fatura: historicoBruto ? Number(historicoBruto) : null }).eq("codigo", d.codigo);
   if (erroCodigos) return { erro: `Cartão salvo, mas os códigos de encargos não: ${mensagemDeErro(erroCodigos)}` };
   revalidatePath(ROTA_CARTAO, "layout");
   return { ok: true };
@@ -293,7 +295,7 @@ export async function fecharCiclo(entrada: { id: string }): Promise<Resultado> {
   // Banco da fatura nos títulos (regra 56): falha não desfaz o fechamento (vira a pendência "Trocar o banco dos títulos").
   let avisoPortador = "";
   if (c.cartao.portador_fatura) {
-    const t = await trocarPortadorDoCiclo(supabase, ciclo.id, c.resultado, c.cartao.portador_fatura, provisorio);
+    const t = await trocarPortadorDoCiclo(supabase, ciclo.id, c.resultado, { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura }, provisorio);
     avisoPortador = ` ${t.aviso}`;
   }
   revalidatePath(ROTA_CARTAO, "layout");
@@ -498,7 +500,7 @@ export async function lancarCompra(entrada: z.input<typeof esquemaCompra>): Prom
   if (!proposta || !item) return { ok: false, erro: "Esta linha não está mais entre as compras a lançar. Recarregue a página." };
   const contas = conferirContas(lerCampos(d.campos), q.creditoPadrao);
   if (contas) return { ok: false, erro: contas };
-  const camposCompra = comPortadorDaFatura(await comCategoriaDoFornecedor(supabase, c.fatura.empresa_id, lerCampos(d.campos)), c.cartao.portador_fatura);
+  const camposCompra = comMarcasDaFatura(await comCategoriaDoFornecedor(supabase, c.fatura.empresa_id, lerCampos(d.campos)), { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura });
   const t = montarTitulosCompra({ linha: item.linha, cartao: paraCartaoInfo(c.cartao), campos: camposCompra, vencimentoFatura: c.fatura.vencimento, competencia: q.competencia });
   if (!t.ok) return { ok: false, erro: t.erro };
 
@@ -625,7 +627,7 @@ export async function lancarAgrupado(entrada: z.input<typeof esquemaAgrupado>): 
   if (linhas.some((l) => !l)) return { ok: false, erro: "Uma das linhas não está mais entre as compras a lançar. Recarregue a página." };
   const contas = conferirContas(lerCampos(d.campos), q.creditoPadrao);
   if (contas) return { ok: false, erro: contas };
-  const t = montarTituloAgrupado({ linhas: linhas as LinhaFatura[], nomeCartao: c.cartao.nome, campos: comPortadorDaFatura(await comCategoriaDoFornecedor(supabase, c.fatura.empresa_id, lerCampos(d.campos)), c.cartao.portador_fatura), fechamento: q.fechamento, vencimento: c.fatura.vencimento, rotulo: d.rotulo });
+  const t = montarTituloAgrupado({ linhas: linhas as LinhaFatura[], nomeCartao: c.cartao.nome, campos: comMarcasDaFatura(await comCategoriaDoFornecedor(supabase, c.fatura.empresa_id, lerCampos(d.campos)), { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura }), fechamento: q.fechamento, vencimento: c.fatura.vencimento, rotulo: d.rotulo });
   if (!t.ok) return { ok: false, erro: t.erro };
   const { data: lote, error } = await supabase.rpc("crt_reservar_lancamento_agrupado", { p_fatura: c.fatura.id, p_linhas: d.linhas, p_payload: t.payload });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
@@ -680,14 +682,16 @@ async function comCategoriaDoFornecedor<T extends { codFornecedor?: number; cate
 const CHAVE_TROCAR_PORTADOR = "financeiro.cartao.trocar_portador_no_erp";
 
 /** Reserva e envia a troca do portador dos títulos conciliados do mês fechado. Nunca lança erro: devolve o aviso para a tela. */
-async function trocarPortadorDoCiclo(supabase: Awaited<ReturnType<typeof criarClienteServidor>>, cicloId: string, resultado: Pick<ResultadoConciliacao, "conciliados">, portador: number, provisorio: string | null): Promise<{ ok: boolean; aviso: string }> {
+async function trocarPortadorDoCiclo(supabase: Awaited<ReturnType<typeof criarClienteServidor>>, cicloId: string, resultado: Pick<ResultadoConciliacao, "conciliados">, marcas: { portador: number; historico: number | null }, provisorio: string | null): Promise<{ ok: boolean; aviso: string }> {
+  const { portador, historico } = marcas;
+  const alvo = `banco ${portador}${historico ? ` e histórico ${historico}` : ""}`;
   const { data: chave } = await supabase.from("configuracoes").select("valor").eq("chave", CHAVE_TROCAR_PORTADOR).maybeSingle();
-  if ((chave as { valor: unknown } | null)?.valor !== true) return { ok: false, aviso: `A troca do banco dos títulos para ${portador} no Consistem está desligada.` };
-  const lista = titulosParaTrocar(resultado, { portador, provisorio });
-  if (!lista.length) return { ok: true, aviso: `Nenhum título a trocar para o banco ${portador}.` };
+  if ((chave as { valor: unknown } | null)?.valor !== true) return { ok: false, aviso: `A troca dos títulos para ${alvo} no Consistem está desligada.` };
+  const lista = titulosParaTrocar(resultado, { portador, historico, provisorio });
+  if (!lista.length) return { ok: true, aviso: `Nenhum título a trocar para ${alvo}.` };
   const { data: lote, error } = await supabase.rpc("crt_reservar_trocas", { p_ciclo: cicloId, p_titulos: lista });
   if (error) return { ok: false, aviso: `O banco dos títulos NÃO foi trocado: ${mensagemDeErro(error)}` };
-  if (!lote) return { ok: true, aviso: `Os títulos já estão no banco ${portador}.` };
+  if (!lote) return { ok: true, aviso: `Os títulos já estão com ${alvo}.` };
   const { data, error: erroFuncao } = await supabase.functions.invoke("crt-trocar-portador", { body: { lote } });
   if (erroFuncao) {
     const { mensagem } = await mensagemDaFuncao(erroFuncao, "Não foi possível falar com a função de troca do banco.");
@@ -697,7 +701,7 @@ async function trocarPortadorDoCiclo(supabase: Awaited<ReturnType<typeof criarCl
   const r = data as { trocados?: string[]; erros?: { cod: string; mensagem: string }[] } | null;
   const n = r?.trocados?.length ?? 0;
   const erros = r?.erros ?? [];
-  const feitos = `${n} ${n === 1 ? "título passou" : "títulos passaram"} para o banco ${portador} no Consistem.`;
+  const feitos = `${n} ${n === 1 ? "título passou" : "títulos passaram"} para ${alvo} no Consistem.`;
   return erros.length
     ? { ok: false, aviso: `${feitos} ${erros.length} com erro (primeiro: ${erros[0].cod} — ${erros[0].mensagem}): pendência "Trocar o banco dos títulos" aberta.` }
     : { ok: true, aviso: feitos };
@@ -718,7 +722,7 @@ export async function trocarPortador(entrada: { cicloId: string }): Promise<Resu
   if (!cartao?.portador_fatura) return { ok: false, erro: "O cartão não tem o banco da fatura no Consistem (cadastro de cartões)." };
   const foto = vigente.resultado;
   if (!foto?.resultado?.conciliados) return { ok: false, erro: "O fechamento não tem os títulos conciliados." };
-  const r = await trocarPortadorDoCiclo(supabase, ciclo.id, foto.resultado, cartao.portador_fatura, ciclo.provisorio_cod_lancamento ?? vigente.provisorio_cod_lancamento);
+  const r = await trocarPortadorDoCiclo(supabase, ciclo.id, foto.resultado, { portador: cartao.portador_fatura, historico: cartao.historico_fatura }, ciclo.provisorio_cod_lancamento ?? vigente.provisorio_cod_lancamento);
   revalidatePath(ROTA_CARTAO, "layout");
   return r.ok ? { ok: true, aviso: r.aviso } : { ok: false, erro: r.aviso };
 }

@@ -85,11 +85,16 @@ export function DialogoCartao({ cartao, contasFluxo = [] }: { cartao?: CartaoLin
         </div>
       </fieldset>
       <fieldset className="space-y-2 rounded-[3px] border border-grade p-3">
-        <legend className="px-1 text-sm font-medium">Banco da fatura no Consistem</legend>
-        <p className="text-xs text-muted-foreground">Código do banco/portador cadastrado no Consistem só para este cartão. Ao fechar o mês, os títulos da fatura passam a esse portador (filtro do borderô) e os lançados pelo painel já nascem com ele. Vazio = não troca.</p>
-        <Campo id="portadorFatura" rotulo="Banco/portador da fatura">
-          <Input id="portadorFatura" name="portadorFatura" defaultValue={cartao?.portador_fatura ?? ""} inputMode="numeric" pattern="\d{0,9}" autoComplete="off" className="w-32" />
-        </Campo>
+        <legend className="px-1 text-sm font-medium">Marcas da fatura no Consistem</legend>
+        <p className="text-xs text-muted-foreground">Códigos cadastrados no Consistem só para este cartão. Ao fechar o mês, os títulos da fatura recebem o banco/portador e o histórico (o borderô filtra pelo histórico); os lançados pelo painel já nascem com eles. Vazio = não troca.</p>
+        <div className="flex flex-wrap gap-3">
+          <Campo id="portadorFatura" rotulo="Banco/portador da fatura">
+            <Input id="portadorFatura" name="portadorFatura" defaultValue={cartao?.portador_fatura ?? ""} inputMode="numeric" pattern="\d{0,9}" autoComplete="off" className="w-32" />
+          </Campo>
+          <Campo id="historicoFatura" rotulo="Histórico da fatura">
+            <Input id="historicoFatura" name="historicoFatura" defaultValue={cartao?.historico_fatura ?? ""} inputMode="numeric" pattern="\d{0,9}" autoComplete="off" className="w-32" />
+          </Campo>
+        </div>
       </fieldset>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="ativo" defaultChecked={cartao?.ativo ?? true} className="size-4" />

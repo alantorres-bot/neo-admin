@@ -28,6 +28,8 @@ export type LancamentoEspelho = {
   tem_bordero?: boolean | null;
   /** Lido da API: banco/portador atual do título (codBanco). */
   cod_banco?: string | null;
+  /** Lido da API: histórico atual do título (o borderô filtra por ele). */
+  cod_historico?: string | null;
 };
 
 export type OutroTitulo = { titulo: TituloPagar; situacao: "outro_cartao" | "ambiguo" | "so_marca"; detalhe: string };
@@ -62,6 +64,7 @@ export function paraTitulo(l: LancamentoEspelho): TituloPagar {
     emBordero: l.tem_bordero === true,
     codFornecedor: l.cod_fornecedor,
     ...(l.cod_banco ? { codBanco: l.cod_banco } : {}),
+    ...(l.cod_historico ? { codHistorico: l.cod_historico } : {}),
     ...(l.tipo_lancamento === "A" ? { antecipacao: true } : {}),
   };
 }

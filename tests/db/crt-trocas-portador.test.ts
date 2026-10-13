@@ -64,9 +64,9 @@ describe("troca do portador da fatura (0162)", () => {
     // Usuário não envia (só a service role).
     await expect(rpc(finOperador, `select crt_iniciar_troca($1)`, [a.id])).rejects.toThrow();
     await servico(`select crt_iniciar_troca($1)`, [a.id]);
-    await servico(`select crt_concluir_troca($1, true, 91, '{"codPortador":91}'::jsonb, '{"codPortador":501}'::jsonb, null, null)`, [a.id]);
+    await servico(`select crt_concluir_troca($1, true, 91, 2, '{"codPortador":91}'::jsonb, '{"codPortador":501}'::jsonb, null, null)`, [a.id]);
     await servico(`select crt_iniciar_troca($1)`, [b.id]);
-    await servico(`select crt_concluir_troca($1, false, 91, null, null, null, 'O Consistem recusou (HTTP 400).')`, [b.id]);
+    await servico(`select crt_concluir_troca($1, false, 91, 2, null, null, null, 'O Consistem recusou (HTTP 400).')`, [b.id]);
     expect((await troca("33626")).situacao).toBe("trocado");
     expect((await troca("33627")).erro).toMatch(/recusou/);
     const p = await pendencia();
@@ -81,7 +81,7 @@ describe("troca do portador da fatura (0162)", () => {
     const b2 = await troca("33627");
     expect([b2.situacao, b2.lote, b2.erro]).toEqual(["reservado", novo, null]);
     await servico(`select crt_iniciar_troca($1)`, [b2.id]);
-    await servico(`select crt_concluir_troca($1, true, 91, null, null, null, null)`, [b2.id]);
+    await servico(`select crt_concluir_troca($1, true, 91, 2, null, null, null, null)`, [b2.id]);
     expect((await troca("33627")).tentativas).toBe(2);
     expect((await pendencia()).status).toBe("concluida");
     expect((await reservar(finOperador, "33626", "33627")).rows[0].lote).toBeNull(); // nada a fazer
@@ -92,5 +92,20 @@ describe("troca do portador da fatura (0162)", () => {
     await rpc(finOperador, `select crt_falha_trocas($1, 'A função não respondeu.')`, [lote]);
     expect((await troca("33700")).situacao).toBe("erro");
     expect((await pendencia()).status).toBe("aberta");
+  });
+
+  it("histórico da fatura (0164): o cartão ganha outro histórico e o trocado volta à fila só por isso", async () => {
+    expect((await q(`select historico_fatura from crt_cartoes where codigo = 'SICREDI PJ'`)).rows[0].historico_fatura).toBe(80);
+    expect((await troca("33626")).historico_novo).toBe(80);
+    await q(`update crt_cartoes set historico_fatura = 81 where codigo = 'SICREDI PJ'`);
+    const lote = (await reservar(finOperador, "33626")).rows[0].lote as string;
+    const t = await troca("33626");
+    expect([t.situacao, t.historico_novo, t.lote]).toEqual(["reservado", 81, lote]);
+    await servico(`select crt_iniciar_troca($1)`, [t.id]);
+    await servico(`select crt_concluir_troca($1, false, 992, 2, null, null, null, 'recusado')`, [t.id]);
+    expect((await troca("33626")).historico_anterior).toBe(2);
+    expect((await pendencia()).descricao).toMatch(/banco trocado para 501 e o histórico para 8[01]/);
+    // Trocado com o mesmo alvo não volta (nem por update direto).
+    await expect(servico(`update crt_trocas_portador set situacao = 'reservado' where cod_lancamento = '33627'`)).rejects.toThrow(/já foi trocado/);
   });
 });
