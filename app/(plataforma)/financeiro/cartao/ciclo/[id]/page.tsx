@@ -53,7 +53,8 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
       ? ` Os títulos conciliados passarão para ${alvo} no Consistem (filtro do borderô).`
       : ` A troca dos títulos para ${alvo} no Consistem está desligada.`
     : "";
-  const trocados = trocas?.trocas.filter((t) => t.situacao === "trocado").length ?? 0;
+  // Pronto = trocado com o histórico atual do cartão (troca antiga só de portador não conta).
+  const trocados = trocas?.trocas.filter((t) => t.situacao === "trocado" && (!trocas.historico || t.historico_novo === trocas.historico)).length ?? 0;
   const comErro = trocas?.trocas.filter((t) => t.situacao === "erro") ?? [];
   const bloqueio = aoVivo ? (aoVivo.origemTitulos !== "consistem" ? "Os títulos não foram lidos do Consistem agora; recarregue para tentar de novo." : bloqueioDoFechamento({ itensALancar: aoVivo.resultado.pendentes, residuoCentavos: aoVivo.resultado.residuoCentavos })) : null;
   const podeCancelarFatura = fatura?.status === "importada" && ciclo.situacao === "em_conciliacao" && (ehGestor || (podeOperar && fatura.importado_por === sessao.userId));
