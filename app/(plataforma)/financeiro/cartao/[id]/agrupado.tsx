@@ -112,7 +112,11 @@ function DialogoLancarAgrupado({ faturaId, itens, compras, aoConcluir }: { fatur
               <p className="rounded-[3px] border border-amber-300 bg-amber-50 p-2 text-sm">As linhas têm códigos diferentes ({divergentes.filter((k) => k !== "codFornecedor").map((k) => ROTULO_CAMPO_COMPRA[k].toLowerCase()).join(", ")}): veio a sugestão da primeira. Confira antes de lançar.</p>
             )}
             <SeletorFornecedor empresaId={compras.empresaId} cod={campos.codFornecedor} nome={fornecedorNome}
-              aoEscolher={(cod, nome) => { setCampos((c) => ({ ...c, codFornecedor: cod })); setTextos((t) => ({ ...t, codFornecedor: String(cod) })); setFornecedorNome(nome); }} />
+              aoEscolher={(cod, nome, cat) => {
+                setCampos((c) => ({ ...c, codFornecedor: cod, ...(cat ? { categoriaDoc: cat } : {}) }));
+                setTextos((t) => ({ ...t, codFornecedor: String(cod), ...(cat ? { categoriaDoc: String(cat) } : {}) }));
+                setFornecedorNome(nome);
+              }} />
             <div className="-mt-2 flex justify-end">
               <BotaoCadastrarFornecedor empresaId={compras.empresaId} nomeInicial={rotulo} cadastro={compras.cadastro} listas={compras.listas}
                 fluxoInicial={{ grupo: campos.grupoContaFluxoCaixa, item: campos.contaFluxoCaixa }}

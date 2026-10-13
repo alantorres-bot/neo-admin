@@ -250,7 +250,9 @@ export async function lerEncargos(supabase: Cliente, c: Conciliacao): Promise<Qu
   const historico = (lancs ?? []) as LancamentoErpLinha[];
   const ativo = historico.find((l) => l.situacao !== "erro") ?? null;
   const jaLancadas = new Set(historico.filter((l) => l.situacao !== "erro").flatMap((l) => l.linhas));
-  const cfg = lerConfigEncargos(c.cartao.lancamento_encargos);
+  const cfgBruta = lerConfigEncargos(c.cartao.lancamento_encargos);
+  const catBanco = cfgBruta ? (await categoriasDosFornecedores(supabase, c.fatura.empresa_id, [cfgBruta.codFornecedor])).get(String(cfgBruta.codFornecedor)) : undefined;
+  const cfg = cfgBruta && catBanco ? { ...cfgBruta, categoriaDoc: catBanco } : cfgBruta;
   const titulo = montarTituloEncargos({
     nomeCartao: c.cartao.nome, config: cfg, linhas: encargosALancar(c.resultado, jaLancadas),
     fechamento: (cic as { fechamento: string } | null)?.fechamento ?? null, vencimento: c.fatura.vencimento,
@@ -258,6 +260,14 @@ export async function lerEncargos(supabase: Cliente, c: Conciliacao): Promise<Qu
   const nomes = cfg ? await nomesDosFornecedores(supabase, [String(cfg.codFornecedor)]) : new Map<string, string>();
   const mesAberto = (cic as { situacao: string } | null)?.situacao === "em_conciliacao" && c.fatura.status === "importada";
   return { ligado: (config as { valor: unknown } | null)?.valor === true, mesAberto, titulo, fornecedorNome: cfg ? nomes.get(String(cfg.codFornecedor)) ?? null : null, ativo, historico };
+}
+
+/** Categoria (codCategoria) dos fornecedores no espelho: o título usa a categoria do fornecedor (regra 55). */
+export async function categoriasDosFornecedores(supabase: Cliente, empresaId: string, codigos: (number | string)[]): Promise<Map<string, number>> {
+  const lista = [...new Set(codigos.map(String))].filter(Boolean);
+  if (!lista.length) return new Map();
+  const { data } = await supabase.from("cap_fornecedores").select("cod_fornecedor, cod_categoria").eq("empresa_id", empresaId).in("cod_fornecedor", lista);
+  return new Map((data ?? []).filter((f) => f.cod_categoria !== null).map((f) => [String(f.cod_fornecedor), Number(f.cod_categoria)]));
 }
 
 // ---------------------------------------------------------------- compras lançadas no Consistem (0138)
@@ -339,6 +349,11 @@ export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<Qua
     propostas[a.linha.id] = { sugestao, padraoLembrar: sugestao.padrao ?? padraoSugerido(a.linha.descricao), fornecedorNome: null, categoria: a.categoria };
   }
   const codigos = [...new Set(Object.values(propostas).map((p) => p.sugestao.campos.codFornecedor).filter((x): x is number => x !== undefined).map(String))];
+  const categorias = await categoriasDosFornecedores(supabase, c.fatura.empresa_id, codigos);
+  for (const p of Object.values(propostas)) {
+    const cat = p.sugestao.campos.codFornecedor ? categorias.get(String(p.sugestao.campos.codFornecedor)) : undefined;
+    if (cat) { p.sugestao.campos.categoriaDoc = cat; p.sugestao.origem.categoriaDoc = "fornecedor"; }
+  }
   if (codigos.length) {
     const { data: f } = await supabase.from("cap_fornecedores").select("cod_fornecedor, nome").eq("empresa_id", c.fatura.empresa_id).in("cod_fornecedor", codigos);
     const nomes = new Map((f ?? []).map((x) => [String(x.cod_fornecedor), x.nome as string]));
@@ -375,8 +390,11 @@ export async function lerProvisorio(supabase: Cliente, ciclo: Pick<CicloLinha, "
   ]);
   const cartao = cartoes.find((c) => c.codigo === ciclo.cartao);
   if (!lida || !cartao) return null;
+  const codBanco = (cartao.lancamento_encargos as { codFornecedor?: number } | null)?.codFornecedor;
+  const catBanco = codBanco ? (await categoriasDosFornecedores(supabase, lida.fatura.empresa_id, [codBanco])).get(String(codBanco)) : undefined;
+  const cfgProv = (config as { valor: Record<string, unknown> } | null)?.valor;
   const titulo = montarProvisorio({
-    nomeCartao: cartao.nome, codigosCartao: cartao.lancamento_encargos, config: (config as { valor: unknown } | null)?.valor,
+    nomeCartao: cartao.nome, codigosCartao: cartao.lancamento_encargos, config: cfgProv && catBanco ? { ...cfgProv, categoriaDoc: catBanco } : cfgProv,
     totalCentavos: centavos(lida.fatura.total_informado), vencimento: lida.fatura.vencimento, competencia: ciclo.competencia, hoje: hojeEmCuiaba(),
   });
   const cod = titulo.ok ? String(titulo.payload.codFornecedor) : null;

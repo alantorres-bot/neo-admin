@@ -99,8 +99,9 @@ describe("detalhe e fornecedor", () => {
     expect(normalizarDetalheLancamento({ dataPagamento: "" }).dataPagamento).toBeNull();
   });
   it("normaliza o fornecedor (ativo/inativo pela situação)", () => {
-    expect(normalizarFornecedorApi({ codFornecedor: 382, nome: "PERFILADOS MULTIACO", nomeFantasia: "MULTIAÇO", cpfCnpj: "12345678000195", situacao: 1 }))
-      .toEqual({ codFornecedor: "382", nome: "PERFILADOS MULTIACO", nomeFantasia: "MULTIAÇO", documentoBruto: "12345678000195", ativo: true });
+    expect(normalizarFornecedorApi({ codFornecedor: 382, nome: "PERFILADOS MULTIACO", nomeFantasia: "MULTIAÇO", cpfCnpj: "12345678000195", situacao: 1, codCategoria: 14 }))
+      .toEqual({ codFornecedor: "382", nome: "PERFILADOS MULTIACO", nomeFantasia: "MULTIAÇO", documentoBruto: "12345678000195", ativo: true, codCategoria: 14 });
+    expect(normalizarFornecedorApi({ codFornecedor: 1, nome: "X" })?.codCategoria).toBeNull();
     expect(normalizarFornecedorApi({ codFornecedor: 9, situacao: 0 })).toMatchObject({ nome: "Fornecedor 9 (Consistem)", ativo: false });
     expect(normalizarFornecedorApi({ nome: "sem código" })).toBeNull();
   });

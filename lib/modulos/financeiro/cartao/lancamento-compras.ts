@@ -15,7 +15,7 @@ export const CAMPOS_COMPRA = [
 ] as const;
 export type CampoCompra = (typeof CAMPOS_COMPRA)[number];
 export type CamposCompra = Partial<Record<CampoCompra, number>>;
-export type OrigemCampo = "estabelecimento" | "cartao" | "escolher";
+export type OrigemCampo = "estabelecimento" | "cartao" | "fornecedor" | "escolher";
 
 export const ROTULO_CAMPO_COMPRA: Record<CampoCompra, string> = {
   codFornecedor: "Fornecedor", codHistorico: "Histórico", codPortador: "Portador", categoriaDoc: "Categoria do documento",

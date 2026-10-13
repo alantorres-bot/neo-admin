@@ -208,7 +208,7 @@ export function normalizarDetalheLancamento(r: Record<string, unknown>): Detalhe
   };
 }
 
-export type FornecedorApi = { codFornecedor: string; nome: string; nomeFantasia: string; documentoBruto: string; ativo: boolean };
+export type FornecedorApi = { codFornecedor: string; nome: string; nomeFantasia: string; documentoBruto: string; ativo: boolean; codCategoria: number | null };
 
 export function normalizarFornecedorApi(r: Record<string, unknown>): FornecedorApi | null {
   const codFornecedor = texto(r.codFornecedor);
@@ -221,6 +221,7 @@ export function normalizarFornecedorApi(r: Record<string, unknown>): FornecedorA
     nomeFantasia: texto(r.nomeFantasia),
     documentoBruto: texto(r.cpfCnpj ?? r.cnpjCpf ?? r.cnpj ?? r.cpf),
     ativo: situacao === "" ? true : situacao === "1",
+    codCategoria: /^\d{1,3}$/.test(texto(r.codCategoria)) ? Number(texto(r.codCategoria)) : null,
   };
 }
 

@@ -249,7 +249,7 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
       const fornecedores = await lerFornecedoresApi(cfg);
       const rows = fornecedores.map((f) => ({
         empresa_id: empresa.id, cod_fornecedor: f.codFornecedor, nome: f.nome, nome_fantasia: f.nomeFantasia || null,
-        documento: f.documentoBruto ? documentoFormatado(f.documentoBruto) : null, ativo: f.ativo, visto_em: agora,
+        documento: f.documentoBruto ? documentoFormatado(f.documentoBruto) : null, ativo: f.ativo, visto_em: agora, cod_categoria: f.codCategoria,
       }));
       for (const lote of lotes(rows)) {
         const { error } = await banco.from("cap_fornecedores").upsert(lote, { onConflict: "empresa_id,cod_fornecedor" });

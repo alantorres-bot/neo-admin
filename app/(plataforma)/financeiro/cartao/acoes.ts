@@ -20,7 +20,7 @@ import { CAMPOS_COMPRA, CAMPOS_PADRAO_CARTAO, conferirContas, lerCampos, montarT
 import { CONFERIR, type LinhaFatura } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { montarTituloAgrupado } from "@/lib/modulos/financeiro/cartao/lancamento-agrupado";
 import { normalizar } from "@/lib/modulos/financeiro/cartao/texto";
-import { codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerCompras, lerEncargos, lerEstabelecimentos, lerProvisorio, paraCartaoInfo, type FotoFechamento } from "./dados";
+import { categoriasDosFornecedores, codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerCompras, lerEncargos, lerEstabelecimentos, lerProvisorio, paraCartaoInfo, type FotoFechamento } from "./dados";
 
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
 const texto = (d: FormData, nome: string) => String(d.get(nome) ?? "").trim();
@@ -488,7 +488,8 @@ export async function lancarCompra(entrada: z.input<typeof esquemaCompra>): Prom
   if (!proposta || !item) return { ok: false, erro: "Esta linha não está mais entre as compras a lançar. Recarregue a página." };
   const contas = conferirContas(lerCampos(d.campos), q.creditoPadrao);
   if (contas) return { ok: false, erro: contas };
-  const t = montarTitulosCompra({ linha: item.linha, cartao: paraCartaoInfo(c.cartao), campos: lerCampos(d.campos), vencimentoFatura: c.fatura.vencimento, competencia: q.competencia });
+  const camposCompra = await comCategoriaDoFornecedor(supabase, c.fatura.empresa_id, lerCampos(d.campos));
+  const t = montarTitulosCompra({ linha: item.linha, cartao: paraCartaoInfo(c.cartao), campos: camposCompra, vencimentoFatura: c.fatura.vencimento, competencia: q.competencia });
   if (!t.ok) return { ok: false, erro: t.erro };
 
   const { data: lote, error } = await supabase.rpc("crt_reservar_lancamento_compra", {
@@ -528,16 +529,17 @@ export async function reenviarLote(entrada: { lote: string }): Promise<Resultado
 }
 
 /** Busca fornecedores do Consistem (espelho cap_fornecedores) da empresa, por nome ou código. */
-export async function buscarFornecedores(entrada: { empresaId: string; termo: string }): Promise<{ cod: number; nome: string }[]> {
+export async function buscarFornecedores(entrada: { empresaId: string; termo: string }): Promise<{ cod: number; nome: string; categoria: number | null }[]> {
   const sessao = await exigirSessao();
   if (!temAcesso(sessao.acesso, "financeiro", "consulta")) return [];
   const termo = entrada.termo.trim();
   if (!z.string().uuid().safeParse(entrada.empresaId).success || termo.length < 2) return [];
   const supabase = await criarClienteServidor();
-  let consulta = supabase.from("cap_fornecedores").select("cod_fornecedor, nome").eq("empresa_id", entrada.empresaId).limit(20);
+  let consulta = supabase.from("cap_fornecedores").select("cod_fornecedor, nome, cod_categoria").eq("empresa_id", entrada.empresaId).limit(20);
   consulta = /^\d+$/.test(termo) ? consulta.eq("cod_fornecedor", termo) : consulta.ilike("nome", `%${termo.replace(/[%_]/g, "")}%`);
   const { data } = await consulta.order("nome");
-  return (data ?? []).map((f) => ({ cod: Number(f.cod_fornecedor), nome: f.nome as string })).filter((f) => Number.isInteger(f.cod) && f.cod > 0);
+  return (data ?? []).map((f) => ({ cod: Number(f.cod_fornecedor), nome: f.nome as string, categoria: f.cod_categoria === null ? null : Number(f.cod_categoria) }))
+    .filter((f) => Number.isInteger(f.cod) && f.cod > 0);
 }
 
 // ---------------------------------------------------------------- fornecedor "Outros" no Consistem (0140)
@@ -613,7 +615,7 @@ export async function lancarAgrupado(entrada: z.input<typeof esquemaAgrupado>): 
   if (linhas.some((l) => !l)) return { ok: false, erro: "Uma das linhas não está mais entre as compras a lançar. Recarregue a página." };
   const contas = conferirContas(lerCampos(d.campos), q.creditoPadrao);
   if (contas) return { ok: false, erro: contas };
-  const t = montarTituloAgrupado({ linhas: linhas as LinhaFatura[], nomeCartao: c.cartao.nome, campos: lerCampos(d.campos), fechamento: q.fechamento, vencimento: c.fatura.vencimento, rotulo: d.rotulo });
+  const t = montarTituloAgrupado({ linhas: linhas as LinhaFatura[], nomeCartao: c.cartao.nome, campos: await comCategoriaDoFornecedor(supabase, c.fatura.empresa_id, lerCampos(d.campos)), fechamento: q.fechamento, vencimento: c.fatura.vencimento, rotulo: d.rotulo });
   if (!t.ok) return { ok: false, erro: t.erro };
   const { data: lote, error } = await supabase.rpc("crt_reservar_lancamento_agrupado", { p_fatura: c.fatura.id, p_linhas: d.linhas, p_payload: t.payload });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
@@ -654,4 +656,11 @@ export async function criarProvisorio(entrada: { cicloId: string }): Promise<Res
   const r = await criarProvisorioDoCiclo(supabase, lido.ciclo);
   revalidatePath(ROTA_CARTAO, "layout");
   return r.ok ? { ok: true, aviso: `Provisório criado no Consistem: lançamento ${r.cod}.` } : { ok: false, erro: `O provisório não foi criado: ${r.erro}` };
+}
+
+/** O Consistem exige a categoria do título = a do fornecedor (regra 55): troca a categoriaDoc pela do fornecedor escolhido. */
+async function comCategoriaDoFornecedor<T extends { codFornecedor?: number; categoriaDoc?: number }>(supabase: Awaited<ReturnType<typeof criarClienteServidor>>, empresaId: string, campos: T): Promise<T> {
+  if (!campos.codFornecedor) return campos;
+  const cat = (await categoriasDosFornecedores(supabase, empresaId, [campos.codFornecedor])).get(String(campos.codFornecedor));
+  return cat ? { ...campos, categoriaDoc: cat } : campos;
 }

@@ -18,12 +18,12 @@ import { BotaoResolver } from "./encargos";
 import { BotaoCadastrarFornecedor } from "../fornecedores";
 import { SeletorContaFluxo } from "../listas";
 
-const ORIGEM = { estabelecimento: "do estabelecimento", cartao: "do cartão", escolher: "escolher" } as const;
+const ORIGEM = { estabelecimento: "do estabelecimento", cartao: "do cartão", fornecedor: "do fornecedor", escolher: "escolher" } as const;
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
 
-export function SeletorFornecedor({ empresaId, cod, nome, aoEscolher }: { empresaId: string; cod?: number; nome: string | null; aoEscolher: (cod: number, nome: string) => void }) {
+export function SeletorFornecedor({ empresaId, cod, nome, aoEscolher }: { empresaId: string; cod?: number; nome: string | null; aoEscolher: (cod: number, nome: string, categoria: number | null) => void }) {
   const [termo, setTermo] = useState("");
-  const [lista, setLista] = useState<{ cod: number; nome: string }[]>([]);
+  const [lista, setLista] = useState<{ cod: number; nome: string; categoria: number | null }[]>([]);
   const [buscando, iniciar] = useTransition();
   function buscar() {
     iniciar(async () => setLista(await buscarFornecedores({ empresaId, termo })));
@@ -40,7 +40,7 @@ export function SeletorFornecedor({ empresaId, cod, nome, aoEscolher }: { empres
         <ul className="max-h-36 overflow-y-auto rounded-[3px] border border-grade text-sm">
           {lista.map((f) => (
             <li key={f.cod}>
-              <button type="button" className="w-full px-2 py-1 text-left hover:bg-cabecalho" onClick={() => { aoEscolher(f.cod, f.nome); setLista([]); setTermo(""); }}>
+              <button type="button" className="w-full px-2 py-1 text-left hover:bg-cabecalho" onClick={() => { aoEscolher(f.cod, f.nome, f.categoria); setLista([]); setTermo(""); }}>
                 {f.cod} · {f.nome}
               </button>
             </li>
@@ -101,7 +101,11 @@ export function DialogoLancarCompra({ faturaId, item, proposta, compras }: { fat
               <p className="rounded-[3px] border border-amber-300 bg-amber-50 p-2 text-sm">Parcela sem título: confira no Consistem se a compra não foi lançada pelo total antes de lançar as parcelas restantes.</p>
             )}
             <SeletorFornecedor empresaId={compras.empresaId} cod={campos.codFornecedor} nome={fornecedorNome}
-              aoEscolher={(cod, nome) => { setCampos((c) => ({ ...c, codFornecedor: cod })); setFornecedorNome(nome); }} />
+              aoEscolher={(cod, nome, cat) => {
+                setCampos((c) => ({ ...c, codFornecedor: cod, ...(cat ? { categoriaDoc: cat } : {}) }));
+                if (cat) setTextos((t) => ({ ...t, categoriaDoc: String(cat) }));
+                setFornecedorNome(nome);
+              }} />
             <div className="-mt-2 flex justify-end">
               <BotaoCadastrarFornecedor empresaId={compras.empresaId} nomeInicial={proposta.sugestao.padrao ?? proposta.padraoLembrar} cadastro={compras.cadastro}
                 listas={compras.listas} fluxoInicial={{ grupo: campos.grupoContaFluxoCaixa, item: campos.contaFluxoCaixa }}

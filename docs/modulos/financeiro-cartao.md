@@ -214,6 +214,11 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     pendência "Criar o provisório" + o botão "Criar provisório no Consistem" na página do mês. Conta de fluxo e contas contábeis
     do provisório: configuração `financeiro.cartao.provisorio` (os provisórios reais 33392/33360 já foram excluídos; valores a
     informar pelo Alan).
+55. **Categoria do título = categoria do fornecedor** (o Consistem recusa alterar título com categoria diferente: "Categoria
+    informada diferente da categoria do documento!", 33626; decisão do Alan, 13/10/2026; migration 0157): o espelho
+    `cap_fornecedores.cod_categoria` (gravado pela sincronização) dá a categoria; compra, agrupado, encargos e provisório usam a
+    do fornecedor (o servidor aplica ao enviar; os diálogos mostram "do fornecedor"). Os títulos 33626, 33627, 33628, 33629 e
+    33633 saíram com 17 e ficaram assim (decisão do Alan).
 49. Cadastro com a mesma regra de envio dos títulos: reserva, envio único, erro (nada criado) ou sem resposta (conferir e
     resolver à mão); cadastrado vai na hora para o espelho `cap_fornecedores`. Prova em `crt_fornecedores_cadastrados`.
 
