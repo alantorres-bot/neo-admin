@@ -73,6 +73,10 @@ describe("troca do portador (0162)", () => {
     expect(conferirTroca(antes, { ...antes, codPortador: 501, dataAlteracao: "2026-10-13" }, 501)).toEqual({ ok: true });
     expect(conferirTroca(antes, { ...antes, codPortador: "501" }, 501)).toEqual({ ok: true });
     expect(conferirTroca(antes, antes, 501)).toMatchObject({ ok: false, mensagem: /continua 91 \(esperado 501\)/ });
+    // Vencimento original vazio passa a ser o próprio vencimento (33456, 13/10/2026): aceito. Outro valor: diferença.
+    const comOriginal = { ...antes, dataVencimentoOriginal: "" };
+    expect(conferirTroca(comOriginal, { ...comOriginal, codPortador: 501, dataVencimentoOriginal: "2026-10-23" }, 501)).toEqual({ ok: true });
+    expect(conferirTroca(comOriginal, { ...comOriginal, codPortador: 501, dataVencimentoOriginal: "2026-10-30" }, 501)).toMatchObject({ ok: false });
     const r = conferirTroca(antes, { ...antes, codPortador: 501, codBarras: "" }, 501);
     expect(r).toMatchObject({ ok: false, mensagem: /outros campos também mudaram/, diferencas: ['codBarras: "123" → ""'] });
   });

@@ -231,7 +231,8 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
 58. **Já nascem com o código:** compra, agrupado e encargos lançados pelo painel saem com o portador da fatura do cartão (o servidor
     aplica ao enviar; o diálogo mostra). O provisório continua com o portador da configuração (91).
 59. **Envio** (Edge Function `crt-trocar-portador`): para cada título, lê o detalhe (antes), troca só o `codPortador`, lê de novo
-    (depois) e confere: portador novo e **todo o resto igual** (campos de data/usuário da alteração não contam). Já no código: só
+    (depois) e confere: portador novo e **todo o resto igual** (campos de data/usuário da alteração não contam; o "vencimento
+    original" vazio que o Consistem preenche com o próprio vencimento na primeira alteração também não — visto no 33456). Já no código: só
     registra. Recusa, falta de resposta ou diferença = erro com o antes/depois (diferença em outros campos para o lote: corrigir no
     Consistem antes de tentar de novo). Trocar o portador é idempotente: a decisão é sempre pelo que o Consistem mostra depois.
 60. **Prova e pendência:** `crt_trocas_portador` (um registro por título e mês, sem delete). Erro abre a pendência "Trocar o banco

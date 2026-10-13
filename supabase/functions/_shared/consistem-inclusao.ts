@@ -107,6 +107,8 @@ export function conferirTroca(antes: Record<string, unknown>, depois: Record<str
   const diferencas: string[] = [];
   for (const k of Object.keys(antes)) {
     if (k === "codPortador" || VOLATEIS.test(k)) continue;
+    // Na primeira alteração o Consistem grava o vencimento original (vazio → o próprio vencimento): o vencimento não muda.
+    if (k === "dataVencimentoOriginal" && !antes[k] && depois[k] === antes.dataVencimento) continue;
     const a = JSON.stringify(antes[k] ?? null);
     const d = JSON.stringify(depois[k] ?? null);
     if (a !== d) diferencas.push(`${k}: ${a.slice(0, 80)} → ${d.slice(0, 80)}`);
