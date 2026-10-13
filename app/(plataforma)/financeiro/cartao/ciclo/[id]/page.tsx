@@ -10,7 +10,7 @@ import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { conciliacaoDaRequisicao, lerCiclo, lerFatura, quandoEm, registrarApuracao } from "../../dados";
+import { conciliacaoDaRequisicao, lerCiclo, lerEncargos, lerFatura, quandoEm, registrarApuracao } from "../../dados";
 import { PainelConciliacao } from "../../[id]/painel";
 import { BotaoCancelarFatura } from "../../[id]/componentes";
 import { BotaoFechar, BotaoReabrir } from "./componentes";
@@ -36,6 +36,7 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
   // Em conciliação: calcula ao vivo e grava a apuração (mantém as pendências). Fechada/paga: mostra a foto do fechamento.
   const aoVivo = ciclo.situacao === "em_conciliacao" && ciclo.fatura_id ? await conciliacaoDaRequisicao(ciclo.fatura_id) : null;
   if (aoVivo) await registrarApuracao(supabase, ciclo.id, aoVivo);
+  const encargos = aoVivo ? await lerEncargos(supabase, aoVivo) : null;
   const linhasCongeladas = !aoVivo && vigente ? (await lerFatura(supabase, vigente.fatura_id))?.linhas ?? [] : [];
   const bloqueio = aoVivo ? (aoVivo.origemTitulos !== "consistem" ? "Os títulos não foram lidos do Consistem agora; recarregue para tentar de novo." : bloqueioDoFechamento({ itensALancar: aoVivo.resultado.pendentes, residuoCentavos: aoVivo.resultado.residuoCentavos })) : null;
   const podeCancelarFatura = fatura?.status === "importada" && ciclo.situacao === "em_conciliacao" && (ehGestor || (podeOperar && fatura.importado_por === sessao.userId));
@@ -104,7 +105,7 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
             {" "}<Link href={`${ROTA_CARTAO}/${aoVivo.fatura.id}`} className="text-elo hover:underline">Abrir só a fatura</Link>
           </p>
           <PainelConciliacao resultado={aoVivo.resultado} outros={aoVivo.outros} linhas={aoVivo.linhas} tituloDaFatura={aoVivo.tituloDaFatura} podeOperar={podeOperar}
-            faturaId={aoVivo.fatura.id} decisoesHistorico={aoVivo.decisoesHistorico} />
+            faturaId={aoVivo.fatura.id} decisoesHistorico={aoVivo.decisoesHistorico} encargos={encargos} />
         </>
       )}
 

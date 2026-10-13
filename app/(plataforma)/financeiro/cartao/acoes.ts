@@ -15,7 +15,8 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { gerarPlanilha, nomeDaPlanilha } from "@/lib/modulos/financeiro/cartao/planilha";
 import { bloqueioDoFechamento, rotuloCompetencia } from "@/lib/modulos/financeiro/cartao/ciclos";
-import { codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, type FotoFechamento } from "./dados";
+import { CAMPOS_CONFIG_ENCARGOS, ROTULO_CAMPO_CONFIG } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
+import { codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerEncargos, type FotoFechamento } from "./dados";
 
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
 const texto = (d: FormData, nome: string) => String(d.get(nome) ?? "").trim();
@@ -155,6 +156,18 @@ const esquemaCartao = z.object({
   observacao: z.string().trim().max(300),
 });
 
+/** Códigos do Consistem do título de encargos: todos preenchidos (inteiros positivos) ou todos vazios. */
+function lerCodigosEncargos(dados: FormData): { ok: true; valor: Record<string, number> | null } | { ok: false; erro: string } {
+  const brutos = CAMPOS_CONFIG_ENCARGOS.map((k) => [k, texto(dados, `enc_${k}`)] as const);
+  if (brutos.every(([, v]) => v === "")) return { ok: true, valor: null };
+  const valor: Record<string, number> = {};
+  for (const [k, v] of brutos) {
+    if (!/^\d{1,9}$/.test(v) || Number(v) <= 0) return { ok: false, erro: `Encargos no Consistem: informe ${ROTULO_CAMPO_CONFIG[k].toLowerCase()} (número), ou deixe todos os códigos vazios.` };
+    valor[k] = Number(v);
+  }
+  return { ok: true, valor };
+}
+
 export async function salvarCartao(_anterior: EstadoForm, dados: FormData): Promise<EstadoForm> {
   const sessao = await exigirSessao();
   if (!temAcesso(sessao.acesso, "financeiro", "gestor")) return { erro: "Somente gestor do Financeiro (ou acima) pode alterar os cartões." };
@@ -164,6 +177,8 @@ export async function salvarCartao(_anterior: EstadoForm, dados: FormData): Prom
     pastaFaturas: texto(dados, "pastaFaturas"), ativo: dados.get("ativo") === "on", observacao: texto(dados, "observacao"),
   });
   if (!v.success) return { erro: v.error.issues[0].message };
+  const codigos = lerCodigosEncargos(dados);
+  if (!codigos.ok) return { erro: codigos.erro };
   const d = v.data;
   const supabase = await criarClienteServidor();
   const { error } = await supabase.rpc("crt_salvar_cartao", {
@@ -171,7 +186,9 @@ export async function salvarCartao(_anterior: EstadoForm, dados: FormData): Prom
     p_tipo_titulo: d.tipoTitulo, p_leitor: d.leitor, p_pasta_faturas: d.pastaFaturas || null, p_ativo: d.ativo, p_observacao: d.observacao || null,
   });
   if (error) return { erro: mensagemDeErro(error) };
-  revalidatePath(`${ROTA_CARTAO}/cartoes`);
+  const { error: erroCodigos } = await supabase.from("crt_cartoes").update({ lancamento_encargos: codigos.valor }).eq("codigo", d.codigo);
+  if (erroCodigos) return { erro: `Cartão salvo, mas os códigos de encargos não: ${mensagemDeErro(erroCodigos)}` };
+  revalidatePath(ROTA_CARTAO, "layout");
   return { ok: true };
 }
 
@@ -325,3 +342,71 @@ export async function atualizarRegrasNeoFiscal(): Promise<Resultado> {
   return { ok: true, aviso: `Regras do Neo Fiscal: ${r?.recebidas ?? 0} recebidas · ${r?.novas ?? 0} novas · ${r?.alteradas ?? 0} alteradas · ${r?.removidas ?? 0} removidas.` };
 }
 
+
+// ---------------------------------------------------------------- lançar encargos no Consistem (0137)
+
+async function mensagemDaFuncao(error: unknown, padrao: string): Promise<{ mensagem: string; tipo: string | null }> {
+  const resposta = (error as { context?: Response }).context;
+  if (resposta && typeof resposta.json === "function") {
+    try {
+      const j = (await resposta.json()) as { erro?: string; mensagem?: string; tipo?: string };
+      return { mensagem: j.mensagem ?? j.erro ?? padrao, tipo: j.tipo ?? null };
+    } catch { /* mantém */ }
+  }
+  return { mensagem: padrao, tipo: null };
+}
+
+/**
+ * Lança no Consistem o título com a soma dos encargos da fatura (operador ou acima). Recalcula a conciliação na hora (não
+ * confia na tela), confere que o título é o mesmo que a pessoa viu (valor e linhas), reserva (crt_reservar_lancamento_encargos)
+ * e chama a Edge Function crt-lancar-encargos, que envia uma vez só.
+ */
+export async function lancarEncargos(entrada: { faturaId: string; valorCentavos: number; linhas: string[] }): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) lança encargos no Consistem." };
+  if (!z.string().uuid().safeParse(entrada.faturaId).success) return { ok: false, erro: "Fatura inválida." };
+  const c = await conciliacaoDaRequisicao(entrada.faturaId);
+  if (!c) return { ok: false, erro: "Fatura não encontrada." };
+  if (c.origemTitulos !== "consistem") return { ok: false, erro: `Não foi possível consultar o Consistem agora (${c.avisoOrigem}). Tente de novo.` };
+  const supabase = await criarClienteServidor();
+  const q = await lerEncargos(supabase, c);
+  if (!q.ligado) return { ok: false, erro: "O lançamento de encargos no Consistem está desligado." };
+  if (!q.mesAberto) return { ok: false, erro: "Só se lançam encargos de fatura de um mês em conciliação." };
+  if (q.ativo) return { ok: false, erro: `Este mês já tem lançamento de encargos (${q.ativo.cod_lancamento_erp ?? q.ativo.situacao}).` };
+  const t = q.titulo;
+  if (!t.ok) return { ok: false, erro: t.erro };
+  const mesmas = [...t.linhas.map((a) => a.linha.id)].sort().join(",") === [...entrada.linhas].sort().join(",");
+  if (t.valorCentavos !== entrada.valorCentavos || !mesmas) return { ok: false, erro: "Os encargos mudaram desde que a tela foi aberta. Recarregue e confira de novo." };
+
+  const { data: id, error } = await supabase.rpc("crt_reservar_lancamento_encargos", {
+    p_fatura: c.fatura.id, p_linhas: t.linhas.map((a) => a.linha.id), p_valor: t.valorCentavos / 100, p_complemento: t.complemento, p_payload: t.payload,
+  });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  const { data, error: erroFuncao } = await supabase.functions.invoke("crt-lancar-encargos", { body: { id } });
+  revalidatePath(ROTA_CARTAO, "layout");
+  if (erroFuncao) {
+    const { mensagem, tipo } = await mensagemDaFuncao(erroFuncao, "Não foi possível falar com a função de lançamento.");
+    return { ok: false, erro: tipo === "incerto" ? `${mensagem} Depois de conferir, use “Resolver” na lista de lançamentos.` : mensagem };
+  }
+  const r = data as { codLancamento?: string } | null;
+  return { ok: true, aviso: `Encargos lançados no Consistem: lançamento ${r?.codLancamento ?? "?"} (${(t.valorCentavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}). As linhas foram casadas com o título.` };
+}
+
+const esquemaResolver = z.object({
+  id: z.string().uuid(),
+  codLancamento: z.string().trim().regex(/^\d{0,12}$/, "O código do lançamento é só números.").transform((v) => v || null),
+  motivo: z.string().trim().min(3, "Informe o que foi conferido no Consistem.").max(300),
+});
+
+/** Resolve à mão um lançamento sem resposta, depois de conferir no Consistem (com o código, ou "não foi criado"). */
+export async function resolverLancamentoEncargos(entrada: z.input<typeof esquemaResolver>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) resolve lançamentos." };
+  const dados = esquemaResolver.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("crt_resolver_lancamento_encargos", { p_id: dados.data.id, p_cod: dados.data.codLancamento, p_motivo: dados.data.motivo });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidatePath(ROTA_CARTAO, "layout");
+  return { ok: true, aviso: dados.data.codLancamento ? `Registrado como lançado (${dados.data.codLancamento}); as linhas foram casadas com o título.` : "Registrado como não criado. O lançamento pode ser feito de novo." };
+}

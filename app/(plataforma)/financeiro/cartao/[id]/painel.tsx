@@ -3,10 +3,13 @@
 import type { ResultadoConciliacao, TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import type { OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import type { DecisaoLinha, LinhaFaturaBanco } from "../dados";
+import type { DecisaoLinha, LinhaFaturaBanco, QuadroEncargos as DadosEncargos } from "../dados";
 import { AbasConciliacao } from "./componentes";
+import { QuadroEncargos } from "./encargos";
 
-export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false, faturaId = null, decisoesHistorico = [] }: {
+export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false, faturaId = null, decisoesHistorico = [], encargos = null }: {
+  /** Encargos do mês (lançamento no Consistem); nulo = não mostra. */
+  encargos?: DadosEncargos | null;
   /** Fatura que aceita decisões (em conciliação); nulo = só leitura. */
   faturaId?: string | null;
   decisoesHistorico?: DecisaoLinha[];
@@ -35,6 +38,7 @@ export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura
           É o provisório do fechamento (os títulos do cartão vão para o borderô e ele é excluído após o pagamento): fica fora do cruzamento linha a linha. Quando ele sair do Consistem, o mês fechado passa a <strong>Paga</strong> sozinho.
         </p>
       )}
+      {!congelado && encargos && <QuadroEncargos dados={encargos} faturaId={faturaId} podeOperar={podeOperar} />}
       <AbasConciliacao resultado={r} outros={outros} linhas={linhas} podeOperar={podeOperar && !congelado} faturaId={congelado ? null : faturaId} decisoesHistorico={decisoesHistorico} />
 
       {!congelado && (

@@ -21,7 +21,7 @@ export default async function LayoutCartao({ children }: LayoutProps<"/financeir
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Cartão de crédito</h1>
         <p className="text-sm text-muted-foreground">
-          Conciliação da fatura do cartão com os títulos do Contas a Pagar (espelho do Consistem): o que falta lançar, divergências e o quadro de conciliação. O Neo Admin só lê o ERP; lançar e dar baixa continuam no Consistem.
+          Conciliação da fatura do cartão com os títulos do Contas a Pagar (espelho do Consistem): o que falta lançar, divergências e o quadro de conciliação. Lançar e dar baixa continuam no Consistem; só o título de encargos do mês pode ser lançado daqui, com conferência.
         </p>
       </div>
       <Abas abas={ABAS} />

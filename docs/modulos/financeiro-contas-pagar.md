@@ -290,6 +290,9 @@ financeiro repetia a marcação, documento por documento, no ERP. O pedido do Al
   `GET /lancamentoContasPagar/{id}` não devolvem o campo. Interpretação: **1 = confirmado no CCFFB014**, 0 = passou pela tela e não
   foi marcado, nulo = nunca passou pela tela.
 - **Conclusão**: escrever **não dá** hoje; ler dá. Decisão do Alan: entregar a leitura agora e pedir a escrita à Consistem.
+- **Inclusão de lançamento (13/10/2026):** `PUT /lancamentoContasPagar` (`GerarLancamentoContaPagar`) passa a ser usado pelo módulo
+  Cartão de crédito para o título de encargos da fatura (única escrita no ERP; ver `financeiro-cartao.md`, regras 31 a 36). A ação
+  `exemplos_encargos` desta Edge Function (só leitura) devolve os encargos de cartão já lançados, com o detalhe completo.
 
 ### O que foi feito
 - Migration `0129_cap_confirmacao.sql`: `cap_lancamentos.confirmado_consistem` (true/false/nulo = não verificado) e

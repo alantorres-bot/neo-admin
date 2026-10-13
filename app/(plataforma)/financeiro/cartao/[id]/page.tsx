@@ -8,7 +8,8 @@ import { ROTA_CARTAO } from "@/lib/modulos/financeiro/cartao/modulo";
 import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
-import { conciliacaoDaRequisicao, quandoEm } from "../dados";
+import { conciliacaoDaRequisicao, lerEncargos, quandoEm } from "../dados";
+import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { BotaoCancelarFatura } from "./componentes";
 import { PainelConciliacao } from "./painel";
 
@@ -22,6 +23,7 @@ export default async function PaginaConciliacao({ params }: PageProps<"/financei
   if (!c) notFound();
   const { fatura, resultado: r, outros } = c;
   const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
+  const encargos = fatura.status === "importada" ? await lerEncargos(await criarClienteServidor(), c) : null;
   const podeCancelar = fatura.status === "importada" && (temAcesso(sessao.acesso, "financeiro", "gestor") || (podeOperar && fatura.importado_por === sessao.userId));
 
   return (
@@ -60,7 +62,7 @@ export default async function PaginaConciliacao({ params }: PageProps<"/financei
         </p>
       )}
       <PainelConciliacao resultado={r} outros={outros} linhas={c.linhas} tituloDaFatura={c.tituloDaFatura} podeOperar={podeOperar}
-        faturaId={fatura.status === "importada" ? fatura.id : null} decisoesHistorico={c.decisoesHistorico} />
+        faturaId={fatura.status === "importada" ? fatura.id : null} decisoesHistorico={c.decisoesHistorico} encargos={encargos} />
     </div>
   );
 }

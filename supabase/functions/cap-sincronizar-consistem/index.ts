@@ -20,6 +20,9 @@
 //                                       Também devolve as ANTECIPAÇÕES (A) com data de pagamento em [ini, fim] (antecipação paga no
 //                                       cartão: o complemento quase nunca cita o cartão). A data de pagamento vem do espelho ou do
 //                                       detalhe (lancamentoContasPagar/{id}); procura as emitidas até 60 dias antes do início.
+//   exemplos_encargos { empresaId?, ini, fim }
+//                                       SÓ LEITURA: títulos de encargo de cartão (IOF, juros, multa...) emitidos no período, com o
+//                                       detalhe completo, para montar o lançamento automático dos encargos.
 //
 // Regras:
 //   - A API devolve a vida inteira e ignora `situacao`: em aberto = valorAtualizado > 0. Só C, A e D são gravados.
@@ -636,6 +639,30 @@ Deno.serve(async (req) => {
             tem_bordero: comBordero.has(t.codLancamento),
           })),
         });
+      }
+      case "exemplos_encargos": {
+        // SÓ LEITURA: títulos de encargo de cartão já lançados à mão (emissão no período), com o detalhe completo da API
+        // (conta contábil, conta de fluxo, histórico, portador). Serve para montar o lançamento automático dos encargos.
+        const ini = String(corpo.ini ?? "");
+        const fim = String(corpo.fim ?? "");
+        const dataOk = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d);
+        if (!dataOk(ini) || !dataOk(fim) || ini > fim || (Date.parse(fim) - Date.parse(ini)) / 86_400_000 > 400) {
+          return responder({ erro: "Período de emissão inválido (até 400 dias)." }, 400);
+        }
+        const e = (empresas as Empresa[]).find((x) => x.id === corpo.empresaId) ?? (empresas[0] as Empresa);
+        const cfg: ConfigConsistem = { ...cfgBase, empresa: e.codigo_erp };
+        const registros = await buscarTodasPaginas(buscar, cfg, ROTA_CONTAS_PAGAR, { dataEmissaoIni: ini, dataEmissaoFim: fim, paginacao: PAGINACAO });
+        const ehEncargoDeCartao = (t: string) => /CART/i.test(t) && /(IOF|JUROS|MULTA|ANUIDADE|TARIFA|TAXA|ENCARGO|MORA|ROTATIVO)/i.test(t);
+        const achados = registros.filter((r) => ehEncargoDeCartao(String(r.complementoHistorico ?? "")));
+        const detalhes: Record<string, unknown>[] = [];
+        for (const r of achados.slice(0, 15)) {
+          try {
+            detalhes.push(await buscarObjeto(buscar, cfg, `${ROTA_DETALHE_LANCAMENTO}/${encodeURIComponent(String(r.codLancamento))}`));
+          } catch (erro) {
+            detalhes.push({ codLancamento: r.codLancamento, erro: erro instanceof Error ? erro.message : "falha" });
+          }
+        }
+        return responder({ ok: true, empresa: e.nome_curto, registrosNoPeriodo: registros.length, encontrados: achados.length, lista: achados.slice(0, 40), detalhes });
       }
       case "sincronizar": {
         const resultados: ResumoEmpresa[] = [];

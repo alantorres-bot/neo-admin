@@ -5,6 +5,7 @@ import { conciliar, type DecisaoItem, type Estabelecimento, type LinhaFatura, ty
 import { MODULO_CARTAO, type CodigoLeitor } from "@/lib/modulos/financeiro/cartao/modulo";
 import { selecionarTitulos, type LancamentoEspelho, type OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { somarDias } from "@/lib/modulos/financeiro/cartao/texto";
+import { encargosALancar, lerConfigEncargos, montarTituloEncargos, type NovoLancamentoContaPagar, type TituloEncargos } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
 import { JANELA_VENCIMENTO } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { FUSO } from "@/lib/nucleo/fila";
 import { urlAssinadaAnexo } from "@/lib/nucleo/anexos";
@@ -21,8 +22,10 @@ export const quandoEm = (iso: string) =>
 export type CartaoLinha = {
   codigo: string; nome: string; banco: string; tipo_pessoa: "PF" | "PJ"; dia_fechamento: number; dia_vencimento: number; tipo_titulo: number | null;
   leitor: CodigoLeitor; pasta_faturas: string | null; ativo: boolean; observacao: string | null;
+  /** Códigos do Consistem do título de encargos (crt_cartoes.lancamento_encargos). */
+  lancamento_encargos: Record<string, number> | null;
 };
-const COLUNAS_CARTAO = "codigo, nome, banco, tipo_pessoa, dia_fechamento, dia_vencimento, tipo_titulo, leitor, pasta_faturas, ativo, observacao";
+const COLUNAS_CARTAO = "codigo, nome, banco, tipo_pessoa, dia_fechamento, dia_vencimento, tipo_titulo, leitor, pasta_faturas, ativo, observacao, lancamento_encargos";
 
 export async function lerCartoes(supabase: Cliente): Promise<CartaoLinha[]> {
   const { data, error } = await supabase.from("crt_cartoes").select(COLUNAS_CARTAO).order("codigo");
@@ -196,6 +199,51 @@ export const conciliacaoDaRequisicao = cache(async (id: string): Promise<Concili
   return { fatura, linhas, cartao, resultado, outros: [...selecao.outros, ...antecipacoesSobrando], tituloDaFatura: selecao.tituloDaFatura, ultimaSincronizacao: u ? quandoEm(u.criado_em) : null,
     origemTitulos: lancamentos.origem, avisoOrigem: lancamentos.aviso, decisoesHistorico };
 });
+
+// ---------------------------------------------------------------- encargos lançados no Consistem (0137)
+
+export type LancamentoErpLinha = {
+  id: string; fatura_id: string; situacao: "reservado" | "enviando" | "lancado" | "erro"; valor: number | string; complemento: string; linhas: string[];
+  payload: NovoLancamentoContaPagar; cod_lancamento_erp: string | null; erro: string | null; criado_por: string | null; criado_por_nome: string | null; criado_em: string;
+  enviado_em: string | null; concluido_em: string | null; resolvido_por_nome: string | null; motivo_resolucao: string | null;
+};
+
+export type QuadroEncargos = {
+  /** Chave geral financeiro.cartao.lancar_encargos_no_erp. */
+  ligado: boolean;
+  /** O mês da fatura está em conciliação (só então se lança). */
+  mesAberto: boolean;
+  titulo: TituloEncargos;
+  fornecedorNome: string | null;
+  /** Lançamento ativo do mês (reservado, enviando ou lançado), se houver. */
+  ativo: LancamentoErpLinha | null;
+  historico: LancamentoErpLinha[];
+};
+
+/** Encargos a lançar da fatura, o título que seria enviado e os lançamentos já feitos no mês. */
+export async function lerEncargos(supabase: Cliente, c: Conciliacao): Promise<QuadroEncargos> {
+  const ciclo = c.fatura.ciclo_id;
+  const [{ data: config }, { data: lancs, error }, { data: cic }] = await Promise.all([
+    supabase.from("configuracoes").select("valor").eq("chave", "financeiro.cartao.lancar_encargos_no_erp").maybeSingle(),
+    ciclo
+      ? supabase.from("crt_vw_lancamentos_erp").select("id, fatura_id, situacao, valor, complemento, linhas, payload, cod_lancamento_erp, erro, criado_por, criado_por_nome, criado_em, enviado_em, concluido_em, resolvido_por_nome, motivo_resolucao")
+        .eq("ciclo_id", ciclo).order("criado_em", { ascending: false }).limit(50)
+      : Promise.resolve({ data: [], error: null }),
+    ciclo ? supabase.from("crt_ciclos").select("fechamento, situacao").eq("id", ciclo).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+  if (error) throw new Error(`Falha ao ler os lançamentos de encargos: ${error.message}`);
+  const historico = (lancs ?? []) as LancamentoErpLinha[];
+  const ativo = historico.find((l) => l.situacao !== "erro") ?? null;
+  const jaLancadas = new Set(historico.filter((l) => l.situacao !== "erro").flatMap((l) => l.linhas));
+  const cfg = lerConfigEncargos(c.cartao.lancamento_encargos);
+  const titulo = montarTituloEncargos({
+    nomeCartao: c.cartao.nome, config: cfg, linhas: encargosALancar(c.resultado, jaLancadas),
+    fechamento: (cic as { fechamento: string } | null)?.fechamento ?? null, vencimento: c.fatura.vencimento,
+  });
+  const nomes = cfg ? await nomesDosFornecedores(supabase, [String(cfg.codFornecedor)]) : new Map<string, string>();
+  const mesAberto = (cic as { situacao: string } | null)?.situacao === "em_conciliacao" && c.fatura.status === "importada";
+  return { ligado: (config as { valor: unknown } | null)?.valor === true, mesAberto, titulo, fornecedorNome: cfg ? nomes.get(String(cfg.codFornecedor)) ?? null : null, ativo, historico };
+}
 
 // ---------------------------------------------------------------- regras fornecedor → cartão (cópia do Neo Fiscal)
 
