@@ -42,6 +42,8 @@ export type TituloPagar = {
   emBordero?: boolean;
   /** Código do fornecedor no Consistem. */
   codFornecedor?: string | null;
+  /** Banco/portador atual do título no Consistem (lido da API). */
+  codBanco?: string | null;
   /** Entrou na fatura só pela regra do fornecedor no Neo Fiscal (o complemento não cita o cartão). */
   porRegra?: boolean;
   /** Cartão da regra do fornecedor no Neo Fiscal na data da compra, quando há regra. */

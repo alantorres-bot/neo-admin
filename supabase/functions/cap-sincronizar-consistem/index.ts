@@ -557,6 +557,8 @@ Deno.serve(async (req) => {
             data_emissao: t.emissao, valor_documento: reais(t.valorDocumentoCentavos),
             valor_original: t.valorOriginalCentavos === null ? null : reais(t.valorOriginalCentavos), valor_atualizado: reais(t.saldoCentavos),
             tem_bordero: comBordero.has(t.codLancamento),
+            // Banco/portador atual: o fechamento do cartão troca o dos títulos da fatura (0162) e pula quem já está no código.
+            cod_banco: t.codBanco || null,
           })),
         });
       }

@@ -5,6 +5,7 @@ import { conciliar, doDicionario, type DecisaoItem, type Estabelecimento, type L
 import { MODULO_CARTAO, type CodigoLeitor } from "@/lib/modulos/financeiro/cartao/modulo";
 import { selecionarTitulos, type LancamentoEspelho, type OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { somarDias } from "@/lib/modulos/financeiro/cartao/texto";
+import { comPortadorDaFatura } from "@/lib/modulos/financeiro/cartao/portador-fatura";
 import { encargosALancar, lerConfigEncargos, montarTituloEncargos, type NovoLancamentoContaPagar, type TituloEncargos } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
 import type { CategoriaFornecedor, ContaFluxo, ListasConsistem } from "@/lib/modulos/financeiro/cartao/listas";
 import { montarProvisorio, type Provisorio } from "@/lib/modulos/financeiro/cartao/provisorio";
@@ -30,8 +31,10 @@ export type CartaoLinha = {
   lancamento_encargos: Record<string, number> | null;
   /** Padrões do cartão para o título de compra (portador, categoria, histórico, conta contábil de crédito). */
   lancamento_compras: Record<string, number> | null;
+  /** Banco/portador da fatura no Consistem (0162): os títulos da fatura passam a ele no fechamento. */
+  portador_fatura: number | null;
 };
-const COLUNAS_CARTAO = "codigo, nome, banco, tipo_pessoa, dia_fechamento, dia_vencimento, tipo_titulo, leitor, pasta_faturas, ativo, observacao, lancamento_encargos, lancamento_compras";
+const COLUNAS_CARTAO = "codigo, nome, banco, tipo_pessoa, dia_fechamento, dia_vencimento, tipo_titulo, leitor, pasta_faturas, ativo, observacao, lancamento_encargos, lancamento_compras, portador_fatura";
 
 export async function lerCartoes(supabase: Cliente): Promise<CartaoLinha[]> {
   const { data, error } = await supabase.from("crt_cartoes").select(COLUNAS_CARTAO).order("codigo");
@@ -250,7 +253,8 @@ export async function lerEncargos(supabase: Cliente, c: Conciliacao): Promise<Qu
   const historico = (lancs ?? []) as LancamentoErpLinha[];
   const ativo = historico.find((l) => l.situacao !== "erro") ?? null;
   const jaLancadas = new Set(historico.filter((l) => l.situacao !== "erro").flatMap((l) => l.linhas));
-  const cfgBruta = lerConfigEncargos(c.cartao.lancamento_encargos);
+  const cfgLida = lerConfigEncargos(c.cartao.lancamento_encargos);
+  const cfgBruta = cfgLida ? comPortadorDaFatura(cfgLida, c.cartao.portador_fatura) : cfgLida;
   const catBanco = cfgBruta ? (await categoriasDosFornecedores(supabase, c.fatura.empresa_id, [cfgBruta.codFornecedor])).get(String(cfgBruta.codFornecedor)) : undefined;
   const cfg = cfgBruta && catBanco ? { ...cfgBruta, categoriaDoc: catBanco } : cfgBruta;
   const titulo = montarTituloEncargos({
@@ -346,6 +350,7 @@ export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<Qua
     const mkt = doDicionario(a.linha.descricao, ativos);
     if (mkt?.marketplace) { marketplace[a.linha.id] = mkt.padrao; continue; }
     const sugestao = sugestaoDaLinha(a.linha.descricao, estabs, padroesCartao);
+    if (c.cartao.portador_fatura) { sugestao.campos.codPortador = c.cartao.portador_fatura; sugestao.origem.codPortador = "cartao"; }
     propostas[a.linha.id] = { sugestao, padraoLembrar: sugestao.padrao ?? padraoSugerido(a.linha.descricao), fornecedorNome: null, categoria: a.categoria };
   }
   const codigos = [...new Set(Object.values(propostas).map((p) => p.sugestao.campos.codFornecedor).filter((x): x is number => x !== undefined).map(String))];
@@ -400,6 +405,28 @@ export async function lerProvisorio(supabase: Cliente, ciclo: Pick<CicloLinha, "
   const cod = titulo.ok ? String(titulo.payload.codFornecedor) : null;
   const nomes = cod ? await nomesDosFornecedores(supabase, [cod]) : new Map<string, string>();
   return { ligado: (chave as { valor: unknown } | null)?.valor === true, titulo, lancamentos: (lancs ?? []) as LancamentoErpLinha[], fornecedorNome: cod ? nomes.get(cod) ?? null : null };
+}
+
+// ---------------------------------------------------------------- banco da fatura nos títulos do Consistem (0162)
+
+export type TrocaPortadorLinha = {
+  id: string; cod_lancamento: string; num_documento: string | null; fornecedor: string | null; valor: number | string | null;
+  portador_anterior: number | null; portador_novo: number; situacao: "reservado" | "enviando" | "trocado" | "erro"; erro: string | null;
+  tentativas: number; criado_em: string; concluido_em: string | null;
+};
+export type QuadroTrocas = { ligado: boolean; portador: number | null; trocas: TrocaPortadorLinha[] };
+
+/** Trocas de portador do mês (crt_trocas_portador), a chave geral e o código do cartão. */
+export async function lerTrocas(supabase: Cliente, ciclo: Pick<CicloLinha, "id" | "cartao">): Promise<QuadroTrocas> {
+  const [{ data: chave }, { data: cartao }, { data, error }] = await Promise.all([
+    supabase.from("configuracoes").select("valor").eq("chave", "financeiro.cartao.trocar_portador_no_erp").maybeSingle(),
+    supabase.from("crt_cartoes").select("portador_fatura").eq("codigo", ciclo.cartao).maybeSingle(),
+    supabase.from("crt_trocas_portador").select("id, cod_lancamento, num_documento, fornecedor, valor, portador_anterior, portador_novo, situacao, erro, tentativas, criado_em, concluido_em")
+      .eq("ciclo_id", ciclo.id).order("cod_lancamento"),
+  ]);
+  // Sem a migration 0162 a tabela não existe: o quadro some.
+  if (error) return { ligado: false, portador: null, trocas: [] };
+  return { ligado: (chave as { valor: unknown } | null)?.valor === true, portador: (cartao as { portador_fatura: number | null } | null)?.portador_fatura ?? null, trocas: (data ?? []) as TrocaPortadorLinha[] };
 }
 
 // ---------------------------------------------------------------- regras fornecedor → cartão (cópia do Neo Fiscal)

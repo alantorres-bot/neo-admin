@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { incluirLancamento, lerRespostaInclusao, type Enviar } from "@/supabase/functions/_shared/consistem-inclusao";
+import { alterarPortador, conferirTroca, incluirLancamento, lerRespostaInclusao, type Enviar } from "@/supabase/functions/_shared/consistem-inclusao";
 
 const cfg = { baseUrl: "https://erp.exemplo/api/", token: "tok", empresa: "1" };
 
@@ -47,5 +47,33 @@ describe("cadastro de fornecedor", () => {
     expect(await incluirFornecedor(enviar, cfg, { nome: "NUVIAGENS" })).toMatchObject({ tipo: "lancado", codigo: "1500" });
     expect(urlUsada).toBe("https://erp.exemplo/api/cadastrosgerais/v10/fornecedor");
     expect(lerRespostaInclusao(200, '{"codLancamento":1}', "codFornecedor").tipo).toBe("incerto");
+  });
+});
+
+describe("troca do portador (0162)", () => {
+  const responde = (status: number, corpo = ""): { enviar: Enviar; chamadas: { url: string; body: string }[] } => {
+    const chamadas: { url: string; body: string }[] = [];
+    return { chamadas, enviar: async (url, init) => { chamadas.push({ url, body: init.body }); return { status, text: async () => corpo }; } };
+  };
+  it("PUT no lançamento, só com o portador; 2xx com ou sem corpo = ok", async () => {
+    const r = responde(200, "");
+    expect(await alterarPortador(r.enviar, cfg, "33626", 501)).toMatchObject({ tipo: "ok" });
+    expect(r.chamadas).toEqual([{ url: "https://erp.exemplo/api/financeiro/v10/lancamentoContasPagar/33626", body: '{"codPortador":501}' }]);
+    expect((await alterarPortador(responde(200, '{"codLancamento":33626}').enviar, cfg, "33626", 501)).tipo).toBe("ok");
+  });
+  it("4xx = erro; 5xx = incerto; código inválido nem envia", async () => {
+    expect(await alterarPortador(responde(400, '[{"mensagem":"Portador inexistente"}]').enviar, cfg, "1", 501)).toMatchObject({ tipo: "erro", mensagem: /Portador inexistente/ });
+    expect(await alterarPortador(responde(502).enviar, cfg, "1", 501)).toMatchObject({ tipo: "incerto", mensagem: /conferida pelo detalhe/ });
+    const r = responde(200);
+    expect((await alterarPortador(r.enviar, cfg, "1;2", 501)).tipo).toBe("erro");
+    expect(r.chamadas).toHaveLength(0);
+  });
+  it("conferência: portador novo e o resto igual (campos de alteração não contam)", () => {
+    const antes = { codLancamento: 1, codPortador: 91, valorDocumento: 10.5, dataVencimento: "2026-10-23", codBarras: "123", dataAlteracao: "2026-10-01" };
+    expect(conferirTroca(antes, { ...antes, codPortador: 501, dataAlteracao: "2026-10-13" }, 501)).toEqual({ ok: true });
+    expect(conferirTroca(antes, { ...antes, codPortador: "501" }, 501)).toEqual({ ok: true });
+    expect(conferirTroca(antes, antes, 501)).toMatchObject({ ok: false, mensagem: /continua 91 \(esperado 501\)/ });
+    const r = conferirTroca(antes, { ...antes, codPortador: 501, codBarras: "" }, 501);
+    expect(r).toMatchObject({ ok: false, mensagem: /outros campos também mudaram/, diferencas: ['codBarras: "123" → ""'] });
   });
 });

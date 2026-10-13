@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { conciliacaoDaRequisicao, lerCiclo, quandoEm, type FechamentoLinha } from "@/app/(plataforma)/financeiro/cartao/dados";
+import { conciliacaoDaRequisicao, lerCiclo, lerTrocas, quandoEm, type FechamentoLinha } from "@/app/(plataforma)/financeiro/cartao/dados";
 import { BotaoImprimir } from "@/app/(impressao)/imprimir/contas-pagar/autorizacao/[id]/botao-imprimir";
 import { ROTULO_SITUACAO, rotuloCompetencia } from "@/lib/modulos/financeiro/cartao/ciclos";
 import { ROTULO_DECISAO, type DecisaoItem, type ResultadoConciliacao } from "@/lib/modulos/financeiro/cartao/conciliacao";
@@ -35,6 +35,8 @@ export default async function PaginaImprimirCiclo({ params }: PageProps<"/imprim
   const r: ResultadoConciliacao | null = fechado ? vigente.resultado.resultado : aoVivo?.resultado ?? null;
   const decisoes: DecisaoItem[] = r?.decisoes ?? [];
   const selo = fechado ? null : "SEM VALIDADE — MÊS NÃO FECHADO";
+  const trocas = fechado ? (await lerTrocas(supabase, ciclo)).trocas : [];
+  const trocados = trocas.filter((t) => t.situacao === "trocado");
 
   return (
     <>
@@ -130,6 +132,10 @@ export default async function PaginaImprimirCiclo({ params }: PageProps<"/imprim
           <div>
             <p className="font-bold">Pagamento</p>
             <p>{ciclo.paga_em ? `Paga em ${formatarData(ciclo.paga_em)} (título provisório ${ciclo.paga_por_cod_lancamento ?? ""} saiu do Consistem)` : "Não pago."}</p>
+            {trocas.length > 0 && (
+              <p>Banco da fatura no Consistem: {trocados.length} de {trocas.length} {trocas.length === 1 ? "título" : "títulos"} no banco {trocas[0].portador_novo}
+                {trocados.length < trocas.length ? ` (com erro: ${trocas.filter((t) => t.situacao !== "trocado").map((t) => t.cod_lancamento).join(", ")})` : ""}.</p>
+            )}
           </div>
         </footer>
       </article>

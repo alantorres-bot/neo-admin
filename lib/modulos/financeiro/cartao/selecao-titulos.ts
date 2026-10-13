@@ -26,6 +26,8 @@ export type LancamentoEspelho = {
   tipo_lancamento?: string | null;
   /** Lido da API: o título está num borderô (no fechamento do cartão, os títulos da fatura entram num borderô e ficam sem saldo). */
   tem_bordero?: boolean | null;
+  /** Lido da API: banco/portador atual do título (codBanco). */
+  cod_banco?: string | null;
 };
 
 export type OutroTitulo = { titulo: TituloPagar; situacao: "outro_cartao" | "ambiguo" | "so_marca"; detalhe: string };
@@ -59,6 +61,7 @@ export function paraTitulo(l: LancamentoEspelho): TituloPagar {
     valorCentavos: centavos(l.baixado_em || Number(l.valor_atualizado) <= 0 ? l.valor_documento : l.valor_atualizado),
     emBordero: l.tem_bordero === true,
     codFornecedor: l.cod_fornecedor,
+    ...(l.cod_banco ? { codBanco: l.cod_banco } : {}),
     ...(l.tipo_lancamento === "A" ? { antecipacao: true } : {}),
   };
 }

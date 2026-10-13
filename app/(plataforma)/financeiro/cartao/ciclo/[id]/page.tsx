@@ -11,11 +11,11 @@ import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { conciliacaoDaRequisicao, lerCiclo, lerCompras, lerEncargos, lerFatura, lerProvisorio, quandoEm, registrarApuracao } from "../../dados";
+import { conciliacaoDaRequisicao, lerCiclo, lerCompras, lerEncargos, lerFatura, lerProvisorio, lerTrocas, quandoEm, registrarApuracao } from "../../dados";
 import { BotaoResolver } from "../../[id]/encargos";
 import { PainelConciliacao } from "../../[id]/painel";
 import { BotaoCancelarFatura } from "../../[id]/componentes";
-import { BotaoCriarProvisorio, BotaoFechar, BotaoReabrir } from "./componentes";
+import { BotaoCriarProvisorio, BotaoFechar, BotaoReabrir, BotaoTrocarPortador } from "./componentes";
 
 export const metadata: Metadata = { title: "Mês do cartão" };
 
@@ -46,6 +46,14 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
       ? `Será criado no Consistem o provisório de ${formatarMoeda(Math.round(provisorio.titulo.payload.valorDocumento * 100))} contra ${provisorio.titulo.payload.codFornecedor}${provisorio.fornecedorNome ? ` · ${provisorio.fornecedorNome}` : ""}, vencimento ${formatarData(provisorio.titulo.payload.dataVencimento)}, documento ${provisorio.titulo.payload.codDocumento}.`
       : `O provisório não será criado (${provisorio.ligado ? (provisorio.titulo.ok ? "" : provisorio.titulo.erro) : "lançamento no Consistem desligado"}): fica a pendência "Criar o provisório".`
     : null;
+  const trocas = ciclo.situacao !== "aguardando_fatura" ? await lerTrocas(supabase, ciclo) : null;
+  const previaPortador = aoVivo && trocas?.portador
+    ? trocas.ligado
+      ? ` Os títulos conciliados passarão para o banco ${trocas.portador} no Consistem (filtro do borderô).`
+      : ` A troca do banco dos títulos para ${trocas.portador} no Consistem está desligada.`
+    : "";
+  const trocados = trocas?.trocas.filter((t) => t.situacao === "trocado").length ?? 0;
+  const comErro = trocas?.trocas.filter((t) => t.situacao === "erro") ?? [];
   const bloqueio = aoVivo ? (aoVivo.origemTitulos !== "consistem" ? "Os títulos não foram lidos do Consistem agora; recarregue para tentar de novo." : bloqueioDoFechamento({ itensALancar: aoVivo.resultado.pendentes, residuoCentavos: aoVivo.resultado.residuoCentavos })) : null;
   const podeCancelarFatura = fatura?.status === "importada" && ciclo.situacao === "em_conciliacao" && (ehGestor || (podeOperar && fatura.importado_por === sessao.userId));
 
@@ -83,7 +91,7 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
             <Button variant="outline" render={<a href={`/imprimir/cartao/ciclo/${ciclo.id}`} target="_blank" rel="noopener" />}><Printer /> Imprimir / salvar PDF</Button>
           )}
           {podeCancelarFatura && fatura && <BotaoCancelarFatura id={fatura.id} />}
-          {ciclo.situacao === "em_conciliacao" && ehGestor && <BotaoFechar id={ciclo.id} rotulo={rotulo} bloqueio={bloqueio} previaProvisorio={previaProvisorio} />}
+          {ciclo.situacao === "em_conciliacao" && ehGestor && <BotaoFechar id={ciclo.id} rotulo={rotulo} bloqueio={bloqueio} previaProvisorio={previaProvisorio || previaPortador ? `${previaProvisorio ?? ""}${previaPortador}`.trim() : null} />}
           {ciclo.situacao === "fechada" && ehGestor && <BotaoReabrir id={ciclo.id} />}
         </div>
       </div>
@@ -109,6 +117,28 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
               <span>{quandoEm(l.criado_em)} · {l.criado_por_nome ?? ""} · {l.situacao === "erro" ? "não criado" : l.situacao === "lancado" ? `lançado ${l.cod_lancamento_erp}` : "sem resposta"}{l.erro ? ` · ${l.erro}` : ""}</span>
               {ehGestor && (l.situacao === "reservado" || l.situacao === "enviando") && <BotaoResolver l={l} />}
             </div>
+          ))}
+        </section>
+      )}
+
+      {(ciclo.situacao === "fechada" || ciclo.situacao === "paga") && trocas && (trocas.portador || trocas.trocas.length > 0) && (
+        <section className={`space-y-2 rounded-[3px] border p-3 text-sm ${comErro.length ? "border-amber-300 bg-amber-50" : "border-grade bg-card"}`}>
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="font-bold">Banco da fatura no Consistem{trocas.portador ? `: ${trocas.portador}` : ""}</h3>
+              <p className="text-xs text-muted-foreground">
+                {trocas.trocas.length
+                  ? `${trocados} de ${trocas.trocas.length} ${trocas.trocas.length === 1 ? "título" : "títulos"} da fatura no banco ${trocas.portador ?? trocas.trocas[0].portador_novo}: no borderô (CCFFE065), filtre por esse banco.`
+                  : "Nenhum título da fatura teve o banco trocado ainda."}
+                {!trocas.ligado && " A troca no Consistem está desligada (financeiro.cartao.trocar_portador_no_erp)."}
+              </p>
+            </div>
+            {podeOperar && trocas.ligado && trocas.portador && (comErro.length > 0 || trocas.trocas.length === 0) && <BotaoTrocarPortador cicloId={ciclo.id} />}
+          </div>
+          {comErro.map((t) => (
+            <p key={t.id} className="text-xs text-amber-900">
+              <span className="font-medium tabular-nums">{t.cod_lancamento}</span>{t.num_documento ? ` · ${t.num_documento}` : ""}{t.fornecedor ? ` · ${t.fornecedor}` : ""}: {t.erro}
+            </p>
           ))}
         </section>
       )}

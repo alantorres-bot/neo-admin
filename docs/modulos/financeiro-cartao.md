@@ -19,7 +19,7 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
 ## 3. Escopo
 | Entra | Fica fora |
 | --- | --- |
-| Cadastro dos cartões (fechamento, vencimento, tipo de título, leitor de PDF); dicionário estabelecimento → categoria → conta de fluxo; importar a fatura (PDF com ou sem senha, ou CSV) com conferência de integridade; cruzar com os títulos do espelho `cap_lancamentos`; abas A lançar / Divergências / Conciliados / Compensados / Quadro / Linhas / Outros títulos de cartão; planilha XLSX; cancelar fatura (com motivo) | Lançar, alterar ou baixar no Consistem (o Neo Admin só lê o ERP), **exceto o título de encargos do mês e as compras sem título** (regras 31 a 43, 13/10/2026); gravar decisões humanas (reclassificar, casar à mão, "lançado no Consistem") e fechar a conciliação — **Fase 2**; pendências na Fila do dia — Fase 2; leitores Inter, Itaú, Nubank, Unicred — quando houver amostra/senha; PDF digitalizado como imagem (sem texto) |
+| Cadastro dos cartões (fechamento, vencimento, tipo de título, leitor de PDF); dicionário estabelecimento → categoria → conta de fluxo; importar a fatura (PDF com ou sem senha, ou CSV) com conferência de integridade; cruzar com os títulos do espelho `cap_lancamentos`; abas A lançar / Divergências / Conciliados / Compensados / Quadro / Linhas / Outros títulos de cartão; planilha XLSX; cancelar fatura (com motivo) | Lançar, alterar ou baixar no Consistem (o Neo Admin só lê o ERP), **exceto o título de encargos do mês, as compras sem título (regras 31 a 43) e a troca do portador dos títulos da fatura no fechamento (regras 56 a 60)**; gravar decisões humanas (reclassificar, casar à mão, "lançado no Consistem") e fechar a conciliação — **Fase 2**; pendências na Fila do dia — Fase 2; leitores Inter, Itaú, Nubank, Unicred — quando houver amostra/senha; PDF digitalizado como imagem (sem texto) |
 
 ## 4. Entradas
 - **Fatura do emissor**, enviada pela tela (até 8 MB): PDF (texto) ou CSV. O PDF vira **itens de texto posicionados** (x, y) e cada
@@ -219,6 +219,24 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     `cap_fornecedores.cod_categoria` (gravado pela sincronização) dá a categoria; compra, agrupado, encargos e provisório usam a
     do fornecedor (o servidor aplica ao enviar; os diálogos mostram "do fornecedor"). Os títulos 33626, 33627, 33628, 33629 e
     33633 saíram com 17 e ficaram assim (decisão do Alan).
+56. **Banco da fatura nos títulos** (pedido do Alan, 13/10/2026; migration 0162): com o Consistem em "Sem Controle" (CCFFB000,
+    13/10/2026), o borderô (CCFFE065) mostra todos os títulos em aberto e os da fatura ficavam misturados (antes se destacavam por
+    serem os confirmados no CCFFB014). Cada cartão tem um **código de banco/portador próprio**, cadastrado no Consistem
+    (`crt_cartoes.portador_fatura`, gestor edita no cadastro; vazio = não troca). A API não gera borderô (catálogo v1.0.15,
+    consultado em 13/10/2026), mas aceita `PUT financeiro/v10/lancamentoContasPagar/{id}` só com `codPortador`.
+57. **Quando:** ao **fechar o mês**, os títulos conciliados da fatura (e os demais títulos dos casamentos à mão) passam ao portador do
+    cartão. Ficam de fora o provisório, as antecipações, os que já estão num borderô e os que já estão no código
+    (`titulosParaTrocar`). **Nunca volta**: reabrir o mês não desfaz a troca. "Trocar de novo" (operador) no mês fechado usa os
+    títulos do fechamento vigente e só reenvia os que deram erro.
+58. **Já nascem com o código:** compra, agrupado e encargos lançados pelo painel saem com o portador da fatura do cartão (o servidor
+    aplica ao enviar; o diálogo mostra). O provisório continua com o portador da configuração (91).
+59. **Envio** (Edge Function `crt-trocar-portador`): para cada título, lê o detalhe (antes), troca só o `codPortador`, lê de novo
+    (depois) e confere: portador novo e **todo o resto igual** (campos de data/usuário da alteração não contam). Já no código: só
+    registra. Recusa, falta de resposta ou diferença = erro com o antes/depois (diferença em outros campos para o lote: corrigir no
+    Consistem antes de tentar de novo). Trocar o portador é idempotente: a decisão é sempre pelo que o Consistem mostra depois.
+60. **Prova e pendência:** `crt_trocas_portador` (um registro por título e mês, sem delete). Erro abre a pendência "Trocar o banco
+    dos títulos da fatura …" (concluída quando não sobra erro). Falha não desfaz o fechamento. Chave
+    `financeiro.cartao.trocar_portador_no_erp` (começa desligada: o primeiro envio real é acompanhado pelo Alan).
 49. Cadastro com a mesma regra de envio dos títulos: reserva, envio único, erro (nada criado) ou sem resposta (conferir e
     resolver à mão); cadastrado vai na hora para o espelho `cap_fornecedores`. Prova em `crt_fornecedores_cadastrados`.
 
@@ -237,7 +255,7 @@ zero a lançar, zero divergências (`conciliacao.test.ts`). Detecção: tirando 
 | Tela | O que mostra |
 | --- | --- |
 | **Meses** (`/financeiro/cartao/meses`, entrada do módulo) | Grade cartão × mês com 6 meses: começa no mês inicial do módulo (`ciclos_a_partir_de`, 10/2026) ou dois meses antes do atual, o que for mais recente, e segue para o futuro (navegação até 12 meses à frente; nunca antes do início). Mês com ciclo mostra a situação, o total, itens a lançar ou data de pagamento; mês que ainda não fechou aparece como **Previsto**, com o vencimento; cores: **Paga** verde, **Aguardando fatura** amarelo, **Em conciliação** azul, **Fechada** cinza e **Atrasada** vermelho (vencimento já passou, com sábado e domingo levados para a segunda, e o mês não está pago; vale para qualquer situação); contadores por situação e de atrasados |
-| **Mês do cartão** (`/ciclo/[id]`) | Cabeçalho (fechamento, vencimento, situação), linha do tempo (fechou · importada · fechada · paga), Importar fatura (aguardando), conciliação ao vivo (em conciliação) ou resultado congelado (fechada/paga), Fechar o mês (gestor; desabilitado com o motivo), Reabrir (gestor), planilha do fechamento, histórico de fechamentos |
+| **Mês do cartão** (`/ciclo/[id]`) | Cabeçalho (fechamento, vencimento, situação), linha do tempo (fechou · importada · fechada · paga), Importar fatura (aguardando), conciliação ao vivo (em conciliação) ou resultado congelado (fechada/paga), Fechar o mês (gestor; desabilitado com o motivo; avisa a troca do banco dos títulos), Reabrir (gestor), quadro **Banco da fatura no Consistem** (mês fechado/pago: X de N títulos no banco do cartão, erros por título, botão "Trocar de novo"), planilha do fechamento, histórico de fechamentos |
 | **Histórico do cartão** (`/historico?cartao=`) | Todos os meses de um cartão: situação, total, a lançar, quem fechou e quando, data de pagamento (link também na aba Cartões) |
 | **Relatório** (`/imprimir/cartao/ciclo/[id]`, botão "Imprimir / salvar PDF" no mês) | Folha A4 sem a moldura: empresa e CNPJ, cartão e mês, fechamento/vencimento/situação, quadro de conciliação, itens sem título (com a decisão ou PENDENTE), títulos sem linha, conciliados, compensados, decisões, fechamento (versões e reaberturas) e pagamento. Mês fechado/pago imprime o resultado congelado; em conciliação, o cálculo do momento com o selo "SEM VALIDADE — MÊS NÃO FECHADO" |
 | **Faturas** (`/financeiro/cartao/faturas`) | Faturas importadas por empresa/cartão/vencimento (total, linhas, status, quem importou, link para o mês) + "Importar fatura avulsa" |
@@ -261,6 +279,7 @@ zero a lançar, zero divergências (`conciliacao.test.ts`). Detecção: tirando 
 | `crt_fechamentos` | Fechamentos (versão, foto do resultado em jsonb, totais, provisório, quem fechou/reabriu e motivo) — prova; planilha anexada |
 | `crt_vw_ciclos` | View dos meses com nomes e total da fatura |
 | `crt_lancamentos_erp` / `crt_vw_lancamentos_erp` | Títulos lançados pelo painel no Consistem (tipo encargos ou compra; lote; linha de origem; parcela/parcelas; vencimento): linhas, valor, complemento, payload enviado, situação (reservado → enviando → lançado/erro), código criado, resposta, quem/quando, resolução à mão; sem delete; auditoria |
+| `crt_trocas_portador` | Troca do portador dos títulos da fatura no Consistem (0162): mês, título, documento, fornecedor, valor, portador anterior/novo, lote, situação (reservado → enviando → trocado/erro; erro → reservado ao tentar de novo), detalhe antes/depois, resposta, erro, tentativas, quem/quando; sem delete; auditoria |
 | `crt_fornecedores_cadastrados` | Fornecedores "Outros" cadastrados pelo painel: nome, corpo enviado, situação, código, resposta, quem/quando; sem delete; auditoria |
 | `crt_decisoes` / `crt_vw_decisoes` | Decisões por item (tipo, linhas, títulos, categoria/conta, motivo, quem/quando, desfeita por/quando/motivo) — sem delete; auditoria |
 | Funções | `crt_importar_fatura` (com `p_ciclo`), `crt_cancelar_fatura`, `crt_salvar_cartao`, `crt_salvar_estabelecimento`, `crt_normalizar`, `crt_gerar_ciclos`, `crt_registrar_apuracao`, `crt_fechar_ciclo`, `crt_reabrir_ciclo`, `crt_calendario`, `crt_competencia_do_vencimento`, `crt_registrar_decisao`, `crt_desfazer_decisao`, `crt_reservar_lancamento_encargos`, `crt_reservar_lancamento_compra`, `crt_reenviar_lancamentos`, `crt_iniciar_envio_erp`, `crt_concluir_lancamento_erp` e `crt_interromper_lote` (só service role), `crt_resolver_lancamento_encargos` |
@@ -446,3 +465,23 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
   ("cpfCnpj: 0001375. CNPJ/CPF inválido!"). A tela do Consistem usa o campo "Registro Fornecedor", que o corpo `FornecedorPut`
   não documenta. Chamado à Consistem com o exemplo exato. Até a resposta: cadastrar "Outros" pela tela do Consistem e usar
   **Ligar** no painel. A chave `financeiro.cartao.lancar_no_erp` fica ligada (decisão do Alan).
+
+## 19. Banco da fatura nos títulos do Consistem — o que foi feito (13/10/2026)
+- Pedido do Alan: com o CCFFB000 em "Sem Controle", o borderô mistura os títulos da fatura com os demais; trocar o código do banco
+  dos títulos da fatura para filtrar o borderô por ele. Decisões: um código por cartão, troca ao fechar a fatura, nunca volta,
+  lançados pelo painel já nascem com o código (regras 56 a 60).
+- Consulta à API (só leitura, catálogo `/api/resources/documents`, v1.0.15, 56 serviços): **não há geração de borderô** nem
+  remessa/liberação de pagamento; o "borderô" de `GET /ClientesBanco` e `/TitulosBanco` é da cobrança escritural (receber).
+  `LancamentoContaPagarPut` não tem campo obrigatório e aceita `codPortador`.
+- Migration `0162_crt_portador_fatura.sql`: `crt_cartoes.portador_fatura`, chave `financeiro.cartao.trocar_portador_no_erp`
+  (false), `crt_trocas_portador`, `crt_reservar_trocas` (operador; mês fechado/pago), `crt_iniciar_troca`, `crt_concluir_troca`,
+  `crt_interromper_trocas` (service role), `crt_falha_trocas` (painel) e a pendência.
+- Edge Function `crt-trocar-portador`; `_shared/consistem-inclusao.ts` ganhou `alterarPortador` e `conferirTroca`;
+  `cap-sincronizar-consistem` (`titulos_vencimento`) passa a devolver `cod_banco`.
+- App: campo "Banco/portador da fatura" no cadastro do cartão; `fecharCiclo` troca depois do provisório; quadro e botão
+  "Trocar de novo" no mês; linha no relatório impresso; compra/agrupado/encargos com o portador do cartão
+  (`lib/modulos/financeiro/cartao/portador-fatura.ts`).
+- Testes: `portador-fatura.test.ts`, `consistem-inclusao.test.ts`, `tests/db/crt-trocas-portador.test.ts`.
+- **Falta (Alan):** cadastrar no Consistem um banco/portador por cartão e informar os códigos; aplicar a migration, publicar as
+  funções `crt-trocar-portador` e `cap-sincronizar-consistem`; primeiro envio real acompanhado (um mês fechado, "Trocar de novo"),
+  conferindo no Consistem que só o portador mudou e que o CCFFE065 filtra por ele. Só então deixar a chave ligada.

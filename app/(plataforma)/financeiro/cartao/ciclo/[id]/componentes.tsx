@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { criarProvisorio, fecharCiclo, reabrirCiclo } from "../../acoes";
+import { criarProvisorio, fecharCiclo, reabrirCiclo, trocarPortador } from "../../acoes";
 
 /** "Fechar o mês" (gestor). Desabilitado, com o motivo, enquanto houver algo a lançar ou diferença. Confirmação em dois cliques. */
 export function BotaoFechar({ id, rotulo, bloqueio, previaProvisorio }: { id: string; rotulo: string; bloqueio: string | null; previaProvisorio?: string | null }) {
@@ -76,5 +76,17 @@ export function BotaoCriarProvisorio({ cicloId }: { cicloId: string }) {
       if (r.ok) toast.success(r.aviso); else toast.error(r.erro);
       router.refresh();
     })}>{pendente ? "Criando…" : "Criar provisório no Consistem"}</Button>
+  );
+}
+
+export function BotaoTrocarPortador({ cicloId }: { cicloId: string }) {
+  const router = useRouter();
+  const [pendente, iniciar] = useTransition();
+  return (
+    <Button size="sm" disabled={pendente} onClick={() => iniciar(async () => {
+      const r = await trocarPortador({ cicloId });
+      if (r.ok) toast.success(r.aviso); else toast.error(r.erro);
+      router.refresh();
+    })}>{pendente ? "Trocando…" : "Trocar de novo"}</Button>
   );
 }

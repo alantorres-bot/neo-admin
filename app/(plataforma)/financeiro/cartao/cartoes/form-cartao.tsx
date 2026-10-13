@@ -84,6 +84,13 @@ export function DialogoCartao({ cartao, contasFluxo = [] }: { cartao?: CartaoLin
           ))}
         </div>
       </fieldset>
+      <fieldset className="space-y-2 rounded-[3px] border border-grade p-3">
+        <legend className="px-1 text-sm font-medium">Banco da fatura no Consistem</legend>
+        <p className="text-xs text-muted-foreground">Código do banco/portador cadastrado no Consistem só para este cartão. Ao fechar o mês, os títulos da fatura passam a esse portador (filtro do borderô) e os lançados pelo painel já nascem com ele. Vazio = não troca.</p>
+        <Campo id="portadorFatura" rotulo="Banco/portador da fatura">
+          <Input id="portadorFatura" name="portadorFatura" defaultValue={cartao?.portador_fatura ?? ""} inputMode="numeric" pattern="\d{0,9}" autoComplete="off" className="w-32" />
+        </Campo>
+      </fieldset>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="ativo" defaultChecked={cartao?.ativo ?? true} className="size-4" />
         Ativo (aparece na importação de faturas)
