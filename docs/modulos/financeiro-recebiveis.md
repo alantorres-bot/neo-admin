@@ -499,5 +499,10 @@ Agora cada NF da filial vira um **kit** (menu Financeiro > Faturamento Filial, m
   - **Avisos da conferência:** vencimento ou valor diferentes; boleto da AKF em título não cedido; boleto da AKF para cliente que **não aceita boleto de factoring**; título que já tem boleto (o novo passa a valer); dois boletos na mesma parcela.
   - **Gravação:** o anexo vai do navegador para `rec_titulos` (tipo `boleto`, como na ficha do título) e a linha digitável é gravada. O gatilho do kit o deixa **pronto** e abre "Enviar kit ao cliente".
   - Calibração opcional: `NEO_AMOSTRAS_BOLETOS=<pasta com 0023xx.pdf> npx vitest run lib/modulos/financeiro/filial/boleto-pdf.test.ts`.
-- **Próximas fases** (plano aprovado):
-  - C: rascunho no Gmail da própria filial, com OAuth por usuário, e "Enviado ao cliente".
+- **E-mail ao cliente pelo Gmail de quem prepara (Fase C, 0153):** a ficha do kit pronto tem o bloco "E-mail ao cliente".
+  - **Conectar meu Gmail:** cada pessoa autoriza o próprio Gmail uma vez (escopo `gmail.compose`). O refresh token fica no Vault (`gmail_contas` guarda só o e-mail e o id do segredo). Edge Function `nucleo-gmail-conectar`, com `state` de uso único. A conta do Google precisa ser a do usuário. A configuração está em `docs/GMAIL_POR_USUARIO.md`.
+  - **Rascunho:** a Edge Function `rec-kit-rascunho-gmail` cria, no Gmail de quem clica, o e-mail com a nota fatura, o demonstrativo, o comodato, o boleto de cada parcela e a carta de cessão, se houver.
+    - Texto no modelo da filial (`montarEmailCliente`, `lib/modulos/financeiro/filial/email-cliente.ts`): "Prezado cliente, …", período, obra, "Gentileza confirmar o recebimento deste e-mail." e "Atenciosamente,".
+    - Para: o último destinatário usado para o cliente ou os contatos dele. Cc: `financeiro.filial.copia_cliente`.
+    - Tudo editável antes. Nada é enviado pelo sistema.
+  - **Enviado ao cliente** (`rec_kit_marcar_enviado`): kit "enviada", parcelas com boleto como "boleto enviado", histórico e pendência "Enviar kit ao cliente" concluída. A cobrança segue a régua normal.

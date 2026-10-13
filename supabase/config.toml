@@ -443,3 +443,6 @@ verify_jwt = false
 
 [functions.crt-cadastrar-fornecedor]
 verify_jwt = false
+
+[functions.nucleo-gmail-conectar]
+verify_jwt = false

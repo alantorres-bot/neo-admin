@@ -176,3 +176,81 @@ export async function conferirClientesErp(kitIds: string[]): Promise<{ ok: true;
   revalidatePath(ROTA_FILIAL, "layout");
   return { ok: true, encontrados: resultados.filter((r) => r.codigo).length, naoCadastrados: resultados.filter((r) => !r.codigo).length };
 }
+
+// ---------------------------------------------------------------- Fase C: e-mail ao cliente pelo Gmail de quem prepara
+
+/** Começa o "Conectar meu Gmail": gera o state e devolve a URL da Edge Function, que leva ao Google e volta para `destino`. */
+export async function iniciarConexaoGmail(destino: string): Promise<{ ok: true; url: string } | { ok: false; erro: string }> {
+  await exigirSessao();
+  if (!/^https?:\/\/[^/]+\//.test(destino)) return { ok: false, erro: "Destino inválido." };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.rpc("gmail_iniciar_conexao", { p_destino: destino });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  const base = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").replace(/\/+$/, "");
+  return { ok: true, url: `${base}/functions/v1/nucleo-gmail-conectar?state=${encodeURIComponent(data as string)}` };
+}
+
+export async function desconectarGmail(): Promise<Resultado> {
+  await exigirSessao();
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("gmail_desconectar");
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidatePath(ROTA_FILIAL, "layout");
+  return { ok: true, aviso: "Gmail desconectado." };
+}
+
+const esquemaRascunho = z.object({
+  kitId: z.string().uuid(),
+  para: z.string().trim().min(3, "Informe o e-mail do cliente.").max(500),
+  cc: z.string().trim().max(500).default(""),
+  assunto: z.string().trim().min(1, "Informe o assunto.").max(200),
+  corpo: z.string().trim().min(1, "Escreva o texto do e-mail.").max(5000),
+});
+
+/**
+ * Grava a mensagem (rascunho, com a sessão do usuário) e pede à Edge Function rec-kit-rascunho-gmail o rascunho no Gmail de
+ * quem chama, com todos os documentos do kit anexados. Nada é enviado: a pessoa confere e envia no Gmail.
+ */
+export async function criarRascunhoKit(entrada: z.input<typeof esquemaRascunho>): Promise<{ ok: true; url: string; aviso?: string } | { ok: false; erro: string }> {
+  const negado = await exigirOperador();
+  if (negado) return { ok: false, erro: negado };
+  const dados = esquemaRascunho.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const d = dados.data;
+  const emails = (v: string) => v.split(/[,;\s]+/).map((e) => e.trim()).filter(Boolean);
+  const invalido = [...emails(d.para), ...emails(d.cc)].find((e) => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
+  if (invalido) return { ok: false, erro: `E-mail inválido: ${invalido}` };
+
+  const supabase = await criarClienteServidor();
+  const { data: kit } = await supabase.from("rec_vw_kits").select("id, estagio, contraparte_id").eq("id", d.kitId).maybeSingle();
+  if (!kit) return { ok: false, erro: "Kit não encontrado." };
+  if (kit.estagio !== "pronta") return { ok: false, erro: "O kit ainda não está pronto para envio." };
+
+  const { data: mensagem, error } = await supabase.from("mensagens").insert({
+    modulo: MODULO_FILIAL, canal: "email", status: "rascunho", contraparte_id: kit.contraparte_id ?? null,
+    destinatario: emails(d.para).join(", "), cc: emails(d.cc).join(", ") || null, assunto: d.assunto, corpo: d.corpo,
+  }).select("id").single();
+  if (error || !mensagem) return { ok: false, erro: "Não foi possível registrar a mensagem." };
+
+  const { data, error: erroFuncao } = await supabase.functions.invoke("rec-kit-rascunho-gmail", { body: { mensagem_id: mensagem.id, kit_id: d.kitId } });
+  if (erroFuncao) {
+    const corpo = await (erroFuncao as { context?: Response }).context?.json?.().catch(() => null);
+    return { ok: false, erro: (corpo as { erro?: string } | null)?.erro ?? "Não foi possível criar o rascunho no Gmail." };
+  }
+  revalidatePath(`${ROTA_FILIAL}/${d.kitId}`);
+  const r = data as { url: string; aviso?: string };
+  return { ok: true, url: r.url, aviso: r.aviso };
+}
+
+/** Depois de enviar pelo Gmail: kit enviado, parcelas com boleto enviado (régua normal da Cobrança a partir daqui). */
+export async function marcarKitEnviado(kitId: string): Promise<Resultado> {
+  const negado = await exigirOperador();
+  if (negado) return { ok: false, erro: negado };
+  if (!z.string().uuid().safeParse(kitId).success) return { ok: false, erro: "Kit inválido." };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("rec_kit_marcar_enviado", { p_kit: kitId, p_mensagem: null });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidatePath(ROTA_FILIAL, "layout");
+  revalidatePath("/inicio");
+  return { ok: true, aviso: "Kit marcado como enviado ao cliente." };
+}
