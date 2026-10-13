@@ -96,6 +96,7 @@ export default async function PaginaRemessa({ params }: PageProps<"/financeiro/f
         </div>
         <div className="flex flex-wrap items-start gap-2">
           <BotaoBaixarTudo remessaId={r.id} />
+          {podeOperar && !sessao.acesso.restrito && <Button variant="outline" render={<Link href={`${ROTA_FILIAL}/boletos`} />}>Anexar boletos</Button>}
           {podeOperar && itensAviso.length > 0 && (
             <BotaoAvisoCuiaba remessaId={r.id} numero={r.numero} data={dataCuiaba(r.criado_em)} itens={itensAviso} para={para} variante={r.aviso_aberto_em ? "outline" : "default"} />
           )}

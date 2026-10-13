@@ -52,6 +52,7 @@ export default async function PaginaFilial({ searchParams }: PageProps<"/finance
         </div>
         <div className="flex gap-2">
           <Button variant="outline" render={<Link href={`${ROTA_FILIAL}/remessas`} />}>Remessas</Button>
+          {sessao.acesso.restrito ? null : podeOperar && <Button variant="outline" render={<Link href={`${ROTA_FILIAL}/boletos`} />}>Anexar boletos</Button>}
           {podeOperar && <Button render={<Link href={`${ROTA_FILIAL}/enviar`} />}>Enviar faturas</Button>}
         </div>
       </div>

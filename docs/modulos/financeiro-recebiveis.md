@@ -492,6 +492,12 @@ Agora cada NF da filial vira um **kit** (menu Financeiro > Faturamento Filial, m
     - O restrito lê só os títulos da unidade (`rec_titulos_ler_unidade`), os clientes com título na unidade e o boleto dessas parcelas. Não cadastra nem altera cliente ou contato.
   - **No app:** `Acesso.restrito` (sessão) e `temAcessoModulo` (`lib/nucleo/permissoes.ts`). O menu mostra só Financeiro > Faturamento Filial (e o Início), e Configurações some.
   - **Para liberar a filial:** criar o usuário, dar Operador no Financeiro e marcar "Restrito à unidade: Filial Contagem".
+- **Boletos em lote (Fase B):** a tela é Faturamento Filial > **Anexar boletos** (`/financeiro/filial/boletos`), só para Cuiabá: operador do Financeiro, não restrito.
+  - Recebe vários PDFs de uma vez. Cada boleto é ligado à parcela pelo nº do arquivo ("002345.pdf"), ou pelo nº do documento impresso.
+  - **Do boleto com texto** (os da AKF/Bradesco) sai a **linha digitável**, conferida pelos dígitos verificadores. Dela vêm o **vencimento** (fator FEBRABAN, base 22/02/2025) e o **valor** (`decodificarLinhaDigitavel` e `lerBoletoPdf`, `lib/modulos/financeiro/filial/boleto-pdf.ts`). Boleto escaneado só é ligado pelo nome.
+  - **Escolha da parcela:** NF com várias parcelas usa a que bate em vencimento e valor; se nenhuma bater, a pessoa escolhe (`escolherTitulo`).
+  - **Avisos da conferência:** vencimento ou valor diferentes; boleto da AKF em título não cedido; boleto da AKF para cliente que **não aceita boleto de factoring**; título que já tem boleto (o novo passa a valer); dois boletos na mesma parcela.
+  - **Gravação:** o anexo vai do navegador para `rec_titulos` (tipo `boleto`, como na ficha do título) e a linha digitável é gravada. O gatilho do kit o deixa **pronto** e abre "Enviar kit ao cliente".
+  - Calibração opcional: `NEO_AMOSTRAS_BOLETOS=<pasta com 0023xx.pdf> npx vitest run lib/modulos/financeiro/filial/boleto-pdf.test.ts`.
 - **Próximas fases** (plano aprovado):
-  - B: boletos em lote na Cobrança.
   - C: rascunho no Gmail da própria filial, com OAuth por usuário, e "Enviado ao cliente".
