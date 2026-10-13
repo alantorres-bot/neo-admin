@@ -28,8 +28,6 @@ export const podeEditarExtras = (status: StatusAutorizacao, p: Papel): boolean =
 
 export type ItemResumo = {
   tipo: "titulo" | "antecipacao"; valorCentavos: number; removido: boolean; baixadoConsistemEm: string | null;
-  /** Data em que a sincronização viu o documento confirmado no Consistem (CCFFB014); ausente/nulo = não consta confirmado. */
-  confirmadoConsistemEm?: string | null;
 };
 /** Pagamento extra: pedido da diretoria que não existe no Consistem (frete avulso, reembolso, taxa…). */
 export type ExtraResumo = { valorCentavos: number; removido: boolean };
@@ -44,16 +42,12 @@ export type ResumoAutorizacao = {
   /** Tudo: lançamentos + extras. É o total autorizado. */
   geral: Totais;
   baixados: number;
-  /** Itens ainda não baixados que já constam confirmados no Consistem (CCFFB014): prontos para o borderô. */
-  confirmados: number;
-  /** Itens ainda não baixados e sem confirmação no Consistem: o financeiro precisa confirmá-los no CCFFB014. */
-  faltaConfirmar: number;
   removidos: number;
 };
 
 export function resumirItens(itens: readonly ItemResumo[], extras: readonly ExtraResumo[] = []): ResumoAutorizacao {
   const zero = (): Totais => ({ quantidade: 0, centavos: 0 });
-  const r: ResumoAutorizacao = { titulos: zero(), antecipacoes: zero(), extras: zero(), lancamentos: zero(), geral: zero(), baixados: 0, confirmados: 0, faltaConfirmar: 0, removidos: 0 };
+  const r: ResumoAutorizacao = { titulos: zero(), antecipacoes: zero(), extras: zero(), lancamentos: zero(), geral: zero(), baixados: 0, removidos: 0 };
   const somar = (t: Totais, centavos: number) => { t.quantidade++; t.centavos += centavos; };
   for (const i of itens) {
     if (i.removido) {
@@ -64,8 +58,6 @@ export function resumirItens(itens: readonly ItemResumo[], extras: readonly Extr
     somar(r.lancamentos, i.valorCentavos);
     somar(r.geral, i.valorCentavos);
     if (i.baixadoConsistemEm) r.baixados++;
-    else if (i.confirmadoConsistemEm) r.confirmados++;
-    else r.faltaConfirmar++;
   }
   for (const x of extras) {
     if (x.removido) continue;
@@ -111,31 +103,10 @@ export function prazoExecucao(datas: readonly (string | null)[], hoje: string): 
 export const criticidadeExecucao = (prazo: string, hoje: string): "alta" | "normal" => (diasEntre(prazo, hoje) <= 3 ? "alta" : "normal");
 
 /** Rótulo curto da linha do item na autorização. */
-export function situacaoDoItem(i: { removido: boolean; baixadoConsistemEm: string | null; tipo: "titulo" | "antecipacao"; confirmadoConsistemEm?: string | null }): string {
+export function situacaoDoItem(i: { removido: boolean; baixadoConsistemEm: string | null; tipo: "titulo" | "antecipacao" }): string {
   if (i.removido) return "removido";
   if (i.baixadoConsistemEm) return i.tipo === "antecipacao" ? "abatida por NF no Consistem" : "baixado no Consistem";
-  if (i.confirmadoConsistemEm) return "confirmado no Consistem";
   return "em aberto no Consistem";
-}
-
-const dataBr = (iso: string | null) => (iso ? iso.slice(0, 10).split("-").reverse().join("/") : "");
-
-export type ItemParaConfirmar = {
-  tipo: "titulo" | "antecipacao"; fornecedor: string; numDocumento: string | null; codLancamento: string;
-  vencimento: string | null; dataPagamento: string | null; valorCentavos: number; removido: boolean; baixadoConsistemEm: string | null; confirmadoConsistemEm: string | null;
-};
-
-/**
- * Lista do que o financeiro ainda precisa confirmar no Consistem (CCFFB014): itens ativos, não baixados e sem confirmação,
- * uma linha por item, para copiar e marcar na tela do ERP. Vazia quando não falta nada.
- */
-export function textoFaltaConfirmar(itens: readonly ItemParaConfirmar[]): string {
-  const faltam = itens.filter((i) => !i.removido && !i.baixadoConsistemEm && !i.confirmadoConsistemEm);
-  const ordenados = [...faltam].sort((a, b) => a.fornecedor.localeCompare(b.fornecedor, "pt-BR") || (a.numDocumento ?? "").localeCompare(b.numDocumento ?? "", "pt-BR"));
-  return ordenados.map((i) => {
-    const data = i.tipo === "antecipacao" ? i.dataPagamento : i.vencimento;
-    return `${i.fornecedor} · ${i.tipo === "antecipacao" ? "antecipação " : ""}${i.numDocumento || `lanç. ${i.codLancamento}`}${data ? ` · ${dataBr(data)}` : ""} · ${reais(i.valorCentavos)}`;
-  }).join("\n");
 }
 
 // ---------------------------------------------------------------- caixa disponível

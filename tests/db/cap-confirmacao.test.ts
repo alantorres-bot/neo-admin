@@ -3,7 +3,9 @@ import type { PGlite } from "@electric-sql/pglite";
 import { como, criarBanco, novoUsuario, type Linha } from "./harness";
 
 // Migration 0129: confirmação dos documentos no Consistem (CCFFB014), só leitura. A sincronização (service role) anota
-// cap_lancamentos.confirmado_consistem e cap_autorizacao_itens.confirmado_consistem_em; as views e a pendência refletem isso.
+// cap_lancamentos.confirmado_consistem e cap_autorizacao_itens.confirmado_consistem_em; as views refletem isso.
+// Migration 0161 (13/10/2026): o Consistem passou a "Sem Controle" (CCFFB000); a pendência não manda mais confirmar no CCFFB014.
+// As colunas ficam como histórico (a sincronização parou de preenchê-las).
 
 let db: PGlite;
 let finConsulta: string, finOperador: string, finGestor: string;
@@ -63,15 +65,16 @@ describe("confirmação no Consistem (0129)", () => {
     expect(ic).toBeTruthy();
   });
 
-  it("cap_autorizar devolve `confirmados` e a pendência pede a confirmação no CCFFB014", async () => {
+  it("cap_autorizar (0161): a pendência não pede mais a confirmação no CCFFB014", async () => {
     const a = await titulo(100, true);
     const b = await titulo(50, null);
     const r = (await criar(finOperador, [a, b])).rows[0].r;
     await servico(`update cap_autorizacao_itens set confirmado_consistem_em = current_date where autorizacao_id = $1 and lancamento_id = $2`, [r.id, a]);
     const aut = (await rpc(finGestor, `select cap_autorizar($1) as r`, [r.id])).rows[0].r;
-    expect([aut.itens, aut.confirmados]).toEqual([2, 1]);
+    expect([aut.itens, aut.confirmados]).toEqual([2, undefined]);
     const p = (await q(`select descricao from pendencias where referencia_tabela = 'cap_autorizacoes' and referencia_id = $1 and status = 'aberta'`, [r.id])).rows[0];
-    expect(p.descricao).toMatch(/confirme os documentos no Consistem \(CCFFB014\), monte o borderô/);
+    expect(p.descricao).toMatch(/Abra a autorização, monte o borderô, faça os pagamentos, confira com o banco e dê baixa no Consistem\./);
+    expect(p.descricao).not.toMatch(/CCFFB014/);
   });
 
   it("item novo nasce sem confirmação mesmo que o lançamento já esteja confirmado (a sincronização anota depois)", async () => {

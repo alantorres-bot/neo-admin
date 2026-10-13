@@ -10,7 +10,7 @@ function item(p: Partial<ItemPendente> & { id: string }): ItemPendente {
   return {
     empresaId: "e1", tipo: "titulo", codLancamento: p.id, codFornecedor: "1", fornecedor: "ALUSSIN IND. E COM. METAIS LTDA", documentoFornecedor: "12.345.678/0001-95",
     numDocumento: "NF 10", emissao: "2026-09-01", vencimento: "2026-10-20", dataPagamento: null, valorDocumentoCentavos: 10_000, saldoCentavos: 10_000,
-    complemento: "", codBanco: "91", categoria: "16", autorizacao: null, tratada: null, temBordero: null, borderoVistoEm: null, confirmadoConsistem: null, confirmacaoVistaEm: null, ...p,
+    complemento: "", codBanco: "91", categoria: "16", autorizacao: null, tratada: null, temBordero: null, borderoVistoEm: null, ...p,
   };
 }
 const antecipacao = (id: string, extra: Partial<ItemPendente> = {}) =>
@@ -37,11 +37,6 @@ describe("data de referência e atraso", () => {
     expect(descreverSituacao(antecipacao("2", { temBordero: false }), HOJE)).toBe("a pagar · sem data de pagamento");
     expect(descreverSituacao(antecipacao("2", { temBordero: true }), HOJE)).toBe("paga (borderô no Consistem)");
     expect(descreverSituacao(antecipacao("2", { dataPagamento: "2026-10-28" }), HOJE)).toBe("programada para 28/10 · pagamento não verificado");
-    // já confirmado no Consistem (CCFFB014): informação a mais; antecipação paga não ganha o sufixo
-    expect(descreverSituacao(item({ id: "1", vencimento: "2026-10-08", confirmadoConsistem: true }), HOJE)).toBe("vencido há 1 dia · confirmado no Consistem");
-    expect(descreverSituacao(item({ id: "1", vencimento: "2026-10-20", confirmadoConsistem: false }), HOJE)).toBe("vence em 11 dias");
-    expect(descreverSituacao(antecipacao("2", { temBordero: false, confirmadoConsistem: true }), HOJE)).toBe("a pagar · sem data de pagamento · confirmado no Consistem");
-    expect(descreverSituacao(antecipacao("2", { temBordero: true, confirmadoConsistem: true }), HOJE)).toBe("paga (borderô no Consistem)");
   });
   it("ehDataIso confere o calendário", () => {
     expect(ehDataIso("2026-10-09")).toBe(true);

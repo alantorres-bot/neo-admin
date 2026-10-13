@@ -61,7 +61,6 @@ export default async function PaginaAutorizacoes({ searchParams }: PageProps<"/f
                 <TableHead className="text-right">Antecipações</TableHead>
                 <TableHead className="text-right">Extras</TableHead>
                 <TableHead className="text-right">Total</TableHead>
-                <TableHead>Confirmados no Consistem</TableHead>
                 <TableHead>Baixados no Consistem</TableHead>
                 <TableHead>Conferidos no banco</TableHead>
                 <TableHead>Montada por</TableHead>
@@ -80,7 +79,6 @@ export default async function PaginaAutorizacoes({ searchParams }: PageProps<"/f
                   <TableCell className="text-right tabular-nums">{formatarMoeda(centavos(a.total_antecipacoes))}<span className="block text-[11px] text-muted-foreground">{a.antecipacoes}</span></TableCell>
                   <TableCell className="text-right tabular-nums">{a.extras > 0 ? <>{formatarMoeda(centavos(a.total_extras))}<span className="block text-[11px] text-muted-foreground">{a.extras}</span></> : <span className="text-muted-foreground">—</span>}</TableCell>
                   <TableCell className="text-right font-medium tabular-nums">{formatarMoeda(centavos(a.total))}<span className="block text-[11px] font-normal text-muted-foreground">{a.itens + a.extras} {a.itens + a.extras === 1 ? "item" : "itens"}</span></TableCell>
-                  <TableCell className="tabular-nums">{a.status === "cancelada" ? "—" : `${a.confirmados} de ${a.itens - a.baixados}`}</TableCell>
                   <TableCell className="tabular-nums">{a.status === "cancelada" ? "—" : `${a.baixados} de ${a.itens}`}</TableCell>
                   <TableCell className={`tabular-nums ${a.divergentes > 0 ? "text-amber-700" : ""}`}>{a.status !== "autorizada" ? "—" : `${a.conferidos} de ${a.itens + a.extras}`}{a.status === "autorizada" && a.divergentes > 0 ? ` · ${a.divergentes} ${a.divergentes === 1 ? "divergente" : "divergentes"}` : ""}</TableCell>
                   <TableCell>{a.criado_por_nome ?? "—"}</TableCell>

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ListChecks, Printer } from "lucide-react";
-import { compararComCaixa, mensagemSlack, podeAutorizar, podeCancelar, podeEditarExtras, podeRemoverItem, resumirItens, ROTULO_STATUS, rotaImpressao, textoFaltaConfirmar, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { compararComCaixa, mensagemSlack, podeAutorizar, podeCancelar, podeEditarExtras, podeRemoverItem, resumirItens, ROTULO_STATUS, rotaImpressao, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { podeConferir } from "@/lib/modulos/financeiro/contas-pagar/conferencia";
 import { CHAVES_CONTAS_PAGAR, lerParametrosContasPagar } from "@/lib/modulos/financeiro/contas-pagar/parametros";
 import { ROTA_CONTAS_PAGAR, ROTULO_TIPO } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
@@ -16,7 +16,7 @@ import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { lerAutorizacao, quandoEm, type LinhaExtraAutorizacao } from "../../dados";
-import { BotaoAutorizar, BotaoCopiarLista, BotaoEnviarSlack, BotaoExcluirDaLista, BotaoRemoverExtra, DialogoCaixa, DialogoCancelar, DialogoExtraAutorizacao } from "./componentes";
+import { BotaoAutorizar, BotaoEnviarSlack, BotaoExcluirDaLista, BotaoRemoverExtra, DialogoCaixa, DialogoCancelar, DialogoExtraAutorizacao } from "./componentes";
 import { SecaoItens } from "./secao-itens";
 
 export const metadata: Metadata = { title: "Autorização de pagamento" };
@@ -39,19 +39,13 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
   // Link absoluto da autorização para a mensagem (host e protocolo da própria requisição).
   const host = cabecalhos.get("x-forwarded-host") ?? cabecalhos.get("host") ?? "localhost:3000";
   const protocolo = cabecalhos.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
-  const { autorizacao: a, itens, extras, confirmacaoVistaEm } = lido;
+  const { autorizacao: a, itens, extras } = lido;
 
   const papel = { podeOperar: temAcesso(sessao.acesso, "financeiro", "operador"), ehGestor: temAcesso(sessao.acesso, "financeiro", "gestor"), userId: sessao.userId };
   const resumo = resumirItens(
-    itens.map((i) => ({ tipo: i.tipo, valorCentavos: centavos(i.valor), removido: i.removido_em !== null, baixadoConsistemEm: i.baixado_consistem_em, confirmadoConsistemEm: i.confirmado_consistem_em })),
+    itens.map((i) => ({ tipo: i.tipo, valorCentavos: centavos(i.valor), removido: i.removido_em !== null, baixadoConsistemEm: i.baixado_consistem_em })),
     extras.map((x) => ({ valorCentavos: centavos(x.valor), removido: x.removido_em !== null })),
   );
-  // Confirmação no Consistem (CCFFB014): só documento confirmado entra no borderô. Cobrada depois de autorizada; a lista é para copiar.
-  const cobrarConfirmacao = a.status === "autorizada";
-  const listaFaltaConfirmar = textoFaltaConfirmar(itens.map((i) => ({
-    tipo: i.tipo, fornecedor: i.fornecedor_nome, numDocumento: i.num_documento, codLancamento: i.cod_lancamento, vencimento: i.data_vencimento, dataPagamento: i.data_pagamento,
-    valorCentavos: centavos(i.valor), removido: i.removido_em !== null, baixadoConsistemEm: i.baixado_consistem_em, confirmadoConsistemEm: i.confirmado_consistem_em,
-  })));
   const ativos = itens.filter((i) => i.removido_em === null);
   const extrasAtivos = extras.filter((x) => x.removido_em === null);
   const extrasRemovidos = extras.filter((x) => x.removido_em !== null);
@@ -94,7 +88,7 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
         </div>
       </div>
 
-      <div className={`grid gap-3 sm:grid-cols-2 ${a.status === "autorizada" ? "lg:grid-cols-4 xl:grid-cols-7" : "lg:grid-cols-6"}`}>
+      <div className={`grid gap-3 sm:grid-cols-2 ${a.status === "autorizada" ? "lg:grid-cols-3 xl:grid-cols-6" : "lg:grid-cols-5"}`}>
         <Card size="sm">
           <CardHeader><CardDescription>Títulos</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(resumo.titulos.centavos)}</CardTitle></CardHeader>
           <CardContent className="text-xs text-muted-foreground">{resumo.titulos.quantidade} {resumo.titulos.quantidade === 1 ? "título" : "títulos"}</CardContent>
@@ -112,10 +106,6 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
           <CardContent className="text-xs text-muted-foreground">{resumo.geral.quantidade} {resumo.geral.quantidade === 1 ? "item" : "itens"}</CardContent>
         </Card>
         <Card size="sm">
-          <CardHeader><CardDescription>Confirmados no Consistem</CardDescription><CardTitle className="text-xl tabular-nums">{a.status === "cancelada" ? "—" : `${resumo.confirmados} de ${resumo.lancamentos.quantidade - resumo.baixados}`}</CardTitle></CardHeader>
-          <CardContent className="text-xs text-muted-foreground">{confirmacaoVistaEm ? `CCFFB014 · verificado em ${confirmacaoVistaEm}` : "CCFFB014 · ainda não verificado"}</CardContent>
-        </Card>
-        <Card size="sm">
           <CardHeader><CardDescription>Baixados no Consistem</CardDescription><CardTitle className="text-xl tabular-nums">{a.status === "cancelada" ? "—" : `${resumo.baixados} de ${resumo.lancamentos.quantidade}`}</CardTitle></CardHeader>
           <CardContent className="text-xs text-muted-foreground">anotado pela atualização do Consistem</CardContent>
         </Card>
@@ -129,16 +119,6 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
           </Card>
         )}
       </div>
-
-      {cobrarConfirmacao && resumo.faltaConfirmar > 0 && (
-        <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
-          <span>
-            <strong>{resumo.faltaConfirmar} {resumo.faltaConfirmar === 1 ? "documento ainda não está confirmado" : "documentos ainda não estão confirmados"} no Consistem</strong> (tela CCFFB014).
-            Sem a confirmação {resumo.faltaConfirmar === 1 ? "ele não entra" : "eles não entram"} no borderô. A API do Consistem não permite confirmar daqui: marque lá e depois clique em “Atualizar do Consistem”.
-          </span>
-          <BotaoCopiarLista texto={listaFaltaConfirmar} quantidade={resumo.faltaConfirmar} />
-        </div>
-      )}
 
       {caixa && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -169,8 +149,8 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
         </p>
       )}
 
-      <SecaoItens titulo="Títulos" lista={titulos} total={resumo.titulos.centavos} autorizacaoId={a.id} podeRemover={podeRemoverItem(a.status, papel)} cobrarConfirmacao={cobrarConfirmacao} />
-      <SecaoItens titulo="Antecipações" lista={antecipacoes} total={resumo.antecipacoes.centavos} autorizacaoId={a.id} podeRemover={podeRemoverItem(a.status, papel)} cobrarConfirmacao={cobrarConfirmacao} />
+      <SecaoItens titulo="Títulos" lista={titulos} total={resumo.titulos.centavos} autorizacaoId={a.id} podeRemover={podeRemoverItem(a.status, papel)} />
+      <SecaoItens titulo="Antecipações" lista={antecipacoes} total={resumo.antecipacoes.centavos} autorizacaoId={a.id} podeRemover={podeRemoverItem(a.status, papel)} />
       <SecaoExtras lista={extrasAtivos} total={resumo.extras.centavos} totalAutorizacao={resumo.geral.centavos} caixaCentavos={caixaCentavos} autorizacaoId={a.id} podeEditar={podeEditarExtras(a.status, papel)} />
 
       {(removidos.length > 0 || extrasRemovidos.length > 0) && (

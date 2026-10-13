@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ClipboardCopy, Send, Trash2 } from "lucide-react";
+import { Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -369,17 +369,4 @@ export function BotaoEnviarSlack({ id, codigo, mensagem, canalUrl, ehGestor, jaE
       )}
     </>
   );
-}
-
-/** Copia a lista do que ainda falta confirmar no Consistem (CCFFB014), uma linha por documento, para marcar na tela do ERP. */
-export function BotaoCopiarLista({ texto, quantidade }: { texto: string; quantidade: number }) {
-  async function copiar() {
-    try {
-      await navigator.clipboard.writeText(texto);
-      toast.success(`Lista copiada (${quantidade} ${quantidade === 1 ? "documento" : "documentos"}). Cole onde precisar e confirme no CCFFB014.`);
-    } catch {
-      toast.error("Não foi possível copiar. Selecione a lista na tela e copie à mão.");
-    }
-  }
-  return <Button type="button" variant="outline" size="sm" onClick={copiar}><ClipboardCopy /> Copiar lista</Button>;
 }

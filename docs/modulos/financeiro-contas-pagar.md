@@ -32,7 +32,7 @@ Testado ao vivo em 09/10/2026:
 | `GET financeiro/v10/lancamentoContasPagar` (lista) | **HTTP 500** no servidor (bug do Consistem; reportar ao suporte) | não usar |
 | `GET financeiro/v10/lancamentoContasPagar/{id}` | Funciona | Detalhe de um lançamento: portador, código de barras, Pix, `dataPagamento`, `valorPago` |
 | `GET cadastrosgerais/v10/fornecedor?situacao=1` e `=0` | Funciona | Nome, nome fantasia e CPF/CNPJ do fornecedor (a lista de títulos só traz o código) |
-| `GET financeiro/v10/contasPagar?campoFiltroDinamico=docConfirmado&valorFiltroDinamico=1` (+ `dataVencimentoIni/Fim` ou `dataEmissaoIni/Fim`) | Funciona (12/10/2026) | Só os documentos **confirmados** na tela CCFFB014. Valores da coluna: `1` confirmado, `0` verificado e não confirmado, nulo nunca avaliado. O campo **não** vem na resposta da lista nem dos detalhes; só o filtro enxerga. Nome inventado dá HTTP 400 |
+| `GET financeiro/v10/contasPagar?campoFiltroDinamico=docConfirmado&valorFiltroDinamico=1` (+ `dataVencimentoIni/Fim` ou `dataEmissaoIni/Fim`) | Funciona (12/10/2026); **sem uso desde 13/10/2026** | Só os documentos **confirmados** na tela CCFFB014. Valores da coluna: `1` confirmado, `0` verificado e não confirmado, nulo nunca avaliado. O campo **não** vem na resposta da lista nem dos detalhes; só o filtro enxerga. Nome inventado dá HTTP 400 |
 
 Campos da lista: `codLancamento, codFornecedor, numDocumento, categoriaDoc, codBanco, codHistorico, complementoHistorico,
 dataEmissao, dataEntrada, dataVencimento, tipoLancamento, valorDocumento, valorOriginal, valorAtualizado, codOrigem`.
@@ -102,7 +102,7 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
 | Tela | O que mostra |
 | --- | --- |
 | **Autorizar pagamento** (`/financeiro/contas-pagar`) | Três cartões (Títulos, Antecipações, Total: quantidade e R$); filtros (fornecedor/documento, tipo, vencimento de/até, mostrar já autorizados); tabela unificada com caixa de marcação e **títulos de coluna clicáveis para ordenar** (crescente ↔ decrescente): Tipo, Fornecedor, Documento, Vencimento (antecipação: pagamento programado), Valor, Saldo, Histórico — sem CNPJ, código do lançamento, emissão ou situação (linhas não pendentes ficam apagadas com uma linha pequena "na autorização X", "paga (borderô)" ou "paga fora"); barra fixa "N itens · R$ X" + caixa disponível + rascunho em montagem + botões **Salvar parcial · Extras · Gerar autorização** (diálogo: data (só ao criar), caixa, observação; gestor vê "Autorizar agora"); "Atualizado do Consistem em …" + Simular/Atualizar |
-| **Autorizações** (`/autorizacoes`) | Histórico: nº, data, status, itens, total títulos, total antecipações, montada por, autorizada por, confirmados e baixados no Consistem X/N, conferidos no banco X/N (só autorizada; âmbar com divergentes); filtro por status |
+| **Autorizações** (`/autorizacoes`) | Histórico: nº, data, status, itens, total títulos, total antecipações, montada por, autorizada por, baixados no Consistem X/N, conferidos no banco X/N (só autorizada; âmbar com divergentes); filtro por status |
 | **Autorização** (`/autorizacoes/[id]`) | Cabeçalho e status; seção Títulos e seção Antecipações com totais, colunas Fornecedor · Documento · Vencimento/Pagamento programado · Histórico · Valor, ordenáveis pelo título (sob o valor, só quando há algo a dizer: "baixado no Consistem em dd/mm" ou "já paga (tem borderô)"); seção Pagamentos extras; botões Autorizar (gestor), Cancelar (motivo), Remover item (só rascunho), Imprimir / salvar PDF |
 | **Conferência com o banco** (`/autorizacoes/[id]/conferencia`, Fase 4e) | Só autorização autorizada. Cartões Conferidos X de N (R$), Divergentes (com a diferença no banco), Faltam; busca por valor ("150" acha 150,00 e 150,90; "1.234,56" exato) ou fornecedor/documento, Enter marca a única linha encontrada; filtros Todos/Faltam/Conferidos/Divergentes; colunas ordenáveis. Por linha: caixa **Conferido** (grava na hora), botão **Divergente** (valor no banco e/ou observação), "por Fulano em dd/mm hh:mm" |
 | **Impressão** (`/imprimir/contas-pagar/autorizacao/[id]`) | O relatório da seção 6, sem a moldura do sistema |
@@ -138,12 +138,12 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
 4. Cabeçalho do relatório usa razão social + CNPJ (o cadastro de empresas não tem endereço).
 5. Tempo da leitura completa da API (~27 mil registros): medir na Fase 1; se passar de ~60 s, leitura incremental por janelas de emissão/vencimento.
 6. Bug da listagem `lancamentoContasPagar` (HTTP 500): reportar à Consistem; o módulo não depende dele.
-7. **Escrita da confirmação (CCFFB014) pela API depende da Consistem**: texto do chamado na seção 16 (ainda não enviado em 13/10/2026; o Alan envia depois). Enquanto isso, a confirmação é lida e cobrada na autorização (Fase 4d).
-8. ~~Semântica de `docConfirmado`~~ **Validada pelo Alan em 13/10/2026**: no CCFFB014 ("Visualizar Documentos Confirmados = Sim", vencimento 01–31/10/2026) aparecem os títulos que a API devolve com `docConfirmado = 1`.
+7. ~~Escrita da confirmação (CCFFB014) pela API~~ **Encerrado em 13/10/2026**: o Consistem passou a "Sem Controle" na CCFFB000; a confirmação deixou de ser exigida e o chamado não será enviado (seção 16).
+8. ~~Semântica de `docConfirmado`~~ **Validada pelo Alan em 13/10/2026**: no CCFFB014 ("Visualizar Documentos Confirmados = Sim", vencimento 01–31/10/2026) aparecem os títulos que a API devolve com `docConfirmado = 1`. Sem uso desde 13/10/2026 (seção 16).
 
 ## 11. Fases
 0. Especificação (aprovada 09/10/2026). 1. Sincronização + lista unificada só leitura (**feita**). 2. Autorização, histórico e pendência (**feita**).
-3. Relatório/impressão (**feita**). 4. Extras (abas Antecipações e Parâmetros, fornecedores como contrapartes, crédito D, agendamento). 4d. Confirmação no Consistem: leitura (**feita, 12/10/2026**); escrita quando a Consistem entregar a API (4d-2). 4e. Conferência dos pagamentos com o banco (**feita, 13/10/2026**).
+3. Relatório/impressão (**feita**). 4. Extras (abas Antecipações e Parâmetros, fornecedores como contrapartes, crédito D, agendamento). 4d. Confirmação no Consistem: leitura feita em 12/10/2026 e **desligada em 13/10/2026** (CCFFB000 em "Sem Controle"; a 4d-2 não será feita). 4e. Conferência dos pagamentos com o banco (**feita, 13/10/2026**).
 
 ## 12. Fase 1 — o que foi feito (09/10/2026)
 - Migration `0121_cap_base.sql` (aplicada em produção em 09/10/2026): módulo `financeiro.contas-pagar` ativo, parâmetro
@@ -270,7 +270,18 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
   permite só essa mudança numa cancelada, uma vez). Nada é apagado: a autorização some do histórico (`listarAutorizacoes`
   filtra `excluida_em is null`) e fica no banco com quem excluiu, quando e o motivo.
 
-## 16. Fase 4d — confirmação dos documentos no Consistem (12/10/2026)
+## 16. Fase 4d — confirmação dos documentos no Consistem (12/10/2026) — **desligada em 13/10/2026**
+
+> **Desligada em 13/10/2026.** O Alan trocou no Consistem a rotina **CCFFB000**, campo "Controle de Apresentação de Documento", de
+> **Simples** para **Sem Controle**, como a Consistem orientou nos chamados **557808** (28/08/2025) e **561244** (17/09/2025): o título
+> entra no borderô sem passar pelo CCFFB014. O controle passa a ser a autorização da diretoria + a conferência com o banco (Fase 4e)
+> do Neo Admin. **Risco aceito:** sem trava no ERP, qualquer título lançado no Consistem pode entrar num borderô; o controle depende
+> de seguir a rotina do Neo Admin.
+> O que saiu: passo 6d da sincronização (`docConfirmado`), `FILTRO_CONFIRMADO`/`planejarConfirmacoes` de `consistem-pagar.ts`,
+> cartão/coluna "Confirmados no Consistem", aviso "falta confirmar" com "Copiar lista", linha verde na lista e o CCFFB014 no texto da
+> pendência (migration `0161_cap_sem_confirmacao.sql`, que também corrigiu as pendências já abertas). As colunas da 0129 ficam no
+> banco como histórico, sem uso. O chamado à Consistem abaixo **não será enviado**. A customização paga da tela CCFFB014 (proposta
+> 9945, chamado 573110) deixa de ter uso. O texto abaixo fica como registro do que foi feito em 12/10/2026.
 
 ### Por que
 No Consistem da Neo Formas o Contas a Pagar trabalha com **controle de liberação** (CCFFB000, campo "Controla Apresentação Documento"

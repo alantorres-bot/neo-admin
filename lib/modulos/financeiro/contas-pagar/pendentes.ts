@@ -39,13 +39,7 @@ export type ItemPendente = {
   /** Antecipação: true = tem borderô no Consistem (paga); false = sem borderô (a pagar); null = ainda não verificado. */
   temBordero: boolean | null;
   borderoVistoEm: string | null;
-  /** Consistem docConfirmado (tela CCFFB014): true = confirmado (pode entrar no borderô); false = verificado e não confirmado; null = não verificado. */
-  confirmadoConsistem: boolean | null;
-  confirmacaoVistaEm: string | null;
 };
-
-/** Sufixo da situação quando o documento já está confirmado no Consistem: informação para quem autoriza (não muda a pendência). */
-export const SUFIXO_CONFIRMADO = " · confirmado no Consistem";
 
 /** Antecipação paga de verdade: tem borderô no Consistem. */
 export const estaPaga = (i: Pick<ItemPendente, "tipo" | "temBordero">): boolean => i.tipo === "antecipacao" && i.temBordero === true;
@@ -188,22 +182,21 @@ export function paginar<T>(itens: readonly T[], pagina: number, porPagina = POR_
   return { pagina: p, totalPaginas, itens: itens.slice((p - 1) * porPagina, p * porPagina) };
 }
 
-/** Rótulo curto da situação de um item para a tabela. Acrescenta "confirmado no Consistem" quando já está (menos em antecipação paga). */
+/** Rótulo curto da situação de um item para a tabela. */
 export function descreverSituacao(item: ItemPendente, hoje: string): string {
-  const confirmado = item.confirmadoConsistem === true ? SUFIXO_CONFIRMADO : "";
   if (item.tipo === "antecipacao") {
     if (item.temBordero === true) return "paga (borderô no Consistem)";
-    if (item.temBordero === null) return (item.dataPagamento ? `programada para ${formatarDataCurta(item.dataPagamento)} · pagamento não verificado` : "pagamento não verificado") + confirmado;
-    return (item.dataPagamento ? `a pagar · programada para ${formatarDataCurta(item.dataPagamento)}` : "a pagar · sem data de pagamento") + confirmado;
+    if (item.temBordero === null) return (item.dataPagamento ? `programada para ${formatarDataCurta(item.dataPagamento)} · pagamento não verificado` : "pagamento não verificado");
+    return (item.dataPagamento ? `a pagar · programada para ${formatarDataCurta(item.dataPagamento)}` : "a pagar · sem data de pagamento");
   }
   const dias = diasAtraso(item, hoje);
-  if (dias > 0) return (dias === 1 ? "vencido há 1 dia" : `vencido há ${dias} dias`) + confirmado;
-  if (item.vencimento === hoje) return "vence hoje" + confirmado;
+  if (dias > 0) return (dias === 1 ? "vencido há 1 dia" : `vencido há ${dias} dias`);
+  if (item.vencimento === hoje) return "vence hoje";
   if (item.vencimento) {
     const faltam = diasEntre(item.vencimento, hoje);
-    return (faltam === 1 ? "vence amanhã" : `vence em ${faltam} dias`) + confirmado;
+    return (faltam === 1 ? "vence amanhã" : `vence em ${faltam} dias`);
   }
-  return "sem vencimento" + confirmado;
+  return "sem vencimento";
 }
 
 const formatarDataCurta = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
