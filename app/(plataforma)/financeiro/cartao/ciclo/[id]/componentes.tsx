@@ -6,10 +6,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { fecharCiclo, reabrirCiclo } from "../../acoes";
+import { criarProvisorio, fecharCiclo, reabrirCiclo } from "../../acoes";
 
 /** "Fechar o mês" (gestor). Desabilitado, com o motivo, enquanto houver algo a lançar ou diferença. Confirmação em dois cliques. */
-export function BotaoFechar({ id, rotulo, bloqueio }: { id: string; rotulo: string; bloqueio: string | null }) {
+export function BotaoFechar({ id, rotulo, bloqueio, previaProvisorio }: { id: string; rotulo: string; bloqueio: string | null; previaProvisorio?: string | null }) {
   const router = useRouter();
   const [armado, setArmado] = useState(false);
   const [pendente, iniciar] = useTransition();
@@ -18,6 +18,7 @@ export function BotaoFechar({ id, rotulo, bloqueio }: { id: string; rotulo: stri
   return (
     <div role="alert" className="flex max-w-md flex-col gap-2 rounded-[3px] border border-marca bg-marca-clara p-2 text-[13px]">
       <p>Fechar a fatura <strong>{rotulo}</strong>? A conciliação é recalculada agora; se estiver zerada, o resultado fica gravado como prova e a planilha é anexada.</p>
+      {previaProvisorio && <p>{previaProvisorio}</p>}
       <div className="flex gap-2">
         <Button size="sm" disabled={pendente} onClick={() => iniciar(async () => {
           const r = await fecharCiclo({ id });
@@ -62,5 +63,18 @@ export function BotaoReabrir({ id }: { id: string }) {
         </Dialog>
       )}
     </>
+  );
+}
+
+/** "Criar provisório no Consistem" (gestor), no mês fechado sem provisório. */
+export function BotaoCriarProvisorio({ cicloId }: { cicloId: string }) {
+  const router = useRouter();
+  const [pendente, iniciar] = useTransition();
+  return (
+    <Button size="sm" disabled={pendente} onClick={() => iniciar(async () => {
+      const r = await criarProvisorio({ cicloId });
+      if (r.ok) toast.success(r.aviso); else toast.error(r.erro);
+      router.refresh();
+    })}>{pendente ? "Criando…" : "Criar provisório no Consistem"}</Button>
   );
 }

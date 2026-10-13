@@ -20,6 +20,8 @@
 //                                       Também devolve as ANTECIPAÇÕES (A) com data de pagamento em [ini, fim] (antecipação paga no
 //                                       cartão: o complemento quase nunca cita o cartão). A data de pagamento vem do espelho ou do
 //                                       detalhe (lancamentoContasPagar/{id}); procura as emitidas até 60 dias antes do início.
+//   detalhe_lancamentos { empresaId?, codigos }
+//                                       SÓ LEITURA: detalhe completo dos lançamentos pedidos (até 20).
 //   exemplos_fornecedores { empresaId?, codigos? }
 //                                       SÓ LEITURA: fornecedores "Outros" (classificação 3) e o detalhe dos códigos pedidos.
 //   exemplos_compras_cartao { empresaId?, ini, fim }
@@ -709,6 +711,17 @@ Deno.serve(async (req) => {
           })),
           detalhes,
         });
+      }
+      case "detalhe_lancamentos": {
+        // SÓ LEITURA: detalhe completo (GET lancamentoContasPagar/{id}) dos códigos pedidos (até 20).
+        const e = (empresas as Empresa[]).find((x) => x.id === corpo.empresaId) ?? (empresas[0] as Empresa);
+        const cfg: ConfigConsistem = { ...cfgBase, empresa: e.codigo_erp };
+        const pedidos = Array.isArray(corpo.codigos) ? (corpo.codigos as unknown[]).map(String).filter((c) => /^\d{1,9}$/.test(c)).slice(0, 20) : [];
+        const detalhes: Record<string, unknown>[] = [];
+        for (const c of pedidos) {
+          try { detalhes.push(await buscarObjeto(buscar, cfg, `${ROTA_DETALHE_LANCAMENTO}/${c}`)); } catch (erro) { detalhes.push({ codLancamento: c, erro: erro instanceof Error ? erro.message : "falha" }); }
+        }
+        return responder({ ok: true, empresa: e.nome_curto, detalhes });
       }
       case "exemplos_fornecedores": {
         // SÓ LEITURA: fornecedores de classificação 3 ("Outros") com endereço, categoria e grupo, e o detalhe dos códigos

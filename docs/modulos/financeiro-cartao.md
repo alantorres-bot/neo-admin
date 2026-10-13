@@ -206,6 +206,14 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     débito igual ao crédito e débito igual à conta de crédito padrão do cartão (2004, fornecedores) — o título 33626 saiu com
     débito 2004 e crédito 3241 (invertidas) e foi corrigido no Consistem pelo financeiro; a sugestão da "99" foi corrigida
     (migration 0151). "Reenviar o que faltou" só aparece para envio interrompido (recusa pede correção e novo lançamento).
+54. **Provisório da fatura no fechamento** (pedido do Alan, 13/10/2026; migration 0154): ao fechar o mês, se a conciliação não
+    achou um provisório, o painel cria no Consistem o título no valor da fatura contra o banco emissor (codFornecedor dos códigos
+    de encargos do cartão), histórico 1, categoria 17, portador 91, documento = vencimento DDMMAA, complemento
+    "FATURA CARTÃO <NOME> MM/AAAA", emissão no dia. O código vira o `provisorio_cod_lancamento` do mês (gatilho de "Paga").
+    Se o Consistem recusar, não responder, a chave estiver desligada ou faltar configuração, **o mês fecha mesmo assim** e fica a
+    pendência "Criar o provisório" + o botão "Criar provisório no Consistem" na página do mês. Conta de fluxo e contas contábeis
+    do provisório: configuração `financeiro.cartao.provisorio` (os provisórios reais 33392/33360 já foram excluídos; valores a
+    informar pelo Alan).
 49. Cadastro com a mesma regra de envio dos títulos: reserva, envio único, erro (nada criado) ou sem resposta (conferir e
     resolver à mão); cadastrado vai na hora para o espelho `cap_fornecedores`. Prova em `crt_fornecedores_cadastrados`.
 

@@ -11,10 +11,11 @@ import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { conciliacaoDaRequisicao, lerCiclo, lerCompras, lerEncargos, lerFatura, quandoEm, registrarApuracao } from "../../dados";
+import { conciliacaoDaRequisicao, lerCiclo, lerCompras, lerEncargos, lerFatura, lerProvisorio, quandoEm, registrarApuracao } from "../../dados";
+import { BotaoResolver } from "../../[id]/encargos";
 import { PainelConciliacao } from "../../[id]/painel";
 import { BotaoCancelarFatura } from "../../[id]/componentes";
-import { BotaoFechar, BotaoReabrir } from "./componentes";
+import { BotaoCriarProvisorio, BotaoFechar, BotaoReabrir } from "./componentes";
 
 export const metadata: Metadata = { title: "Mês do cartão" };
 
@@ -39,6 +40,12 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
   if (aoVivo) await registrarApuracao(supabase, ciclo.id, aoVivo);
   const [encargos, compras] = aoVivo ? await Promise.all([lerEncargos(supabase, aoVivo), lerCompras(supabase, aoVivo)]) : [null, null];
   const linhasCongeladas = !aoVivo && vigente ? (await lerFatura(supabase, vigente.fatura_id))?.linhas ?? [] : [];
+  const provisorio = ciclo.situacao === "em_conciliacao" || (ciclo.situacao === "fechada" && !ciclo.provisorio_cod_lancamento) ? await lerProvisorio(supabase, ciclo) : null;
+  const previaProvisorio = provisorio && aoVivo && !aoVivo.tituloDaFatura
+    ? provisorio.titulo.ok && provisorio.ligado
+      ? `Será criado no Consistem o provisório de ${formatarMoeda(Math.round(provisorio.titulo.payload.valorDocumento * 100))} contra ${provisorio.titulo.payload.codFornecedor}${provisorio.fornecedorNome ? ` · ${provisorio.fornecedorNome}` : ""}, vencimento ${formatarData(provisorio.titulo.payload.dataVencimento)}, documento ${provisorio.titulo.payload.codDocumento}.`
+      : `O provisório não será criado (${provisorio.ligado ? (provisorio.titulo.ok ? "" : provisorio.titulo.erro) : "lançamento no Consistem desligado"}): fica a pendência "Criar o provisório".`
+    : null;
   const bloqueio = aoVivo ? (aoVivo.origemTitulos !== "consistem" ? "Os títulos não foram lidos do Consistem agora; recarregue para tentar de novo." : bloqueioDoFechamento({ itensALancar: aoVivo.resultado.pendentes, residuoCentavos: aoVivo.resultado.residuoCentavos })) : null;
   const podeCancelarFatura = fatura?.status === "importada" && ciclo.situacao === "em_conciliacao" && (ehGestor || (podeOperar && fatura.importado_por === sessao.userId));
 
@@ -76,10 +83,35 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
             <Button variant="outline" render={<a href={`/imprimir/cartao/ciclo/${ciclo.id}`} target="_blank" rel="noopener" />}><Printer /> Imprimir / salvar PDF</Button>
           )}
           {podeCancelarFatura && fatura && <BotaoCancelarFatura id={fatura.id} />}
-          {ciclo.situacao === "em_conciliacao" && ehGestor && <BotaoFechar id={ciclo.id} rotulo={rotulo} bloqueio={bloqueio} />}
+          {ciclo.situacao === "em_conciliacao" && ehGestor && <BotaoFechar id={ciclo.id} rotulo={rotulo} bloqueio={bloqueio} previaProvisorio={previaProvisorio} />}
           {ciclo.situacao === "fechada" && ehGestor && <BotaoReabrir id={ciclo.id} />}
         </div>
       </div>
+
+      {ciclo.situacao === "fechada" && !ciclo.provisorio_cod_lancamento && provisorio && (
+        <section className="space-y-2 rounded-[3px] border border-amber-300 bg-amber-50 p-3 text-sm">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="font-bold">Provisório da fatura no Consistem</h3>
+              <p className="text-xs">O mês está fechado sem o título provisório. Sem ele, a situação “Paga” não é detectada sozinha.</p>
+            </div>
+            {ehGestor && provisorio.ligado && provisorio.titulo.ok && !provisorio.lancamentos.some((l) => l.situacao === "reservado" || l.situacao === "enviando") && <BotaoCriarProvisorio cicloId={ciclo.id} />}
+          </div>
+          {provisorio.titulo.ok ? (
+            <p>
+              {formatarMoeda(Math.round(provisorio.titulo.payload.valorDocumento * 100))} contra {provisorio.titulo.payload.codFornecedor}{provisorio.fornecedorNome ? ` · ${provisorio.fornecedorNome}` : ""},
+              vencimento {formatarData(provisorio.titulo.payload.dataVencimento)}, documento {provisorio.titulo.payload.codDocumento}, complemento “{provisorio.titulo.payload.complementoHistorico}”.
+            </p>
+          ) : <p className="font-medium text-amber-900">{provisorio.titulo.erro}</p>}
+          {!provisorio.ligado && <p className="text-xs">O lançamento no Consistem está desligado.</p>}
+          {provisorio.lancamentos.map((l) => (
+            <div key={l.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
+              <span>{quandoEm(l.criado_em)} · {l.criado_por_nome ?? ""} · {l.situacao === "erro" ? "não criado" : l.situacao === "lancado" ? `lançado ${l.cod_lancamento_erp}` : "sem resposta"}{l.erro ? ` · ${l.erro}` : ""}</span>
+              {ehGestor && (l.situacao === "reservado" || l.situacao === "enviando") && <BotaoResolver l={l} />}
+            </div>
+          ))}
+        </section>
+      )}
 
       <ol className="grid gap-2 sm:grid-cols-4">
         {etapas.map((e) => (

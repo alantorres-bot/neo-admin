@@ -20,7 +20,7 @@ import { CAMPOS_COMPRA, CAMPOS_PADRAO_CARTAO, conferirContas, lerCampos, montarT
 import { CONFERIR, type LinhaFatura } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { montarTituloAgrupado } from "@/lib/modulos/financeiro/cartao/lancamento-agrupado";
 import { normalizar } from "@/lib/modulos/financeiro/cartao/texto";
-import { codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerCompras, lerEncargos, lerEstabelecimentos, paraCartaoInfo, type FotoFechamento } from "./dados";
+import { codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerCompras, lerEncargos, lerEstabelecimentos, lerProvisorio, paraCartaoInfo, type FotoFechamento } from "./dados";
 
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
 const texto = (d: FormData, nome: string) => String(d.get(nome) ?? "").trim();
@@ -278,12 +278,17 @@ export async function fecharCiclo(entrada: { id: string }): Promise<Resultado> {
   } catch (e) {
     avisoAnexo = ` A planilha não foi anexada: ${(e as Error).message}`;
   }
+  // Provisório da fatura (regra 54): se a conciliação não achou um, cria no Consistem. Falha não desfaz o fechamento.
+  let avisoProvisorio = " Quando o título provisório sair do Consistem, o mês passa a Paga.";
+  if (!provisorio) {
+    const r = await criarProvisorioDoCiclo(supabase, ciclo);
+    avisoProvisorio = r.ok
+      ? ` Provisório criado no Consistem: lançamento ${r.cod}. Quando ele sair do Consistem, o mês passa a Paga.`
+      : ` O provisório NÃO foi criado (${r.erro}): pendência "Criar o provisório" aberta.`;
+  }
   revalidatePath(ROTA_CARTAO, "layout");
   revalidatePath("/financeiro/recebiveis/fila");
-  return {
-    ok: true,
-    aviso: `Fatura ${ciclo.cartao_nome} ${rotuloCompetencia(ciclo.competencia)} fechada.${provisorio ? " Quando o título provisório sair do Consistem, o mês passa a Paga." : " Sem título provisório identificado: a situação Paga não será detectada sozinha."}${avisoAnexo}`,
-  };
+  return { ok: true, aviso: `Fatura ${ciclo.cartao_nome} ${rotuloCompetencia(ciclo.competencia)} fechada.${avisoProvisorio}${avisoAnexo}` };
 }
 
 const esquemaReabrir = z.object({ id: z.string().uuid(), motivo: z.string().trim().min(3, "Informe o motivo da reabertura.").max(300) });
@@ -616,4 +621,37 @@ export async function lancarAgrupado(entrada: z.input<typeof esquemaAgrupado>): 
   revalidatePath(ROTA_CARTAO, "layout");
   if (!envio.ok) return { ok: false, erro: envio.erro };
   return { ok: true, aviso: `${d.linhas.length} linhas lançadas num título no Consistem: ${envio.codigos.join(", ")} (${(t.valorCentavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}). As linhas foram casadas com ele.` };
+}
+
+// ---------------------------------------------------------------- provisório da fatura (0154)
+
+/** Monta, reserva e envia o provisório do mês fechado; em falha abre a pendência "Criar o provisório". */
+async function criarProvisorioDoCiclo(supabase: Awaited<ReturnType<typeof criarClienteServidor>>, ciclo: { id: string; cartao: string; competencia: string; fatura_id: string | null }): Promise<{ ok: true; cod: string } | { ok: false; erro: string }> {
+  const falhar = async (erro: string) => {
+    await supabase.rpc("crt_pendencia_provisorio", { p_ciclo: ciclo.id, p_motivo: erro });
+    return { ok: false as const, erro };
+  };
+  const q = await lerProvisorio(supabase, ciclo);
+  if (!q) return falhar("fatura ou cartão não encontrados");
+  if (!q.ligado) return falhar("o lançamento no Consistem está desligado");
+  if (!q.titulo.ok) return falhar(q.titulo.erro);
+  const { data: lote, error } = await supabase.rpc("crt_reservar_provisorio", { p_ciclo: ciclo.id, p_payload: q.titulo.payload });
+  if (error) return falhar(mensagemDeErro(error));
+  const envio = await enviarLote(supabase, lote as string);
+  if (!envio.ok) return falhar(envio.erro);
+  return { ok: true, cod: envio.codigos[0] ?? "?" };
+}
+
+/** Botão "Criar provisório no Consistem" no mês fechado sem provisório (gestor). */
+export async function criarProvisorio(entrada: { cicloId: string }): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "gestor")) return { ok: false, erro: "Somente gestor do Financeiro (ou acima) cria o provisório." };
+  if (!z.string().uuid().safeParse(entrada.cicloId).success) return { ok: false, erro: "Mês do cartão inválido." };
+  const supabase = await criarClienteServidor();
+  const lido = await lerCiclo(supabase, entrada.cicloId);
+  if (!lido) return { ok: false, erro: "Mês do cartão não encontrado." };
+  if (lido.ciclo.situacao !== "fechada" || lido.ciclo.provisorio_cod_lancamento) return { ok: false, erro: "Só um mês fechado e sem provisório." };
+  const r = await criarProvisorioDoCiclo(supabase, lido.ciclo);
+  revalidatePath(ROTA_CARTAO, "layout");
+  return r.ok ? { ok: true, aviso: `Provisório criado no Consistem: lançamento ${r.cod}.` } : { ok: false, erro: `O provisório não foi criado: ${r.erro}` };
 }

@@ -7,6 +7,8 @@ import { selecionarTitulos, type LancamentoEspelho, type OutroTitulo } from "@/l
 import { somarDias } from "@/lib/modulos/financeiro/cartao/texto";
 import { encargosALancar, lerConfigEncargos, montarTituloEncargos, type NovoLancamentoContaPagar, type TituloEncargos } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
 import type { CategoriaFornecedor, ContaFluxo, ListasConsistem } from "@/lib/modulos/financeiro/cartao/listas";
+import { montarProvisorio, type Provisorio } from "@/lib/modulos/financeiro/cartao/provisorio";
+import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { lerCampos, padraoSugerido, sugestaoDaLinha, type EstabelecimentoCodigos, type Sugestao } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
 import { JANELA_VENCIMENTO } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { FUSO } from "@/lib/nucleo/fila";
@@ -348,6 +350,38 @@ export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<Qua
     empresaId: c.fatura.empresa_id, competencia: cc?.competencia ?? null, fechamento: cc?.fechamento ?? null, creditoPadrao: padroesCartao.contaContabilCredito ?? null, vencimentoFatura: c.fatura.vencimento, cartao: paraCartaoInfo(c.cartao), propostas, lancamentos,
     marketplace, cadastro, listas,
   };
+}
+
+// ---------------------------------------------------------------- provisório da fatura no fechamento (0154)
+
+export type QuadroProvisorio = {
+  ligado: boolean;
+  /** O título que vai (ou iria) para o Consistem. */
+  titulo: Provisorio;
+  /** Lançamentos de provisório do mês (mais novo primeiro). */
+  lancamentos: LancamentoErpLinha[];
+  fornecedorNome: string | null;
+};
+
+/** Provisório do mês: o título montado (banco do cartão, total, vencimento) e os envios já feitos. */
+export async function lerProvisorio(supabase: Cliente, ciclo: Pick<CicloLinha, "id" | "cartao" | "competencia" | "fatura_id">): Promise<QuadroProvisorio | null> {
+  if (!ciclo.fatura_id) return null;
+  const [{ data: config }, { data: chave }, lida, cartoes, { data: lancs }] = await Promise.all([
+    supabase.from("configuracoes").select("valor").eq("chave", "financeiro.cartao.provisorio").maybeSingle(),
+    supabase.from("configuracoes").select("valor").eq("chave", CHAVE_LANCAR_NO_ERP).maybeSingle(),
+    lerFatura(supabase, ciclo.fatura_id),
+    lerCartoes(supabase),
+    supabase.from("crt_vw_lancamentos_erp").select("id, fatura_id, situacao, valor, complemento, linhas, payload, cod_lancamento_erp, erro, criado_por, criado_por_nome, criado_em, enviado_em, concluido_em, resolvido_por_nome, motivo_resolucao, tipo, lote, linha_origem, linha_descricao, parcela, parcelas, vencimento").eq("ciclo_id", ciclo.id).eq("tipo", "provisorio").order("criado_em", { ascending: false }).limit(20),
+  ]);
+  const cartao = cartoes.find((c) => c.codigo === ciclo.cartao);
+  if (!lida || !cartao) return null;
+  const titulo = montarProvisorio({
+    nomeCartao: cartao.nome, codigosCartao: cartao.lancamento_encargos, config: (config as { valor: unknown } | null)?.valor,
+    totalCentavos: centavos(lida.fatura.total_informado), vencimento: lida.fatura.vencimento, competencia: ciclo.competencia, hoje: hojeEmCuiaba(),
+  });
+  const cod = titulo.ok ? String(titulo.payload.codFornecedor) : null;
+  const nomes = cod ? await nomesDosFornecedores(supabase, [cod]) : new Map<string, string>();
+  return { ligado: (chave as { valor: unknown } | null)?.valor === true, titulo, lancamentos: (lancs ?? []) as LancamentoErpLinha[], fornecedorNome: cod ? nomes.get(cod) ?? null : null };
 }
 
 // ---------------------------------------------------------------- regras fornecedor → cartão (cópia do Neo Fiscal)
