@@ -355,7 +355,10 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
 - Descoberta (só leitura): ação `exemplos_compras_cartao` de `cap-sincronizar-consistem`: 1.203 compras de cartão lançadas à mão
   no último ano (173 fornecedores), com detalhe de 2 por fornecedor. Padrão recente das despesas sem nota fiscal: histórico 2,
   categoria 17, portador 91 (77 nos títulos do Inter PJ), contábil crédito 2004; débito e fluxo variam com o tipo de despesa.
-  **Nenhum código foi carregado ainda**: a proposta foi apresentada ao Alan para aprovação (regra 7).
+  Proposta aprovada pelo Alan ("pode carregar todas") e carregada pela migration `0139_crt_codigos_sugeridos.sql` (aplicada e
+  registrada): padrões dos 8 cartões (portador 91, Inter PJ 77) e fluxo/débito de 27 estabelecimentos (passagens, Uber, Petrobras,
+  softwares, Mercado Livre, alimentação, locação). Fornecedor fica vazio (cada estabelecimento terá o seu no Consistem).
+  "Combustível no Inter PJ" (29/11, 3238) não entrou: o dicionário é por estabelecimento, não por cartão.
 - Migration `0138_crt_lancamento_compras.sql` (aplicada e registrada em produção): chave única `financeiro.cartao.lancar_no_erp`,
   `crt_cartoes.lancamento_compras`, `crt_estabelecimentos.lancamento_erp`, colunas de lote e parcela em `crt_lancamentos_erp`,
   funções de reservar compra, reenviar, interromper lote e as de envio com nomes genéricos.
