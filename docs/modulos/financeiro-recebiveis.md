@@ -291,7 +291,7 @@ O Consistem lista os títulos das duas unidades juntos (mesma empresa na API). C
 - **Dado (migration 0109):** coluna calculada `rec_titulos.unidade` (`matriz` ou `contagem`, derivada do documento; não se grava à mão) e a view `rec_vw_titulos` recriada com ela. A regra em TypeScript (`unidadeDoDocumento`, em `_shared/cobranca.ts`) tem teste de paridade com o banco. Mudar a regra exige nova migration.
 - **Carteira:** seletor **Todas as unidades · Matriz · Filial Contagem**, com quantidade e valor de cada uma. Escolhida a unidade, os cartões, o aging, as abas por situação e a lista passam a ser só dela (a escolha vale na busca, na faixa, nas abas e na paginação). Em "Todas", os títulos da Filial levam o selo "Contagem".
 - **Pendências por unidade:** "Cobrar D+n", "Confirmar pagamento" e "Ligar para confirmar pagamento" são abertas por **cliente e unidade**; as da Filial Contagem levam "(Filial Contagem)" no título e uma linha "Unidade: Filial Contagem" na descrição (as da Matriz não mudam). As telas de cobrança e de confirmação mostram a unidade (a confirmação da Filial abre com `?unidade=contagem`), o rascunho de e-mail e o registro do resultado valem para uma unidade por vez, e `rec_registrar_cobranca` e `rec_registrar_confirmacao` recusam parcelas de unidades misturadas e só concluem as pendências da unidade registrada. A ficha do título mostra a unidade de cada parcela.
-- **Ainda igual nas duas:** os textos de mensagem e os marcos da régua (D+1, D+5, D+10). O que muda na cobrança da Filial (textos, prazos, contatos) será definido e entra aqui.
+- **Ainda igual nas duas:** os textos de mensagem e os marcos da régua (D+1, D+5, D+10). O que muda na cobrança da Filial (textos, prazos, contatos) será definido e entra aqui. O faturamento da Filial (kit NF + demonstrativo + comodato + boleto) está na seção 34.
 - **Hoje:** 36 títulos da Filial (R$ 528 mil) e 106 da Matriz (R$ 21,7 mi). O documento `453` (NF 45, Canopus) fica na Matriz.
 
 ## 23. Ocultar vencidos há mais de 90 dias (06/10/2026)
@@ -432,3 +432,58 @@ Os marcos da régua (hoje D+1, D+5 e D+10) deixaram de ser fixos no código. Fic
 - **Gravação:** `rec_salvar_regua(p_parametros, p_marcos)` (security definer; gestor+; valida tudo; atômica; auditada, com `atualizado_por/em` em cada marco). `rec_registrar_cobranca` passou a aceitar qualquer marco ativo (antes só 1, 5 e 10). `rec_variaveis_invalidas(texto)` é a validação de variáveis no banco; `validarMarcos` (`_shared/cobranca.ts`) é a mesma regra no app, e há teste de que as duas concordam.
 - **Leitura:** a Edge Function lê os marcos do banco a cada rodada (falha de leitura = padrão); o app usa `carregarRegra` (`lib/modulos/financeiro/recebiveis/regra.ts`). As funções puras recebem `marcos` por parâmetro (padrão `MARCOS_PADRAO`).
 - **Fora desta fase:** multa e juros padrão (view `rec_vw_titulos`), contratos por cliente, estágios cobráveis, textos de boleto e dados de pagamento (`modelos_mensagem`).
+
+## 34. Faturamento da Filial Contagem — Fase A: o kit da fatura (13/10/2026)
+
+Na Filial a NF é emitida no **Syslock**. O ciclo, que corria todo por e-mail, era assim:
+1. A filial manda "FATURAS MG - <MÊS> - EMAIL n".
+2. Cuiabá implanta a fatura no Consistem.
+3. Cuiabá decide entre AKF e boleto próprio e devolve o boleto, junto com a carta de cessão quando o título foi cedido.
+4. A filial envia ao cliente a nota fatura, o demonstrativo, o comodato e o boleto.
+
+Agora cada NF da filial vira um **kit** (menu Financeiro > Faturamento Filial, módulo `financeiro.filial`, migration 0146).
+
+- **Tabelas:**
+  - `rec_kits`: uma linha por NF de 6 dígitos, com cliente, obra, período e "aceita boleto de factoring". Um kit vivo por NF; cancela-se com motivo e não há exclusão.
+  - `rec_kit_titulos`: liga o kit às parcelas.
+  - Os documentos ficam em `anexos` (`referencia_tabela = 'rec_kits'`, tipo `nota_fatura`, `demonstrativo`, `comodato` ou `carta_cessao`). O boleto continua na parcela (`rec_titulos`, tipo `boleto`), como no restante da Cobrança.
+- **Estágio, calculado pelo banco** (`rec_kit_atualizar_estagio`; não se grava à mão):
+  - **Aguardando implantação** (`recebida`).
+  - **Aguardando boleto** (`implantada`): existe título ligado.
+  - **Pronta para envio** (`pronta`): toda parcela com boleto, ou com forma de pagamento transferência, e com carta de cessão se alguma parcela estiver cedida.
+  - **Enviada** (`enviada`): vem na Fase C.
+- **Ligação automática pela NF:** o título da filial é `4` + NF + parcela (`4002323U` = NF 002323; `rec_nota_filial(documento)` no banco, `notaDoDocumento` no app, com teste de que concordam). A ligação acontece nos dois sentidos: quando o título chega depois do kit (gatilho em `rec_titulos`) e quando o kit é criado depois do título. Anexar boleto ou carta, ou mudar `cedido`, `forma_pagamento` ou `estagio` da parcela, recalcula o kit.
+- **Pendências** (módulo `financeiro.filial`):
+  - "Implantar fatura da filial: NF n — cliente" abre no registro e fecha quando o título aparece.
+  - "Enviar kit ao cliente: NF n — cliente" abre quando o kit fica pronto e é cancelada se ele deixar de estar pronto (ex.: o título foi cedido e falta a carta).
+- **Envio em lote** (`/financeiro/filial/enviar`):
+  - A pessoa escolhe vários PDFs de uma vez. `lerNomeArquivo` (`lib/modulos/financeiro/filial/arquivos.ts`) tira do nome a NF, o cliente e o tipo. Exemplos: "NF 02351 - QRTZ 39.pdf", "DEMONSTRATIVO 2352.pdf", "Comodato NF 2351 - …", "2353.PDF".
+  - A prévia agrupa por NF. O que não for reconhecido é informado ali.
+  - "Aceita boleto de factoring" já vem desmarcado para os clientes da lista `financeiro.akf.clientes_sem_boleto`.
+  - Ao confirmar, cada NF chama `rec_kit_registrar`. Se o kit da NF já existe, a função devolve o mesmo, para completar o que faltou. Em seguida sobe um anexo por chamada.
+- **Ficha do kit** (`/financeiro/filial/[id]`): mostra a esteira, o que falta, os documentos (links de 15 minutos), as parcelas e os boletos, e permite anexar documento avulso (como a carta de cessão) e cancelar o kit.
+- **Carta de cessão só para quem pede (0147):** a carta é exigida apenas quando há parcela cedida **e** o cliente está marcado "Exige carta de cessão" (`rec_clientes_config.exige_carta_cessao`, na ficha do cliente em Recebíveis; `rec_cliente_definir_carta_cessao` recalcula os kits abertos). Cliente que não aceita boleto de factoring não sabe da cessão e não recebe carta.
+- **Remessa e aviso a Cuiabá (0148):** os arquivos não vão mais por e-mail.
+  - Cada envio em lote vira uma **remessa** numerada (`rec_remessas`, `rec_remessa_kits`). A pendência passa a ser por remessa, "Implantar remessa nº N da filial (k NFs)", e fecha quando todas as NFs estão implantadas.
+  - Na prévia, cada NF recebe o **vencimento e o valor de cada parcela, como na nota** (`rec_kits.parcelas_informadas`). Esses dados são **lidos automaticamente da nota fatura** (`lerNotaSyslock`, `lib/modulos/financeiro/filial/leitor-nota.ts`, sobre `extrairPaginasDoPdf` do cartão):
+    - O vencimento e o valor vêm do quadro de duplicatas: um trio número / valor / vencimento por parcela. Na falta do quadro, o leitor usa o "VENCIMENTO:" da descrição e o total, com aviso.
+    - Também são lidos o nº da nota, o cliente (razão social, só quando o nome do arquivo não traz), a obra e o período ("NO PERÍODO DE dd/mm A dd/mm/aaaa", inclusive com vários períodos).
+    - A prévia mostra "lido da nota" e os avisos: soma das parcelas diferente do total, NF do nome do arquivo diferente da NF do PDF. A pessoa pode corrigir antes de registrar.
+    - Calibrado com 9 notas reais (002317 a 002354). Calibração opcional: `NEO_AMOSTRAS_FILIAL=<pasta> npx vitest run lib/modulos/financeiro/filial/calibracao.test.ts`; os PDFs não entram no repositório.
+  - O botão **"Abrir e-mail para Cuiabá"** abre o Gmail de quem clica numa aba nova (tela de novo e-mail, `linkGmail`; o mailto foi descartado porque não abre nada sem programa de e-mail padrão no Windows), com: para (`financeiro.filial.aviso_destinatarios`), assunto "FATURAS MG - <MÊS> <ANO> - REMESSA nº N", relação NF/cliente/vencimento/valor, OBS dos clientes sem boleto de factoring e link da remessa. Sem anexos; acima de ~1.900 caracteres leva só o resumo e o link; "Copiar texto" leva a relação inteira. O sistema registra quando o aviso foi aberto (`rec_remessa_marcar_aviso`); quem envia é a pessoa.
+  - Tela da remessa (`/financeiro/filial/remessas/[n]`): "Baixar todas as notas" (nota fatura, demonstrativo e comodato, com o nome original), estágio de cada NF e **conferência com o Consistem**: quando o título chega, compara quantidade de parcelas, total, vencimentos e valores com o que a nota informou (`divergencias`, `lib/modulos/financeiro/filial/remessa.ts`). A ficha do kit mostra o mesmo aviso.
+- **Relatório de implantação (CCFT040, 0149):** na tela da remessa, a seção "Implantar no Consistem" traz um bloco por NF, na ordem do POP "Implantação de Faturas de Locação" (rotina CCFT040):
+  - **Cabeçalho:** Data Emissão e Nota Fiscal (sem zeros); Tipo de Nota; Cliente (código no Consistem); Representante; Condição Venda.
+  - **Aba Item:** Produto e Classificação Fiscal; Quantidade 1 e Preço (valor da nota).
+  - **PIS/COFINS** a conferir e **Totais**.
+  - **"Altera Valor Título":** vencimento dd/mm/aa e valor de cada parcela.
+
+  Funcionamento:
+  - Botão copiar nos campos variáveis, filtro "só as que faltam implantar" e **Imprimir / PDF**, que imprime só os blocos. A NF aparece "implantada ✓" quando o título chega, com a conferência de divergência.
+  - **Campos fixos** em `financeiro.filial.implantacao` (tipo 12 — FAT LOCAÇÃO, representante 5 — LUCAS DE MOURA SILVA, condição 1, produto 2.09.002.0024, classificação fiscal **11837 — OUTRAS**, PIS 1,65%, COFINS 7,60%). A regra pura é `montarFichaImplantacao` (`lib/modulos/financeiro/filial/implantacao.ts`).
+  - **Emissão e CNPJ/CPF do cliente** são lidos da nota (`lerNotaSyslock`) e conferidos com o Consistem nas notas calibradas. Ficam guardados em `rec_kits.data_emissao` e `cliente_documento`.
+  - **Código do cliente** (`rec_kits.cliente_codigo_erp`): vem de `contrapartes`, quando o cliente já tem título, ou da Edge Function `rec-filial-cliente-erp`. Ela consulta `cadastrosgerais/v10/cliente`, só lê, e é chamada ao registrar a remessa e pelo botão "Conferir clientes no Consistem". CNPJ que não está no Consistem gera o alerta "cadastrar antes de implantar".
+- **Próximas fases** (plano aprovado):
+  - B: boletos em lote na Cobrança.
+  - C: rascunho no Gmail da própria filial, com OAuth por usuário, e "Enviado ao cliente".
+  - D: usuário restrito à unidade contagem. **Até a D, a filial não deve receber acesso ao Financeiro.**

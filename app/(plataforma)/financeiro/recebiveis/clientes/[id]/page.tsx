@@ -18,6 +18,7 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 import type { Contato, Contraparte } from "@/lib/nucleo/tipos";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { ROTULO_UNIDADE } from "@/supabase/functions/_shared/cobranca";
+import { MarcaCartaCessao } from "./carta-cessao";
 import { finalidadesDesconhecidas, normalizarFinalidade, ROTULO_FINALIDADE, temContatoUtil, type Finalidade } from "@/supabase/functions/_shared/contatos";
 
 export const metadata: Metadata = { title: "Cliente" };
@@ -45,10 +46,11 @@ export default async function PaginaCliente({ params }: PageProps<"/financeiro/r
   if (!clienteBruto) notFound();
   const cliente = clienteBruto as Contraparte;
 
-  const [{ data: contatosBrutos }, { data: titulosBrutos }, { data: interacoesBrutas }] = await Promise.all([
+  const [{ data: contatosBrutos }, { data: titulosBrutos }, { data: interacoesBrutas }, { data: config }] = await Promise.all([
     supabase.from("contatos").select("id, contraparte_id, nome, funcao, email, whatsapp, telefone, canal_preferido, finalidades, ativo").eq("contraparte_id", id).order("ativo", { ascending: false }).order("nome"),
     supabase.from("rec_vw_titulos").select("id, documento, parcela, vencimento, valor, dias_atraso, faixa, estagio, cedido, contestado, unidade").eq("contraparte_id", id).neq("faixa", "encerrado").order("vencimento").limit(500),
     supabase.from("interacoes").select("id, referencia_id, tipo, descricao, criado_em, usuario_id").eq("contraparte_id", id).in("modulo", [MODULO, "financeiro.akf"]).order("criado_em", { ascending: false }).limit(30),
+    supabase.from("rec_clientes_config").select("exige_carta_cessao").eq("contraparte_id", id).maybeSingle(),
   ]);
   const contatos = (contatosBrutos ?? []) as Contato[];
   const titulos = (titulosBrutos ?? []) as TituloAberto[];
@@ -86,6 +88,7 @@ export default async function PaginaCliente({ params }: PageProps<"/financeiro/r
             {titulos.length} {titulos.length === 1 ? "título em aberto" : "títulos em aberto"} · {formatarMoeda(total)}
             {unidades.length > 0 && <> · {unidades.map((u) => ROTULO_UNIDADE[u]).join(" e ")}</>}
           </p>
+          <div className="mt-2"><MarcaCartaCessao contraparteId={cliente.id} exige={!!config?.exige_carta_cessao} podeOperar={podeOperar} /></div>
         </div>
         {podeOperar && <DialogoContraparte contraparte={cliente} podeColaborador={podeColaborador} />}
       </div>
