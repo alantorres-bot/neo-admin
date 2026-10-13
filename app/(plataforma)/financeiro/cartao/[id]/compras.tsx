@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import type { ItemALancar } from "@/lib/modulos/financeiro/cartao/conciliacao";
-import { CAMPOS_COMPRA, montarTitulosCompra, ROTULO_CAMPO_COMPRA, type CampoCompra, type CamposCompra } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
+import { CAMPOS_COMPRA, conferirContas, montarTitulosCompra, ROTULO_CAMPO_COMPRA, type CampoCompra, type CamposCompra } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { buscarFornecedores, lancarCompra, reenviarLote } from "../acoes";
 import type { LancamentoErpLinha, PropostaCompra, QuadroCompras } from "../dados";
@@ -21,7 +21,7 @@ import { SeletorContaFluxo } from "../listas";
 const ORIGEM = { estabelecimento: "do estabelecimento", cartao: "do cartão", escolher: "escolher" } as const;
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
 
-function SeletorFornecedor({ empresaId, cod, nome, aoEscolher }: { empresaId: string; cod?: number; nome: string | null; aoEscolher: (cod: number, nome: string) => void }) {
+export function SeletorFornecedor({ empresaId, cod, nome, aoEscolher }: { empresaId: string; cod?: number; nome: string | null; aoEscolher: (cod: number, nome: string) => void }) {
   const [termo, setTermo] = useState("");
   const [lista, setLista] = useState<{ cod: number; nome: string }[]>([]);
   const [buscando, iniciar] = useTransition();
@@ -82,6 +82,7 @@ export function DialogoLancarCompra({ faturaId, item, proposta, compras }: { fat
     });
   }
   const n = titulos.ok ? titulos.titulos.length : 0;
+  const avisoContas = conferirContas(campos, compras.creditoPadrao);
   return (
     <>
       <Button size="sm" variant="outline" onClick={() => { setErro(undefined); setAberto(true); }}>Lançar</Button>
@@ -144,10 +145,11 @@ export function DialogoLancarCompra({ faturaId, item, proposta, compras }: { fat
               Lembrar para as próximas compras de
               <Input value={padrao} onChange={(e) => setPadrao(e.target.value)} className="h-7 w-48" maxLength={60} disabled={!lembrar} autoComplete="off" />
             </label>
+            {avisoContas && <p className="text-sm font-medium text-destructive">{avisoContas}</p>}
             {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setAberto(false)} disabled={pendente}>Voltar</Button>
-              <Button onClick={confirmar} disabled={pendente || !titulos.ok || (lembrar && padrao.trim().length < 2)}>
+              <Button onClick={confirmar} disabled={pendente || !titulos.ok || !!avisoContas || (lembrar && padrao.trim().length < 2)}>
                 {pendente ? "Lançando…" : n > 1 ? `Lançar ${n} títulos` : "Lançar 1 título"}
               </Button>
             </div>
@@ -181,12 +183,13 @@ export function ListaComprasLancadas({ compras, podeOperar }: { compras: QuadroC
         <thead><tr className="text-left text-xs text-muted-foreground"><th>Compra</th><th>Parcela</th><th>Vencimento</th><th className="text-right">Valor</th><th>Situação</th><th>Quem · quando</th><th /></tr></thead>
         <tbody>
           {lotes.map((ls) => {
-            const faltando = ls.some((l) => l.situacao === "erro" && !ativas.has(`${l.linha_origem}:${l.parcela}`));
+            // Só o que nem chegou a ser enviado (envio interrompido) é reenviado; recusa do Consistem pede correção e novo lançamento.
+            const faltando = ls.some((l) => l.tipo === "compra" && l.situacao === "erro" && (l.erro ?? "").startsWith("Envio interrompido") && !ativas.has(`${l.linha_origem}:${l.parcela}`));
             return (
               <Fragment key={ls[0].lote}>
                 {ls.map((l, i) => (
                   <tr key={l.id} className="border-t border-grade/60 align-top">
-                    <td>{i === 0 ? l.linha_descricao ?? "" : ""}</td>
+                    <td>{i === 0 ? (l.tipo === "agrupado" ? `${l.linhas.length} linhas · ${l.complemento}` : l.linha_descricao ?? "") : ""}</td>
                     <td className="tabular-nums">{l.parcela}/{l.parcelas}</td>
                     <td className="tabular-nums">{formatarData(l.vencimento)}</td>
                     <td className="text-right tabular-nums">{formatarMoeda(centavos(l.valor))}</td>

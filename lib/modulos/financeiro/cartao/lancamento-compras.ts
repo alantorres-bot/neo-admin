@@ -86,7 +86,7 @@ export type ResultadoCompra = { ok: true; titulos: TituloCompra[] } | { ok: fals
 
 /** Monta os títulos da compra: um por parcela restante, da parcela da linha até a última. */
 export function montarTitulosCompra(e: {
-  linha: Pick<LinhaFatura, "dataCompra" | "descricao" | "valorCentavos" | "parcelaNum" | "parcelaTotal">;
+  linha: Pick<LinhaFatura, "ordem" | "dataCompra" | "descricao" | "valorCentavos" | "parcelaNum" | "parcelaTotal">;
   cartao: Pick<CartaoInfo, "nome" | "diaFechamento" | "diaVencimento">;
   campos: CamposCompra;
   vencimentoFatura: string;
@@ -110,7 +110,7 @@ export function montarTitulosCompra(e: {
     titulos.push({
       parcela: k, parcelas: total, vencimento,
       payload: {
-        codFornecedor: c.codFornecedor, categoriaDoc: c.categoriaDoc, codDocumento: total > 1 ? `${ddmm}/${k}` : ddmm, codPortador: c.codPortador,
+        codFornecedor: c.codFornecedor, categoriaDoc: c.categoriaDoc, codDocumento: total > 1 ? `${ddmm}-${linha.ordem}/${k}` : `${ddmm}-${linha.ordem}`, codPortador: c.codPortador,
         dataEmissao: linha.dataCompra, dataEntrada: linha.dataCompra, dataVencimento: vencimento, valorDocumento: linha.valorCentavos / 100,
         codHistorico: c.codHistorico, complementoHistorico: complemento, grupoContaFluxoCaixa: c.grupoContaFluxoCaixa, contaFluxoCaixa: c.contaFluxoCaixa,
         dadosContabilidade: { contaContabilDebito: c.contaContabilDebito, contaContabilCredito: c.contaContabilCredito, listaCentroCustoContab: [] },
@@ -118,4 +118,18 @@ export function montarTitulosCompra(e: {
     });
   }
   return { ok: true, titulos };
+}
+
+/**
+ * Contas contábeis invertidas ou iguais: o débito é a despesa e o crédito é a conta de fornecedores (a de crédito padrão do
+ * cartão). Recusa débito igual ao crédito e débito igual à conta de crédito padrão (caso do 1º uso real, 13/10/2026).
+ */
+export function conferirContas(campos: CamposCompra, creditoPadrao: number | null | undefined): string | null {
+  const d = campos.contaContabilDebito;
+  const c = campos.contaContabilCredito;
+  if (d !== undefined && c !== undefined && d === c) return "A conta contábil de débito não pode ser igual à de crédito.";
+  if (d !== undefined && creditoPadrao && d === creditoPadrao) {
+    return `A conta de débito ${d} é a conta de fornecedores (crédito padrão do cartão): use a conta da despesa no débito e ${creditoPadrao} no crédito.`;
+  }
+  return null;
 }

@@ -218,7 +218,7 @@ export type LancamentoErpLinha = {
   id: string; fatura_id: string; situacao: "reservado" | "enviando" | "lancado" | "erro"; valor: number | string; complemento: string; linhas: string[];
   payload: NovoLancamentoContaPagar; cod_lancamento_erp: string | null; erro: string | null; criado_por: string | null; criado_por_nome: string | null; criado_em: string;
   enviado_em: string | null; concluido_em: string | null; resolvido_por_nome: string | null; motivo_resolucao: string | null;
-  tipo: "encargos" | "compra"; lote: string; linha_origem: string | null; linha_descricao: string | null; parcela: number | null; parcelas: number | null; vencimento: string | null;
+  tipo: "encargos" | "compra" | "agrupado"; lote: string; linha_origem: string | null; linha_descricao: string | null; parcela: number | null; parcelas: number | null; vencimento: string | null;
 };
 
 export type QuadroEncargos = {
@@ -271,6 +271,10 @@ export type QuadroCompras = {
   empresaId: string;
   /** Competência do mês da fatura (AAAA-MM-01). */
   competencia: string | null;
+  /** Fechamento do mês da fatura (emissão do título agrupado). */
+  fechamento: string | null;
+  /** Conta contábil de crédito padrão do cartão (fornecedores): não pode ir no débito. */
+  creditoPadrao: number | null;
   vencimentoFatura: string;
   cartao: CartaoInfo;
   /** Sugestão por linha que pode ser lançada (id da linha → proposta). */
@@ -310,16 +314,16 @@ export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<Qua
     supabase.from("configuracoes").select("valor").eq("chave", CHAVE_LANCAR_NO_ERP).maybeSingle(),
     ciclo
       ? supabase.from("crt_vw_lancamentos_erp").select("id, fatura_id, situacao, valor, complemento, linhas, payload, cod_lancamento_erp, erro, criado_por, criado_por_nome, criado_em, enviado_em, concluido_em, resolvido_por_nome, motivo_resolucao, tipo, lote, linha_origem, linha_descricao, parcela, parcelas, vencimento")
-        .eq("ciclo_id", ciclo).eq("tipo", "compra").order("criado_em", { ascending: false }).order("parcela").limit(500)
+        .eq("ciclo_id", ciclo).in("tipo", ["compra", "agrupado"]).order("criado_em", { ascending: false }).order("parcela").limit(500)
       : Promise.resolve({ data: [], error: null }),
-    ciclo ? supabase.from("crt_ciclos").select("competencia, situacao").eq("id", ciclo).maybeSingle() : Promise.resolve({ data: null }),
+    ciclo ? supabase.from("crt_ciclos").select("competencia, fechamento, situacao").eq("id", ciclo).maybeSingle() : Promise.resolve({ data: null }),
     lerEstabelecimentos(supabase),
     lerCadastroOutros(supabase),
     lerListasConsistem(supabase),
   ]);
   if (error) throw new Error(`Falha ao ler os lançamentos de compras: ${error.message}`);
   const lancamentos = (lancs ?? []) as LancamentoErpLinha[];
-  const emLancamento = new Set(lancamentos.filter((l) => l.situacao !== "erro").map((l) => l.linha_origem));
+  const emLancamento = new Set(lancamentos.filter((l) => l.situacao !== "erro").flatMap((l) => [l.linha_origem, ...(l.linhas ?? [])]));
   const ativos = estabelecimentos.filter((e) => e.ativo);
   const estabs: EstabelecimentoCodigos[] = ativos.map((e) => ({ padrao: e.padrao, lancamentoErp: lerCampos(e.lancamento_erp) }));
   const marketplace: Record<string, string> = {};
@@ -338,10 +342,10 @@ export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<Qua
     const nomes = new Map((f ?? []).map((x) => [String(x.cod_fornecedor), x.nome as string]));
     for (const p of Object.values(propostas)) if (p.sugestao.campos.codFornecedor) p.fornecedorNome = nomes.get(String(p.sugestao.campos.codFornecedor)) ?? null;
   }
-  const cc = cic as { competencia: string; situacao: string } | null;
+  const cc = cic as { competencia: string; fechamento: string; situacao: string } | null;
   return {
     ligado: (config as { valor: unknown } | null)?.valor === true, mesAberto: cc?.situacao === "em_conciliacao" && c.fatura.status === "importada",
-    empresaId: c.fatura.empresa_id, competencia: cc?.competencia ?? null, vencimentoFatura: c.fatura.vencimento, cartao: paraCartaoInfo(c.cartao), propostas, lancamentos,
+    empresaId: c.fatura.empresa_id, competencia: cc?.competencia ?? null, fechamento: cc?.fechamento ?? null, creditoPadrao: padroesCartao.contaContabilCredito ?? null, vencimentoFatura: c.fatura.vencimento, cartao: paraCartaoInfo(c.cartao), propostas, lancamentos,
     marketplace, cadastro, listas,
   };
 }

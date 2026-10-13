@@ -16,8 +16,9 @@ import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { gerarPlanilha, nomeDaPlanilha } from "@/lib/modulos/financeiro/cartao/planilha";
 import { bloqueioDoFechamento, rotuloCompetencia } from "@/lib/modulos/financeiro/cartao/ciclos";
 import { CAMPOS_CONFIG_ENCARGOS, ROTULO_CAMPO_CONFIG } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
-import { CAMPOS_COMPRA, CAMPOS_PADRAO_CARTAO, lerCampos, montarTitulosCompra, ROTULO_CAMPO_COMPRA } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
-import { CONFERIR } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { CAMPOS_COMPRA, CAMPOS_PADRAO_CARTAO, conferirContas, lerCampos, montarTitulosCompra, ROTULO_CAMPO_COMPRA } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
+import { CONFERIR, type LinhaFatura } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { montarTituloAgrupado } from "@/lib/modulos/financeiro/cartao/lancamento-agrupado";
 import { normalizar } from "@/lib/modulos/financeiro/cartao/texto";
 import { codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerCompras, lerEncargos, lerEstabelecimentos, paraCartaoInfo, type FotoFechamento } from "./dados";
 
@@ -480,6 +481,8 @@ export async function lancarCompra(entrada: z.input<typeof esquemaCompra>): Prom
   const proposta = q.propostas[d.linhaId];
   const item = c.resultado.aLancar.find((a) => a.linha.id === d.linhaId);
   if (!proposta || !item) return { ok: false, erro: "Esta linha não está mais entre as compras a lançar. Recarregue a página." };
+  const contas = conferirContas(lerCampos(d.campos), q.creditoPadrao);
+  if (contas) return { ok: false, erro: contas };
   const t = montarTitulosCompra({ linha: item.linha, cartao: paraCartaoInfo(c.cartao), campos: lerCampos(d.campos), vencimentoFatura: c.fatura.vencimento, competencia: q.competencia });
   if (!t.ok) return { ok: false, erro: t.erro };
 
@@ -576,4 +579,41 @@ export async function ligarFornecedor(entrada: { estabelecimentoId: string; codF
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   revalidatePath(ROTA_CARTAO, "layout");
   return { ok: true, aviso: `Estabelecimento ligado ao fornecedor ${entrada.codFornecedor}.` };
+}
+
+// ---------------------------------------------------------------- lançar várias linhas num único título (0150)
+
+const esquemaAgrupado = z.object({
+  faturaId: z.string().uuid(),
+  linhas: z.array(z.string().uuid()).min(2, "Escolha pelo menos duas linhas.").max(200),
+  campos: z.object(Object.fromEntries(CAMPOS_COMPRA.map((k) => [k, codigoCampo])) as Record<(typeof CAMPOS_COMPRA)[number], typeof codigoCampo>),
+  rotulo: z.string().trim().min(2, "Informe o nome do grupo.").max(60),
+});
+
+/** Lança várias linhas à vista da fatura como um único título (operador ou acima): recalcula, confere, reserva e envia. */
+export async function lancarAgrupado(entrada: z.input<typeof esquemaAgrupado>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) lança compras no Consistem." };
+  const dados = esquemaAgrupado.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const d = dados.data;
+  const c = await conciliacaoDaRequisicao(d.faturaId);
+  if (!c) return { ok: false, erro: "Fatura não encontrada." };
+  if (c.origemTitulos !== "consistem") return { ok: false, erro: `Não foi possível consultar o Consistem agora (${c.avisoOrigem}). Tente de novo.` };
+  const supabase = await criarClienteServidor();
+  const q = await lerCompras(supabase, c);
+  if (!q.ligado) return { ok: false, erro: "O lançamento no Consistem está desligado." };
+  if (!q.mesAberto) return { ok: false, erro: "Só se lançam compras de fatura de um mês em conciliação." };
+  const linhas = d.linhas.map((id) => c.resultado.aLancar.find((a) => a.linha.id === id && q.propostas[id])?.linha);
+  if (linhas.some((l) => !l)) return { ok: false, erro: "Uma das linhas não está mais entre as compras a lançar. Recarregue a página." };
+  const contas = conferirContas(lerCampos(d.campos), q.creditoPadrao);
+  if (contas) return { ok: false, erro: contas };
+  const t = montarTituloAgrupado({ linhas: linhas as LinhaFatura[], nomeCartao: c.cartao.nome, campos: lerCampos(d.campos), fechamento: q.fechamento, vencimento: c.fatura.vencimento, rotulo: d.rotulo });
+  if (!t.ok) return { ok: false, erro: t.erro };
+  const { data: lote, error } = await supabase.rpc("crt_reservar_lancamento_agrupado", { p_fatura: c.fatura.id, p_linhas: d.linhas, p_payload: t.payload });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  const envio = await enviarLote(supabase, lote as string);
+  revalidatePath(ROTA_CARTAO, "layout");
+  if (!envio.ok) return { ok: false, erro: envio.erro };
+  return { ok: true, aviso: `${d.linhas.length} linhas lançadas num título no Consistem: ${envio.codigos.join(", ")} (${(t.valorCentavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}). As linhas foram casadas com ele.` };
 }

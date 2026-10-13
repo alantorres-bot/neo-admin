@@ -37,7 +37,7 @@ describe("módulo e cadastros (0131)", () => {
       ["INTER PF", 20, 28, 8, "inter"], ["INTER PJ", 3, 10, 8, "inter"], ["ITAU PJ", 10, 28, 10, "generico"], ["NUBANK PF", 20, 27, 7, "generico"],
       ["PICPAY PF", 15, 25, 75, "picpay"], ["SICREDI PF", 26, 10, 9, "sicredi"], ["SICREDI PJ", 10, 23, 9, "sicredi"], ["UNICRED PF", 10, 20, 73, "unicred"],
     ]);
-    expect((await rpc(finConsulta, `select count(*)::int as n from crt_estabelecimentos`)).rows[0].n).toBe(45);   // 43 da carga inicial + DROGARIA e FARMACIA (0144)
+    expect((await rpc(finConsulta, `select count(*)::int as n from crt_estabelecimentos`)).rows[0].n).toBe(46);   // 43 da carga inicial + DROGARIA e FARMACIA (0144) + 99 (0150)
     expect((await rpc(finConsulta, `select conta_fluxo from crt_estabelecimentos where padrao = 'MERCADOLIVRE'`)).rows[0].conta_fluxo).toBeNull();
     expect((await como(db, semAcesso, () => q(`select count(*)::int as n from crt_cartoes`))).rows[0].n).toBe(0);
   });

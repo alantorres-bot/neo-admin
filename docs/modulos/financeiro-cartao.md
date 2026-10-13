@@ -192,6 +192,17 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     outra). Google fica no 928 GOOGLE SUITE. Os genéricos do dicionário deixam de ser "fornecedor por compra". Compras com nota
     fiscal continuam pela nota; marketplace casa pelo valor. A sincronização do contas a pagar passou a reler o cadastro de
     fornecedores a cada rodada (fornecedor novo aparece no painel mesmo sem título).
+52. **Lançamento agrupado** (pedido do Alan, 13/10/2026, Sicredi PJ 10/2026 com 14 linhas de transporte por aplicativo;
+    migration 0150): várias linhas à vista, positivas e pendentes viram **um título** com a soma — vencimento da fatura, emissão
+    e entrada no fechamento, documento DDMM do fechamento + "-" + o menor número de linha, complemento
+    `CARTÃO <NOME> 1x — <GRUPO> (<n> LANÇ.)`. Códigos: os comuns às sugestões das linhas (diferentes → aviso). Na aba A lançar:
+    caixa de seleção por linha, atalhos "Agrupar: <fornecedor> — n linhas, R$ X" e "Lançar agrupado". Lançado: "casar" liga
+    todas as linhas. Estabelecimento "99" (a fatura traz só "99").
+53. **Documento único por fornecedor** (recusa real de 13/10/2026: duas compras da 99 no mesmo dia, documento 0810 no 1376):
+    o documento da compra leva o número da linha na fatura (DDMM-ordem, e /k nas parcelas). **Contas contábeis:** o painel recusa
+    débito igual ao crédito e débito igual à conta de crédito padrão do cartão (2004, fornecedores) — o título 33626 saiu com
+    débito 2004 e crédito 3241 (invertidas) e foi corrigido no Consistem pelo financeiro; a sugestão da "99" foi corrigida
+    (migration 0151). "Reenviar o que faltou" só aparece para envio interrompido (recusa pede correção e novo lançamento).
 49. Cadastro com a mesma regra de envio dos títulos: reserva, envio único, erro (nada criado) ou sem resposta (conferir e
     resolver à mão); cadastrado vai na hora para o espelho `cap_fornecedores`. Prova em `crt_fornecedores_cadastrados`.
 

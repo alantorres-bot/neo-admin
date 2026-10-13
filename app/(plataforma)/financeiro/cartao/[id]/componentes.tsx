@@ -17,6 +17,7 @@ import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis
 import { cancelarFatura } from "../acoes";
 import type { DecisaoLinha, LinhaFaturaBanco, QuadroCompras } from "../dados";
 import { DialogoLancarCompra } from "./compras";
+import { BarraAgrupado, itensAgrupaveis } from "./agrupado";
 import { DialogoDecidir, ListaDecisoes, SeloDecisao, type Candidatos } from "./decisoes";
 
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
@@ -33,6 +34,10 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
   const rotulo = (nome: string, n: number) => `${nome} (${n})`;
   const decide = podeOperar && faturaId !== null;
   const lancaCompra = decide && !!compras && compras.ligado && compras.mesAberto;
+  const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
+  const agrupaveis = lancaCompra ? itensAgrupaveis(r.aLancar, compras!) : [];
+  const agrupavel = new Set(agrupaveis.map((i) => i.linha.id));
+  const marcar = (id: string, v: boolean) => { const n = new Set(selecionadas); if (v) n.add(id); else n.delete(id); setSelecionadas(n); };
   const candidatos: Candidatos = {
     linhas: r.aLancar,
     titulos: [...r.divergencias.filter((d) => !d.justificativa).map((d) => d.titulo), ...outros.map((o) => o.titulo)],
@@ -62,15 +67,22 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
 
       <TabsContent value="lancar" className="space-y-2">
         <p className="text-xs text-muted-foreground">Linhas da fatura sem título correspondente, classificadas por natureza. Lançar contra a instituição emissora, com o complemento sugerido (máscara do POP). Encargo: parcela única. Estorno: abater do título da compra, não lançar título novo. Parcela não desdobrada: localizar a compra de origem e desdobrar.</p>
+        {lancaCompra && <BarraAgrupado faturaId={faturaId!} itens={agrupaveis} compras={compras!} selecionadas={selecionadas} setSelecionadas={setSelecionadas} />}
         {r.aLancar.length === 0 ? <Vazio texto="Nada a lançar: toda linha da fatura tem título." /> : (
           <Table>
             <TableHeader><TableRow>
-              <TableHead>Data</TableHead><TableHead>Descrição na fatura</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Natureza</TableHead>
+              {agrupaveis.length >= 2 && <TableHead className="w-8" />}<TableHead>Data</TableHead><TableHead>Descrição na fatura</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Natureza</TableHead>
               <TableHead>Categoria</TableHead><TableHead>Conta de fluxo</TableHead><TableHead className="text-right">Parcelas</TableHead><TableHead>Vencimento</TableHead><TableHead>Complemento sugerido</TableHead><TableHead>Decisão</TableHead>
             </TableRow></TableHeader>
             <TableBody>
               {r.aLancar.map((a) => (
-                <TableRow key={a.linha.id} className={a.justificativa ? "bg-emerald-50/50" : ""}>
+                <TableRow key={a.linha.id} className={a.justificativa ? "bg-emerald-50/50" : selecionadas.has(a.linha.id) ? "bg-sky-50" : ""}>
+                  {agrupaveis.length >= 2 && (
+                    <TableCell>{agrupavel.has(a.linha.id) && (
+                      <input type="checkbox" className="size-4" aria-label={`Selecionar ${a.linha.descricao} para lançar agrupado`}
+                        checked={selecionadas.has(a.linha.id)} onChange={(e) => marcar(a.linha.id, e.target.checked)} />
+                    )}</TableCell>
+                  )}
                   <TableCell className="tabular-nums">{formatarData(a.linha.dataCompra)}</TableCell>
                   <TableCell>{a.linha.descricao}</TableCell>
                   <TableCell className={`text-right tabular-nums ${a.linha.valorCentavos < 0 ? "text-red-700" : ""}`}>{formatarMoeda(a.linha.valorCentavos)}</TableCell>
