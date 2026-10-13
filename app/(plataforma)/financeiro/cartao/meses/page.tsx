@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { cicloDaCompetencia, CLASSE_SITUACAO, ROTULO_SITUACAO, rotuloCompetencia, somarMeses, type SituacaoCiclo } from "@/lib/modulos/financeiro/cartao/ciclos";
+import { cicloDaCompetencia, CLASSE_ATRASADA, CLASSE_SITUACAO, classeDoCiclo, estaAtrasado, ROTULO_SITUACAO, rotuloCompetencia, somarMeses, type SituacaoCiclo } from "@/lib/modulos/financeiro/cartao/ciclos";
 import { ROTA_CARTAO } from "@/lib/modulos/financeiro/cartao/modulo";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
@@ -70,6 +70,7 @@ export default async function PaginaMeses({ searchParams }: PageProps<"/financei
         {(["aguardando_fatura", "em_conciliacao", "fechada", "paga"] as const).map((s) => (
           <span key={s} className={`rounded-[3px] border px-2 py-0.5 ${CLASSE_SITUACAO[s]}`}>{ROTULO_SITUACAO[s]}: {contagem(s)}</span>
         ))}
+        <span className={`rounded-[3px] border px-2 py-0.5 ${CLASSE_ATRASADA}`}>Atrasada: {ciclos.filter((c) => competencias.includes(c.competencia) && estaAtrasado(c, hoje)).length}</span>
       </div>
 
       <div className="overflow-x-auto">
@@ -103,9 +104,9 @@ export default async function PaginaMeses({ searchParams }: PageProps<"/financei
                   }
                   return (
                     <td key={comp} className="border border-grade p-1">
-                      <Link href={`${ROTA_CARTAO}/ciclo/${c.id}`} className={`block rounded-[3px] border px-2 py-1 hover:opacity-80 ${CLASSE_SITUACAO[c.situacao]}`}>
-                        <span className="block font-bold">{ROTULO_SITUACAO[c.situacao]}</span>
-                        <span className="block text-[11px]"><Detalhe c={c} /></span>
+                      <Link href={`${ROTA_CARTAO}/ciclo/${c.id}`} className={`block rounded-[3px] border px-2 py-1 hover:opacity-80 ${classeDoCiclo(c, hoje)}`}>
+                        <span className="block font-bold">{estaAtrasado(c, hoje) ? "Atrasada" : ROTULO_SITUACAO[c.situacao]}</span>
+                        <span className="block text-[11px]">{estaAtrasado(c, hoje) ? `${ROTULO_SITUACAO[c.situacao].toLowerCase()} · venceu ${formatarData(c.vencimento_nominal)}` : <Detalhe c={c} />}</span>
                       </Link>
                     </td>
                   );

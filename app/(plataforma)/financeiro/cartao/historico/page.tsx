@@ -1,10 +1,11 @@
+import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { CLASSE_SITUACAO, ROTULO_SITUACAO, rotuloCompetencia } from "@/lib/modulos/financeiro/cartao/ciclos";
+import { classeDoCiclo, ROTULO_SITUACAO, rotuloCompetencia } from "@/lib/modulos/financeiro/cartao/ciclos";
 import { ROTA_CARTAO } from "@/lib/modulos/financeiro/cartao/modulo";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { exigirSessao } from "@/lib/nucleo/sessao";
@@ -50,7 +51,7 @@ export default async function PaginaHistorico({ searchParams }: PageProps<"/fina
                   <TableCell><Link href={`${ROTA_CARTAO}/ciclo/${c.id}`} className="font-medium text-elo hover:underline">{rotuloCompetencia(c.competencia)}</Link></TableCell>
                   <TableCell className="tabular-nums">{formatarData(c.fechamento)}</TableCell>
                   <TableCell className="tabular-nums">{formatarData(c.vencimento_nominal)}</TableCell>
-                  <TableCell><span className={`rounded-[3px] border px-2 py-0.5 text-xs ${CLASSE_SITUACAO[c.situacao]}`}>{ROTULO_SITUACAO[c.situacao]}</span></TableCell>
+                  <TableCell><span className={`rounded-[3px] border px-2 py-0.5 text-xs ${classeDoCiclo(c, hojeEmCuiaba())}`}>{ROTULO_SITUACAO[c.situacao]}</span></TableCell>
                   <TableCell className="text-right tabular-nums">{total !== null ? formatarMoeda(total) : ""}</TableCell>
                   <TableCell className="text-right tabular-nums">{c.situacao === "em_conciliacao" && c.itens_a_lancar !== null ? c.itens_a_lancar : ""}</TableCell>
                   <TableCell className="text-muted-foreground">{c.fechada_em ? `${quandoEm(c.fechada_em)}${c.fechada_por_nome ? ` · ${c.fechada_por_nome}` : ""}` : ""}</TableCell>

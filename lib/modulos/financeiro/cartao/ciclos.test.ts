@@ -32,3 +32,19 @@ describe("apoio de tela", () => {
     expect(bloqueioDoFechamento({ itensALancar: 0, residuoCentavos: 0 })).toBeNull();
   });
 });
+
+describe("cor do mês na grade", () => {
+  it("paga verde, aguardando amarelo, atrasada vermelha (vencimento no fim de semana vale a segunda)", async () => {
+    const { classeDoCiclo, estaAtrasado, vencimentoEmDiaUtil, CLASSE_ATRASADA } = await import("./ciclos");
+    expect(vencimentoEmDiaUtil("2026-10-10")).toBe("2026-10-12");   // sábado → segunda
+    expect(vencimentoEmDiaUtil("2026-10-11")).toBe("2026-10-12");   // domingo → segunda
+    expect(vencimentoEmDiaUtil("2026-10-13")).toBe("2026-10-13");
+    const aguardando = { situacao: "aguardando_fatura" as const, vencimento_nominal: "2026-10-10" };
+    expect(estaAtrasado(aguardando, "2026-10-12")).toBe(false);
+    expect(estaAtrasado(aguardando, "2026-10-13")).toBe(true);
+    expect(classeDoCiclo(aguardando, "2026-10-01")).toMatch(/amber/);
+    expect(classeDoCiclo(aguardando, "2026-10-13")).toBe(CLASSE_ATRASADA);
+    expect(classeDoCiclo({ situacao: "paga", vencimento_nominal: "2026-10-10" }, "2026-12-01")).toMatch(/emerald/);
+    expect(estaAtrasado({ situacao: "fechada", vencimento_nominal: "2026-10-28" }, "2026-10-29")).toBe(true);
+  });
+});

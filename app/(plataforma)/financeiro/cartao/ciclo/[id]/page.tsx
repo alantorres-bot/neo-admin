@@ -1,10 +1,11 @@
+import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ArrowLeft, Download, Printer, Upload } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { bloqueioDoFechamento, CLASSE_SITUACAO, ROTULO_SITUACAO, rotuloCompetencia } from "@/lib/modulos/financeiro/cartao/ciclos";
+import { bloqueioDoFechamento, classeDoCiclo, ROTULO_SITUACAO, rotuloCompetencia } from "@/lib/modulos/financeiro/cartao/ciclos";
 import { ROTA_CARTAO } from "@/lib/modulos/financeiro/cartao/modulo";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
@@ -54,7 +55,7 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
         <div className="space-y-1">
           <Button variant="ghost" size="sm" render={<Link href={`${ROTA_CARTAO}/meses`} />}><ArrowLeft /> Meses</Button>
           <h2 className="text-lg font-bold">
-            {rotulo} <span className={`ml-2 rounded-[3px] border px-2 py-0.5 align-middle text-xs ${CLASSE_SITUACAO[ciclo.situacao]}`}>{ROTULO_SITUACAO[ciclo.situacao]}</span>
+            {rotulo} <span className={`ml-2 rounded-[3px] border px-2 py-0.5 align-middle text-xs ${classeDoCiclo(ciclo, hojeEmCuiaba())}`}>{ROTULO_SITUACAO[ciclo.situacao]}</span>
           </h2>
           <p className="text-sm text-muted-foreground">
             {ciclo.empresa_nome} · fechamento {formatarData(ciclo.fechamento)} · vencimento {formatarData(ciclo.vencimento_nominal)} ·{" "}

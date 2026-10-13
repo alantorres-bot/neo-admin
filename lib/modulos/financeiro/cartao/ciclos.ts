@@ -12,13 +12,34 @@ export const ROTULO_SITUACAO: Record<SituacaoCiclo, string> = {
   paga: "Paga",
 };
 
-/** Classes de cor da situação (borda, fundo, texto) nas grades e selos. */
+/** Classes de cor da situação (borda, fundo, texto) nas grades e selos. Paga = verde; aguardando = amarelo. */
 export const CLASSE_SITUACAO: Record<SituacaoCiclo, string> = {
   aguardando_fatura: "border-amber-300 bg-amber-50 text-amber-900",
   em_conciliacao: "border-sky-300 bg-sky-50 text-sky-900",
-  fechada: "border-emerald-300 bg-emerald-50 text-emerald-900",
-  paga: "border-grade bg-cabecalho text-muted-foreground",
+  fechada: "border-slate-300 bg-slate-50 text-slate-800",
+  paga: "border-emerald-300 bg-emerald-50 text-emerald-900",
 };
+/** Mês atrasado (vencimento passou e não está pago): vermelho, por cima da cor da situação. */
+export const CLASSE_ATRASADA = "border-red-300 bg-red-50 text-red-900";
+
+/** Vencimento nominal no sábado ou domingo passa para a segunda-feira (feriados não são considerados). */
+export function vencimentoEmDiaUtil(vencimento: string): string {
+  const d = new Date(`${vencimento}T12:00:00Z`);
+  const dia = d.getUTCDay();
+  if (dia === 6) d.setUTCDate(d.getUTCDate() + 2);
+  if (dia === 0) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+/** Atrasado: hoje já passou do vencimento (em dia útil) e o mês ainda não está pago. */
+export function estaAtrasado(c: { situacao: SituacaoCiclo; vencimento_nominal: string }, hoje: string): boolean {
+  return c.situacao !== "paga" && hoje > vencimentoEmDiaUtil(c.vencimento_nominal);
+}
+
+/** Cor do mês na grade e nos selos: vermelho se atrasado; senão, a da situação. */
+export function classeDoCiclo(c: { situacao: SituacaoCiclo; vencimento_nominal: string }, hoje: string): string {
+  return estaAtrasado(c, hoje) ? CLASSE_ATRASADA : CLASSE_SITUACAO[c.situacao];
+}
 
 const pad = (n: number) => String(n).padStart(2, "0");
 const diasNoMes = (ano: number, mes: number) => new Date(Date.UTC(ano, mes, 0)).getUTCDate();
