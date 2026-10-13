@@ -1,11 +1,9 @@
-import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { MODULO_FILIAL, ROTA_FILIAL } from "@/lib/modulos/financeiro/filial/arquivos";
 import { temAcesso, temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
-import { AbasFilialComNumeros, AbasFilialSemNumeros } from "./abas-filial";
 
 export default async function LayoutFilial({ children }: LayoutProps<"/financeiro/filial">) {
   const sessao = await exigirSessao();
@@ -20,17 +18,15 @@ export default async function LayoutFilial({ children }: LayoutProps<"/financeir
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Faturamento Filial</h1>
           <p className="text-sm text-muted-foreground">
-            As notas da Filial Contagem, por etapa: remessa, implantação no Consistem, boleto e envio ao cliente. Ao fazer a tarefa, a nota passa sozinha para a etapa seguinte.
+            Todas as notas da Filial Contagem numa fila só, da mais urgente para a menos. Cada NF mostra em que estágio está e a próxima
+            tarefa; clique para abrir tudo dela ao lado.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {ehCuiaba && <Button variant="outline" render={<Link href={`${ROTA_FILIAL}/boletos`} />}>Anexar boletos</Button>}
-          {podeEnviar && <Button render={<Link href={`${ROTA_FILIAL}/enviar`} />}>Enviar faturas</Button>}
+          {ehCuiaba && <Button variant="outline" nativeButton={false} render={<Link href={`${ROTA_FILIAL}/boletos`} />}>Anexar boletos</Button>}
+          {podeEnviar && <Button nativeButton={false} render={<Link href={`${ROTA_FILIAL}/enviar`} />}>Enviar faturas</Button>}
         </div>
       </div>
-      <Suspense fallback={<AbasFilialSemNumeros filial={!!sessao.acesso.restrito} />}>
-        <AbasFilialComNumeros filial={!!sessao.acesso.restrito} />
-      </Suspense>
       {children}
     </div>
   );

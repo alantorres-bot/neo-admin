@@ -540,3 +540,33 @@ A filial (usuário restrito à unidade, §34 Fase D) passa a **cobrar os cliente
 
 **Correção:** o histórico das telas "Cobrar" e "Confirmar" era lido só do módulo `financeiro.cobranca`, mas as funções gravam em `financeiro.recebiveis`, e por isso ele aparecia vazio. Agora lê os dois.
 
+## 36. Faturamento Filial — fila única e estágios de trabalho (13/10/2026)
+
+As abas por etapa, a tela da remessa e a ficha do kit deram lugar a **uma fila só** em `/financeiro/filial`. Não há migration: o `estagio` técnico do kit (§34) continua o mesmo, e a fila faz a leitura dele para quem trabalha.
+
+**Estágios da fila** (`situacaoDaNota`, `lib/modulos/financeiro/filial/estagios.ts`, com testes). Cada NF fica no primeiro passo que falta:
+
+| Estágio | Quando | Próxima tarefa | De quem |
+|---|---|---|---|
+| Falta demonstrativo | sem demonstrativo, implantada ou não | anexar o demonstrativo | Filial |
+| A implantar | com demonstrativo, sem título no Consistem | implantar na CCFT040 | Cuiabá |
+| Aguardando boleto | implantada; falta boleto ou carta exigida | anexar o boleto | Cuiabá |
+| Pronta para envio | nota, demonstrativo e boleto prontos | enviar ao cliente, tudo junto | Filial |
+| Nota enviada · aguardando boleto | exceção: a nota foi antes do boleto | anexar o boleto | Cuiabá |
+| Boleto a enviar | exceção: a nota já foi e o boleto chegou | enviar o boleto em resposta | Filial |
+| Enviada / Cancelada | — | — | — |
+
+- **Tarefas em paralelo:** o demonstrativo é anexado enquanto Cuiabá implanta. Por isso cada NF também traz as **tarefas abertas de cada lado**, e "Minhas tarefas" usa essas tarefas, não o estágio. Cuiabá vê "implantar" mesmo com o demonstrativo faltando.
+- **Urgência pelo vencimento** (`urgenciaDaNota`): o do título ou, antes da implantação, o da nota. **Atrasada** = venceu; **crítica** ≤ 5 dias; **atenção** ≤ 10; **normal** acima disso. Vale até o boleto chegar ao cliente. NF crítica ou atrasada com Cuiabá mostra à filial **"Cobrar boleto de Cuiabá"**.
+
+**A tela:**
+- **Filtros na URL (`?ver=`):** Minhas tarefas (padrão) · Críticas e atrasadas · um por estágio, com a contagem · Todas em andamento · Enviadas. Mais o seletor de **remessa** (`?remessa=N`) e a busca por cliente ou NF (`?q=`).
+- **Tabela** ordenada por urgência e vencimento: urgência, remessa (link que filtra), NF, cliente e obra (selos "sem boleto de factoring" e AKF), estágio, documentos (NF · Dem · Com · Boleto · Carta quando exigida), valor e o botão da próxima tarefa de quem vê.
+- **Barra da remessa**, com a remessa filtrada: aviso a Cuiabá, baixar as notas, demonstrativos em lote e, para Cuiabá, o relatório CCFT040 para imprimir.
+- **Painel lateral** (`?nf=<kit>`): situação e tarefas dos dois lados; documentos, com o demonstrativo sugerido quando falta; para Cuiabá, o bloco da CCFT040 e "Anexar boleto" em cada parcela; o e-mail ao cliente; cancelar. Fechar volta à mesma fila.
+- **Envio da nota antes do boleto:** continua possível, mas só como exceção recolhida no painel ("o recomendado é enviar tudo junto").
+- **Cabeçalho:** "Enviar faturas" e, para Cuiabá, "Anexar boletos". As duas telas voltam à fila.
+- **Links antigos redirecionam,** inclusive os das pendências gravadas:
+  - `[id]` vai para `?ver=todas&nf=`;
+  - `remessas/[n]` vai para `?ver=todas&remessa=n`;
+  - `a-implantar`, `boletos-a-anexar`, `a-enviar`, `enviadas` e `remessas` vão para o filtro correspondente.

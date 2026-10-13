@@ -1,8 +1,6 @@
-import type { Metadata } from "next";
-import { PaginaEtapa } from "../lista";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = { title: "Boletos a anexar — Faturamento Filial" };
-
-export default function Pagina({ searchParams }: PageProps<"/financeiro/filial/boletos-a-anexar">) {
-  return <PaginaEtapa etapa="implantada" caminho="/financeiro/filial/boletos-a-anexar" searchParams={searchParams} />;
+// A fila do Faturamento Filial é uma só (/financeiro/filial); esta rota antiga leva ao filtro correspondente.
+export default function Pagina() {
+  redirect("/financeiro/filial?ver=aguardando_boleto");
 }

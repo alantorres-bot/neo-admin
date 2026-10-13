@@ -36,14 +36,19 @@ export function EmailCliente({ kitId, modo, gmail, sugestao, anexos }: { kitId: 
     if (r === "conectado") toast.success("Gmail conectado.");
     else if (r === "recusado") toast.error("A autorização do Gmail foi recusada.");
     else toast.error(parametros.get("motivo") ?? "Não foi possível conectar o Gmail.");
-    router.replace(window.location.pathname);
+    // Tira só os avisos do Gmail da URL (o painel da NF continua aberto).
+    const u = new URL(window.location.href);
+    u.searchParams.delete("gmail");
+    u.searchParams.delete("motivo");
+    router.replace(u.pathname + u.search, { scroll: false });
   }, [parametros, router]);
 
   const mudar = (m: Partial<Sugestao>) => setCampos((c) => ({ ...c, ...m }));
 
   function conectar() {
     iniciar(async () => {
-      const r = await iniciarConexaoGmail(window.location.href.split("?")[0]);
+      // Volta para a mesma tela (com o painel da NF aberto).
+      const r = await iniciarConexaoGmail(window.location.href);
       if (!r.ok) return void toast.error(r.erro);
       window.location.href = r.url;
     });
@@ -97,7 +102,7 @@ export function EmailCliente({ kitId, modo, gmail, sugestao, anexos }: { kitId: 
         </div>
         <div className="flex flex-wrap items-center gap-2">
           {rascunho
-            ? <Button render={<a href={rascunho} target="_blank" rel="noreferrer" />}>Abrir o rascunho no Gmail</Button>
+            ? <Button nativeButton={false} render={<a href={rascunho} target="_blank" rel="noreferrer" />}>Abrir o rascunho no Gmail</Button>
             : <Button onClick={criar} disabled={pendente || !gmail}>{pendente ? "Criando…" : "Criar rascunho no meu Gmail"}</Button>}
           <Button variant="outline" onClick={enviado} disabled={pendente}>{modo === "nota" ? "Nota enviada ao cliente" : "Enviado ao cliente"}</Button>
         </div>

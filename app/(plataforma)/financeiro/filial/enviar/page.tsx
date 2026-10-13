@@ -27,7 +27,7 @@ export default async function PaginaEnviarFaturas() {
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" size="sm" render={<Link href={`${ROTA_FILIAL}/remessas`} />}><ArrowLeft /> Remessas</Button>
+      <Button variant="ghost" size="sm" nativeButton={false} render={<Link href={ROTA_FILIAL} />}><ArrowLeft /> Voltar à fila</Button>
       <div>
         <h2 className="text-xl font-semibold tracking-tight">Enviar faturas da filial</h2>
         <p className="text-sm text-muted-foreground">
