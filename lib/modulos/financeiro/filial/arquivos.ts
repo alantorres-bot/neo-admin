@@ -66,7 +66,8 @@ export function tipoPeloNome(nome: string): TipoDocumentoKit | null {
 }
 
 export function lerNomeArquivo(nome: string): ArquivoLido {
-  const base = nome.replace(/\.[A-Za-z0-9]{1,5}$/, "").trim();
+  // " (1)", " (2)"…: sufixo que o Windows põe ao baixar o mesmo arquivo de novo (não faz parte do nome do cliente).
+  const base = nome.replace(/\.[A-Za-z0-9]{1,5}$/, "").replace(/\s*\(\d{1,2}\)$/, "").trim();
   const tipo = tipoPeloNome(base);
 
   // "NF 02351 - QRTZ 39", "NF02351-QRTZ 39", "NF Nº 2351 - QRTZ 39", "DEMONSTRATIVO NF 2351 - QRTZ 39"

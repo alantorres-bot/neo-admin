@@ -9,6 +9,12 @@ describe("lerNomeArquivo (nomes reais dos e-mails da filial e de Cuiabá)", () =
     expect(lerNomeArquivo("NF 02354 - JANEIRO - CARBON (GUARDA-CORPO PARA PILARES).pdf"))
       .toEqual({ nota: "002354", cliente: "JANEIRO - CARBON (GUARDA-CORPO PARA PILARES)", tipo: "nota_fatura" });
   });
+  it("ignora o \" (1)\" de arquivo baixado de novo; parênteses do nome ficam", () => {
+    expect(lerNomeArquivo("NF 02317 - PIZZANE (1).pdf")).toEqual({ nota: "002317", cliente: "PIZZANE", tipo: "nota_fatura" });
+    expect(lerNomeArquivo("002345 (2).pdf").nota).toBe("002345");
+    expect(lerNomeArquivo("NF 02354 - JANEIRO - CARBON (GUARDA-CORPO PARA PILARES).pdf").cliente).toBe("JANEIRO - CARBON (GUARDA-CORPO PARA PILARES)");
+  });
+
   it("cliente com acento é preservado", () => {
     expect(lerNomeArquivo("NF 2340 - CAPARAÓ RESERVA GREEN.pdf").cliente).toBe("CAPARAÓ RESERVA GREEN");
   });

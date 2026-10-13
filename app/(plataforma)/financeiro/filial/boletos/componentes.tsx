@@ -196,7 +196,7 @@ export function BoletosEmLote() {
         <Card size="sm">
           <CardHeader><CardTitle>Resultado</CardTitle></CardHeader>
           <CardContent className="space-y-1 text-[13px]">
-            <p>{resultado.anexados} {resultado.anexados === 1 ? "boleto anexado" : "boletos anexados"}. <Link className="underline" href={`${ROTA_FILIAL}?estagio=pronta`}>Ver kits prontos para envio</Link></p>
+            <p>{resultado.anexados} {resultado.anexados === 1 ? "boleto anexado" : "boletos anexados"}. <Link className="underline" href={`${ROTA_FILIAL}/a-enviar`}>Ver as notas prontas para envio</Link></p>
             {resultado.erros.map((e) => <p key={e} className="text-destructive">{e}</p>)}
           </CardContent>
         </Card>

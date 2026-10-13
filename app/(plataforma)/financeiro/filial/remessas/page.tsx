@@ -1,9 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MODULO_FILIAL, ROTA_FILIAL } from "@/lib/modulos/financeiro/filial/arquivos";
 import { temAcessoModulo } from "@/lib/nucleo/permissoes";
@@ -27,12 +25,9 @@ export default async function PaginaRemessas() {
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" size="sm" render={<Link href={ROTA_FILIAL} />}><ArrowLeft /> Faturamento Filial</Button>
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Remessas da filial</h1>
-        <p className="text-sm text-muted-foreground">Cada envio de faturas da filial. Abra a remessa para baixar as notas e acompanhar a implantação.</p>
-      </div>
-      <Table>
+      <p className="text-[12px] text-muted-foreground">Cada envio de faturas da filial. Abra a remessa para baixar as notas, implantar no Consistem e acompanhar o andamento.</p>
+      <div className="overflow-x-auto rounded-[3px] border border-grade">
+      <Table className="cartoes">
         <TableHeader>
           <TableRow><TableHead>Remessa</TableHead><TableHead>Enviada</TableHead><TableHead>Por</TableHead><TableHead className="text-right">NFs</TableHead><TableHead>Situação</TableHead></TableRow>
         </TableHeader>
@@ -55,6 +50,7 @@ export default async function PaginaRemessas() {
           ))}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }

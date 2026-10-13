@@ -17,6 +17,7 @@ import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { Suspense } from "react";
+import { ABAS_FILIAL } from "@/lib/modulos/financeiro/filial/abas";
 import { montarEmailCliente } from "@/lib/modulos/financeiro/filial/email-cliente";
 import { AnexarDocumento, BotaoCancelarKit } from "./componentes";
 import { EmailCliente } from "./email-cliente";
@@ -72,6 +73,7 @@ export default async function PaginaKit({ params }: PageProps<"/financeiro/filia
     parcelasTransferencia: (titulos ?? []).filter((t) => t.forma_pagamento === "transferencia" && !boletoPorTitulo.has(t.id)).length,
   });
   const aberto = estagio !== "enviada" && estagio !== "cancelada";
+  const abaDoKit = ABAS_FILIAL.find((x) => x.estagio === estagio);
 
   // E-mail ao cliente (Fase C): sugestão de destinatário (último e-mail da filial a este cliente; senão, contatos com e-mail),
   // cópia interna configurada, texto no modelo da filial e o Gmail conectado de quem está vendo.
@@ -110,16 +112,16 @@ export default async function PaginaKit({ params }: PageProps<"/financeiro/filia
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" size="sm" render={<Link href={ROTA_FILIAL} />}><ArrowLeft /> Faturamento Filial</Button>
+      <Button variant="ghost" size="sm" render={<Link href={abaDoKit?.href ?? ROTA_FILIAL} />}><ArrowLeft /> {abaDoKit?.rotulo ?? "Faturamento Filial"}</Button>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
+          <h2 className="flex flex-wrap items-center gap-2 text-xl font-semibold tracking-tight">
             NF {k.nota_fiscal} — {k.cliente_nome}
             <Badge variant={COR_ESTAGIO[estagio]}>{ROTULO_ESTAGIO_KIT[estagio]}</Badge>
             {k.cedido && <Badge variant="outline">Cedido à AKF</Badge>}
             {!k.aceita_boleto_factoring && <Badge variant="outline">Sem boleto de factoring</Badge>}
-          </h1>
+          </h2>
           <p className="text-sm text-muted-foreground">
             {k.obra && <>Obra: {k.obra} · </>}
             {k.periodo_inicio && <>Período {formatarData(k.periodo_inicio)} a {formatarData(k.periodo_fim)} · </>}
@@ -159,7 +161,7 @@ export default async function PaginaKit({ params }: PageProps<"/financeiro/filia
         <Card size="sm">
           <CardHeader>
             <CardTitle>Documentos</CardTitle>
-            <CardDescription>Nota fatura, demonstrativo e comodato vêm da filial; a carta de cessão, de Cuiabá — obrigatória só para cliente marcado &quot;exige carta de cessão&quot; com parcela cedida. Nada é apagado: para substituir, anexe outro.</CardDescription>
+            <CardDescription>Nota fatura, demonstrativo e comodato (da filial) e carta de cessão (de Cuiabá, se o cliente pedir). Para substituir, anexe outro.</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             <ul className="space-y-1 text-[13px]">
@@ -179,7 +181,7 @@ export default async function PaginaKit({ params }: PageProps<"/financeiro/filia
         <Card size="sm">
           <CardHeader>
             <CardTitle>Parcelas no Consistem</CardTitle>
-            <CardDescription>Ligadas sozinhas pela NF (título 4{k.nota_fiscal}…) quando a sincronização traz o título implantado. O boleto é anexado na parcela, pela Cobrança.</CardDescription>
+            <CardDescription>Títulos do Consistem desta NF e o boleto de cada um.</CardDescription>
           </CardHeader>
           <CardContent>
             {(titulos ?? []).length === 0 ? (

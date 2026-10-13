@@ -88,7 +88,7 @@ export default async function PaginaRemessa({ params }: PageProps<"/financeiro/f
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Remessa nº {r.numero} da filial</h1>
+          <h2 className="text-xl font-semibold tracking-tight">Remessa nº {r.numero} da filial</h2>
           <p className="text-sm text-muted-foreground">
             Enviada por {r.criado_por_nome ?? "—"} em {quando(r.criado_em)} · {r.kits} {r.kits === 1 ? "NF" : "NFs"}
             {r.aviso_aberto_em ? <> · aviso a Cuiabá aberto em {quando(r.aviso_aberto_em)}</> : <> · aviso a Cuiabá ainda não aberto</>}
@@ -96,7 +96,6 @@ export default async function PaginaRemessa({ params }: PageProps<"/financeiro/f
         </div>
         <div className="flex flex-wrap items-start gap-2">
           <BotaoBaixarTudo remessaId={r.id} />
-          {podeOperar && !sessao.acesso.restrito && <Button variant="outline" render={<Link href={`${ROTA_FILIAL}/boletos`} />}>Anexar boletos</Button>}
           {podeOperar && itensAviso.length > 0 && (
             <BotaoAvisoCuiaba remessaId={r.id} numero={r.numero} data={dataCuiaba(r.criado_em)} itens={itensAviso} para={para} variante={r.aviso_aberto_em ? "outline" : "default"} />
           )}

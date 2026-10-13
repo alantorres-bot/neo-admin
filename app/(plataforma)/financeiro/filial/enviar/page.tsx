@@ -27,9 +27,9 @@ export default async function PaginaEnviarFaturas() {
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" size="sm" render={<Link href={ROTA_FILIAL} />}><ArrowLeft /> Faturamento Filial</Button>
+      <Button variant="ghost" size="sm" render={<Link href={`${ROTA_FILIAL}/remessas`} />}><ArrowLeft /> Remessas</Button>
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Enviar faturas da filial</h1>
+        <h2 className="text-xl font-semibold tracking-tight">Enviar faturas da filial</h2>
         <p className="text-sm text-muted-foreground">
           Cada envio vira uma remessa e cada NF, um kit. Os arquivos ficam aqui: Cuiabá recebe só o aviso por e-mail (relação e link
           da remessa), baixa as notas, implanta no Consistem e anexa o boleto; aí o kit fica pronto para você enviar ao cliente.

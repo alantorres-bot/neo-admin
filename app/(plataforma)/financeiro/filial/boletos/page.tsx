@@ -18,9 +18,9 @@ export default async function PaginaBoletosFilial() {
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" size="sm" render={<Link href={ROTA_FILIAL} />}><ArrowLeft /> Faturamento Filial</Button>
+      <Button variant="ghost" size="sm" render={<Link href={`${ROTA_FILIAL}/boletos-a-anexar`} />}><ArrowLeft /> Boletos a anexar</Button>
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Anexar boletos da filial</h1>
+        <h2 className="text-xl font-semibold tracking-tight">Anexar boletos da filial</h2>
         <p className="text-sm text-muted-foreground">
           Os boletos (próprios ou da AKF) das NFs implantadas. Cada um vai para a parcela certa; com o boleto, o kit fica pronto e a filial
           recebe a pendência para enviar ao cliente.
