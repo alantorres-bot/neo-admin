@@ -3,8 +3,8 @@
 // migration 0140. O corpo (nome, tipo 3, endereço fixo, categoria e grupo) foi montado pelo banco na reserva.
 //
 // Quem chama: SÓ usuário logado, operador do Financeiro (ou acima), e só quem reservou. Corpo: { "id": "<uuid>" }.
-// Código: o Consistem exige cpfCnpj no tipo 3 e os "Outros" usam o próprio código com 7 dígitos (928 → 0000928). A função
-// escolhe o próximo código livre (maior do espelho + 1, conferido com GET fornecedor/{cod}) e manda codFornecedor e cpfCnpj.
+// Código: o Consistem exige no tipo 3 o "registro do fornecedor" (campo cpfCnpj) = o próprio código com 7 dígitos (1375 →
+// 0001375). A função descobre o próximo código do Consistem (maior existente + 1) e manda codFornecedor e cpfCnpj.
 // Envia UMA vez (PUT cadastrosgerais/v10/fornecedor): cadastrado (com o código; vai para o espelho e para a sugestão do
 // estabelecimento), erro (4xx, nada criado) ou incerto (fica "enviando": conferir no Consistem e resolver à mão).
 // Segredos: CONSISTEM_API_KEY (token do CSMEN050) e CONSISTEM_BASE_URL (opcional).
@@ -50,23 +50,32 @@ Deno.serve(async (req) => {
   if (erroInicio || !item) return responder({ erro: erroInicio?.message ?? "Não foi possível iniciar o envio." }, 409);
 
   const cfg = { baseUrl: Deno.env.get("CONSISTEM_BASE_URL") || BASE_URL_PADRAO, token, empresa: String(empresa.codigo_erp) };
-  // Próximo código livre: parte do maior do espelho e confere no Consistem (o espelho pode estar atrasado).
+  // Código: o Consistem dá o próximo número do seu contador (a tela pula códigos já consumidos — ex.: 1372 e 1373 livres e o
+  // próximo foi 1374) e o registro do tipo 3 tem de ser igual a ele. Procura, a partir do maior do espelho, o MAIOR código que
+  // existe no Consistem (anda enquanto achar um existente nos próximos 15 números) e usa o seguinte.
   const { data: inicial } = await banco.rpc("crt_proximo_codigo_fornecedor", { p_empresa: reserva.empresa_id });
-  let codigo = Number(inicial) || 0;
-  let livre = false;
-  for (let i = 0; i < 30 && codigo > 0 && codigo <= 99999; i++, codigo++) {
+  const existe = async (cod: number): Promise<boolean> => {
     try {
-      const existente = await buscarObjeto((u, init) => fetch(u, init), cfg, `cadastrosgerais/v10/fornecedor/${codigo}`);
-      if (String(existente.codFornecedor ?? "") !== String(codigo)) { livre = true; break; }
+      const f = await buscarObjeto((u, init) => fetch(u, init), cfg, `cadastrosgerais/v10/fornecedor/${cod}`);
+      return String(f.codFornecedor ?? "") === String(cod);
     } catch (e) {
-      if (e instanceof ConsistemErro && (e.status === 400 || e.status === 404)) { livre = true; break; }
-      const mensagem = `Não foi possível conferir o código ${codigo} no Consistem: ${e instanceof Error ? e.message : "falha"}. Nada foi enviado.`;
-      await banco.rpc("crt_concluir_cadastro_fornecedor", { p_id: reserva.id, p_cod: null, p_resposta: null, p_erro: mensagem });
-      return responder({ ok: false, tipo: "erro", mensagem }, 502);
+      if (e instanceof ConsistemErro && (e.status === 400 || e.status === 404)) return false;
+      throw e;
     }
+  };
+  let maiorExistente = (Number(inicial) || 1) - 1;
+  try {
+    for (let cod = maiorExistente + 1, semAchar = 0; cod <= 99999 && semAchar < 15; cod++) {
+      if (await existe(cod)) { maiorExistente = cod; semAchar = 0; } else semAchar++;
+    }
+  } catch (e) {
+    const mensagem = `Não foi possível conferir os códigos de fornecedor no Consistem: ${e instanceof Error ? e.message : "falha"}. Nada foi enviado.`;
+    await banco.rpc("crt_concluir_cadastro_fornecedor", { p_id: reserva.id, p_cod: null, p_resposta: null, p_erro: mensagem });
+    return responder({ ok: false, tipo: "erro", mensagem }, 502);
   }
-  if (!livre) {
-    const mensagem = "Não foi encontrado um código de fornecedor livre perto do último do espelho. Nada foi enviado.";
+  const codigo = maiorExistente + 1;
+  if (codigo < 1 || codigo > 99999) {
+    const mensagem = "Código de fornecedor fora da faixa. Nada foi enviado.";
     await banco.rpc("crt_concluir_cadastro_fornecedor", { p_id: reserva.id, p_cod: null, p_resposta: null, p_erro: mensagem });
     return responder({ ok: false, tipo: "erro", mensagem }, 409);
   }
