@@ -63,6 +63,7 @@ export default async function PaginaAutorizacoes({ searchParams }: PageProps<"/f
                 <TableHead className="text-right">Total</TableHead>
                 <TableHead>Confirmados no Consistem</TableHead>
                 <TableHead>Baixados no Consistem</TableHead>
+                <TableHead>Conferidos no banco</TableHead>
                 <TableHead>Montada por</TableHead>
                 <TableHead>Autorizada por</TableHead>
                 <TableHead />
@@ -81,6 +82,7 @@ export default async function PaginaAutorizacoes({ searchParams }: PageProps<"/f
                   <TableCell className="text-right font-medium tabular-nums">{formatarMoeda(centavos(a.total))}<span className="block text-[11px] font-normal text-muted-foreground">{a.itens + a.extras} {a.itens + a.extras === 1 ? "item" : "itens"}</span></TableCell>
                   <TableCell className="tabular-nums">{a.status === "cancelada" ? "—" : `${a.confirmados} de ${a.itens - a.baixados}`}</TableCell>
                   <TableCell className="tabular-nums">{a.status === "cancelada" ? "—" : `${a.baixados} de ${a.itens}`}</TableCell>
+                  <TableCell className={`tabular-nums ${a.divergentes > 0 ? "text-amber-700" : ""}`}>{a.status !== "autorizada" ? "—" : `${a.conferidos} de ${a.itens + a.extras}`}{a.status === "autorizada" && a.divergentes > 0 ? ` · ${a.divergentes} ${a.divergentes === 1 ? "divergente" : "divergentes"}` : ""}</TableCell>
                   <TableCell>{a.criado_por_nome ?? "—"}</TableCell>
                   <TableCell>{a.autorizada_por_nome ? <>{a.autorizada_por_nome}<span className="block text-[11px] text-muted-foreground">{a.autorizada_em ? formatarData(a.autorizada_em) : ""}</span></> : "—"}</TableCell>
                   <TableCell className="text-right"><Button variant="outline" size="sm" render={<Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes/${a.id}`} />}>Abrir</Button></TableCell>

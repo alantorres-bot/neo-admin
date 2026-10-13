@@ -128,6 +128,8 @@ export type LinhaAutorizacao = {
   confirmados: number;
   /** Pagamentos extras (fora do Consistem) ativos e sua soma; `total` já inclui. */
   extras: number; total_extras: number | string;
+  /** Conferência com o banco (Fase 4e), itens + extras ativos: conferidos, divergentes e a soma dos conferidos. */
+  conferidos: number; divergentes: number; total_conferido: number | string;
   excluida_em: string | null; excluida_por_nome: string | null; motivo_exclusao: string | null;
 };
 
@@ -135,6 +137,9 @@ export type LinhaAutorizacao = {
 export type LinhaExtraAutorizacao = {
   id: string; descricao: string; favorecido: string; valor: number | string; ordem: number;
   criado_por: string | null; criado_por_nome: string | null; criado_em: string; removido_em: string | null; motivo_remocao: string | null;
+  /** Conferência com o banco (Fase 4e): conferido | divergente | nulo; quem marcou e quando. */
+  conferencia_banco: "conferido" | "divergente" | null; valor_banco: number | string | null; observacao_conferencia: string | null;
+  conferido_banco_por: string | null; conferido_banco_por_nome: string | null; conferido_banco_em: string | null;
 };
 
 export type LinhaItemAutorizacao = {
@@ -144,11 +149,14 @@ export type LinhaItemAutorizacao = {
   cod_barras: string | null; qrcode_pix: string | null; ordem: number; removido_em: string | null; motivo_remocao: string | null; baixado_consistem_em: string | null;
   /** Data em que a sincronização viu o documento confirmado no Consistem (CCFFB014). */
   confirmado_consistem_em: string | null;
+  /** Conferência com o banco (Fase 4e): conferido | divergente | nulo; quem marcou e quando. */
+  conferencia_banco: "conferido" | "divergente" | null; valor_banco: number | string | null; observacao_conferencia: string | null;
+  conferido_banco_por: string | null; conferido_banco_por_nome: string | null; conferido_banco_em: string | null;
   /** Do lançamento de origem: antecipação com borderô no Consistem (paga) — preenchido na leitura. */
   tem_bordero: boolean | null;
 };
 
-const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados, confirmados, extras, total_extras, excluida_em, excluida_por_nome, motivo_exclusao";
+const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados, confirmados, extras, total_extras, conferidos, divergentes, total_conferido, excluida_em, excluida_por_nome, motivo_exclusao";
 
 export async function listarAutorizacoes(supabase: Cliente, filtro: { status: string | null; pagina: number; porPagina: number }): Promise<{ linhas: LinhaAutorizacao[]; total: number }> {
   let consulta = supabase.from("cap_vw_autorizacoes").select(COLUNAS_AUTORIZACAO, { count: "exact" }).is("excluida_em", null).order("numero", { ascending: false })
@@ -165,9 +173,9 @@ export async function lerAutorizacao(supabase: Cliente, id: string): Promise<{ a
   const [{ data: a, error: erroA }, { data: itens, error: erroI }, { data: extrasBrutos, error: erroX }, { data: anexosBrutos }] = await Promise.all([
     supabase.from("cap_vw_autorizacoes").select(COLUNAS_AUTORIZACAO).eq("id", id).maybeSingle(),
     supabase.from("cap_autorizacao_itens")
-      .select("id, lancamento_id, tipo, cod_lancamento, cod_fornecedor, fornecedor_nome, fornecedor_documento, num_documento, categoria_doc, data_emissao, data_vencimento, data_pagamento, valor, valor_original, complemento_historico, cod_banco, cod_portador, cod_barras, qrcode_pix, ordem, removido_em, motivo_remocao, baixado_consistem_em, confirmado_consistem_em")
+      .select("id, lancamento_id, tipo, cod_lancamento, cod_fornecedor, fornecedor_nome, fornecedor_documento, num_documento, categoria_doc, data_emissao, data_vencimento, data_pagamento, valor, valor_original, complemento_historico, cod_banco, cod_portador, cod_barras, qrcode_pix, ordem, removido_em, motivo_remocao, baixado_consistem_em, confirmado_consistem_em, conferencia_banco, valor_banco, observacao_conferencia, conferido_banco_por, conferido_banco_em")
       .eq("autorizacao_id", id).order("ordem").limit(1000),
-    supabase.from("cap_autorizacao_extras").select("id, descricao, favorecido, valor, ordem, criado_por, criado_em, removido_em, motivo_remocao").eq("autorizacao_id", id).order("ordem").limit(200),
+    supabase.from("cap_autorizacao_extras").select("id, descricao, favorecido, valor, ordem, criado_por, criado_em, removido_em, motivo_remocao, conferencia_banco, valor_banco, observacao_conferencia, conferido_banco_por, conferido_banco_em").eq("autorizacao_id", id).order("ordem").limit(200),
     supabase.from("anexos").select("id, arquivo_path, nome_arquivo, enviado_em")
       .eq("modulo", MODULO_CONTAS_PAGAR).eq("referencia_tabela", "cap_autorizacoes").eq("referencia_id", id).order("enviado_em", { ascending: false }).limit(20),
   ]);
@@ -175,14 +183,7 @@ export async function lerAutorizacao(supabase: Cliente, id: string): Promise<{ a
   if (erroI) throw new Error(`Falha ao ler os itens: ${erroI.message}`);
   if (erroX) throw new Error(`Falha ao ler os pagamentos extras: ${erroX.message}`);
   if (!a) return null;
-  // Nome de quem incluiu cada extra.
-  const extras = (extrasBrutos ?? []).map((x) => ({ ...(x as Omit<LinhaExtraAutorizacao, "criado_por_nome">), criado_por_nome: null as string | null }));
-  const idsPerfis = [...new Set(extras.map((x) => x.criado_por).filter((v): v is string => v !== null))];
-  if (idsPerfis.length > 0) {
-    const { data: perfis } = await supabase.from("perfis").select("id, nome").in("id", idsPerfis);
-    const nomeDe = new Map((perfis ?? []).map((p) => [p.id as string, p.nome as string]));
-    for (const x of extras) x.criado_por_nome = x.criado_por ? nomeDe.get(x.criado_por) ?? null : null;
-  }
+  const extras = (extrasBrutos ?? []).map((x) => ({ ...(x as Omit<LinhaExtraAutorizacao, "criado_por_nome" | "conferido_banco_por_nome">), criado_por_nome: null as string | null, conferido_banco_por_nome: null as string | null }));
   // Link assinado de 15 min para cada anexo (o bucket é privado; a RLS do Storage decide).
   // Antecipação do item já tem borderô (paga) no espelho? Aviso na página: o item deveria sair do rascunho.
   const lista = (itens ?? []) as unknown as LinhaItemAutorizacao[];
@@ -199,6 +200,17 @@ export async function lerAutorizacao(supabase: Cliente, id: string): Promise<{ a
     }
   }
   for (const i of lista) i.tem_bordero = borderoDe.get(i.lancamento_id) ?? null;
+  // Nomes de quem incluiu cada extra e de quem marcou a conferência com o banco.
+  const idsPerfis = [...new Set([...extras.flatMap((x) => [x.criado_por, x.conferido_banco_por]), ...lista.map((i) => i.conferido_banco_por)].filter((v): v is string => !!v))];
+  if (idsPerfis.length > 0) {
+    const { data: perfis } = await supabase.from("perfis").select("id, nome").in("id", idsPerfis);
+    const nomeDe = new Map((perfis ?? []).map((p) => [p.id as string, p.nome as string]));
+    for (const x of extras) {
+      x.criado_por_nome = x.criado_por ? nomeDe.get(x.criado_por) ?? null : null;
+      x.conferido_banco_por_nome = x.conferido_banco_por ? nomeDe.get(x.conferido_banco_por) ?? null : null;
+    }
+    for (const i of lista) i.conferido_banco_por_nome = i.conferido_banco_por ? nomeDe.get(i.conferido_banco_por) ?? null : null;
+  }
   const anexos: AnexoAutorizacao[] = await Promise.all((anexosBrutos ?? []).map(async (x) => {
     const r = await urlAssinadaAnexo(supabase, x.arquivo_path as string, 900);
     return { id: x.id as string, nome: x.nome_arquivo as string, enviadoEm: quandoEm(x.enviado_em as string), url: r.ok ? r.url : null };

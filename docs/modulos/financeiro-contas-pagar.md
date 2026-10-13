@@ -102,8 +102,9 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
 | Tela | O que mostra |
 | --- | --- |
 | **Autorizar pagamento** (`/financeiro/contas-pagar`) | Três cartões (Títulos, Antecipações, Total: quantidade e R$); filtros (fornecedor/documento, tipo, vencimento de/até, mostrar já autorizados); tabela unificada com caixa de marcação e **títulos de coluna clicáveis para ordenar** (crescente ↔ decrescente): Tipo, Fornecedor, Documento, Vencimento (antecipação: pagamento programado), Valor, Saldo, Histórico — sem CNPJ, código do lançamento, emissão ou situação (linhas não pendentes ficam apagadas com uma linha pequena "na autorização X", "paga (borderô)" ou "paga fora"); barra fixa "N itens · R$ X" + caixa disponível + rascunho em montagem + botões **Salvar parcial · Extras · Gerar autorização** (diálogo: data (só ao criar), caixa, observação; gestor vê "Autorizar agora"); "Atualizado do Consistem em …" + Simular/Atualizar |
-| **Autorizações** (`/autorizacoes`) | Histórico: nº, data, status, itens, total títulos, total antecipações, montada por, autorizada por, baixados no Consistem X/N; filtro por status |
+| **Autorizações** (`/autorizacoes`) | Histórico: nº, data, status, itens, total títulos, total antecipações, montada por, autorizada por, confirmados e baixados no Consistem X/N, conferidos no banco X/N (só autorizada; âmbar com divergentes); filtro por status |
 | **Autorização** (`/autorizacoes/[id]`) | Cabeçalho e status; seção Títulos e seção Antecipações com totais, colunas Fornecedor · Documento · Vencimento/Pagamento programado · Histórico · Valor, ordenáveis pelo título (sob o valor, só quando há algo a dizer: "baixado no Consistem em dd/mm" ou "já paga (tem borderô)"); seção Pagamentos extras; botões Autorizar (gestor), Cancelar (motivo), Remover item (só rascunho), Imprimir / salvar PDF |
+| **Conferência com o banco** (`/autorizacoes/[id]/conferencia`, Fase 4e) | Só autorização autorizada. Cartões Conferidos X de N (R$), Divergentes (com a diferença no banco), Faltam; busca por valor ("150" acha 150,00 e 150,90; "1.234,56" exato) ou fornecedor/documento, Enter marca a única linha encontrada; filtros Todos/Faltam/Conferidos/Divergentes; colunas ordenáveis. Por linha: caixa **Conferido** (grava na hora), botão **Divergente** (valor no banco e/ou observação), "por Fulano em dd/mm hh:mm" |
 | **Impressão** (`/imprimir/contas-pagar/autorizacao/[id]`) | O relatório da seção 6, sem a moldura do sistema |
 | **Antecipações** e **Parâmetros** (Fase 4) | Todas as antecipações com saldo e sua situação; data de corte com prévia |
 
@@ -117,7 +118,7 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
 | `cap_antecipacoes_tratadas` | Antecipações marcadas como pagas fora do Neo Admin (motivo, quem; desfazível) |
 | `cap_autorizacao_extras` | Pagamentos extras (fora do Consistem) da autorização: descrição, favorecido, valor; só em rascunho — prova |
 | `cap_vw_pendentes` | View: abertos C/A com fornecedor, autorização ativa, tratada, fora do corte (a tela lê daqui) |
-| Funções | `cap_criar_autorizacao`, `cap_adicionar_itens`, `cap_montar_rascunho`, `cap_autorizar`, `cap_cancelar`, `cap_remover_item`, `cap_incluir_extra`, `cap_remover_extra`, `cap_marcar_antecipacao_tratada`, `cap_desfazer_antecipacao_tratada`, `cap_salvar_parametros` |
+| Funções | `cap_conferir` (4e), `cap_criar_autorizacao`, `cap_adicionar_itens`, `cap_montar_rascunho`, `cap_autorizar`, `cap_cancelar`, `cap_remover_item`, `cap_incluir_extra`, `cap_remover_extra`, `cap_marcar_antecipacao_tratada`, `cap_desfazer_antecipacao_tratada`, `cap_salvar_parametros` |
 | Configuração | `financeiro.contas-pagar.antecipacoes_a_partir_de` |
 Migrations: `0121_cap_base.sql` (Fase 1), `0122_cap_autorizacoes.sql` (Fase 2), `0123_cap_fornecedores_contrapartes.sql` (Fase 4).
 Edge Function: `cap-sincronizar-consistem` (ações `medir`, `simular`, `sincronizar`; `detalhar` na Fase 3).
@@ -126,7 +127,7 @@ Edge Function: `cap-sincronizar-consistem` (ações `medir`, `simular`, `sincron
 | Nível | Pode |
 | --- | --- |
 | consulta | ver lista, autorizações e imprimir |
-| operador | atualizar do Consistem, montar rascunho, remover item de rascunho, marcar antecipação como tratada |
+| operador | atualizar do Consistem, montar rascunho, remover item de rascunho, marcar antecipação como tratada, **conferir com o banco** (4e) |
 | gestor (diretoria) | tudo acima + **autorizar**, cancelar, alterar a data de corte |
 Quem monta pode autorizar a própria autorização (fluxo real: a diretoria monta e autoriza).
 
@@ -142,7 +143,7 @@ Quem monta pode autorizar a própria autorização (fluxo real: a diretoria mont
 
 ## 11. Fases
 0. Especificação (aprovada 09/10/2026). 1. Sincronização + lista unificada só leitura (**feita**). 2. Autorização, histórico e pendência (**feita**).
-3. Relatório/impressão (**feita**). 4. Extras (abas Antecipações e Parâmetros, fornecedores como contrapartes, crédito D, agendamento). 4d. Confirmação no Consistem: leitura (**feita, 12/10/2026**); escrita quando a Consistem entregar a API (4d-2).
+3. Relatório/impressão (**feita**). 4. Extras (abas Antecipações e Parâmetros, fornecedores como contrapartes, crédito D, agendamento). 4d. Confirmação no Consistem: leitura (**feita, 12/10/2026**); escrita quando a Consistem entregar a API (4d-2). 4e. Conferência dos pagamentos com o banco (**feita, 13/10/2026**).
 
 ## 12. Fase 1 — o que foi feito (09/10/2026)
 - Migration `0121_cap_base.sql` (aplicada em produção em 09/10/2026): módulo `financeiro.contas-pagar` ativo, parâmetro
@@ -348,3 +349,35 @@ Confirmação disparada por `cap_autorizar` (Edge Function `cap-confirmar-consis
   chama a Edge Function todos os dias às 07:30 de Cuiabá (`cap_chamar_sincronizacao`, mesmo segredo do Vault do agendamento de
   Recebíveis). Necessário para o módulo Cartão de crédito detectar sozinho o pagamento da fatura (o título provisório some).
   A mesma Edge Function ganhou a ação só de leitura `titulos_vencimento` (nível consulta), usada pela conciliação do cartão.
+
+## 17. Fase 4e — conferência dos pagamentos com o banco (13/10/2026)
+
+### Por que
+Depois que a diretoria autoriza, quem libera os pagamentos no banco (em geral o Alan) imprimia a autorização e, para cada pagamento
+lançado no banco, procurava o item no papel, conferia e marcava à caneta antes de liberar. A tela "Conferir no banco" faz isso no
+Neo Admin: cada item marcado já fica gravado como conferido, com quem e quando.
+
+### Regras
+- Só autorização **autorizada**; itens removidos não entram. Entram títulos, antecipações e **pagamentos extras**.
+- **Operador ou gestor** do Financeiro marca (decisão do Alan, 13/10/2026).
+- Situações: **conferido** (o banco bate) ou **divergente** (exige valor do banco e/ou observação; ex.: juros, desconto). Marcar
+  conferido apaga o valor do banco; desmarcar limpa a conferência. O antes/depois fica na `auditoria` (gatilho `fn_auditoria`).
+- Quem/quando são carimbados pelo gatilho (`conferido_banco_por = auth.uid()`, `conferido_banco_em = now()`): não dá para forjar.
+- As demais colunas dos itens e extras continuam imutáveis; a sincronização (service role) segue anotando baixa e confirmação sem
+  mexer na conferência. A conferência não altera o Consistem nem a pendência de execução (é registro de operação).
+
+### O que foi feito
+- Migration `0160_cap_conferencia_banco.sql`: em `cap_autorizacao_itens` e `cap_autorizacao_extras`, `conferencia_banco`
+  (`conferido`/`divergente`/nulo), `valor_banco`, `observacao_conferencia` (até 300), `conferido_banco_por`, `conferido_banco_em`;
+  regra comum `fn_cap_aplicar_conferencia` chamada pelos gatilhos `fn_cap_item_regras` e `fn_cap_extra_regras` (caminho próprio
+  quando só as colunas da conferência mudam); RPC `cap_conferir(origem, id, situacao, valor_banco, observacao)` (devolve a linha e o
+  resumo); `cap_vw_autorizacoes` + `conferidos`, `divergentes`, `total_conferido` (itens + extras ativos).
+- Regras puras `lib/modulos/financeiro/contas-pagar/conferencia.ts`: `interpretarBusca` (valores no padrão brasileiro; sem vírgula
+  casa a parte inteira), `filtrarConferencia` (valor autorizado ou do banco; texto sem acento em nome/documento/histórico),
+  `filtrarPorSituacao`, `resumirConferencia` (quantidade e R$ por situação, diferença dos divergentes), `podeConferir`.
+- Tela `autorizacoes/[id]/conferencia/` (página + `tabela-conferencia.tsx`, marcação otimista que desfaz e avisa se o banco
+  recusar); ação `conferir` em `autorizacoes/[id]/acoes.ts`; botão **Conferir no banco** e cartão "Conferidos no banco X de N" na
+  autorização; coluna no histórico.
+- Testes: `conferencia.test.ts` (8) e `tests/db/cap-conferencia.test.ts` (6: operador confere item e extra, carimbo, divergente
+  exige valor ou observação, desmarcar e auditoria, só autorizada e item ativo, consulta não confere, colunas imutáveis, carimbo não
+  forjável, sincronização preserva a conferência).

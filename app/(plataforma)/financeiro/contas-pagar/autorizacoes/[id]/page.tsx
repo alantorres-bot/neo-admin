@@ -6,8 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Printer } from "lucide-react";
+import { ListChecks, Printer } from "lucide-react";
 import { compararComCaixa, mensagemSlack, podeAutorizar, podeCancelar, podeEditarExtras, podeRemoverItem, resumirItens, ROTULO_STATUS, rotaImpressao, textoFaltaConfirmar, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { podeConferir } from "@/lib/modulos/financeiro/contas-pagar/conferencia";
 import { CHAVES_CONTAS_PAGAR, lerParametrosContasPagar } from "@/lib/modulos/financeiro/contas-pagar/parametros";
 import { ROTA_CONTAS_PAGAR, ROTULO_TIPO } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -83,6 +84,7 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Button variant="ghost" render={<Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes`} />}>Voltar ao histórico</Button>
+          {podeConferir(a.status, papel.podeOperar) && <Button render={<Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes/${a.id}/conferencia`} />}><ListChecks /> Conferir no banco</Button>}
           <Button variant="outline" render={<a href={rotaImpressao(a.id)} target="_blank" rel="noopener" />}><Printer /> Imprimir / salvar PDF</Button>
           {a.status !== "cancelada" && <BotaoEnviarSlack id={a.id} codigo={a.codigo} mensagem={textoSlack} canalUrl={parametrosModulo.slackCanalUrl} ehGestor={papel.ehGestor} jaEnviadaEm={a.slack_enviada_em ? quandoEm(a.slack_enviada_em) : null} />}
           {papel.ehGestor && a.status === "cancelada" && !a.excluida_em && <BotaoExcluirDaLista id={a.id} codigo={a.codigo} />}
@@ -92,7 +94,7 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
         </div>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
+      <div className={`grid gap-3 sm:grid-cols-2 ${a.status === "autorizada" ? "lg:grid-cols-4 xl:grid-cols-7" : "lg:grid-cols-6"}`}>
         <Card size="sm">
           <CardHeader><CardDescription>Títulos</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(resumo.titulos.centavos)}</CardTitle></CardHeader>
           <CardContent className="text-xs text-muted-foreground">{resumo.titulos.quantidade} {resumo.titulos.quantidade === 1 ? "título" : "títulos"}</CardContent>
@@ -117,6 +119,15 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
           <CardHeader><CardDescription>Baixados no Consistem</CardDescription><CardTitle className="text-xl tabular-nums">{a.status === "cancelada" ? "—" : `${resumo.baixados} de ${resumo.lancamentos.quantidade}`}</CardTitle></CardHeader>
           <CardContent className="text-xs text-muted-foreground">anotado pela atualização do Consistem</CardContent>
         </Card>
+        {a.status === "autorizada" && (
+          <Card size="sm">
+            <CardHeader><CardDescription>Conferidos no banco</CardDescription><CardTitle className="text-xl tabular-nums">{a.conferidos} de {resumo.geral.quantidade}</CardTitle></CardHeader>
+            <CardContent className={`text-xs ${a.divergentes > 0 ? "text-amber-700" : "text-muted-foreground"}`}>
+              {a.divergentes > 0 ? `${a.divergentes} ${a.divergentes === 1 ? "divergente" : "divergentes"} · ` : ""}
+              {papel.podeOperar ? <Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes/${a.id}/conferencia`} className="text-elo hover:underline">abrir conferência</Link> : "conferência com o banco"}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {cobrarConfirmacao && resumo.faltaConfirmar > 0 && (

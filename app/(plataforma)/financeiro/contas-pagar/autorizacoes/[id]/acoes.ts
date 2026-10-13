@@ -200,3 +200,44 @@ export async function enviarNoSlack(entrada: { id: string }): Promise<ResultadoS
   revalidar(a.id);
   return { ok: true, permalink: r.permalink ?? null, aviso: r.aviso ?? `PDF da autorização ${a.codigo} publicado no canal do financeiro.` };
 }
+
+const esquemaConferencia = z.object({
+  autorizacaoId: uuid,
+  origem: z.enum(["item", "extra"]),
+  id: uuid,
+  situacao: z.enum(["conferido", "divergente"]).nullable(),
+  valorBanco: z.number().positive("O valor do banco deve ser maior que zero.").max(999_999_999_999.99).nullable(),
+  observacao: z.string().trim().max(300, "A observação pode ter até 300 caracteres.").nullable(),
+});
+export type ResultadoConferencia =
+  | { ok: true; situacao: "conferido" | "divergente" | null; valorBanco: number | null; observacao: string | null; conferidoEm: string | null }
+  | { ok: false; erro: string };
+
+/**
+ * Conferência com o banco (Fase 4e, função de banco `cap_conferir`): marca o item/extra como conferido ou divergente (valor do banco
+ * e/ou observação), ou desmarca (`situacao` nula). Só autorização autorizada; operador ou gestor. Quem/quando: carimbo do banco.
+ */
+export async function conferir(entrada: z.input<typeof esquemaConferencia>): Promise<ResultadoConferencia> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Só operador ou gestor do Financeiro marca a conferência com o banco." };
+  const dados = esquemaConferencia.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const d = dados.data;
+  if (d.situacao === "divergente" && d.valorBanco === null && !d.observacao) return { ok: false, erro: "Para marcar divergente, informe o valor que está no banco ou uma observação." };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.rpc("cap_conferir", {
+    p_origem: d.origem, p_id: d.id, p_situacao: d.situacao,
+    p_valor_banco: d.situacao === "divergente" ? d.valorBanco : null,
+    p_observacao: d.situacao ? d.observacao || null : null,
+  });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidar(d.autorizacaoId);
+  const r = (data ?? {}) as { conferencia_banco?: "conferido" | "divergente" | null; valor_banco?: number | string | null; observacao_conferencia?: string | null; conferido_banco_em?: string | null };
+  return {
+    ok: true,
+    situacao: r.conferencia_banco ?? null,
+    valorBanco: r.valor_banco === null || r.valor_banco === undefined ? null : Number(r.valor_banco),
+    observacao: r.observacao_conferencia ?? null,
+    conferidoEm: r.conferido_banco_em ? quandoEm(r.conferido_banco_em) : null,
+  };
+}
