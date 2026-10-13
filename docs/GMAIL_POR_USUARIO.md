@@ -12,12 +12,15 @@ rascunhos** e nunca envia nem lê a caixa. Quem confere e envia é a pessoa, no 
 
 ## Configuração (uma vez, pelo Alan)
 
-1. **Google Cloud**, projeto `neo-admin-neoformas` (o mesmo do login e do Gmail; a Gmail API já está ativada):
-   - **APIs e serviços > Credenciais >** cliente **Neo Formas Login** (Aplicativo da Web) **> URIs de redirecionamento
-     autorizados > adicionar:** `https://chdszjpbtfpstjrqnmmm.supabase.co/functions/v1/nucleo-gmail-conectar`
-   - **Tela de consentimento OAuth > Acesso a dados (escopos) > Adicionar:** `https://www.googleapis.com/auth/gmail.compose`.
-     A tela é do tipo **Interno**, então não precisa de verificação do Google.
-2. **Segredos** das Edge Functions: o ID e o segredo do cliente "Neo Formas Login". Cole quando o script pedir; nada aparece
+1. **Google Cloud**, projeto `neo-admin-neoformas`:
+   - **Gmail API ativada** (APIs e serviços > Biblioteca > Gmail API > Ativar). Sem ela, a conexão funciona, mas o rascunho
+     falha com HTTP 403. O Gmail "global" da Cobrança usa outro projeto.
+   - Cliente OAuth **próprio**, separado do login: **Neo Admin Gmail (rascunhos)**, do tipo Aplicativo da Web, com um único
+     URI de redirecionamento: `https://chdszjpbtfpstjrqnmmm.supabase.co/functions/v1/nucleo-gmail-conectar`. O cliente
+     "Neo Formas Login" não é alterado: ele já tem duas chaves ativas e é o do "Entrar com Google" dos três apps.
+   - **Tela de consentimento > Acesso a dados (escopos):** `https://www.googleapis.com/auth/gmail.compose`. O público é
+     **Interno**, então não precisa de verificação do Google.
+2. **Segredos** das Edge Functions: o ID e o segredo do cliente "Neo Admin Gmail (rascunhos)". Cole quando o script pedir; nada aparece
    na tela.
    ```
    node scripts/gravar-segredo.mjs GMAIL_WEB_CLIENT_ID --ref chdszjpbtfpstjrqnmmm
