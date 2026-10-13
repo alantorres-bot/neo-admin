@@ -406,3 +406,7 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
 - Testes: `tests/db/crt-fornecedores.test.ts`, `consistem-inclusao.test.ts`.
 - Testado ao vivo (local): coluna Fornecedor, "Ligar" do GOOGLE (1370, 889, 928), marketplace e genéricos. **Nenhum fornecedor foi
   ligado nem cadastrado** (chave desligada; decisão do Alan).
+- **Pendente (13/10/2026):** a API recusa o tipo 3 mesmo com o próximo código certo e o registro no formato da tela
+  ("cpfCnpj: 0001375. CNPJ/CPF inválido!"). A tela do Consistem usa o campo "Registro Fornecedor", que o corpo `FornecedorPut`
+  não documenta. Chamado à Consistem com o exemplo exato. Até a resposta: cadastrar "Outros" pela tela do Consistem e usar
+  **Ligar** no painel. A chave `financeiro.cartao.lancar_no_erp` fica ligada (decisão do Alan).
