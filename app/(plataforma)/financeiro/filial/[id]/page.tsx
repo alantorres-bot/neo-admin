@@ -18,7 +18,7 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { Suspense } from "react";
 import { abasFilial } from "@/lib/modulos/financeiro/filial/abas";
-import { montarEmailCliente } from "@/lib/modulos/financeiro/filial/email-cliente";
+import { montarEmailCliente, type ModoEmailCliente } from "@/lib/modulos/financeiro/filial/email-cliente";
 import { AnexarDocumento, BotaoCancelarKit } from "./componentes";
 import { EmailCliente } from "./email-cliente";
 
@@ -41,7 +41,7 @@ export default async function PaginaKit({ params }: PageProps<"/financeiro/filia
 
   const [{ data: ligacoes }, { data: extra }] = await Promise.all([
     supabase.from("rec_kit_titulos").select("titulo_id").eq("kit_id", id),
-    supabase.from("rec_kits").select("parcelas_informadas").eq("id", id).maybeSingle(),
+    supabase.from("rec_kits").select("parcelas_informadas, nota_enviada_em, email_assunto").eq("id", id).maybeSingle(),
   ]);
   const informadas = lerParcelasInformadas(extra?.parcelas_informadas);
   const idsTitulos = (ligacoes ?? []).map((l) => l.titulo_id as string);
@@ -77,8 +77,14 @@ export default async function PaginaKit({ params }: PageProps<"/financeiro/filia
 
   // E-mail ao cliente (Fase C): sugestão de destinatário (último e-mail da filial a este cliente; senão, contatos com e-mail),
   // cópia interna configurada, texto no modelo da filial e o Gmail conectado de quem está vendo.
+  // Fase F: antes do boleto, com nota e demonstrativo, dá para mandar a nota agora (modo "nota"); com a nota já enviada, o kit
+  // pronto manda só o boleto, em resposta ao mesmo e-mail (modo "boleto").
+  const notaEnviadaEm = (extra?.nota_enviada_em as string | null) ?? null;
+  const tiposKit = new Set((docsKit ?? []).map((d) => d.tipo as string));
+  const podeEnviarNota = (estagio === "recebida" || estagio === "implantada") && !notaEnviadaEm && tiposKit.has("nota_fatura") && tiposKit.has("demonstrativo");
+  const modoEmail: ModoEmailCliente | null = estagio === "pronta" ? (notaEnviadaEm ? "boleto" : "completo") : podeEnviarNota ? "nota" : null;
   let email: { gmail: string | null; sugestao: { para: string; cc: string; assunto: string; corpo: string }; anexos: string[] } | null = null;
-  if (estagio === "pronta") {
+  if (modoEmail) {
     const [{ data: conta }, { data: ultima }, { data: contatos }, { data: copia }] = await Promise.all([
       supabase.from("gmail_contas").select("email").eq("perfil_id", sessao.userId).is("desconectado_em", null).maybeSingle(),
       k.contraparte_id
@@ -91,7 +97,11 @@ export default async function PaginaKit({ params }: PageProps<"/financeiro/filia
     const hora = Number(new Date().toLocaleString("en-US", { timeZone: "America/Cuiaba", hour: "2-digit", hour12: false }));
     const texto = montarEmailCliente({
       cliente: k.cliente_nome, nota: k.nota_fiscal, obra: k.obra, periodoInicio: k.periodo_inicio, periodoFim: k.periodo_fim, documentos: tipos, hora,
+      modo: modoEmail, assuntoAnterior: (extra?.email_assunto as string | null) ?? null,
     });
+    const qtdBoletos = (titulos ?? []).filter((t) => boletoPorTitulo.has(t.id)).length;
+    const rotulosDocs = tipos.filter((t) => modoEmail === "completo" || (modoEmail === "nota" ? t !== "carta_cessao" : t === "carta_cessao"))
+      .map((t) => ROTULO_DOCUMENTO_KIT[t].toLowerCase());
     const copiaPadrao = Array.isArray(copia?.valor) ? (copia.valor as string[]).join(", ") : "";
     email = {
       gmail: (conta?.email as string | undefined) ?? null,
@@ -100,10 +110,7 @@ export default async function PaginaKit({ params }: PageProps<"/financeiro/filia
         cc: (ultima?.cc as string | undefined) ?? copiaPadrao,
         ...texto,
       },
-      anexos: [
-        ...tipos.map((t) => ROTULO_DOCUMENTO_KIT[t].toLowerCase()),
-        ...((titulos ?? []).filter((t) => boletoPorTitulo.has(t.id)).length ? [`${(titulos ?? []).filter((t) => boletoPorTitulo.has(t.id)).length === 1 ? "boleto" : "boletos"}`] : []),
-      ],
+      anexos: [...rotulosDocs, ...(modoEmail !== "nota" && qtdBoletos ? [qtdBoletos === 1 ? "boleto" : "boletos"] : [])],
     };
   }
   const divergentes = divergencias(informadas, (titulos ?? []).filter((t) => t.estagio !== "cancelado" && t.estagio !== "renegociado")
@@ -154,7 +161,10 @@ export default async function PaginaKit({ params }: PageProps<"/financeiro/filia
         </div>
       )}
 
-      {email && <Suspense><EmailCliente kitId={id} gmail={email.gmail} sugestao={email.sugestao} anexos={email.anexos} /></Suspense>}
+      {email && modoEmail && <Suspense><EmailCliente kitId={id} modo={modoEmail} gmail={email.gmail} sugestao={email.sugestao} anexos={email.anexos} /></Suspense>}
+      {notaEnviadaEm && estagio !== "pronta" && estagio !== "enviada" && (
+        <p className="text-sm">Nota e demonstrativo enviados ao cliente em {quando(notaEnviadaEm)}. Quando o boleto chegar, ele vai como resposta ao mesmo e-mail.</p>
+      )}
       {estagio === "enviada" && <p className="text-sm">Enviado ao cliente em {quando(k.enviado_em)}. A partir daqui, a cobrança segue a régua normal.</p>}
 
       <div className="grid gap-4 lg:grid-cols-2">

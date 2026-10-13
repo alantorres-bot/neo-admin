@@ -109,3 +109,63 @@ describe("kit enviado ao cliente", () => {
     await expect(como(db, outro, () => q(`select rec_kit_marcar_enviado($1)`, [kit]))).rejects.toThrow(/operador/);
   });
 });
+
+describe("Fase F (0159): demonstrativos pendentes e envio da nota antes do boleto", () => {
+  const anexar = (tabela: string, id: string, tipo: string, modulo = "financeiro.filial") =>
+    q(`insert into anexos (modulo, referencia_tabela, referencia_id, arquivo_path, nome_arquivo, tipo) values ($1, $2, $3, 'x/a.pdf', 'a.pdf', $4)`, [modulo, tabela, id, tipo]);
+  async function remessaCom(notas: string[]) {
+    const r = await comoMelina(async () => (await q(`select rec_remessa_criar() as r`)).rows[0].r as { id: string; numero: number });
+    const kits: string[] = [];
+    for (const n of notas) kits.push(await comoMelina(async () => (await q(`select rec_kit_registrar($1, 'CLIENTE MG', true, null, null, null, null, $2) as id`, [n, r.id])).rows[0].id as string));
+    await comoMelina(() => q(`select rec_remessa_concluir($1)`, [r.id]));
+    return { remessa: r, kits };
+  }
+  const pend = async (ref: string, prefixo: string) => (await q(`select status from pendencias where referencia_id = $1 and titulo like $2`, [ref, `${prefixo}%`])).rows.map((p) => p.status);
+
+  it("remessa sem demonstrativo abre a pendência; ela fecha quando todas as NFs têm demonstrativo", async () => {
+    const { remessa, kits } = await remessaCom(["002601", "002602"]);
+    expect(await pend(remessa.id, "Subir demonstrativos")).toEqual(["aberta"]);
+    await comoMelina(() => anexar("rec_kits", kits[0], "demonstrativo"));
+    expect(await pend(remessa.id, "Subir demonstrativos")).toEqual(["aberta"]);
+    await comoMelina(() => anexar("rec_kits", kits[1], "demonstrativo"));
+    expect(await pend(remessa.id, "Subir demonstrativos")).toEqual(["concluida"]);
+  });
+
+  it("remessa já com todos os demonstrativos não abre a pendência", async () => {
+    const r = await comoMelina(async () => (await q(`select rec_remessa_criar() as r`)).rows[0].r as { id: string });
+    const k = await comoMelina(async () => (await q(`select rec_kit_registrar('002603', 'CLIENTE MG', true, null, null, null, null, $1) as id`, [r.id])).rows[0].id as string);
+    await anexar("rec_kits", k, "demonstrativo");
+    await comoMelina(() => q(`select rec_remessa_concluir($1)`, [r.id]));
+    expect(await pend(r.id, "Subir demonstrativos")).toEqual([]);
+  });
+
+  it("envio antecipado: exige nota e demonstrativo; boleto depois abre 'Enviar boleto' e o envio final conclui", async () => {
+    const { kits: [kit] } = await remessaCom(["002604"]);
+    await expect(comoMelina(() => q(`select rec_kit_marcar_nota_enviada($1)`, [kit]))).rejects.toThrow(/nota fatura e de pelo menos um demonstrativo/);
+    await anexar("rec_kits", kit, "nota_fatura");
+    await anexar("rec_kits", kit, "demonstrativo");
+    await comoMelina(() => q(`select rec_kit_marcar_nota_enviada($1)`, [kit]));
+    expect((await q(`select nota_enviada_por from rec_kits where id = $1`, [kit])).rows[0].nota_enviada_por).toBe(melina);
+    await expect(comoMelina(() => q(`select rec_kit_marcar_nota_enviada($1)`, [kit]))).rejects.toThrow(/já foi enviada/);
+
+    const t = (await q(`insert into rec_titulos (empresa_id, contraparte_id, documento, parcela, vencimento, valor, estagio)
+      values ($1, $2, '4002604U', '1', current_date + 20, 500, 'aguardando_boleto') returning id`, [empresa, cliente])).rows[0].id as string;
+    await anexar("rec_titulos", t, "boleto", "financeiro.recebiveis");
+    expect((await q(`select estagio from rec_kits where id = $1`, [kit])).rows[0].estagio).toBe("pronta");
+    expect(await pend(kit, "Enviar boleto ao cliente")).toEqual(["aberta"]);
+    expect(await pend(kit, "Enviar kit ao cliente")).toEqual([]);
+
+    await expect(comoMelina(() => q(`select rec_kit_marcar_nota_enviada($1)`, [kit]))).rejects.toThrow(/antes do boleto/);
+    await comoMelina(() => q(`select rec_kit_marcar_enviado($1)`, [kit]));
+    expect(await pend(kit, "Enviar boleto ao cliente")).toEqual(["concluida"]);
+    expect((await q(`select descricao from interacoes where referencia_id = $1 and tipo = 'boleto_enviado'`, [t])).rows[0].descricao).toMatch(/Boleto da NF 002604 enviado/);
+  });
+
+  it("conversa do e-mail: só a service role grava", async () => {
+    const { kits: [kit] } = await remessaCom(["002605"]);
+    await expect(comoMelina(() => q(`select rec_kit_registrar_conversa($1, 't', 'm', 'a')`, [kit]))).rejects.toThrow();
+    await como(db, "service", () => q(`select rec_kit_registrar_conversa($1, 'thread-1', '<m@x>', 'Faturamento X')`, [kit]));
+    expect((await q(`select gmail_thread_id, email_message_id, email_assunto from rec_kits where id = $1`, [kit])).rows[0])
+      .toEqual({ gmail_thread_id: "thread-1", email_message_id: "<m@x>", email_assunto: "Faturamento X" });
+  });
+});

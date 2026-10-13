@@ -17,6 +17,7 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { BotaoAvisoCuiaba } from "../../aviso";
 import { BotaoBaixarTudo } from "./baixar";
+import { AnexarDemonstrativos } from "./demonstrativos";
 import { RelatorioImplantacao, type BlocoImplantacao } from "./implantacao";
 
 export const metadata: Metadata = { title: "Remessa da filial" };
@@ -101,6 +102,12 @@ export default async function PaginaRemessa({ params }: PageProps<"/financeiro/f
           )}
         </div>
       </div>
+
+      {podeOperar && (kits ?? []).some((k) => k.estagio !== "cancelada" && k.estagio !== "enviada") && (
+        <AnexarDemonstrativos kits={(kits ?? []).filter((k) => k.estagio !== "cancelada" && k.estagio !== "enviada").map((k) => ({
+          id: k.id as string, nota: k.nota_fiscal as string, cliente: k.cliente_nome as string, temDemonstrativo: (k.demonstrativos ?? 0) > 0,
+        }))} />
+      )}
 
       <Table>
         <TableHeader>

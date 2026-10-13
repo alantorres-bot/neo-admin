@@ -43,10 +43,11 @@ export async function PaginaEtapa({ etapa, caminho, searchParams }: { etapa: Eta
   if (error) throw new Error(`Falha ao ler os kits: ${error.message}`);
   const ids = (kits ?? []).map((k) => k.id as string);
   const [{ data: extras }, { data: remessas }] = await Promise.all([
-    ids.length ? supabase.from("rec_kits").select("id, parcelas_informadas").in("id", ids) : Promise.resolve({ data: [] }),
+    ids.length ? supabase.from("rec_kits").select("id, parcelas_informadas, nota_enviada_em").in("id", ids) : Promise.resolve({ data: [] }),
     ids.length ? supabase.from("rec_remessa_kits").select("kit_id, rec_remessas(numero)").in("kit_id", ids) : Promise.resolve({ data: [] }),
   ]);
   const informadas = new Map((extras ?? []).map((e) => [e.id as string, lerParcelasInformadas(e.parcelas_informadas)]));
+  const notaEnviada = new Set((extras ?? []).filter((e) => e.nota_enviada_em).map((e) => e.id as string));
   const remessaDe = new Map<string, number>();
   for (const r of remessas ?? []) {
     const n = ((Array.isArray(r.rec_remessas) ? r.rec_remessas[0] : r.rec_remessas) as { numero?: number } | null)?.numero;
@@ -66,15 +67,21 @@ export async function PaginaEtapa({ etapa, caminho, searchParams }: { etapa: Eta
   };
   const comCuiaba = <span className="text-[12px] text-muted-foreground">Aguardando Cuiabá</span>;
 
-  function acao(k: { id: string }) {
+  function acao(k: { id: string; notas: number; demonstrativos: number }) {
     const remessa = remessaDe.get(k.id);
+    // Filial, antes do boleto: com nota e demonstrativo, pode mandar a nota ao cliente já (o boleto vai depois, Fase F).
+    if (!ehCuiaba && (etapa === "recebida" || etapa === "implantada")) {
+      return !notaEnviada.has(k.id) && k.notas > 0 && k.demonstrativos > 0
+        ? <Button size="sm" variant="outline" render={<Link href={`${ROTA_FILIAL}/${k.id}`} />}>Enviar nota</Button>
+        : comCuiaba;
+    }
     if (etapa === "recebida") {
       return ehCuiaba && remessa
         ? <Button size="sm" render={<Link href={`${ROTA_FILIAL}/remessas/${remessa}#relatorio-implantacao`} />}>Implantar</Button>
         : ehCuiaba ? <Button size="sm" variant="outline" render={<Link href={`${ROTA_FILIAL}/${k.id}`} />}>Abrir</Button> : comCuiaba;
     }
     if (etapa === "implantada") return ehCuiaba ? <Button size="sm" render={<Link href={`${ROTA_FILIAL}/boletos`} />}>Anexar boleto</Button> : comCuiaba;
-    if (etapa === "pronta") return <Button size="sm" render={<Link href={`${ROTA_FILIAL}/${k.id}`} />}>Enviar ao cliente</Button>;
+    if (etapa === "pronta") return <Button size="sm" render={<Link href={`${ROTA_FILIAL}/${k.id}`} />}>{notaEnviada.has(k.id) ? "Enviar boleto" : "Enviar ao cliente"}</Button>;
     return <Button size="sm" variant="outline" render={<Link href={`${ROTA_FILIAL}/${k.id}`} />}>Ver</Button>;
   }
 
@@ -119,6 +126,7 @@ export async function PaginaEtapa({ etapa, caminho, searchParams }: { etapa: Eta
                       <span className="flex flex-wrap gap-1">
                         {!k.aceita_boleto_factoring && <Badge variant="outline">Sem boleto de factoring</Badge>}
                         {k.cedido && <Badge variant="outline">AKF</Badge>}
+                        {notaEnviada.has(k.id) && etapa !== "enviada" && <Badge variant="secondary">nota enviada</Badge>}
                       </span>
                     </TableCell>
                     <TableCell className="tabular-nums">{formatarData(vencimento)}{parcelas.length > 1 && <span className="block text-[11px] text-muted-foreground">{parcelas.length} parcelas</span>}</TableCell>
@@ -128,7 +136,7 @@ export async function PaginaEtapa({ etapa, caminho, searchParams }: { etapa: Eta
                         ? (k.enviado_em ? new Date(k.enviado_em as string).toLocaleDateString("pt-BR", { timeZone: "America/Cuiaba" }) : "—")
                         : faltas.length ? faltas.join(", ") : <span className="text-muted-foreground">—</span>}
                     </TableCell>
-                    <TableCell className="text-right">{acao(k as { id: string })}</TableCell>
+                    <TableCell className="text-right">{acao(k as { id: string; notas: number; demonstrativos: number })}</TableCell>
                   </TableRow>
                 );
               })}

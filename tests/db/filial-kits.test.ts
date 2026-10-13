@@ -187,7 +187,7 @@ describe("remessa (0148)", () => {
   const registrarNa = (remessa: string, nota: string, parcelas: unknown) =>
     como(db, operador, async () => (await q(`select rec_kit_registrar($1, 'HERMES', true, null, null, null, null, $2, $3::jsonb) as id`, [nota, remessa, JSON.stringify(parcelas)])).rows[0].id as string);
   const concluir = (remessa: string) => como(db, operador, async () => (await q(`select rec_remessa_concluir($1) as n`, [remessa])).rows[0].n as number);
-  const pendRemessa = async (remessa: string) => (await q(`select titulo, status from pendencias where referencia_tabela = 'rec_remessas' and referencia_id = $1`, [remessa])).rows;
+  const pendRemessa = async (remessa: string) => (await q(`select titulo, status from pendencias where referencia_tabela = 'rec_remessas' and referencia_id = $1 and titulo like 'Implantar%'`, [remessa])).rows;
 
   it("numera, guarda as parcelas informadas (ordenadas) e abre uma pendência por remessa", async () => {
     const a = await criarRemessa();

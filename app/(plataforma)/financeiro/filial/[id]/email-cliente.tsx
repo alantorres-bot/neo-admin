@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { criarRascunhoKit, desconectarGmail, iniciarConexaoGmail, marcarKitEnviado } from "../acoes";
+import type { ModoEmailCliente } from "@/lib/modulos/financeiro/filial/email-cliente";
+import { criarRascunhoKit, desconectarGmail, iniciarConexaoGmail, marcarKitEnviado, marcarNotaEnviada } from "../acoes";
 
 type Sugestao = { para: string; cc: string; assunto: string; corpo: string };
 
@@ -15,7 +16,13 @@ type Sugestao = { para: string; cc: string; assunto: string; corpo: string };
  * E-mail ao cliente (Fase C): o rascunho é criado no Gmail de QUEM CLICA, com a nota fatura, o demonstrativo, o comodato e o
  * boleto anexados. A pessoa confere e envia no Gmail; depois marca "Enviado ao cliente". Nada sai sozinho.
  */
-export function EmailCliente({ kitId, gmail, sugestao, anexos }: { kitId: string; gmail: string | null; sugestao: Sugestao; anexos: string[] }) {
+const TITULO: Record<ModoEmailCliente, string> = {
+  completo: "E-mail ao cliente",
+  nota: "Enviar nota e demonstrativo agora (o boleto vai depois)",
+  boleto: "Enviar o boleto (resposta ao e-mail da nota)",
+};
+
+export function EmailCliente({ kitId, modo, gmail, sugestao, anexos }: { kitId: string; modo: ModoEmailCliente; gmail: string | null; sugestao: Sugestao; anexos: string[] }) {
   const router = useRouter();
   const parametros = useSearchParams();
   const [campos, setCampos] = useState(sugestao);
@@ -44,7 +51,7 @@ export function EmailCliente({ kitId, gmail, sugestao, anexos }: { kitId: string
 
   function criar() {
     iniciar(async () => {
-      const r = await criarRascunhoKit({ kitId, ...campos });
+      const r = await criarRascunhoKit({ kitId, modo, ...campos });
       if (!r.ok) return void toast.error(r.erro);
       setRascunho(r.url);
       toast.success(r.aviso ?? "Rascunho criado no seu Gmail. Confira e envie por lá.");
@@ -53,7 +60,7 @@ export function EmailCliente({ kitId, gmail, sugestao, anexos }: { kitId: string
 
   function enviado() {
     iniciar(async () => {
-      const r = await marcarKitEnviado(kitId);
+      const r = modo === "nota" ? await marcarNotaEnviada(kitId) : await marcarKitEnviado(kitId);
       if (!r.ok) return void toast.error(r.erro);
       toast.success(r.aviso);
       router.refresh();
@@ -63,10 +70,11 @@ export function EmailCliente({ kitId, gmail, sugestao, anexos }: { kitId: string
   return (
     <Card size="sm">
       <CardHeader>
-        <CardTitle>E-mail ao cliente</CardTitle>
+        <CardTitle>{TITULO[modo]}</CardTitle>
         <CardDescription>
-          O rascunho vai para o seu Gmail com {anexos.length} {anexos.length === 1 ? "anexo" : "anexos"} ({anexos.join(", ")}). Confira e envie pelo Gmail;
-          depois volte aqui e marque &quot;Enviado ao cliente&quot;.
+          O rascunho vai para o seu Gmail com {anexos.length} {anexos.length === 1 ? "anexo" : "anexos"} ({anexos.join(", ")})
+          {modo === "boleto" ? ", na mesma conversa do e-mail da nota" : ""}. Confira e envie pelo Gmail; depois volte aqui e marque
+          &quot;{modo === "nota" ? "Nota enviada ao cliente" : "Enviado ao cliente"}&quot;.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -91,7 +99,7 @@ export function EmailCliente({ kitId, gmail, sugestao, anexos }: { kitId: string
           {rascunho
             ? <Button render={<a href={rascunho} target="_blank" rel="noreferrer" />}>Abrir o rascunho no Gmail</Button>
             : <Button onClick={criar} disabled={pendente || !gmail}>{pendente ? "Criando…" : "Criar rascunho no meu Gmail"}</Button>}
-          <Button variant="outline" onClick={enviado} disabled={pendente}>Enviado ao cliente</Button>
+          <Button variant="outline" onClick={enviado} disabled={pendente}>{modo === "nota" ? "Nota enviada ao cliente" : "Enviado ao cliente"}</Button>
         </div>
       </CardContent>
     </Card>

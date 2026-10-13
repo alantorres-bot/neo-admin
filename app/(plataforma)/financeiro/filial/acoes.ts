@@ -205,6 +205,8 @@ const esquemaRascunho = z.object({
   cc: z.string().trim().max(500).default(""),
   assunto: z.string().trim().min(1, "Informe o assunto.").max(200),
   corpo: z.string().trim().min(1, "Escreva o texto do e-mail.").max(5000),
+  /** completo: kit pronto · nota: antes do boleto · boleto: só o boleto, em resposta ao e-mail da nota (Fase F). */
+  modo: z.enum(["completo", "nota", "boleto"]).default("completo"),
 });
 
 /**
@@ -224,7 +226,9 @@ export async function criarRascunhoKit(entrada: z.input<typeof esquemaRascunho>)
   const supabase = await criarClienteServidor();
   const { data: kit } = await supabase.from("rec_vw_kits").select("id, estagio, contraparte_id").eq("id", d.kitId).maybeSingle();
   if (!kit) return { ok: false, erro: "Kit não encontrado." };
-  if (kit.estagio !== "pronta") return { ok: false, erro: "O kit ainda não está pronto para envio." };
+  if (d.modo === "nota" ? !["recebida", "implantada"].includes(kit.estagio as string) : kit.estagio !== "pronta") {
+    return { ok: false, erro: d.modo === "nota" ? "O envio antecipado vale só antes do boleto." : "O kit ainda não está pronto para envio." };
+  }
 
   const { data: mensagem, error } = await supabase.from("mensagens").insert({
     modulo: MODULO_FILIAL, canal: "email", status: "rascunho", contraparte_id: kit.contraparte_id ?? null,
@@ -232,7 +236,7 @@ export async function criarRascunhoKit(entrada: z.input<typeof esquemaRascunho>)
   }).select("id").single();
   if (error || !mensagem) return { ok: false, erro: "Não foi possível registrar a mensagem." };
 
-  const { data, error: erroFuncao } = await supabase.functions.invoke("rec-kit-rascunho-gmail", { body: { mensagem_id: mensagem.id, kit_id: d.kitId } });
+  const { data, error: erroFuncao } = await supabase.functions.invoke("rec-kit-rascunho-gmail", { body: { mensagem_id: mensagem.id, kit_id: d.kitId, modo: d.modo } });
   if (erroFuncao) {
     const corpo = await (erroFuncao as { context?: Response }).context?.json?.().catch(() => null);
     return { ok: false, erro: (corpo as { erro?: string } | null)?.erro ?? "Não foi possível criar o rascunho no Gmail." };
@@ -240,6 +244,18 @@ export async function criarRascunhoKit(entrada: z.input<typeof esquemaRascunho>)
   revalidatePath(`${ROTA_FILIAL}/${d.kitId}`);
   const r = data as { url: string; aviso?: string };
   return { ok: true, url: r.url, aviso: r.aviso };
+}
+
+/** Nota e demonstrativo enviados ao cliente antes do boleto (Fase F): quando o boleto chegar, abre "Enviar boleto ao cliente". */
+export async function marcarNotaEnviada(kitId: string): Promise<Resultado> {
+  const negado = await exigirOperador();
+  if (negado) return { ok: false, erro: negado };
+  if (!z.string().uuid().safeParse(kitId).success) return { ok: false, erro: "Kit inválido." };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("rec_kit_marcar_nota_enviada", { p_kit: kitId });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidatePath(ROTA_FILIAL, "layout");
+  return { ok: true, aviso: "Nota marcada como enviada. Quando o boleto chegar, ele vai para \"A enviar ao cliente\" como resposta a este e-mail." };
 }
 
 /** Depois de enviar pelo Gmail: kit enviado, parcelas com boleto enviado (régua normal da Cobrança a partir daqui). */

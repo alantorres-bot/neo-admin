@@ -183,3 +183,28 @@ describe("criarRascunho", () => {
     expect(e2.message).toBe("O Gmail recusou o rascunho (HTTP 500).");
   });
 });
+
+describe("resposta na mesma conversa (Faturamento Filial, Fase F)", () => {
+  const base = { de: "minas@neoformas.com.br", para: "cliente@x.com", assunto: "Re: Faturamento X", corpo: "Segue o boleto." };
+  it("montarMime põe Message-ID, In-Reply-To e References", () => {
+    const mime = montarMime({ ...base, messageId: "kit-1.a@neoformas.com.br", inReplyTo: "<kit-0.b@neoformas.com.br>" });
+    expect(mime).toContain("\r\nMessage-ID: <kit-1.a@neoformas.com.br>\r\n");
+    expect(mime).toContain("\r\nIn-Reply-To: <kit-0.b@neoformas.com.br>\r\nReferences: <kit-0.b@neoformas.com.br>\r\n");
+  });
+  it("Message-ID inválido (ou com quebra de linha) é recusado", () => {
+    expect(() => montarMime({ ...base, messageId: "sem-arroba" })).toThrow(/Message-ID inválido/);
+    expect(() => montarMime({ ...base, inReplyTo: "<a@b>\r\nBcc: x@y.com" })).toThrow(/Message-ID inválido/);
+  });
+  it("criarRascunho com threadId usa o upload multipart com os metadados da conversa", async () => {
+    let url = "";
+    let init: Parameters<Buscar>[1] | undefined;
+    const buscar: Buscar = async (u, i) => ((url = u), (init = i), resposta(200, { id: "r", message: { id: "m", threadId: "t-9" } }));
+    const r = await criarRascunho(buscar, "tok", "From: a@b.com\r\n\r\ncorpo", { threadId: "t-9" });
+    expect(url).toBe("https://gmail.googleapis.com/upload/gmail/v1/users/me/drafts?uploadType=multipart");
+    expect((init?.headers as Record<string, string>)["Content-Type"]).toMatch(/^multipart\/related; boundary=/);
+    const corpo = new TextDecoder().decode(init?.body as Uint8Array);
+    expect(corpo).toContain('{"message":{"threadId":"t-9"}}');
+    expect(corpo).toContain("Content-Type: message/rfc822\r\n\r\nFrom: a@b.com");
+    expect(r.threadId).toBe("t-9");
+  });
+});

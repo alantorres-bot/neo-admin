@@ -80,6 +80,10 @@ export type DadosEmail = {
   /** Versão HTML do corpo (opcional). Com ela, o e-mail vai como multipart/alternative: texto simples + HTML. */
   html?: string | null;
   anexos?: readonly AnexoEmail[];
+  /** Message-ID próprio (ex.: "<kit-…@neoformas.com.br>"): permite responder depois na mesma conversa. */
+  messageId?: string | null;
+  /** Resposta a um e-mail anterior: Message-ID dele (In-Reply-To e References). */
+  inReplyTo?: string | null;
   /** Para teste: fixa o separador das partes. */
   limite?: string;
 };
@@ -88,6 +92,14 @@ export type DadosEmail = {
 export function listaDeEmails(v: string | readonly string[] | null | undefined): string[] {
   const partes = (Array.isArray(v) ? v : String(v ?? "").split(/[,;]/)).map((e) => limparCabecalho(String(e)));
   return [...new Set(partes.filter((e) => e !== ""))];
+}
+
+/** "<id@dominio>" limpo (sem quebra de linha); recusa o que não parece um Message-ID. */
+function idDeMensagem(v: string): string {
+  const t = limparCabecalho(v);
+  const comSinais = t.startsWith("<") ? t : `<${t}>`;
+  if (!/^<[^<>\s@]+@[^<>\s@]+>$/.test(comSinais)) throw new GmailErro("Message-ID inválido.");
+  return comSinais;
 }
 
 /** Mensagem completa (ASCII puro: texto e anexos vão em base64). Lança GmailErro se algum endereço for inválido. */
@@ -105,6 +117,8 @@ export function montarMime(d: DadosEmail): string {
     `To: ${para.join(", ")}`,
     ...(cc.length > 0 ? [`Cc: ${cc.join(", ")}`] : []),
     `Subject: ${codificarAssunto(d.assunto)}`,
+    ...(d.messageId ? [`Message-ID: ${idDeMensagem(d.messageId)}`] : []),
+    ...(d.inReplyTo ? [`In-Reply-To: ${idDeMensagem(d.inReplyTo)}`, `References: ${idDeMensagem(d.inReplyTo)}`] : []),
     "MIME-Version: 1.0",
   ];
   const parteTexto = [
@@ -187,17 +201,32 @@ export async function obterAccessToken(buscar: Buscar, c: CredenciaisGmail): Pro
   return j.access_token;
 }
 
-export type RascunhoCriado = { rascunhoId: string; mensagemId: string; url: string };
+export type RascunhoCriado = { rascunhoId: string; mensagemId: string; url: string; threadId?: string };
+const URL_RASCUNHO_MULTIPART = "https://gmail.googleapis.com/upload/gmail/v1/users/me/drafts?uploadType=multipart";
 
 /** `drafts.create`: guarda a mensagem como rascunho na caixa de quem autorizou. Nunca envia. */
-export async function criarRascunho(buscar: Buscar, accessToken: string, mime: string): Promise<RascunhoCriado> {
+export async function criarRascunho(buscar: Buscar, accessToken: string, mime: string, opcoes: { threadId?: string | null } = {}): Promise<RascunhoCriado> {
   let resp;
   try {
-    resp = await buscar(URL_RASCUNHO, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "message/rfc822" },
-      body: codificador.encode(mime),
-    });
+    if (opcoes.threadId) {
+      // Na mesma conversa: upload multipart (metadados com o threadId + a mensagem rfc822).
+      const limite = `neo-admin-rel-${crypto.randomUUID()}`;
+      const corpo = [
+        `--${limite}`, "Content-Type: application/json; charset=UTF-8", "", JSON.stringify({ message: { threadId: opcoes.threadId } }),
+        `--${limite}`, "Content-Type: message/rfc822", "", mime, `--${limite}--`, "",
+      ].join("\r\n");
+      resp = await buscar(URL_RASCUNHO_MULTIPART, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": `multipart/related; boundary=${limite}` },
+        body: codificador.encode(corpo),
+      });
+    } else {
+      resp = await buscar(URL_RASCUNHO, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "message/rfc822" },
+        body: codificador.encode(mime),
+      });
+    }
   } catch {
     throw new GmailErro("Falha de rede ao falar com o Gmail.");
   }
@@ -206,8 +235,11 @@ export async function criarRascunho(buscar: Buscar, accessToken: string, mime: s
     throw new GmailErro(`O Gmail negou o acesso (HTTP ${resp.status}). Confira se a API do Gmail está ativada no projeto do Google e se o escopo gmail.compose foi autorizado.`, resp.status);
   }
   if (!resp.ok) throw new GmailErro(`O Gmail recusou o rascunho (HTTP ${resp.status}).`, resp.status);
-  const j = JSON.parse(texto) as { id?: string; message?: { id?: string } };
+  const j = JSON.parse(texto) as { id?: string; message?: { id?: string; threadId?: string } };
   if (!j.id) throw new GmailErro("O Gmail não devolveu o identificador do rascunho.");
   const mensagemId = j.message?.id ?? "";
-  return { rascunhoId: j.id, mensagemId, url: mensagemId ? `https://mail.google.com/mail/u/0/#drafts?compose=${mensagemId}` : "https://mail.google.com/mail/u/0/#drafts" };
+  return {
+    rascunhoId: j.id, mensagemId, threadId: j.message?.threadId,
+    url: mensagemId ? `https://mail.google.com/mail/u/0/#drafts?compose=${mensagemId}` : "https://mail.google.com/mail/u/0/#drafts",
+  };
 }

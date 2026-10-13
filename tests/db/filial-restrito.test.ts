@@ -78,8 +78,8 @@ describe("usuário restrito à Filial Contagem", () => {
     )).rows[0].id as string);
     expect(await comoMelina(async () => (await q(`select rec_remessa_concluir($1) as n`, [r.id])).rows[0].n)).toBe(1);
     expect(await comoMelina(async () => (await q(`select count(*)::int n from rec_vw_kits where id = $1`, [kit])).rows[0].n)).toBe(1);
-    const pend = await comoMelina(async () => (await q(`select titulo from pendencias where referencia_id = $1`, [r.id])).rows);
-    expect(pend.length).toBe(1);
+    const pend = await comoMelina(async () => (await q(`select titulo from pendencias where referencia_id = $1 order by titulo`, [r.id])).rows);
+    expect(pend.map((p) => p.titulo.split(" da")[0])).toEqual(["Implantar remessa nº 1", "Subir demonstrativos"]);
     await comoMelina(() => q(`insert into anexos (modulo, referencia_tabela, referencia_id, arquivo_path, nome_arquivo, tipo, enviado_por)
       values ('financeiro.filial', 'rec_kits', $1, 'financeiro.filial/rec_kits/x/nf.pdf', 'nf.pdf', 'nota_fatura', $2)`, [kit, melina]));
     await expect(comoMelina(() => q(`insert into anexos (modulo, referencia_tabela, referencia_id, arquivo_path, nome_arquivo, tipo, enviado_por)

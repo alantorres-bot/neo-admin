@@ -506,6 +506,12 @@ Agora cada NF da filial vira um **kit** (menu Financeiro > Faturamento Filial, m
     - Para: o último destinatário usado para o cliente ou os contatos dele. Cc: `financeiro.filial.copia_cliente`.
     - Tudo editável antes. Nada é enviado pelo sistema.
   - **Enviado ao cliente** (`rec_kit_marcar_enviado`): kit "enviada", parcelas com boleto como "boleto enviado", histórico e pendência "Enviar kit ao cliente" concluída. A cobrança segue a régua normal.
+- **Demonstrativos pendentes e envio da nota antes do boleto (Fase F, 0159):**
+  - **Demonstrativos:** ao enviar a remessa, se alguma NF estiver sem demonstrativo (cada fatura pode ter um ou mais), abre "Subir demonstrativos da remessa nº N (k NFs)". Ela fecha sozinha quando todas as NFs têm pelo menos um. A remessa tem o bloco **Demonstrativos de faturamento**, com vários PDFs de uma vez, ligados à NF pelo nome do arquivo.
+  - **Envio antecipado:** antes do boleto, com nota fatura e demonstrativo, a filial pode mandar ao cliente a nota, o demonstrativo e o comodato. Na lista aparece o botão "Enviar nota"; na ficha, o bloco "Enviar nota e demonstrativo agora". Depois ela marca "Nota enviada ao cliente" (`rec_kit_marcar_nota_enviada`).
+    - O rascunho ganha um `Message-ID` próprio, e a conversa do Gmail fica gravada no kit (`gmail_thread_id`, `email_message_id`, `email_assunto`).
+  - **Boleto depois:** quando o boleto chega, a pendência passa a ser **"Enviar boleto ao cliente"**, não "Enviar kit". O rascunho sai **na mesma conversa**: `threadId`, `In-Reply-To`/`References` e assunto "Re: …". Leva só o boleto e a carta de cessão, se houver.
+  - **Peças:** `rec-kit-rascunho-gmail` com `modo` (completo · nota · boleto); `criarRascunho(..., { threadId })` e `montarMime({ messageId, inReplyTo })` em `_shared/gmail.ts`; textos em `montarEmailCliente({ modo })`.
 
 ## 35. Cobrança da Filial pela própria filial — Fase E (13/10/2026)
 
