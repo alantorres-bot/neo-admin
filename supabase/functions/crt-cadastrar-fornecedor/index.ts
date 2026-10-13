@@ -3,13 +3,15 @@
 // migration 0140. O corpo (nome, tipo 3, endereço fixo, categoria e grupo) foi montado pelo banco na reserva.
 //
 // Quem chama: SÓ usuário logado, operador do Financeiro (ou acima), e só quem reservou. Corpo: { "id": "<uuid>" }.
+// Código: o Consistem exige cpfCnpj no tipo 3 e os "Outros" usam o próprio código com 7 dígitos (928 → 0000928). A função
+// escolhe o próximo código livre (maior do espelho + 1, conferido com GET fornecedor/{cod}) e manda codFornecedor e cpfCnpj.
 // Envia UMA vez (PUT cadastrosgerais/v10/fornecedor): cadastrado (com o código; vai para o espelho e para a sugestão do
 // estabelecimento), erro (4xx, nada criado) ou incerto (fica "enviando": conferir no Consistem e resolver à mão).
 // Segredos: CONSISTEM_API_KEY (token do CSMEN050) e CONSISTEM_BASE_URL (opcional).
 //
 // Deploy: npx supabase functions deploy crt-cadastrar-fornecedor --project-ref chdszjpbtfpstjrqnmmm
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { BASE_URL_PADRAO, limparToken } from "../_shared/consistem-receber.ts";
+import { BASE_URL_PADRAO, buscarObjeto, ConsistemErro, limparToken } from "../_shared/consistem-receber.ts";
 import { incluirFornecedor } from "../_shared/consistem-inclusao.ts";
 
 const responder = (corpo: unknown, status = 200) => new Response(JSON.stringify(corpo), { status, headers: { "Content-Type": "application/json" } });
@@ -47,15 +49,36 @@ Deno.serve(async (req) => {
   const { data: item, error: erroInicio } = await banco.rpc("crt_iniciar_cadastro_fornecedor", { p_id: reserva.id });
   if (erroInicio || !item) return responder({ erro: erroInicio?.message ?? "Não foi possível iniciar o envio." }, 409);
 
-  const r = await incluirFornecedor((u, init) => fetch(u, init),
-    { baseUrl: Deno.env.get("CONSISTEM_BASE_URL") || BASE_URL_PADRAO, token, empresa: String(empresa.codigo_erp) },
-    (item as { payload: unknown }).payload);
+  const cfg = { baseUrl: Deno.env.get("CONSISTEM_BASE_URL") || BASE_URL_PADRAO, token, empresa: String(empresa.codigo_erp) };
+  // Próximo código livre: parte do maior do espelho e confere no Consistem (o espelho pode estar atrasado).
+  const { data: inicial } = await banco.rpc("crt_proximo_codigo_fornecedor", { p_empresa: reserva.empresa_id });
+  let codigo = Number(inicial) || 0;
+  let livre = false;
+  for (let i = 0; i < 30 && codigo > 0 && codigo <= 99999; i++, codigo++) {
+    try {
+      const existente = await buscarObjeto((u, init) => fetch(u, init), cfg, `cadastrosgerais/v10/fornecedor/${codigo}`);
+      if (String(existente.codFornecedor ?? "") !== String(codigo)) { livre = true; break; }
+    } catch (e) {
+      if (e instanceof ConsistemErro && (e.status === 400 || e.status === 404)) { livre = true; break; }
+      const mensagem = `Não foi possível conferir o código ${codigo} no Consistem: ${e instanceof Error ? e.message : "falha"}. Nada foi enviado.`;
+      await banco.rpc("crt_concluir_cadastro_fornecedor", { p_id: reserva.id, p_cod: null, p_resposta: null, p_erro: mensagem });
+      return responder({ ok: false, tipo: "erro", mensagem }, 502);
+    }
+  }
+  if (!livre) {
+    const mensagem = "Não foi encontrado um código de fornecedor livre perto do último do espelho. Nada foi enviado.";
+    await banco.rpc("crt_concluir_cadastro_fornecedor", { p_id: reserva.id, p_cod: null, p_resposta: null, p_erro: mensagem });
+    return responder({ ok: false, tipo: "erro", mensagem }, 409);
+  }
+  const corpoFornecedor = { ...((item as { payload: Record<string, unknown> }).payload), codFornecedor: codigo, cpfCnpj: String(codigo).padStart(7, "0") };
+  const r = await incluirFornecedor((u, init) => fetch(u, init), cfg, corpoFornecedor);
+  const resposta = { enviado: corpoFornecedor, retorno: r.resposta ?? null };
   if (r.tipo === "incerto") {
-    await banco.from("crt_fornecedores_cadastrados").update({ erro: r.mensagem, resposta: r.resposta ?? null }).eq("id", reserva.id);
+    await banco.from("crt_fornecedores_cadastrados").update({ erro: `${r.mensagem} Código tentado: ${codigo}.`, resposta }).eq("id", reserva.id);
     return responder({ ok: false, tipo: "incerto", mensagem: r.mensagem }, 502);
   }
   const { error: erroConcluir } = await banco.rpc("crt_concluir_cadastro_fornecedor", {
-    p_id: reserva.id, p_cod: r.tipo === "lancado" ? r.codigo : null, p_resposta: r.resposta ?? null, p_erro: r.tipo === "erro" ? r.mensagem : null,
+    p_id: reserva.id, p_cod: r.tipo === "lancado" ? r.codigo : null, p_resposta: resposta, p_erro: r.tipo === "erro" ? r.mensagem : null,
   });
   if (erroConcluir) {
     const mensagem = r.tipo === "lancado"

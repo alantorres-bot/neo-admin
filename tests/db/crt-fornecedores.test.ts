@@ -46,7 +46,7 @@ describe("cadastrar fornecedor 'Outros'", () => {
     const r = (await q(`select nome, payload from crt_fornecedores_cadastrados where id = $1`, [id])).rows[0];
     expect(r.nome).toBe("NUVIAGENS TURISMO");
     expect(r.payload).toEqual({ nome: "NUVIAGENS TURISMO", nomeFantasia: "NUVIAGENS TURISMO", situacao: 1, classificacao: 3, codCategoria: 13, codGrupo: 16,
-      endereco: "RUA CANADA", numero: "277", bairro: "SANTA ROSA", cep: "78040050", cidade: "CUIABA", estado: "MT" });
+      endereco: "RUA CANADA", numero: "277", bairro: "SANTA ROSA", cep: "78040050", cidade: "CUIABA", estado: "MT", inscEstadual: "ISENTO", codIbge: "5103403" });
     await expect(reservar(finOperador, "Nuviagens Turismo")).rejects.toThrow(/já está sendo/);
     await expect(rpc(finOperador, `select crt_iniciar_cadastro_fornecedor($1)`, [id])).rejects.toThrow(/permission denied/);
     await servico(`select crt_iniciar_cadastro_fornecedor($1)`, [id]);
@@ -79,5 +79,12 @@ describe("genéricos (0141)", () => {
   it("posto, restaurante, padaria, hotel, pousada e supermercado são fornecedor por compra", async () => {
     expect((await q(`select padrao from crt_estabelecimentos where fornecedor_por_compra order by padrao`)).rows.map((r) => r.padrao))
       .toEqual(["HOTEL", "PADARIA", "POSTO", "POUSADA", "RESTAURANTE", "SUPERMERCADO"]);
+  });
+});
+
+describe("próximo código (0142)", () => {
+  it("maior código do espelho + 1, só para a service role", async () => {
+    expect((await servico(`select crt_proximo_codigo_fornecedor($1) as n`, [empresa])).rows[0].n).toBe(1502);
+    await expect(rpc(finOperador, `select crt_proximo_codigo_fornecedor($1)`, [empresa])).rejects.toThrow(/permission denied/);
   });
 });

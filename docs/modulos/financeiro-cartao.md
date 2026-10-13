@@ -169,7 +169,7 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     ("Outros")**, sem CNPJ, pelo `PUT cadastrosgerais/v10/fornecedor`. Nome = descrição do estabelecimento (maiúsculas, até 60;
     nome fantasia = 30 primeiros); endereço **igual para todos** (Rua Canadá, 277, Santa Rosa, 78040-050, Cuiabá/MT — o mesmo de
     19 dos 28 "Outros" existentes); categoria 17 e grupo 22 sugeridos, o operador pode trocar. Configuração
-    `financeiro.cartao.fornecedor_outros`. O corpo é montado pelo banco (ninguém troca o endereço).
+    `financeiro.cartao.fornecedor_outros`. O corpo é montado pelo banco (ninguém troca o endereço). O Consistem exige no tipo 3 o cpfCnpj e a inscrição estadual (recusa do primeiro cadastro real, UNIDAS, 13/10/2026): como nos "Outros" existentes, cpfCnpj = o próprio código com 7 dígitos (928 → 0000928), inscrição ISENTO e IBGE 5103403 (migration 0142). A Edge Function escolhe o código: maior do espelho + 1, conferido no Consistem.
 45. **Marcas** (Nuviagens, Latam, Google…): na aba Estabelecimentos, **Ligar ou cadastrar** — lista os fornecedores do espelho
     com o nome parecido (ex.: GOOGLE → 1370, 889, 928) para ligar; se não houver, cadastra. O código vai para a sugestão do
     estabelecimento.
