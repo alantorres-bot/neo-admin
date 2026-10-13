@@ -8,7 +8,8 @@ import { sanitizarBusca } from "@/lib/nucleo/erros";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { lerEstabelecimentos } from "../dados";
+import { lerCadastroOutros, lerEmpresas, lerEstabelecimentos } from "../dados";
+import { BotaoLigarOuCadastrar } from "../fornecedores";
 import { DialogoEstabelecimento } from "./form-estabelecimento";
 
 export const metadata: Metadata = { title: "Estabelecimentos (dicionário)" };
@@ -21,7 +22,17 @@ export default async function PaginaEstabelecimentos({ searchParams }: PageProps
   const parametros = await searchParams;
   const busca = sanitizarBusca(primeiro(parametros.q));
   const padraoSugerido = sanitizarBusca(primeiro(parametros.padrao));
-  const todos = await lerEstabelecimentos(await criarClienteServidor());
+  const supabase = await criarClienteServidor();
+  const [todos, empresas, cadastro, ligado] = await Promise.all([
+    lerEstabelecimentos(supabase), lerEmpresas(supabase), lerCadastroOutros(supabase),
+    supabase.from("configuracoes").select("valor").eq("chave", "financeiro.cartao.lancar_no_erp").maybeSingle().then((r) => (r.data as { valor: unknown } | null)?.valor === true),
+  ]);
+  const empresaId = empresas[0]?.id ?? null;
+  const codigos = [...new Set(todos.map((e) => e.lancamento_erp?.codFornecedor).filter((c): c is number => typeof c === "number").map(String))];
+  const { data: forns } = codigos.length && empresaId
+    ? await supabase.from("cap_fornecedores").select("cod_fornecedor, nome").eq("empresa_id", empresaId).in("cod_fornecedor", codigos)
+    : { data: [] as { cod_fornecedor: string; nome: string }[] };
+  const nomeForn = new Map((forns ?? []).map((f) => [String(f.cod_fornecedor), f.nome as string]));
   const termo = normalizar(busca);
   const lista = termo ? todos.filter((e) => normalizar(`${e.padrao} ${e.categoria} ${e.conta_fluxo ?? ""}`).includes(termo)) : todos;
 
@@ -41,19 +52,26 @@ export default async function PaginaEstabelecimentos({ searchParams }: PageProps
       </div>
       <Table>
         <TableHeader>
-          <TableRow><TableHead>Trecho na fatura</TableHead><TableHead>Categoria</TableHead><TableHead>Conta de fluxo</TableHead><TableHead>Consistem (fornecedor · fluxo · contábil)</TableHead><TableHead>Situação</TableHead>{podeOperar && <TableHead />}</TableRow>
+          <TableRow><TableHead>Trecho na fatura</TableHead><TableHead>Categoria</TableHead><TableHead>Conta de fluxo</TableHead><TableHead>Fornecedor no Consistem</TableHead><TableHead>Fluxo · contábil</TableHead><TableHead>Situação</TableHead>{podeOperar && <TableHead />}</TableRow>
         </TableHeader>
         <TableBody>
           {lista.map((e) => (
             <TableRow key={e.id} className={e.ativo ? "" : "text-muted-foreground"}>
               <TableCell className="font-medium">{e.padrao}</TableCell><TableCell>{e.categoria}</TableCell>
               <TableCell>{e.conta_fluxo ?? <span className="font-bold text-amber-700">[CONFERIR]</span>}</TableCell>
-              <TableCell className="text-xs tabular-nums">{e.lancamento_erp ? [e.lancamento_erp.codFornecedor ?? "—", `${e.lancamento_erp.grupoContaFluxoCaixa ?? "—"}/${e.lancamento_erp.contaFluxoCaixa ?? "—"}`, e.lancamento_erp.contaContabilDebito ?? "—"].join(" · ") : <span className="text-muted-foreground">sem sugestão</span>}</TableCell>
+              <TableCell className="text-xs">
+                {e.marketplace ? <span className="text-muted-foreground">Marketplace: casa pelo valor da nota</span>
+                  : e.fornecedor_por_compra ? <span className="text-muted-foreground">Fornecedor por compra</span>
+                  : e.lancamento_erp?.codFornecedor ? <span className="tabular-nums">{e.lancamento_erp.codFornecedor}{nomeForn.get(String(e.lancamento_erp.codFornecedor)) ? ` · ${nomeForn.get(String(e.lancamento_erp.codFornecedor))}` : ""}</span>
+                  : podeOperar && empresaId ? <BotaoLigarOuCadastrar estabelecimento={{ id: e.id, padrao: e.padrao }} empresaId={empresaId} cadastro={cadastro} podeCadastrar={ligado} />
+                  : <span className="text-muted-foreground">sem fornecedor</span>}
+              </TableCell>
+              <TableCell className="text-xs tabular-nums">{e.lancamento_erp?.contaFluxoCaixa || e.lancamento_erp?.contaContabilDebito ? `${e.lancamento_erp.grupoContaFluxoCaixa ?? "—"}/${e.lancamento_erp.contaFluxoCaixa ?? "—"} · ${e.lancamento_erp.contaContabilDebito ?? "—"}` : <span className="text-muted-foreground">sem sugestão</span>}</TableCell>
               <TableCell>{e.ativo ? <Badge variant="outline" className="border-marca text-marca">Ativo</Badge> : <Badge variant="outline">Inativo</Badge>}</TableCell>
               {podeOperar && <TableCell><DialogoEstabelecimento estabelecimento={e} /></TableCell>}
             </TableRow>
           ))}
-          {lista.length === 0 && <TableRow><TableCell colSpan={5} className="text-muted-foreground">Nenhum estabelecimento encontrado.</TableCell></TableRow>}
+          {lista.length === 0 && <TableRow><TableCell colSpan={7} className="text-muted-foreground">Nenhum estabelecimento encontrado.</TableCell></TableRow>}
         </TableBody>
       </Table>
     </div>

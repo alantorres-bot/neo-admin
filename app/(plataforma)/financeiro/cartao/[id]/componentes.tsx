@@ -89,6 +89,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
                     <SeloDecisao justificativa={a.justificativa} classificacao={a.classificacao} observacoes={a.observacoes} />
                     {decide && <DialogoDecidir faturaId={faturaId!} alvo={{ tipo: "linha", item: a }} candidatos={candidatos} />}
                     {lancaCompra && compras!.propostas[a.linha.id] && <DialogoLancarCompra faturaId={faturaId!} item={a} proposta={compras!.propostas[a.linha.id]} compras={compras!} />}
+                    {compras?.marketplace[a.linha.id] && <p className="text-xs text-muted-foreground">Marketplace ({compras.marketplace[a.linha.id]}): lance a nota do vendedor no Consistem; a conciliação casa pelo valor.</p>}
                   </TableCell>
                 </TableRow>
               ))}

@@ -229,7 +229,10 @@ export async function salvarEstabelecimento(_anterior: EstadoForm, dados: FormDa
   if (!codigos.ok) return { erro: codigos.erro };
   const { data: id, error } = await supabase.rpc("crt_salvar_estabelecimento", { p_padrao: v.data.padrao, p_categoria: v.data.categoria, p_conta_fluxo: v.data.contaFluxo || null, p_ativo: v.data.ativo });
   if (error) return { erro: mensagemDeErro(error) };
-  const { error: erroCodigos } = await supabase.from("crt_estabelecimentos").update({ lancamento_erp: codigos.valor }).eq("id", id as string);
+  const marketplace = dados.get("marketplace") === "on";
+  const porCompra = dados.get("fornecedorPorCompra") === "on";
+  const semFornecedorFixo = (marketplace || porCompra) && codigos.valor ? { ...codigos.valor, codFornecedor: undefined } : codigos.valor;
+  const { error: erroCodigos } = await supabase.from("crt_estabelecimentos").update({ lancamento_erp: semFornecedorFixo, marketplace, fornecedor_por_compra: porCompra }).eq("id", id as string);
   if (erroCodigos) return { erro: `Estabelecimento salvo, mas os códigos do Consistem não: ${mensagemDeErro(erroCodigos)}` };
   revalidatePath(ROTA_CARTAO, "layout");
   return { ok: true };
@@ -527,4 +530,49 @@ export async function buscarFornecedores(entrada: { empresaId: string; termo: st
   consulta = /^\d+$/.test(termo) ? consulta.eq("cod_fornecedor", termo) : consulta.ilike("nome", `%${termo.replace(/[%_]/g, "")}%`);
   const { data } = await consulta.order("nome");
   return (data ?? []).map((f) => ({ cod: Number(f.cod_fornecedor), nome: f.nome as string })).filter((f) => Number.isInteger(f.cod) && f.cod > 0);
+}
+
+// ---------------------------------------------------------------- fornecedor "Outros" no Consistem (0140)
+
+const esquemaCadastroFornecedor = z.object({
+  empresaId: z.string().uuid(),
+  nome: z.string().trim().min(2, "Informe o nome do fornecedor.").max(60),
+  categoria: z.number().int().min(1, "Categoria de 1 a 99.").max(99, "Categoria de 1 a 99."),
+  grupo: z.number().int().min(1, "Grupo de 1 a 999.").max(999, "Grupo de 1 a 999."),
+  estabelecimentoId: z.string().uuid().nullable(),
+});
+
+/** Cadastra no Consistem o fornecedor "Outros" (tipo 3, endereço fixo), operador ou acima: reserva no banco e envia. */
+export async function cadastrarFornecedor(entrada: z.input<typeof esquemaCadastroFornecedor>): Promise<{ ok: true; aviso: string; codFornecedor: number; nome: string } | { ok: false; erro: string }> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) cadastra fornecedor no Consistem." };
+  const dados = esquemaCadastroFornecedor.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const d = dados.data;
+  const supabase = await criarClienteServidor();
+  const { data: id, error } = await supabase.rpc("crt_reservar_cadastro_fornecedor", {
+    p_empresa: d.empresaId, p_nome: d.nome, p_categoria: d.categoria, p_grupo: d.grupo, p_estabelecimento: d.estabelecimentoId,
+  });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  const { data, error: erroFuncao } = await supabase.functions.invoke("crt-cadastrar-fornecedor", { body: { id } });
+  revalidatePath(ROTA_CARTAO, "layout");
+  if (erroFuncao) {
+    const { mensagem } = await mensagemDaFuncao(erroFuncao, "Não foi possível falar com a função de cadastro.");
+    return { ok: false, erro: mensagem };
+  }
+  const cod = Number((data as { codFornecedor?: string } | null)?.codFornecedor);
+  const nome = d.nome.toUpperCase();
+  return { ok: true, aviso: `Fornecedor cadastrado no Consistem: ${cod} · ${nome}.`, codFornecedor: cod, nome };
+}
+
+/** Liga o estabelecimento a um fornecedor que já existe (grava o código na sugestão). */
+export async function ligarFornecedor(entrada: { estabelecimentoId: string; codFornecedor: number }): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) liga fornecedor." };
+  if (!z.string().uuid().safeParse(entrada.estabelecimentoId).success || !Number.isInteger(entrada.codFornecedor)) return { ok: false, erro: "Dados inválidos." };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("crt_ligar_fornecedor", { p_estabelecimento: entrada.estabelecimentoId, p_cod_fornecedor: String(entrada.codFornecedor) });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidatePath(ROTA_CARTAO, "layout");
+  return { ok: true, aviso: `Estabelecimento ligado ao fornecedor ${entrada.codFornecedor}.` };
 }

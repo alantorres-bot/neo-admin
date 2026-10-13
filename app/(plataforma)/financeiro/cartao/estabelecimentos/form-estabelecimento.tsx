@@ -34,6 +34,14 @@ export function DialogoEstabelecimento({ estabelecimento, padraoSugerido, abrirA
         <Campo id="contaFluxo" rotulo="Conta de fluxo (Descrição Conta no Consistem)" dica="Vazio = [CONFERIR] a cada lançamento (quando a conta depende do item comprado).">
           <Input id="contaFluxo" name="contaFluxo" defaultValue={estabelecimento?.conta_fluxo ?? ""} maxLength={60} placeholder="Ex.: Passagens, Hospedagens, Softwares e Licenças" />
         </Campo>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="marketplace" defaultChecked={estabelecimento?.marketplace ?? false} className="size-4" />
+          Marketplace: a nota é de outro fornecedor (sem fornecedor próprio; a conciliação casa pelo valor)
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" name="fornecedorPorCompra" defaultChecked={estabelecimento?.fornecedor_por_compra ?? false} className="size-4" />
+          Genérico: fornecedor por compra (posto, restaurante, hotel…: cada compra é numa empresa diferente)
+        </label>
         <fieldset className="space-y-2 rounded-[3px] border border-grade p-3">
           <legend className="px-1 text-sm font-medium">Lançamento no Consistem (sugestão)</legend>
           <p className="text-xs text-muted-foreground">Códigos sugeridos ao lançar a compra deste estabelecimento. Todos opcionais: o que faltar vem do cartão ou o operador escolhe.</p>

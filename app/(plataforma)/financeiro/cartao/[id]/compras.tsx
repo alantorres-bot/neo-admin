@@ -15,6 +15,7 @@ import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis
 import { buscarFornecedores, lancarCompra, reenviarLote } from "../acoes";
 import type { LancamentoErpLinha, PropostaCompra, QuadroCompras } from "../dados";
 import { BotaoResolver } from "./encargos";
+import { BotaoCadastrarFornecedor } from "../fornecedores";
 
 const ORIGEM = { estabelecimento: "do estabelecimento", cartao: "do cartão", escolher: "escolher" } as const;
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
@@ -99,6 +100,10 @@ export function DialogoLancarCompra({ faturaId, item, proposta, compras }: { fat
             )}
             <SeletorFornecedor empresaId={compras.empresaId} cod={campos.codFornecedor} nome={fornecedorNome}
               aoEscolher={(cod, nome) => { setCampos((c) => ({ ...c, codFornecedor: cod })); setFornecedorNome(nome); }} />
+            <div className="-mt-2 flex justify-end">
+              <BotaoCadastrarFornecedor empresaId={compras.empresaId} nomeInicial={proposta.sugestao.padrao ?? proposta.padraoLembrar} cadastro={compras.cadastro}
+                aoCadastrar={(cod, nome) => { setCampos((c) => ({ ...c, codFornecedor: cod })); setFornecedorNome(nome); }} />
+            </div>
             <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-4">
               {CAMPOS_COMPRA.filter((k) => k !== "codFornecedor").map((k) => (
                 <label key={k} className="space-y-1 text-sm">

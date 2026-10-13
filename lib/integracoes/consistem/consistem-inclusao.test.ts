@@ -12,8 +12,8 @@ describe("resposta da inclusão de lançamento", () => {
   });
   it("4xx = erro com as mensagens do ERP (nada criado); 5xx = incerto", () => {
     expect(lerRespostaInclusao(400, JSON.stringify([{ mensagem: "Fornecedor inválido" }, { mensagem: "Conta contábil inexistente" }])))
-      .toEqual({ tipo: "erro", mensagem: "O Consistem recusou o título (HTTP 400): Fornecedor inválido; Conta contábil inexistente", resposta: expect.anything() });
-    expect(lerRespostaInclusao(403, "")).toMatchObject({ tipo: "erro", mensagem: expect.stringMatching(/permissão para incluir/) });
+      .toEqual({ tipo: "erro", mensagem: "O Consistem recusou (HTTP 400): Fornecedor inválido; Conta contábil inexistente", resposta: expect.anything() });
+    expect(lerRespostaInclusao(403, "")).toMatchObject({ tipo: "erro", mensagem: expect.stringMatching(/permissão para esta inclusão/) });
     expect(lerRespostaInclusao(429, "").tipo).toBe("erro");
     expect(lerRespostaInclusao(500, JSON.stringify({ mensagem: "Erro interno" })).tipo).toBe("incerto");
     expect(lerRespostaInclusao(400, "texto solto")).toMatchObject({ mensagem: expect.stringMatching(/texto solto/) });
@@ -36,5 +36,16 @@ describe("envio", () => {
     expect(n).toBe(1);
     const lento: Enviar = (_u, init) => new Promise((_, rej) => init.signal?.addEventListener("abort", () => rej(Object.assign(new Error("x"), { name: "AbortError" }))));
     expect(await incluirLancamento(lento, cfg, {}, { tempoMs: 10 })).toMatchObject({ tipo: "incerto", mensagem: /não respondeu a tempo/ });
+  });
+});
+
+describe("cadastro de fornecedor", () => {
+  it("usa a rota de fornecedor e lê o código em codFornecedor", async () => {
+    const { incluirFornecedor } = await import("@/supabase/functions/_shared/consistem-inclusao");
+    let urlUsada = "";
+    const enviar: Enviar = async (url) => { urlUsada = url; return { status: 200, text: async () => '{"codFornecedor":1500,"nome":"NUVIAGENS"}' }; };
+    expect(await incluirFornecedor(enviar, cfg, { nome: "NUVIAGENS" })).toMatchObject({ tipo: "lancado", codigo: "1500" });
+    expect(urlUsada).toBe("https://erp.exemplo/api/cadastrosgerais/v10/fornecedor");
+    expect(lerRespostaInclusao(200, '{"codLancamento":1}', "codFornecedor").tipo).toBe("incerto");
   });
 });

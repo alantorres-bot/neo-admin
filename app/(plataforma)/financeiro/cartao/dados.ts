@@ -1,7 +1,7 @@
 // Leituras do módulo Cartão de crédito (RLS de quem chama; nada é gravado aqui).
 import { cache } from "react";
 import type { CartaoInfo, RegraCartao } from "@/lib/modulos/financeiro/cartao/cartoes";
-import { conciliar, type DecisaoItem, type Estabelecimento, type LinhaFatura, type ResultadoConciliacao, type TipoDecisao, type TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { conciliar, doDicionario, type DecisaoItem, type Estabelecimento, type LinhaFatura, type ResultadoConciliacao, type TipoDecisao, type TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { MODULO_CARTAO, type CodigoLeitor } from "@/lib/modulos/financeiro/cartao/modulo";
 import { selecionarTitulos, type LancamentoEspelho, type OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { somarDias } from "@/lib/modulos/financeiro/cartao/texto";
@@ -43,9 +43,13 @@ export type EstabelecimentoLinha = {
   id: string; padrao: string; categoria: string; conta_fluxo: string | null; ativo: boolean;
   /** Sugestão de códigos do Consistem para a compra deste estabelecimento (fornecedor, histórico, fluxo, contas). */
   lancamento_erp: Record<string, number> | null;
+  /** Marketplace: a nota é do vendedor; sem fornecedor próprio nem botão Lançar (casa pelo valor). */
+  marketplace: boolean;
+  /** Genérico (posto, restaurante...): sem fornecedor fixo; escolhido ou cadastrado em cada compra. */
+  fornecedor_por_compra: boolean;
 };
 export async function lerEstabelecimentos(supabase: Cliente): Promise<EstabelecimentoLinha[]> {
-  const { data, error } = await supabase.from("crt_estabelecimentos").select("id, padrao, categoria, conta_fluxo, ativo, lancamento_erp").order("padrao").limit(2000);
+  const { data, error } = await supabase.from("crt_estabelecimentos").select("id, padrao, categoria, conta_fluxo, ativo, lancamento_erp, marketplace, fornecedor_por_compra").order("padrao").limit(2000);
   if (error) throw new Error(`Falha ao ler o dicionário: ${error.message}`);
   return (data ?? []) as EstabelecimentoLinha[];
 }
@@ -272,12 +276,25 @@ export type QuadroCompras = {
   propostas: Record<string, PropostaCompra>;
   /** Títulos de compra do mês (todos os lotes, mais novos primeiro). */
   lancamentos: LancamentoErpLinha[];
+  /** Linhas de marketplace (id da linha → estabelecimento): sem botão Lançar, casam pelo valor da nota. */
+  marketplace: Record<string, string>;
+  /** Cadastro do fornecedor "Outros" (endereço fixo, categoria e grupo sugeridos); nulo = não configurado. */
+  cadastro: CadastroOutros | null;
 };
+
+export type CadastroOutros = { endereco: string; numero: string; bairro: string; cep: string; cidade: string; estado: string; codCategoria: number; codGrupo: number };
+
+/** Configuração do fornecedor "Outros" (financeiro.cartao.fornecedor_outros). */
+export async function lerCadastroOutros(supabase: Cliente): Promise<CadastroOutros | null> {
+  const { data } = await supabase.from("configuracoes").select("valor").eq("chave", "financeiro.cartao.fornecedor_outros").maybeSingle();
+  const v = (data as { valor: Partial<CadastroOutros> } | null)?.valor;
+  return v && v.endereco && v.cep && v.codCategoria && v.codGrupo ? (v as CadastroOutros) : null;
+}
 
 /** Compras sem título que podem ser lançadas no Consistem, a sugestão de cada uma e os lançamentos já feitos no mês. */
 export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<QuadroCompras> {
   const ciclo = c.fatura.ciclo_id;
-  const [{ data: config }, { data: lancs, error }, { data: cic }, estabelecimentos] = await Promise.all([
+  const [{ data: config }, { data: lancs, error }, { data: cic }, estabelecimentos, cadastro] = await Promise.all([
     supabase.from("configuracoes").select("valor").eq("chave", CHAVE_LANCAR_NO_ERP).maybeSingle(),
     ciclo
       ? supabase.from("crt_vw_lancamentos_erp").select("id, fatura_id, situacao, valor, complemento, linhas, payload, cod_lancamento_erp, erro, criado_por, criado_por_nome, criado_em, enviado_em, concluido_em, resolvido_por_nome, motivo_resolucao, tipo, lote, linha_origem, linha_descricao, parcela, parcelas, vencimento")
@@ -285,15 +302,20 @@ export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<Qua
       : Promise.resolve({ data: [], error: null }),
     ciclo ? supabase.from("crt_ciclos").select("competencia, situacao").eq("id", ciclo).maybeSingle() : Promise.resolve({ data: null }),
     lerEstabelecimentos(supabase),
+    lerCadastroOutros(supabase),
   ]);
   if (error) throw new Error(`Falha ao ler os lançamentos de compras: ${error.message}`);
   const lancamentos = (lancs ?? []) as LancamentoErpLinha[];
   const emLancamento = new Set(lancamentos.filter((l) => l.situacao !== "erro").map((l) => l.linha_origem));
-  const estabs: EstabelecimentoCodigos[] = estabelecimentos.filter((e) => e.ativo).map((e) => ({ padrao: e.padrao, lancamentoErp: lerCampos(e.lancamento_erp) }));
+  const ativos = estabelecimentos.filter((e) => e.ativo);
+  const estabs: EstabelecimentoCodigos[] = ativos.map((e) => ({ padrao: e.padrao, lancamentoErp: lerCampos(e.lancamento_erp) }));
+  const marketplace: Record<string, string> = {};
   const padroesCartao = lerCampos(c.cartao.lancamento_compras);
   const propostas: Record<string, PropostaCompra> = {};
   for (const a of c.resultado.aLancar) {
     if (a.justificativa || a.linha.valorCentavos <= 0 || emLancamento.has(a.linha.id) || !(NATUREZAS_COMPRA as readonly string[]).includes(a.natureza)) continue;
+    const mkt = doDicionario(a.linha.descricao, ativos);
+    if (mkt?.marketplace) { marketplace[a.linha.id] = mkt.padrao; continue; }
     const sugestao = sugestaoDaLinha(a.linha.descricao, estabs, padroesCartao);
     propostas[a.linha.id] = { sugestao, padraoLembrar: sugestao.padrao ?? padraoSugerido(a.linha.descricao), fornecedorNome: null, categoria: a.categoria };
   }
@@ -307,6 +329,7 @@ export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<Qua
   return {
     ligado: (config as { valor: unknown } | null)?.valor === true, mesAberto: cc?.situacao === "em_conciliacao" && c.fatura.status === "importada",
     empresaId: c.fatura.empresa_id, competencia: cc?.competencia ?? null, vencimentoFatura: c.fatura.vencimento, cartao: paraCartaoInfo(c.cartao), propostas, lancamentos,
+    marketplace, cadastro,
   };
 }
 

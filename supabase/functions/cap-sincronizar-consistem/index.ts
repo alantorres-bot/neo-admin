@@ -20,6 +20,8 @@
 //                                       Também devolve as ANTECIPAÇÕES (A) com data de pagamento em [ini, fim] (antecipação paga no
 //                                       cartão: o complemento quase nunca cita o cartão). A data de pagamento vem do espelho ou do
 //                                       detalhe (lancamentoContasPagar/{id}); procura as emitidas até 60 dias antes do início.
+//   exemplos_fornecedores { empresaId?, codigos? }
+//                                       SÓ LEITURA: fornecedores "Outros" (classificação 3) e o detalhe dos códigos pedidos.
 //   exemplos_compras_cartao { empresaId?, ini, fim }
 //                                       SÓ LEITURA: compras no cartão já lançadas (por fornecedor, com detalhe), para sugerir os
 //                                       códigos do lançamento das compras sem título.
@@ -705,6 +707,30 @@ Deno.serve(async (req) => {
             combinacoes: [...new Set(lista.map((r) => `h${r.codHistorico ?? ""}/cat${r.categoriaDoc ?? ""}/port${r.codBanco ?? ""}`))],
           })),
           detalhes,
+        });
+      }
+      case "exemplos_fornecedores": {
+        // SÓ LEITURA: fornecedores de classificação 3 ("Outros") com endereço, categoria e grupo, e o detalhe dos códigos
+        // pedidos (fornecedores das compras de cartão). Serve para definir o cadastro padrão do fornecedor de estabelecimento.
+        const e = (empresas as Empresa[]).find((x) => x.id === corpo.empresaId) ?? (empresas[0] as Empresa);
+        const cfg: ConfigConsistem = { ...cfgBase, empresa: e.codigo_erp };
+        const todos = await buscarTodasPaginas(buscar, cfg, ROTA_FORNECEDORES, { situacao: 1, paginacao: PAGINACAO });
+        const campos = todos[0] ? Object.keys(todos[0]) : [];
+        const outros = todos.filter((f) => String(f.classificacao ?? "") === "3");
+        const contar = (k: string) => {
+          const m = new Map<string, number>();
+          for (const f of outros) m.set(String(f[k] ?? ""), (m.get(String(f[k] ?? "")) ?? 0) + 1);
+          return [...m.entries()].sort((x, y) => y[1] - x[1]).slice(0, 10);
+        };
+        const pedidos = Array.isArray(corpo.codigos) ? (corpo.codigos as unknown[]).map(String).filter((c) => /^\d{1,6}$/.test(c)).slice(0, 20) : [];
+        const detalhes: Record<string, unknown>[] = [];
+        for (const c of pedidos) {
+          try { detalhes.push(await buscarObjeto(buscar, cfg, `${ROTA_FORNECEDORES}/${c}`)); } catch (erro) { detalhes.push({ codFornecedor: c, erro: erro instanceof Error ? erro.message : "falha" }); }
+        }
+        return responder({
+          ok: true, empresa: e.nome_curto, ativos: todos.length, camposDaLista: campos, outros: outros.length,
+          porCategoria: contar("codCategoria"), porGrupo: contar("codGrupo"), porCep: contar("cep"), porEndereco: contar("endereco"),
+          exemplosOutros: outros.slice(-25), detalhes,
         });
       }
       case "sincronizar": {

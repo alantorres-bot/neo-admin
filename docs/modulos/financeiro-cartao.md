@@ -165,6 +165,22 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
 42. Lançada: a decisão **casar** liga a linha só ao título da parcela **desta** fatura; as parcelas futuras casam sozinhas nas
     próximas faturas (mesmo valor, cartão citado, vencimento na janela).
 43. Uma só chave libera encargos e compras: `financeiro.cartao.lancar_no_erp` (era `..._encargos_no_erp`), começa desligada.
+44. **Fornecedor de estabelecimento de cartão** (13/10/2026, decisões do Alan): cadastrado no Consistem como **classificação 3
+    ("Outros")**, sem CNPJ, pelo `PUT cadastrosgerais/v10/fornecedor`. Nome = descrição do estabelecimento (maiúsculas, até 60;
+    nome fantasia = 30 primeiros); endereço **igual para todos** (Rua Canadá, 277, Santa Rosa, 78040-050, Cuiabá/MT — o mesmo de
+    19 dos 28 "Outros" existentes); categoria 17 e grupo 22 sugeridos, o operador pode trocar. Configuração
+    `financeiro.cartao.fornecedor_outros`. O corpo é montado pelo banco (ninguém troca o endereço).
+45. **Marcas** (Nuviagens, Latam, Google…): na aba Estabelecimentos, **Ligar ou cadastrar** — lista os fornecedores do espelho
+    com o nome parecido (ex.: GOOGLE → 1370, 889, 928) para ligar; se não houver, cadastra. O código vai para a sugestão do
+    estabelecimento.
+46. Não cadastra nome que já existe no espelho (nome ou nome fantasia iguais, sem acento): mostra o código para ligar. O mesmo
+    nome não é cadastrado duas vezes pelo painel.
+47. **Genéricos** (posto, restaurante, padaria, hotel, pousada, supermercado; caixa "fornecedor por compra"): sem fornecedor
+    fixo; no diálogo de lançar, o operador busca o fornecedor da compra ou **cadastra** um "Outros" com a descrição dela.
+48. **Marketplace** (Mercado Livre, EBAZAR; caixa "marketplace"): a nota é emitida pelo **vendedor**; sem fornecedor próprio e
+    **sem botão Lançar** — a conciliação casa pelo **valor** com o título da nota lançada no Consistem.
+49. Cadastro com a mesma regra de envio dos títulos: reserva, envio único, erro (nada criado) ou sem resposta (conferir e
+    resolver à mão); cadastrado vai na hora para o espelho `cap_fornecedores`. Prova em `crt_fornecedores_cadastrados`.
 
 Exemplo numérico (ciclo correto, como a calibração da skill): fatura R$ 1.736,70 com 12 linhas (2 pares compensados; 4 pedágios de
 R$ 20) × 5 títulos (um de R$ 120,00 para linha de R$ 120,01) → 4 exatos + 1 agrupamento, diferença apurada R$ 0,01 = arredondamento,
@@ -205,6 +221,7 @@ zero a lançar, zero divergências (`conciliacao.test.ts`). Detecção: tirando 
 | `crt_fechamentos` | Fechamentos (versão, foto do resultado em jsonb, totais, provisório, quem fechou/reabriu e motivo) — prova; planilha anexada |
 | `crt_vw_ciclos` | View dos meses com nomes e total da fatura |
 | `crt_lancamentos_erp` / `crt_vw_lancamentos_erp` | Títulos lançados pelo painel no Consistem (tipo encargos ou compra; lote; linha de origem; parcela/parcelas; vencimento): linhas, valor, complemento, payload enviado, situação (reservado → enviando → lançado/erro), código criado, resposta, quem/quando, resolução à mão; sem delete; auditoria |
+| `crt_fornecedores_cadastrados` | Fornecedores "Outros" cadastrados pelo painel: nome, corpo enviado, situação, código, resposta, quem/quando; sem delete; auditoria |
 | `crt_decisoes` / `crt_vw_decisoes` | Decisões por item (tipo, linhas, títulos, categoria/conta, motivo, quem/quando, desfeita por/quando/motivo) — sem delete; auditoria |
 | Funções | `crt_importar_fatura` (com `p_ciclo`), `crt_cancelar_fatura`, `crt_salvar_cartao`, `crt_salvar_estabelecimento`, `crt_normalizar`, `crt_gerar_ciclos`, `crt_registrar_apuracao`, `crt_fechar_ciclo`, `crt_reabrir_ciclo`, `crt_calendario`, `crt_competencia_do_vencimento`, `crt_registrar_decisao`, `crt_desfazer_decisao`, `crt_reservar_lancamento_encargos`, `crt_reservar_lancamento_compra`, `crt_reenviar_lancamentos`, `crt_iniciar_envio_erp`, `crt_concluir_lancamento_erp` e `crt_interromper_lote` (só service role), `crt_resolver_lancamento_encargos` |
 | Agendamentos | `crt-gerar-ciclos-diario` (07:00 Cuiabá) e `cap-sincronizar-consistem-diario` (07:30; `cap_chamar_sincronizacao`, mesmo segredo do Vault de Recebíveis) |
@@ -369,3 +386,19 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
 - Testes: `lancamento-compras.test.ts` e `tests/db/crt-lancamento-compras.test.ts` (e os dos encargos ajustados à chave nova).
 - Testado ao vivo (servidor local): diálogo numa linha real (forçada localmente), busca de fornecedor, prévia do título com
   documento, vencimento e complemento, legendas de origem. **Ainda não houve envio real.**
+
+## 18. Fornecedor "Outros" e marketplace — o que foi feito (13/10/2026)
+- Pedido do Alan: cadastrar fornecedor pela API (documentação Cadastros Gerais v1.0 / fornecedor), tipo 3 "Outros", sem CNPJ,
+  endereço igual para todos; marcas uma a uma (ligar ou cadastrar); genéricos pela compra; Mercado Livre casa pelo valor da
+  nota (marketplace).
+- Descoberta (só leitura): ação `exemplos_fornecedores` de `cap-sincronizar-consistem` — 1.338 fornecedores ativos, 28 "Outros";
+  19 deles com Rua Canadá, 277 (endereço aprovado); categoria e grupo variam (17/22 aprovado como sugestão).
+- Migrations `0140_crt_fornecedores.sql` (configuração, `marketplace`, `crt_fornecedores_cadastrados`, reservar/iniciar/
+  concluir/resolver, `crt_ligar_fornecedor`) e `0141_crt_fornecedor_por_compra.sql` (genéricos) — aplicadas e registradas.
+- Edge Function `crt-cadastrar-fornecedor` (publicada); `_shared/consistem-inclusao.ts` generalizado (`incluir`,
+  `incluirFornecedor`).
+- Telas: coluna Fornecedor na aba Estabelecimentos (ligado, marketplace, fornecedor por compra ou Ligar ou cadastrar), caixas
+  marketplace e genérico no formulário, "Cadastrar fornecedor" no diálogo de lançar, aviso de marketplace na aba A lançar.
+- Testes: `tests/db/crt-fornecedores.test.ts`, `consistem-inclusao.test.ts`.
+- Testado ao vivo (local): coluna Fornecedor, "Ligar" do GOOGLE (1370, 889, 928), marketplace e genéricos. **Nenhum fornecedor foi
+  ligado nem cadastrado** (chave desligada; decisão do Alan).
