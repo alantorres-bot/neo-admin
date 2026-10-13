@@ -183,6 +183,15 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     `cap_contas_fluxo` (209, grupo × item, ativa/inativa). No fornecedor, **codGrupo = grupo do fluxo** e **item = a conta**
     (confirmado pelo Alan). Cadastro do fornecedor, diálogo de lançar, estabelecimento e códigos de encargos do cartão usam
     listas em vez de números. Correções: alimentação 12/6 (era 10/15 Insumos); Mercado Livre sem conta de fluxo.
+51. **Fornecedores genéricos por tipo de aquisição** (decisão do Alan, 13/10/2026; cadastrados por ele na tela do Consistem;
+    migration 0144): 1372 HOSPEDAGEM (13/7), 1373 ESTACIONAMENTO E PEDAGIOS (estacionamento 18/7, pedágio 18/8), 1374 PASSAGENS
+    AEREAS (13/6), 1375 LOCACAO DE VEICULOS (22/26), 1376 TRANSPORTE POR APLICATIVO (13/5), 1377 COMBUSTIVEIS E LUBRIFICANTES
+    (18/4), 1378 ALIMENTACAO E REFEICOES (12/6), 1379 SOFTWARES E ASSINATURAS (16/4), 1380 MATERIAL DE COPA E LIMPEZA (16/7, sem
+    estabelecimento no dicionário), 1381 FARMACIA E MEDICAMENTOS (12/24; DROGARIA e FARMACIA). Cada estabelecimento do tipo sugere
+    o genérico e a conta de fluxo do tipo (a conta do título vem do estabelecimento, mesmo onde o cadastro do fornecedor tem
+    outra). Google fica no 928 GOOGLE SUITE. Os genéricos do dicionário deixam de ser "fornecedor por compra". Compras com nota
+    fiscal continuam pela nota; marketplace casa pelo valor. A sincronização do contas a pagar passou a reler o cadastro de
+    fornecedores a cada rodada (fornecedor novo aparece no painel mesmo sem título).
 49. Cadastro com a mesma regra de envio dos títulos: reserva, envio único, erro (nada criado) ou sem resposta (conferir e
     resolver à mão); cadastrado vai na hora para o espelho `cap_fornecedores`. Prova em `crt_fornecedores_cadastrados`.
 

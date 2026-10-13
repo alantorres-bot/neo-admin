@@ -76,13 +76,6 @@ describe("cadastrar fornecedor 'Outros'", () => {
   });
 });
 
-describe("genéricos (0141)", () => {
-  it("posto, restaurante, padaria, hotel, pousada e supermercado são fornecedor por compra", async () => {
-    expect((await q(`select padrao from crt_estabelecimentos where fornecedor_por_compra order by padrao`)).rows.map((r) => r.padrao))
-      .toEqual(["HOTEL", "PADARIA", "POSTO", "POUSADA", "RESTAURANTE", "SUPERMERCADO"]);
-  });
-});
-
 describe("próximo código (0142)", () => {
   it("maior código do espelho + 1, só para a service role", async () => {
     expect((await servico(`select crt_proximo_codigo_fornecedor($1) as n`, [empresa])).rows[0].n).toBe(1502);
@@ -96,5 +89,18 @@ describe("listas do Consistem (0143)", () => {
     expect((await q(`select descricao from cap_contas_fluxo where grupo = 22 and item = 26`)).rows[0].descricao).toBe("Rep. Locação a Terceiro");
     expect((await q(`select lancamento_erp from crt_estabelecimentos where padrao = 'PADARIA'`)).rows[0].lancamento_erp).toMatchObject({ grupoContaFluxoCaixa: 12, contaFluxoCaixa: 6 });
     expect((await q(`select lancamento_erp from crt_estabelecimentos where padrao = 'MERCADOLIVRE'`)).rows[0].lancamento_erp).toBeNull();
+  });
+});
+
+describe("fornecedores genéricos por tipo (0144)", () => {
+  it("cada estabelecimento sugere o fornecedor e a conta do seu tipo; genéricos deixam de ser por compra", async () => {
+    const erp = async (p: string) => (await q(`select lancamento_erp, fornecedor_por_compra from crt_estabelecimentos where padrao = $1`, [p])).rows[0];
+    expect(await erp("HOTEL")).toMatchObject({ lancamento_erp: { codFornecedor: 1372, grupoContaFluxoCaixa: 13, contaFluxoCaixa: 7 }, fornecedor_por_compra: false });
+    expect((await erp("LATAM")).lancamento_erp).toMatchObject({ codFornecedor: 1374, grupoContaFluxoCaixa: 13, contaFluxoCaixa: 6, contaContabilDebito: 3338 });
+    expect((await erp("SEM PARAR")).lancamento_erp).toMatchObject({ codFornecedor: 1373, contaFluxoCaixa: 8 });
+    expect((await erp("GOOGLE")).lancamento_erp).toMatchObject({ codFornecedor: 928 });
+    expect((await erp("DROGARIA")).lancamento_erp).toEqual({ codFornecedor: 1381, grupoContaFluxoCaixa: 12, contaFluxoCaixa: 24 });
+    expect((await erp("MERCADOLIVRE")).lancamento_erp).toBeNull();
+    expect((await q(`select count(*)::int as n from crt_estabelecimentos where fornecedor_por_compra`)).rows[0].n).toBe(0);
   });
 });

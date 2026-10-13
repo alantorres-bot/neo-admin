@@ -233,7 +233,8 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
   };
   if (simular) return resumo;
 
-  // 3) Fornecedores: só consulta o cadastro quando aparece um código que ainda não está no espelho (ou o espelho está vazio).
+  // 3) Fornecedores: relê o cadastro a cada rodada (cerca de 1.300; fornecedor novo cadastrado na tela do Consistem — ex.: os
+  //    genéricos "Outros" do cartão — tem de aparecer no painel mesmo antes de ter título).
   const codigosNecessarios = new Set<string>();
   for (const n of plano.novos) if (n.codFornecedor) codigosNecessarios.add(n.codFornecedor);
   for (const a of plano.alterados) if (a.campos.cod_fornecedor) codigosNecessarios.add(a.campos.cod_fornecedor);
@@ -241,7 +242,7 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
     banco.from("cap_fornecedores").select("cod_fornecedor").eq("empresa_id", empresa.id).order("id").range(de, ate))).map((f) => f.cod_fornecedor));
   const faltam = [...codigosNecessarios].filter((c) => !conhecidos.has(c));
   let fornecedoresNovos = 0;
-  if (faltam.length > 0 || conhecidos.size === 0) {
+  {
     try {
       const fornecedores = await lerFornecedoresApi(cfg);
       const rows = fornecedores.map((f) => ({
