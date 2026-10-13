@@ -55,7 +55,7 @@ export default async function PaginaMeses({ searchParams }: PageProps<"/financei
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          Um mês por cartão (pelo vencimento). Os meses que ainda não fecharam aparecem como “Previsto”, com o fechamento e o vencimento da Planilha Cartões. Cada mês nasce “Aguardando fatura” no dia seguinte ao fechamento do cartão, passa a “Em conciliação” com a fatura importada, é fechado pelo gestor quando não há nada a lançar e a diferença é zero, e vira “Paga” sozinho quando o título provisório sai do Consistem.
+          Um mês por cartão (pelo vencimento). Os meses que ainda não fecharam aparecem como “Previsto”, com o vencimento da Planilha Cartões. Cada mês nasce “Aguardando fatura” no dia seguinte ao fechamento do cartão, passa a “Em conciliação” com a fatura importada, é fechado pelo gestor quando não há nada a lançar e a diferença é zero, e vira “Paga” sozinho quando o título provisório sai do Consistem.
         </p>
         <div className="flex items-center gap-2 text-sm">
           {anterior && <Link href={`${ROTA_CARTAO}/meses?de=${anterior}`} className="text-elo hover:underline">‹ anteriores</Link>}
@@ -96,7 +96,7 @@ export default async function PaginaMeses({ searchParams }: PageProps<"/financei
                       <td key={comp} className="border border-grade p-1">
                         <span className="block rounded-[3px] border border-dashed border-grade px-2 py-1 text-muted-foreground">
                           <span className="block font-bold">Previsto</span>
-                          <span className="block text-[11px]">fecha {formatarData(prev.fechamento)} · vence {formatarData(prev.vencimento)}</span>
+                          <span className="block text-[11px]">vence {formatarData(prev.vencimento)}</span>
                         </span>
                       </td>
                     );
