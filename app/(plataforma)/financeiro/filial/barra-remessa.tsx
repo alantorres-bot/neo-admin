@@ -1,4 +1,5 @@
-import { CHAVE_DESTINATARIOS } from "@/lib/modulos/financeiro/filial/arquivos";
+import Link from "next/link";
+import { CHAVE_DESTINATARIOS, ROTA_FILIAL } from "@/lib/modulos/financeiro/filial/arquivos";
 import { lerConfigImplantacao, montarFichaImplantacao } from "@/lib/modulos/financeiro/filial/implantacao";
 import { divergencias, lerParcelasInformadas, type ParcelaConsistem } from "@/lib/modulos/financeiro/filial/remessa";
 import { emCentavos } from "@/lib/modulos/financeiro/recebiveis/carteira";
@@ -13,9 +14,12 @@ const dataCuiaba = (iso: string) => new Date(iso).toLocaleDateString("sv-SE", { 
 
 /**
  * Barra da remessa (fila filtrada por uma remessa): o aviso a Cuiabá, baixar as notas, os demonstrativos em lote e o relatório
- * de implantação (CCFT040, com impressão) das NFs dela. A lista das NFs é a própria fila.
+ * de implantação (CCFT040, com impressão) das NFs dela. Usada na fila filtrada por remessa (com o link para a tela da remessa) e
+ * na própria tela da remessa (com o relatório já aberto).
  */
-export async function BarraRemessa({ numero, podeOperar, ehCuiaba }: { numero: number; podeOperar: boolean; ehCuiaba: boolean }) {
+export async function BarraRemessa({ numero, podeOperar, ehCuiaba, naTelaDaRemessa = false }: {
+  numero: number; podeOperar: boolean; ehCuiaba: boolean; naTelaDaRemessa?: boolean;
+}) {
   const supabase = await criarClienteServidor();
   const { data: r } = await supabase.from("rec_vw_remessas").select("*").eq("numero", numero).maybeSingle();
   if (!r) return <p className="text-sm text-muted-foreground">Remessa nº {numero} não encontrada.</p>;
@@ -68,7 +72,9 @@ export async function BarraRemessa({ numero, podeOperar, ehCuiaba }: { numero: n
     <section className="space-y-3 rounded-[3px] border border-grade bg-cabecalho p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="text-[13px]">
-          <strong className="text-base">Remessa nº {r.numero}</strong>
+          {naTelaDaRemessa
+            ? <strong className="text-base">Remessa nº {r.numero}</strong>
+            : <Link className="text-base font-bold underline" href={`${ROTA_FILIAL}/remessas/${r.numero}`}>Remessa nº {r.numero}</Link>}
           <span className="text-muted-foreground"> · enviada por {r.criado_por_nome ?? "—"} em {quando(r.criado_em)} · {r.kits} {r.kits === 1 ? "NF" : "NFs"}
             {r.aviso_aberto_em ? ` · aviso a Cuiabá aberto em ${quando(r.aviso_aberto_em)}` : " · aviso a Cuiabá ainda não aberto"}</span>
         </div>
@@ -83,7 +89,7 @@ export async function BarraRemessa({ numero, podeOperar, ehCuiaba }: { numero: n
         <AnexarDemonstrativos kits={abertos.map((k) => ({ id: k.id as string, nota: k.nota_fiscal as string, cliente: k.cliente_nome as string, temDemonstrativo: (k.demonstrativos ?? 0) > 0 }))} />
       )}
       {ehCuiaba && blocos.some((b) => b.titulos.length === 0) && (
-        <details className="rounded-[3px] border bg-white p-3">
+        <details className="rounded-[3px] border bg-white p-3" open={naTelaDaRemessa}>
           <summary className="cursor-pointer text-[13px] font-medium">Relatório de implantação desta remessa (CCFT040), para imprimir</summary>
           <div className="mt-3"><RelatorioImplantacao blocos={blocos} rotina={cfg.rotina} podeOperar={podeOperar} /></div>
         </details>

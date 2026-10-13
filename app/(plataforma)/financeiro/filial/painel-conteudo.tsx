@@ -134,7 +134,7 @@ export async function ConteudoKit({ kitId, sessao, papel, podeOperar }: { kitId:
           {urgencia && urgencia !== "sem_data" && <Badge variant={COR_URGENCIA[urgencia]}>{ROTULO_URGENCIA[urgencia]} · {textoVencimento(vencimento, hoje)}</Badge>}
           {k.cedido && <Badge variant="outline">AKF</Badge>}
           {!k.aceita_boleto_factoring && <Badge variant="outline">Sem boleto de factoring</Badge>}
-          {numerosRemessa.map((n) => <Link key={n} className="underline" href={`${ROTA_FILIAL}?remessa=${n}`}>Remessa nº {n}</Link>)}
+          {numerosRemessa.map((n) => <Link key={n} className="underline" href={`${ROTA_FILIAL}/remessas/${n}`}>Remessa nº {n}</Link>)}
         </div>
         {aberto && (
           <ul className="space-y-0.5">

@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { MODULO_FILIAL, ROTA_FILIAL } from "@/lib/modulos/financeiro/filial/arquivos";
 import { temAcesso, temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
+import { NavegacaoFilial } from "./navegacao";
 
 export default async function LayoutFilial({ children }: LayoutProps<"/financeiro/filial">) {
   const sessao = await exigirSessao();
@@ -18,9 +19,10 @@ export default async function LayoutFilial({ children }: LayoutProps<"/financeir
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Faturamento Filial</h1>
           <p className="text-sm text-muted-foreground">
-            Todas as notas da Filial Contagem numa fila só, da mais urgente para a menos. Cada NF mostra em que estágio está e a próxima
-            tarefa; clique para abrir tudo dela ao lado.
+            Notas da Filial Contagem: a <strong>Fila</strong> mostra tudo da mais urgente para a menos, com a próxima tarefa de cada NF; as{" "}
+            <strong>Remessas</strong> mostram cada envio da filial e como está cada NF dele.
           </p>
+          <div className="mt-3"><NavegacaoFilial /></div>
         </div>
         <div className="flex flex-wrap gap-2">
           {ehCuiaba && <Button variant="outline" nativeButton={false} render={<Link href={`${ROTA_FILIAL}/boletos`} />}>Anexar boletos</Button>}

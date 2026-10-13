@@ -4,7 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   ORDEM_URGENCIA, proximaAcao, situacaoDaNota, urgenciaDaNota, type EstagioFila, type Papel, type Situacao, type Urgencia,
 } from "@/lib/modulos/financeiro/filial/estagios";
-import { lerParcelasInformadas } from "@/lib/modulos/financeiro/filial/remessa";
+import { lerParcelasInformadas, type ParcelaInformada } from "@/lib/modulos/financeiro/filial/remessa";
 import { emCentavos } from "@/lib/modulos/financeiro/recebiveis/carteira";
 
 export type LinhaFila = {
@@ -21,15 +21,27 @@ export type LinhaFila = {
   semBoletoFactoring: boolean;
   cedido: boolean;
   notaEnviada: boolean;
+  parcelasNota: ParcelaInformada[];
   docs: { nota: boolean; demonstrativo: boolean; comodato: boolean; boleto: boolean; carta: boolean | null };
 };
 
-export async function carregarFila(supabase: SupabaseClient, opcoes: { papel: Papel; hoje: string; enviadas: boolean }): Promise<LinhaFila[]> {
-  const estagios = opcoes.enviadas ? ["enviada"] : ["recebida", "implantada", "pronta"];
+/** Quais NFs: as em andamento, as enviadas ou todas (inclusive canceladas). `ids` restringe a um conjunto (ex.: as de uma remessa). */
+export type EstagiosFila = "abertas" | "enviadas" | "todas";
+
+const ESTAGIOS_BANCO: Record<EstagiosFila, string[]> = {
+  abertas: ["recebida", "implantada", "pronta"],
+  enviadas: ["enviada"],
+  todas: ["recebida", "implantada", "pronta", "enviada", "cancelada"],
+};
+
+export async function carregarFila(supabase: SupabaseClient, opcoes: { papel: Papel; hoje: string; estagios: EstagiosFila; ids?: string[] }): Promise<LinhaFila[]> {
+  const soEnviadas = opcoes.estagios === "enviadas";
+  let consulta = supabase.from("rec_vw_kits")
+    .select("id, nota_fiscal, cliente_nome, obra, estagio, aceita_boleto_factoring, parcelas, valor_total, primeiro_vencimento, cedido, boletos, notas, demonstrativos, comodatos, cartas, exige_carta, enviado_em")
+    .in("estagio", ESTAGIOS_BANCO[opcoes.estagios]);
+  if (opcoes.ids) consulta = consulta.in("id", opcoes.ids.length ? opcoes.ids : ["00000000-0000-0000-0000-000000000000"]);
   const [{ data: kits, error }, { data: remessas }] = await Promise.all([
-    supabase.from("rec_vw_kits")
-      .select("id, nota_fiscal, cliente_nome, obra, estagio, aceita_boleto_factoring, parcelas, valor_total, primeiro_vencimento, cedido, boletos, notas, demonstrativos, comodatos, cartas, exige_carta, enviado_em")
-      .in("estagio", estagios).order(opcoes.enviadas ? "enviado_em" : "nota_fiscal", { ascending: !opcoes.enviadas }).limit(opcoes.enviadas ? 200 : 1000),
+    consulta.order(soEnviadas ? "enviado_em" : "nota_fiscal", { ascending: !soEnviadas }).limit(soEnviadas ? 200 : 1000),
     supabase.from("rec_remessa_kits").select("kit_id, rec_remessas(numero)").limit(10000),
   ]);
   if (error) throw new Error(`Falha ao ler a fila: ${error.message}`);
@@ -60,7 +72,7 @@ export async function carregarFila(supabase: SupabaseClient, opcoes: { papel: Pa
       remessas: remessasDe.get(k.id as string) ?? [], situacao, urgencia, vencimento,
       valorCentavos: k.valor_total != null ? emCentavos(k.valor_total) : informadas.reduce((s, p) => s + p.valorCentavos, 0),
       acao: proximaAcao(situacao, opcoes.papel, urgencia),
-      semBoletoFactoring: !k.aceita_boleto_factoring, cedido: !!k.cedido, notaEnviada: !!e?.nota_enviada_em,
+      semBoletoFactoring: !k.aceita_boleto_factoring, cedido: !!k.cedido, notaEnviada: !!e?.nota_enviada_em, parcelasNota: informadas,
       docs: {
         nota: k.notas > 0, demonstrativo: k.demonstrativos > 0, comodato: k.comodatos > 0,
         boleto: (k.parcelas ?? 0) > 0 && (k.boletos ?? 0) >= (k.parcelas ?? 0), carta: k.exige_carta ? k.cartas > 0 : null,

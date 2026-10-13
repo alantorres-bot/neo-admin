@@ -542,7 +542,7 @@ A filial (usuário restrito à unidade, §34 Fase D) passa a **cobrar os cliente
 
 ## 36. Faturamento Filial — fila única e estágios de trabalho (13/10/2026)
 
-As abas por etapa, a tela da remessa e a ficha do kit deram lugar a **uma fila só** em `/financeiro/filial`. Não há migration: o `estagio` técnico do kit (§34) continua o mesmo, e a fila faz a leitura dele para quem trabalha.
+As abas por etapa e a ficha do kit deram lugar a **uma fila só** em `/financeiro/filial`. As remessas continuam com tela própria, como visão complementar. Não há migration: o `estagio` técnico do kit (§34) continua o mesmo, e a fila faz a leitura dele para quem trabalha.
 
 **Estágios da fila** (`situacaoDaNota`, `lib/modulos/financeiro/filial/estagios.ts`, com testes). Cada NF fica no primeiro passo que falta:
 
@@ -566,7 +566,14 @@ As abas por etapa, a tela da remessa e a ficha do kit deram lugar a **uma fila s
 - **Painel lateral** (`?nf=<kit>`): situação e tarefas dos dois lados; documentos, com o demonstrativo sugerido quando falta; para Cuiabá, o bloco da CCFT040 e "Anexar boleto" em cada parcela; o e-mail ao cliente; cancelar. Fechar volta à mesma fila.
 - **Envio da nota antes do boleto:** continua possível, mas só como exceção recolhida no painel ("o recomendado é enviar tudo junto").
 - **Cabeçalho:** "Enviar faturas" e, para Cuiabá, "Anexar boletos". As duas telas voltam à fila.
-- **Links antigos redirecionam,** inclusive os das pendências gravadas:
+- **Remessas** (`/financeiro/filial/remessas`), a visão por lote que complementa a fila. O cabeçalho alterna entre **Fila** e **Remessas**.
+  - **Lista:** cada remessa com data, quem enviou, nº de NFs, andamento (contagem por estágio da fila), a NF mais urgente e o aviso a Cuiabá.
+  - **Detalhe** (`remessas/[n]`):
+    - a barra da remessa, com o relatório CCFT040 já aberto para Cuiabá;
+    - todas as NFs, inclusive enviadas e canceladas, com o vencimento e o valor da nota, o estágio e as tarefas de cada lado, os documentos, a **conferência com o Consistem** e a urgência;
+    - a NF abre o mesmo painel lateral, e fechar volta à remessa;
+    - o link "Ver estas NFs na fila".
+  - **Entradas:** as pendências "Implantar remessa nº N" e "Subir demonstrativos da remessa nº N" abrem aqui. Na fila e no painel, o nº da remessa também leva a esta tela.
+- **Links antigos redirecionam para a fila,** inclusive os das pendências gravadas:
   - `[id]` vai para `?ver=todas&nf=`;
-  - `remessas/[n]` vai para `?ver=todas&remessa=n`;
-  - `a-implantar`, `boletos-a-anexar`, `a-enviar`, `enviadas` e `remessas` vão para o filtro correspondente.
+  - `a-implantar`, `boletos-a-anexar`, `a-enviar` e `enviadas` vão para o filtro correspondente.

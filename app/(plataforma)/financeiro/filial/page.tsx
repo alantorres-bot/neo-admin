@@ -32,7 +32,8 @@ function Marca({ rotulo, ok }: { rotulo: string; ok: boolean | null }) {
 
 /**
  * Fila única do Faturamento Filial: todas as NFs numa tela, com o estágio (o próximo passo), a urgência pelo vencimento, o nº da
- * remessa e a próxima tarefa de quem está vendo. Clicar abre o painel lateral com tudo da NF. A remessa é um filtro.
+ * remessa e a próxima tarefa de quem está vendo. Clicar abre o painel lateral com tudo da NF. A remessa também filtra a fila; o nº
+ * dela leva à tela da remessa (Remessas), que é a visão por lote.
  */
 export default async function PaginaFilaFilial({ searchParams }: PageProps<"/financeiro/filial">) {
   const sessao = await exigirSessao();
@@ -52,7 +53,7 @@ export default async function PaginaFilaFilial({ searchParams }: PageProps<"/fin
 
   const supabase = await criarClienteServidor();
   const [todas, { data: listaRemessas }] = await Promise.all([
-    carregarFila(supabase, { papel, hoje, enviadas: ver === "enviadas" }),
+    carregarFila(supabase, { papel, hoje, estagios: ver === "enviadas" ? "enviadas" : "abertas" }),
     supabase.from("rec_vw_remessas").select("numero, kits, aguardando_implantacao").order("numero", { ascending: false }).limit(60),
   ]);
 
@@ -134,7 +135,7 @@ export default async function PaginaFilaFilial({ searchParams }: PageProps<"/fin
                     <span className="block text-muted-foreground">{textoVencimento(l.vencimento, hoje)}</span>
                   </TableCell>
                   <TableCell className="tabular-nums">
-                    {l.remessas.map((n) => <Link key={n} className="mr-1 underline" href={href({ remessa: n })}>{n}</Link>)}
+                    {l.remessas.map((n) => <Link key={n} className="mr-1 underline" href={`${ROTA_FILIAL}/remessas/${n}`} title={`Abrir a remessa nº ${n}`}>{n}</Link>)}
                   </TableCell>
                   <TableCell className="font-medium tabular-nums"><Link className="hover:underline" href={href({ nf: l.id })} scroll={false}>{Number(l.nota)}</Link></TableCell>
                   <TableCell className="max-w-64">
