@@ -3,7 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { EXPLICACAO_ETAPA } from "@/lib/modulos/financeiro/filial/abas";
+import { explicacaoDaEtapa } from "@/lib/modulos/financeiro/filial/abas";
 import { pendenciasDoKit, ROTA_FILIAL } from "@/lib/modulos/financeiro/filial/arquivos";
 import { lerParcelasInformadas } from "@/lib/modulos/financeiro/filial/remessa";
 import { emCentavos } from "@/lib/modulos/financeiro/recebiveis/carteira";
@@ -64,7 +64,7 @@ export async function PaginaEtapa({ etapa, caminho, searchParams }: { etapa: Eta
     if (extra.pagina && extra.pagina > 1) qs.set("pagina", String(extra.pagina));
     return qs.size ? `${caminho}?${qs}` : caminho;
   };
-  const comCuiaba = <span className="text-[12px] text-muted-foreground">Com Cuiabá</span>;
+  const comCuiaba = <span className="text-[12px] text-muted-foreground">Aguardando Cuiabá</span>;
 
   function acao(k: { id: string }) {
     const remessa = remessaDe.get(k.id);
@@ -87,7 +87,7 @@ export async function PaginaEtapa({ etapa, caminho, searchParams }: { etapa: Eta
       </form>
 
       <p className="text-[12px] text-muted-foreground">
-        {EXPLICACAO_ETAPA[etapa]}
+        {explicacaoDaEtapa(etapa, !!sessao.acesso.restrito)}
         {total > 0 && etapa !== "enviada" && <> <strong className="text-foreground">{total} {total === 1 ? "nota" : "notas"}{totalPaginas === 1 ? ` · ${formatarMoeda(somaPagina)}` : ""}</strong>.</>}
       </p>
 

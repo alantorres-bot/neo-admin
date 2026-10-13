@@ -17,7 +17,7 @@ import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { Suspense } from "react";
-import { ABAS_FILIAL } from "@/lib/modulos/financeiro/filial/abas";
+import { abasFilial } from "@/lib/modulos/financeiro/filial/abas";
 import { montarEmailCliente } from "@/lib/modulos/financeiro/filial/email-cliente";
 import { AnexarDocumento, BotaoCancelarKit } from "./componentes";
 import { EmailCliente } from "./email-cliente";
@@ -73,7 +73,7 @@ export default async function PaginaKit({ params }: PageProps<"/financeiro/filia
     parcelasTransferencia: (titulos ?? []).filter((t) => t.forma_pagamento === "transferencia" && !boletoPorTitulo.has(t.id)).length,
   });
   const aberto = estagio !== "enviada" && estagio !== "cancelada";
-  const abaDoKit = ABAS_FILIAL.find((x) => x.estagio === estagio);
+  const abaDoKit = abasFilial(!!sessao.acesso.restrito).find((x) => x.estagio === estagio);
 
   // E-mail ao cliente (Fase C): sugestão de destinatário (último e-mail da filial a este cliente; senão, contatos com e-mail),
   // cópia interna configurada, texto no modelo da filial e o Gmail conectado de quem está vendo.

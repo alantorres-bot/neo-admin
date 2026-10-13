@@ -1,17 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { abaInicialDaFilial, ABAS_FILIAL } from "./abas";
+import { ABA_INICIAL_FILIAL, abasFilial, explicacaoDaEtapa } from "./abas";
 
 describe("abas do Faturamento Filial", () => {
-  it("abre na primeira etapa com pendência", () => {
-    expect(abaInicialDaFilial({ recebida: 2, implantada: 5 })).toBe("/financeiro/filial/a-implantar");
-    expect(abaInicialDaFilial({ recebida: 0, implantada: 5, pronta: 1 })).toBe("/financeiro/filial/boletos-a-anexar");
-    expect(abaInicialDaFilial({ pronta: 1, enviada: 40 })).toBe("/financeiro/filial/a-enviar");
+  it("ordem do fluxo: remessa, implantação, boleto, envio ao cliente, enviadas", () => {
+    expect(abasFilial().map((a) => a.rotulo)).toEqual(["Remessas", "A implantar", "Boletos a anexar", "A enviar ao cliente", "Enviadas"]);
+    expect(ABA_INICIAL_FILIAL).toBe("/financeiro/filial/remessas");
   });
-  it("sem pendência, abre em 'A enviar ao cliente' (enviadas não contam como pendência)", () => {
-    expect(abaInicialDaFilial({ enviada: 10 })).toBe("/financeiro/filial/a-enviar");
-    expect(abaInicialDaFilial({})).toBe("/financeiro/filial/a-enviar");
+  it("a filial vê as etapas de Cuiabá pelo lado dela (mesmas rotas)", () => {
+    const filial = abasFilial(true);
+    expect(filial.map((a) => a.rotulo)).toEqual(["Remessas", "Em implantação", "Boletos a receber", "A enviar ao cliente", "Enviadas"]);
+    expect(filial.map((a) => a.href)).toEqual(abasFilial().map((a) => a.href));
   });
-  it("ordem do trabalho", () => {
-    expect(ABAS_FILIAL.map((a) => a.rotulo)).toEqual(["A implantar", "Boletos a anexar", "A enviar ao cliente", "Enviadas", "Remessas"]);
+  it("explicação da etapa conforme quem vê", () => {
+    expect(explicacaoDaEtapa("implantada", true)).toMatch(/Cuiabá está anexando/);
+    expect(explicacaoDaEtapa("implantada")).toMatch(/esperando o boleto/);
   });
 });

@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
-import { abaInicialDaFilial } from "@/lib/modulos/financeiro/filial/abas";
-import { contarKits } from "./abas-filial";
+import { ABA_INICIAL_FILIAL } from "@/lib/modulos/financeiro/filial/abas";
 
-// Como a Cobrança: o Faturamento Filial abre na primeira etapa que tem notas pendentes.
-export default async function PaginaFilial() {
-  redirect(abaInicialDaFilial(await contarKits()));
+// O Faturamento Filial abre na Remessa: é onde tudo começa.
+export default function PaginaFilial() {
+  redirect(ABA_INICIAL_FILIAL);
 }

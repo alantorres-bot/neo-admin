@@ -20,7 +20,7 @@ export default async function LayoutFilial({ children }: LayoutProps<"/financeir
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Faturamento Filial</h1>
           <p className="text-sm text-muted-foreground">
-            As notas da Filial Contagem, por etapa: implantar no Consistem, anexar o boleto e enviar ao cliente. Ao fazer a tarefa, a nota passa sozinha para a etapa seguinte.
+            As notas da Filial Contagem, por etapa: remessa, implantação no Consistem, boleto e envio ao cliente. Ao fazer a tarefa, a nota passa sozinha para a etapa seguinte.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -28,8 +28,8 @@ export default async function LayoutFilial({ children }: LayoutProps<"/financeir
           {podeEnviar && <Button render={<Link href={`${ROTA_FILIAL}/enviar`} />}>Enviar faturas</Button>}
         </div>
       </div>
-      <Suspense fallback={<AbasFilialSemNumeros />}>
-        <AbasFilialComNumeros />
+      <Suspense fallback={<AbasFilialSemNumeros filial={!!sessao.acesso.restrito} />}>
+        <AbasFilialComNumeros filial={!!sessao.acesso.restrito} />
       </Suspense>
       {children}
     </div>
