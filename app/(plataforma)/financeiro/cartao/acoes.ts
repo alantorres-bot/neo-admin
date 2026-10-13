@@ -16,7 +16,10 @@ import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { gerarPlanilha, nomeDaPlanilha } from "@/lib/modulos/financeiro/cartao/planilha";
 import { bloqueioDoFechamento, rotuloCompetencia } from "@/lib/modulos/financeiro/cartao/ciclos";
 import { CAMPOS_CONFIG_ENCARGOS, ROTULO_CAMPO_CONFIG } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
-import { codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerEncargos, type FotoFechamento } from "./dados";
+import { CAMPOS_COMPRA, CAMPOS_PADRAO_CARTAO, lerCampos, montarTitulosCompra, ROTULO_CAMPO_COMPRA } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
+import { CONFERIR } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { normalizar } from "@/lib/modulos/financeiro/cartao/texto";
+import { codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerCompras, lerEncargos, lerEstabelecimentos, paraCartaoInfo, type FotoFechamento } from "./dados";
 
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
 const texto = (d: FormData, nome: string) => String(d.get(nome) ?? "").trim();
@@ -156,6 +159,21 @@ const esquemaCartao = z.object({
   observacao: z.string().trim().max(300),
 });
 
+/** Códigos do Consistem num formulário (prefixo + campo). `todos` = todos ou nenhum; senão, cada um é opcional. */
+function lerCodigos(dados: FormData, prefixo: string, campos: readonly string[], todos: boolean, rotulo: string): { ok: true; valor: Record<string, number> | null } | { ok: false; erro: string } {
+  const brutos = campos.map((k) => [k, texto(dados, `${prefixo}${k}`)] as const);
+  if (brutos.every(([, v]) => v === "")) return { ok: true, valor: null };
+  const valor: Record<string, number> = {};
+  for (const [k, v] of brutos) {
+    if (v === "" && !todos) continue;
+    if (!/^\d{1,9}$/.test(v) || Number(v) <= 0) {
+      return { ok: false, erro: `${rotulo}: informe ${ROTULO_CAMPO_COMPRA[k as keyof typeof ROTULO_CAMPO_COMPRA].toLowerCase()} (número)${todos ? ", ou deixe todos vazios" : ""}.` };
+    }
+    valor[k] = Number(v);
+  }
+  return { ok: true, valor };
+}
+
 /** Códigos do Consistem do título de encargos: todos preenchidos (inteiros positivos) ou todos vazios. */
 function lerCodigosEncargos(dados: FormData): { ok: true; valor: Record<string, number> | null } | { ok: false; erro: string } {
   const brutos = CAMPOS_CONFIG_ENCARGOS.map((k) => [k, texto(dados, `enc_${k}`)] as const);
@@ -179,6 +197,8 @@ export async function salvarCartao(_anterior: EstadoForm, dados: FormData): Prom
   if (!v.success) return { erro: v.error.issues[0].message };
   const codigos = lerCodigosEncargos(dados);
   if (!codigos.ok) return { erro: codigos.erro };
+  const compras = lerCodigos(dados, "cmp_", CAMPOS_PADRAO_CARTAO, true, "Padrões de compra");
+  if (!compras.ok) return { erro: compras.erro };
   const d = v.data;
   const supabase = await criarClienteServidor();
   const { error } = await supabase.rpc("crt_salvar_cartao", {
@@ -186,7 +206,7 @@ export async function salvarCartao(_anterior: EstadoForm, dados: FormData): Prom
     p_tipo_titulo: d.tipoTitulo, p_leitor: d.leitor, p_pasta_faturas: d.pastaFaturas || null, p_ativo: d.ativo, p_observacao: d.observacao || null,
   });
   if (error) return { erro: mensagemDeErro(error) };
-  const { error: erroCodigos } = await supabase.from("crt_cartoes").update({ lancamento_encargos: codigos.valor }).eq("codigo", d.codigo);
+  const { error: erroCodigos } = await supabase.from("crt_cartoes").update({ lancamento_encargos: codigos.valor, lancamento_compras: compras.valor }).eq("codigo", d.codigo);
   if (erroCodigos) return { erro: `Cartão salvo, mas os códigos de encargos não: ${mensagemDeErro(erroCodigos)}` };
   revalidatePath(ROTA_CARTAO, "layout");
   return { ok: true };
@@ -205,8 +225,12 @@ export async function salvarEstabelecimento(_anterior: EstadoForm, dados: FormDa
   const v = esquemaEstab.safeParse({ padrao: texto(dados, "padrao"), categoria: texto(dados, "categoria"), contaFluxo: texto(dados, "contaFluxo"), ativo: dados.get("ativo") === "on" });
   if (!v.success) return { erro: v.error.issues[0].message };
   const supabase = await criarClienteServidor();
-  const { error } = await supabase.rpc("crt_salvar_estabelecimento", { p_padrao: v.data.padrao, p_categoria: v.data.categoria, p_conta_fluxo: v.data.contaFluxo || null, p_ativo: v.data.ativo });
+  const codigos = lerCodigos(dados, "erp_", CAMPOS_COMPRA, false, "Lançamento no Consistem");
+  if (!codigos.ok) return { erro: codigos.erro };
+  const { data: id, error } = await supabase.rpc("crt_salvar_estabelecimento", { p_padrao: v.data.padrao, p_categoria: v.data.categoria, p_conta_fluxo: v.data.contaFluxo || null, p_ativo: v.data.ativo });
   if (error) return { erro: mensagemDeErro(error) };
+  const { error: erroCodigos } = await supabase.from("crt_estabelecimentos").update({ lancamento_erp: codigos.valor }).eq("id", id as string);
+  if (erroCodigos) return { erro: `Estabelecimento salvo, mas os códigos do Consistem não: ${mensagemDeErro(erroCodigos)}` };
   revalidatePath(ROTA_CARTAO, "layout");
   return { ok: true };
 }
@@ -382,7 +406,7 @@ export async function lancarEncargos(entrada: { faturaId: string; valorCentavos:
     p_fatura: c.fatura.id, p_linhas: t.linhas.map((a) => a.linha.id), p_valor: t.valorCentavos / 100, p_complemento: t.complemento, p_payload: t.payload,
   });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
-  const { data, error: erroFuncao } = await supabase.functions.invoke("crt-lancar-encargos", { body: { id } });
+  const { data, error: erroFuncao } = await supabase.functions.invoke("crt-lancar-no-consistem", { body: { id } });
   revalidatePath(ROTA_CARTAO, "layout");
   if (erroFuncao) {
     const { mensagem, tipo } = await mensagemDaFuncao(erroFuncao, "Não foi possível falar com a função de lançamento.");
@@ -409,4 +433,98 @@ export async function resolverLancamentoEncargos(entrada: z.input<typeof esquema
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   revalidatePath(ROTA_CARTAO, "layout");
   return { ok: true, aviso: dados.data.codLancamento ? `Registrado como lançado (${dados.data.codLancamento}); as linhas foram casadas com o título.` : "Registrado como não criado. O lançamento pode ser feito de novo." };
+}
+
+// ---------------------------------------------------------------- lançar compras no Consistem (0138)
+
+const codigoCampo = z.number().int().positive().max(999_999_999).optional();
+const esquemaCompra = z.object({
+  faturaId: z.string().uuid(),
+  linhaId: z.string().uuid(),
+  campos: z.object(Object.fromEntries(CAMPOS_COMPRA.map((k) => [k, codigoCampo])) as Record<(typeof CAMPOS_COMPRA)[number], typeof codigoCampo>),
+  /** Lembrar a escolha para as próximas compras do estabelecimento (trecho da descrição). */
+  lembrar: z.object({ padrao: z.string().trim().min(2, "Informe o trecho do estabelecimento.").max(60) }).nullable(),
+});
+
+async function enviarLote(supabase: Awaited<ReturnType<typeof criarClienteServidor>>, lote: string): Promise<{ ok: true; codigos: string[] } | { ok: false; erro: string }> {
+  const { data, error } = await supabase.functions.invoke("crt-lancar-no-consistem", { body: { lote } });
+  if (error) {
+    const { mensagem, tipo } = await mensagemDaFuncao(error, "Não foi possível falar com a função de lançamento.");
+    return { ok: false, erro: tipo === "incerto" ? `${mensagem} Depois de conferir, use “Resolver” na lista de compras lançadas.` : mensagem };
+  }
+  const r = data as { lancados?: { codLancamento: string }[] } | null;
+  return { ok: true, codigos: (r?.lancados ?? []).map((x) => x.codLancamento) };
+}
+
+/**
+ * Lança no Consistem a compra sem título (operador ou acima): recalcula a conciliação, confere que a linha ainda está a lançar,
+ * monta os títulos (todas as parcelas restantes) com os códigos conferidos, reserva (crt_reservar_lancamento_compra) e envia.
+ * Com "lembrar", grava os códigos como sugestão do estabelecimento.
+ */
+export async function lancarCompra(entrada: z.input<typeof esquemaCompra>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) lança compras no Consistem." };
+  const dados = esquemaCompra.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const d = dados.data;
+  const c = await conciliacaoDaRequisicao(d.faturaId);
+  if (!c) return { ok: false, erro: "Fatura não encontrada." };
+  if (c.origemTitulos !== "consistem") return { ok: false, erro: `Não foi possível consultar o Consistem agora (${c.avisoOrigem}). Tente de novo.` };
+  const supabase = await criarClienteServidor();
+  const q = await lerCompras(supabase, c);
+  if (!q.ligado) return { ok: false, erro: "O lançamento no Consistem está desligado." };
+  if (!q.mesAberto || !q.competencia) return { ok: false, erro: "Só se lançam compras de fatura de um mês em conciliação." };
+  const proposta = q.propostas[d.linhaId];
+  const item = c.resultado.aLancar.find((a) => a.linha.id === d.linhaId);
+  if (!proposta || !item) return { ok: false, erro: "Esta linha não está mais entre as compras a lançar. Recarregue a página." };
+  const t = montarTitulosCompra({ linha: item.linha, cartao: paraCartaoInfo(c.cartao), campos: lerCampos(d.campos), vencimentoFatura: c.fatura.vencimento, competencia: q.competencia });
+  if (!t.ok) return { ok: false, erro: t.erro };
+
+  const { data: lote, error } = await supabase.rpc("crt_reservar_lancamento_compra", {
+    p_fatura: c.fatura.id, p_linha: d.linhaId, p_titulos: t.titulos.map((x) => ({ parcela: x.parcela, vencimento: x.vencimento, payload: x.payload })),
+  });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+
+  let avisoLembrar = "";
+  if (d.lembrar) {
+    const chave = normalizar(d.lembrar.padrao);
+    const existente = (await lerEstabelecimentos(supabase)).find((e) => normalizar(e.padrao) === chave);
+    const categoria = existente?.categoria ?? (item.categoria && item.categoria !== CONFERIR ? item.categoria : "Compra no cartão");
+    const { data: idEstab, error: erroEstab } = await supabase.rpc("crt_salvar_estabelecimento", {
+      p_padrao: d.lembrar.padrao, p_categoria: categoria, p_conta_fluxo: existente?.conta_fluxo ?? null, p_ativo: true,
+    });
+    const { error: erroCodigos } = erroEstab ? { error: erroEstab } : await supabase.from("crt_estabelecimentos").update({ lancamento_erp: d.campos }).eq("id", idEstab as string);
+    avisoLembrar = erroCodigos ? ` A sugestão não foi gravada: ${mensagemDeErro(erroCodigos)}` : ` Sugestão gravada para ${chave}.`;
+  }
+  const envio = await enviarLote(supabase, lote as string);
+  revalidatePath(ROTA_CARTAO, "layout");
+  if (!envio.ok) return { ok: false, erro: envio.erro + avisoLembrar };
+  const n = envio.codigos.length;
+  return { ok: true, aviso: `${n === 1 ? "Compra lançada" : `${n} parcelas lançadas`} no Consistem: ${envio.codigos.join(", ")}. A linha foi casada com o título.${avisoLembrar}` };
+}
+
+/** Reenvia as parcelas que ficaram de fora de um lote interrompido. */
+export async function reenviarLote(entrada: { lote: string }): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) reenvia lançamentos." };
+  if (!z.string().uuid().safeParse(entrada.lote).success) return { ok: false, erro: "Lote inválido." };
+  const supabase = await criarClienteServidor();
+  const { data: novo, error } = await supabase.rpc("crt_reenviar_lancamentos", { p_lote: entrada.lote });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  const envio = await enviarLote(supabase, novo as string);
+  revalidatePath(ROTA_CARTAO, "layout");
+  return envio.ok ? { ok: true, aviso: `Parcelas lançadas no Consistem: ${envio.codigos.join(", ")}.` } : { ok: false, erro: envio.erro };
+}
+
+/** Busca fornecedores do Consistem (espelho cap_fornecedores) da empresa, por nome ou código. */
+export async function buscarFornecedores(entrada: { empresaId: string; termo: string }): Promise<{ cod: number; nome: string }[]> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "consulta")) return [];
+  const termo = entrada.termo.trim();
+  if (!z.string().uuid().safeParse(entrada.empresaId).success || termo.length < 2) return [];
+  const supabase = await criarClienteServidor();
+  let consulta = supabase.from("cap_fornecedores").select("cod_fornecedor, nome").eq("empresa_id", entrada.empresaId).limit(20);
+  consulta = /^\d+$/.test(termo) ? consulta.eq("cod_fornecedor", termo) : consulta.ilike("nome", `%${termo.replace(/[%_]/g, "")}%`);
+  const { data } = await consulta.order("nome");
+  return (data ?? []).map((f) => ({ cod: Number(f.cod_fornecedor), nome: f.nome as string })).filter((f) => Number.isInteger(f.cod) && f.cod > 0);
 }

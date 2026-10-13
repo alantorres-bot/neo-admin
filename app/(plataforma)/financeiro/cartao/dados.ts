@@ -6,6 +6,7 @@ import { MODULO_CARTAO, type CodigoLeitor } from "@/lib/modulos/financeiro/carta
 import { selecionarTitulos, type LancamentoEspelho, type OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { somarDias } from "@/lib/modulos/financeiro/cartao/texto";
 import { encargosALancar, lerConfigEncargos, montarTituloEncargos, type NovoLancamentoContaPagar, type TituloEncargos } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
+import { lerCampos, padraoSugerido, sugestaoDaLinha, type EstabelecimentoCodigos, type Sugestao } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
 import { JANELA_VENCIMENTO } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { FUSO } from "@/lib/nucleo/fila";
 import { urlAssinadaAnexo } from "@/lib/nucleo/anexos";
@@ -24,8 +25,10 @@ export type CartaoLinha = {
   leitor: CodigoLeitor; pasta_faturas: string | null; ativo: boolean; observacao: string | null;
   /** Códigos do Consistem do título de encargos (crt_cartoes.lancamento_encargos). */
   lancamento_encargos: Record<string, number> | null;
+  /** Padrões do cartão para o título de compra (portador, categoria, histórico, conta contábil de crédito). */
+  lancamento_compras: Record<string, number> | null;
 };
-const COLUNAS_CARTAO = "codigo, nome, banco, tipo_pessoa, dia_fechamento, dia_vencimento, tipo_titulo, leitor, pasta_faturas, ativo, observacao, lancamento_encargos";
+const COLUNAS_CARTAO = "codigo, nome, banco, tipo_pessoa, dia_fechamento, dia_vencimento, tipo_titulo, leitor, pasta_faturas, ativo, observacao, lancamento_encargos, lancamento_compras";
 
 export async function lerCartoes(supabase: Cliente): Promise<CartaoLinha[]> {
   const { data, error } = await supabase.from("crt_cartoes").select(COLUNAS_CARTAO).order("codigo");
@@ -36,9 +39,13 @@ export const paraCartaoInfo = (c: CartaoLinha): CartaoInfo => ({
   codigo: c.codigo, nome: c.nome, banco: c.banco, tipoPessoa: c.tipo_pessoa, diaFechamento: c.dia_fechamento, diaVencimento: c.dia_vencimento, tipoTitulo: c.tipo_titulo,
 });
 
-export type EstabelecimentoLinha = { id: string; padrao: string; categoria: string; conta_fluxo: string | null; ativo: boolean };
+export type EstabelecimentoLinha = {
+  id: string; padrao: string; categoria: string; conta_fluxo: string | null; ativo: boolean;
+  /** Sugestão de códigos do Consistem para a compra deste estabelecimento (fornecedor, histórico, fluxo, contas). */
+  lancamento_erp: Record<string, number> | null;
+};
 export async function lerEstabelecimentos(supabase: Cliente): Promise<EstabelecimentoLinha[]> {
-  const { data, error } = await supabase.from("crt_estabelecimentos").select("id, padrao, categoria, conta_fluxo, ativo").order("padrao").limit(2000);
+  const { data, error } = await supabase.from("crt_estabelecimentos").select("id, padrao, categoria, conta_fluxo, ativo, lancamento_erp").order("padrao").limit(2000);
   if (error) throw new Error(`Falha ao ler o dicionário: ${error.message}`);
   return (data ?? []) as EstabelecimentoLinha[];
 }
@@ -206,6 +213,7 @@ export type LancamentoErpLinha = {
   id: string; fatura_id: string; situacao: "reservado" | "enviando" | "lancado" | "erro"; valor: number | string; complemento: string; linhas: string[];
   payload: NovoLancamentoContaPagar; cod_lancamento_erp: string | null; erro: string | null; criado_por: string | null; criado_por_nome: string | null; criado_em: string;
   enviado_em: string | null; concluido_em: string | null; resolvido_por_nome: string | null; motivo_resolucao: string | null;
+  tipo: "encargos" | "compra"; lote: string; linha_origem: string | null; linha_descricao: string | null; parcela: number | null; parcelas: number | null; vencimento: string | null;
 };
 
 export type QuadroEncargos = {
@@ -224,10 +232,10 @@ export type QuadroEncargos = {
 export async function lerEncargos(supabase: Cliente, c: Conciliacao): Promise<QuadroEncargos> {
   const ciclo = c.fatura.ciclo_id;
   const [{ data: config }, { data: lancs, error }, { data: cic }] = await Promise.all([
-    supabase.from("configuracoes").select("valor").eq("chave", "financeiro.cartao.lancar_encargos_no_erp").maybeSingle(),
+    supabase.from("configuracoes").select("valor").eq("chave", CHAVE_LANCAR_NO_ERP).maybeSingle(),
     ciclo
-      ? supabase.from("crt_vw_lancamentos_erp").select("id, fatura_id, situacao, valor, complemento, linhas, payload, cod_lancamento_erp, erro, criado_por, criado_por_nome, criado_em, enviado_em, concluido_em, resolvido_por_nome, motivo_resolucao")
-        .eq("ciclo_id", ciclo).order("criado_em", { ascending: false }).limit(50)
+      ? supabase.from("crt_vw_lancamentos_erp").select("id, fatura_id, situacao, valor, complemento, linhas, payload, cod_lancamento_erp, erro, criado_por, criado_por_nome, criado_em, enviado_em, concluido_em, resolvido_por_nome, motivo_resolucao, tipo, lote, linha_origem, linha_descricao, parcela, parcelas, vencimento")
+        .eq("ciclo_id", ciclo).eq("tipo", "encargos").order("criado_em", { ascending: false }).limit(50)
       : Promise.resolve({ data: [], error: null }),
     ciclo ? supabase.from("crt_ciclos").select("fechamento, situacao").eq("id", ciclo).maybeSingle() : Promise.resolve({ data: null }),
   ]);
@@ -243,6 +251,63 @@ export async function lerEncargos(supabase: Cliente, c: Conciliacao): Promise<Qu
   const nomes = cfg ? await nomesDosFornecedores(supabase, [String(cfg.codFornecedor)]) : new Map<string, string>();
   const mesAberto = (cic as { situacao: string } | null)?.situacao === "em_conciliacao" && c.fatura.status === "importada";
   return { ligado: (config as { valor: unknown } | null)?.valor === true, mesAberto, titulo, fornecedorNome: cfg ? nomes.get(String(cfg.codFornecedor)) ?? null : null, ativo, historico };
+}
+
+// ---------------------------------------------------------------- compras lançadas no Consistem (0138)
+
+export const CHAVE_LANCAR_NO_ERP = "financeiro.cartao.lancar_no_erp";
+/** Naturezas de "A lançar" que podem virar título de compra pelo painel. */
+export const NATUREZAS_COMPRA = ["Despesa sem nota fiscal", "Não identificado", "Parcela não desdobrada"] as const;
+
+export type PropostaCompra = { sugestao: Sugestao; padraoLembrar: string; fornecedorNome: string | null; categoria: string };
+export type QuadroCompras = {
+  ligado: boolean;
+  mesAberto: boolean;
+  empresaId: string;
+  /** Competência do mês da fatura (AAAA-MM-01). */
+  competencia: string | null;
+  vencimentoFatura: string;
+  cartao: CartaoInfo;
+  /** Sugestão por linha que pode ser lançada (id da linha → proposta). */
+  propostas: Record<string, PropostaCompra>;
+  /** Títulos de compra do mês (todos os lotes, mais novos primeiro). */
+  lancamentos: LancamentoErpLinha[];
+};
+
+/** Compras sem título que podem ser lançadas no Consistem, a sugestão de cada uma e os lançamentos já feitos no mês. */
+export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<QuadroCompras> {
+  const ciclo = c.fatura.ciclo_id;
+  const [{ data: config }, { data: lancs, error }, { data: cic }, estabelecimentos] = await Promise.all([
+    supabase.from("configuracoes").select("valor").eq("chave", CHAVE_LANCAR_NO_ERP).maybeSingle(),
+    ciclo
+      ? supabase.from("crt_vw_lancamentos_erp").select("id, fatura_id, situacao, valor, complemento, linhas, payload, cod_lancamento_erp, erro, criado_por, criado_por_nome, criado_em, enviado_em, concluido_em, resolvido_por_nome, motivo_resolucao, tipo, lote, linha_origem, linha_descricao, parcela, parcelas, vencimento")
+        .eq("ciclo_id", ciclo).eq("tipo", "compra").order("criado_em", { ascending: false }).order("parcela").limit(500)
+      : Promise.resolve({ data: [], error: null }),
+    ciclo ? supabase.from("crt_ciclos").select("competencia, situacao").eq("id", ciclo).maybeSingle() : Promise.resolve({ data: null }),
+    lerEstabelecimentos(supabase),
+  ]);
+  if (error) throw new Error(`Falha ao ler os lançamentos de compras: ${error.message}`);
+  const lancamentos = (lancs ?? []) as LancamentoErpLinha[];
+  const emLancamento = new Set(lancamentos.filter((l) => l.situacao !== "erro").map((l) => l.linha_origem));
+  const estabs: EstabelecimentoCodigos[] = estabelecimentos.filter((e) => e.ativo).map((e) => ({ padrao: e.padrao, lancamentoErp: lerCampos(e.lancamento_erp) }));
+  const padroesCartao = lerCampos(c.cartao.lancamento_compras);
+  const propostas: Record<string, PropostaCompra> = {};
+  for (const a of c.resultado.aLancar) {
+    if (a.justificativa || a.linha.valorCentavos <= 0 || emLancamento.has(a.linha.id) || !(NATUREZAS_COMPRA as readonly string[]).includes(a.natureza)) continue;
+    const sugestao = sugestaoDaLinha(a.linha.descricao, estabs, padroesCartao);
+    propostas[a.linha.id] = { sugestao, padraoLembrar: sugestao.padrao ?? padraoSugerido(a.linha.descricao), fornecedorNome: null, categoria: a.categoria };
+  }
+  const codigos = [...new Set(Object.values(propostas).map((p) => p.sugestao.campos.codFornecedor).filter((x): x is number => x !== undefined).map(String))];
+  if (codigos.length) {
+    const { data: f } = await supabase.from("cap_fornecedores").select("cod_fornecedor, nome").eq("empresa_id", c.fatura.empresa_id).in("cod_fornecedor", codigos);
+    const nomes = new Map((f ?? []).map((x) => [String(x.cod_fornecedor), x.nome as string]));
+    for (const p of Object.values(propostas)) if (p.sugestao.campos.codFornecedor) p.fornecedorNome = nomes.get(String(p.sugestao.campos.codFornecedor)) ?? null;
+  }
+  const cc = cic as { competencia: string; situacao: string } | null;
+  return {
+    ligado: (config as { valor: unknown } | null)?.valor === true, mesAberto: cc?.situacao === "em_conciliacao" && c.fatura.status === "importada",
+    empresaId: c.fatura.empresa_id, competencia: cc?.competencia ?? null, vencimentoFatura: c.fatura.vencimento, cartao: paraCartaoInfo(c.cartao), propostas, lancamentos,
+  };
 }
 
 // ---------------------------------------------------------------- regras fornecedor → cartão (cópia do Neo Fiscal)

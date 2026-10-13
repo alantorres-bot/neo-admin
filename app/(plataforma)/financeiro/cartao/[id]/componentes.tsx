@@ -15,13 +15,16 @@ import { ROTA_CARTAO } from "@/lib/modulos/financeiro/cartao/modulo";
 import type { OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { cancelarFatura } from "../acoes";
-import type { DecisaoLinha, LinhaFaturaBanco } from "../dados";
+import type { DecisaoLinha, LinhaFaturaBanco, QuadroCompras } from "../dados";
+import { DialogoLancarCompra } from "./compras";
 import { DialogoDecidir, ListaDecisoes, SeloDecisao, type Candidatos } from "./decisoes";
 
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
 const Conferir = ({ texto }: { texto: string }) => (texto === CONFERIR ? <span className="font-bold text-amber-700">{texto}</span> : <>{texto}</>);
 
-export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, faturaId = null, decisoesHistorico = [] }: {
+export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, faturaId = null, decisoesHistorico = [], compras = null }: {
+  /** Compras sem título que podem ser lançadas no Consistem; nulo = sem botão Lançar. */
+  compras?: QuadroCompras | null;
   resultado: ResultadoConciliacao; outros: OutroTitulo[]; linhas: LinhaFaturaBanco[]; podeOperar: boolean;
   /** Fatura editável (decisões permitidas); nulo = só leitura (mês fechado ou resultado congelado). */
   faturaId?: string | null;
@@ -29,6 +32,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
 }) {
   const rotulo = (nome: string, n: number) => `${nome} (${n})`;
   const decide = podeOperar && faturaId !== null;
+  const lancaCompra = decide && !!compras && compras.ligado && compras.mesAberto;
   const candidatos: Candidatos = {
     linhas: r.aLancar,
     titulos: [...r.divergencias.filter((d) => !d.justificativa).map((d) => d.titulo), ...outros.map((o) => o.titulo)],
@@ -84,6 +88,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
                   <TableCell className="min-w-40 space-y-1">
                     <SeloDecisao justificativa={a.justificativa} classificacao={a.classificacao} observacoes={a.observacoes} />
                     {decide && <DialogoDecidir faturaId={faturaId!} alvo={{ tipo: "linha", item: a }} candidatos={candidatos} />}
+                    {lancaCompra && compras!.propostas[a.linha.id] && <DialogoLancarCompra faturaId={faturaId!} item={a} proposta={compras!.propostas[a.linha.id]} compras={compras!} />}
                   </TableCell>
                 </TableRow>
               ))}

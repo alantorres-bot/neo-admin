@@ -20,6 +20,9 @@
 //                                       Também devolve as ANTECIPAÇÕES (A) com data de pagamento em [ini, fim] (antecipação paga no
 //                                       cartão: o complemento quase nunca cita o cartão). A data de pagamento vem do espelho ou do
 //                                       detalhe (lancamentoContasPagar/{id}); procura as emitidas até 60 dias antes do início.
+//   exemplos_compras_cartao { empresaId?, ini, fim }
+//                                       SÓ LEITURA: compras no cartão já lançadas (por fornecedor, com detalhe), para sugerir os
+//                                       códigos do lançamento das compras sem título.
 //   exemplos_encargos { empresaId?, ini, fim }
 //                                       SÓ LEITURA: títulos de encargo de cartão (IOF, juros, multa...) emitidos no período, com o
 //                                       detalhe completo, para montar o lançamento automático dos encargos.
@@ -663,6 +666,46 @@ Deno.serve(async (req) => {
           }
         }
         return responder({ ok: true, empresa: e.nome_curto, registrosNoPeriodo: registros.length, encontrados: achados.length, lista: achados.slice(0, 40), detalhes });
+      }
+      case "exemplos_compras_cartao": {
+        // SÓ LEITURA: títulos de COMPRA no cartão (complemento "CARTÃO <banco>...", sem cartório nem encargo) emitidos no período,
+        // agrupados por fornecedor, com o detalhe de até 2 por fornecedor (conta contábil, fluxo, histórico, portador, categoria).
+        const ini = String(corpo.ini ?? "");
+        const fim = String(corpo.fim ?? "");
+        const dataOk = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d);
+        if (!dataOk(ini) || !dataOk(fim) || ini > fim || (Date.parse(fim) - Date.parse(ini)) / 86_400_000 > 400) {
+          return responder({ erro: "Período de emissão inválido (até 400 dias)." }, 400);
+        }
+        const e = (empresas as Empresa[]).find((x) => x.id === corpo.empresaId) ?? (empresas[0] as Empresa);
+        const cfg: ConfigConsistem = { ...cfgBase, empresa: e.codigo_erp };
+        const registros = await buscarTodasPaginas(buscar, cfg, ROTA_CONTAS_PAGAR, { dataEmissaoIni: ini, dataEmissaoFim: fim, paginacao: PAGINACAO });
+        const ehCompra = (t: string) => /^\s*CART(AO|ÃO|AÕ)\b/i.test(t) && !/CART[OÓ]RIO/i.test(t) && !/(IOF|JUROS|MULTA|ANUIDADE|TARIFA|ENCARGO|MORA)/i.test(t);
+        const achados = registros.filter((r) => String(r.tipoLancamento ?? "") === "C" && ehCompra(String(r.complementoHistorico ?? "")));
+        const porFornecedor = new Map<string, Record<string, unknown>[]>();
+        for (const r of achados) {
+          const k = String(r.codFornecedor ?? "");
+          porFornecedor.set(k, [...(porFornecedor.get(k) ?? []), r]);
+        }
+        const grupos = [...porFornecedor.entries()].sort((a, b) => b[1].length - a[1].length);
+        const detalhes: Record<string, unknown>[] = [];
+        for (const [, lista] of grupos.slice(0, 40)) {
+          for (const r of lista.slice(-2)) {
+            try {
+              detalhes.push(await buscarObjeto(buscar, cfg, `${ROTA_DETALHE_LANCAMENTO}/${encodeURIComponent(String(r.codLancamento))}`));
+            } catch (erro) {
+              detalhes.push({ codLancamento: r.codLancamento, erro: erro instanceof Error ? erro.message : "falha" });
+            }
+          }
+        }
+        return responder({
+          ok: true, empresa: e.nome_curto, registrosNoPeriodo: registros.length, encontrados: achados.length,
+          fornecedores: grupos.map(([cod, lista]) => ({
+            codFornecedor: cod, quantidade: lista.length,
+            exemplos: lista.slice(-4).map((r) => String(r.complementoHistorico ?? "")),
+            combinacoes: [...new Set(lista.map((r) => `h${r.codHistorico ?? ""}/cat${r.categoriaDoc ?? ""}/port${r.codBanco ?? ""}`))],
+          })),
+          detalhes,
+        });
       }
       case "sincronizar": {
         const resultados: ResumoEmpresa[] = [];

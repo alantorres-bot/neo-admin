@@ -4,6 +4,7 @@ import { useEffect, useRef } from "react";
 import { Pencil, Plus } from "lucide-react";
 import { Campo, DialogoFormulario } from "@/components/formularios/dialogo-formulario";
 import { Input } from "@/components/ui/input";
+import { CAMPOS_COMPRA, ROTULO_CAMPO_COMPRA } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
 import { salvarEstabelecimento } from "../acoes";
 import type { EstabelecimentoLinha } from "../dados";
 
@@ -33,6 +34,17 @@ export function DialogoEstabelecimento({ estabelecimento, padraoSugerido, abrirA
         <Campo id="contaFluxo" rotulo="Conta de fluxo (Descrição Conta no Consistem)" dica="Vazio = [CONFERIR] a cada lançamento (quando a conta depende do item comprado).">
           <Input id="contaFluxo" name="contaFluxo" defaultValue={estabelecimento?.conta_fluxo ?? ""} maxLength={60} placeholder="Ex.: Passagens, Hospedagens, Softwares e Licenças" />
         </Campo>
+        <fieldset className="space-y-2 rounded-[3px] border border-grade p-3">
+          <legend className="px-1 text-sm font-medium">Lançamento no Consistem (sugestão)</legend>
+          <p className="text-xs text-muted-foreground">Códigos sugeridos ao lançar a compra deste estabelecimento. Todos opcionais: o que faltar vem do cartão ou o operador escolhe.</p>
+          <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-4">
+            {CAMPOS_COMPRA.map((k) => (
+              <Campo key={k} id={`erp_${k}`} rotulo={ROTULO_CAMPO_COMPRA[k]}>
+                <Input id={`erp_${k}`} name={`erp_${k}`} defaultValue={estabelecimento?.lancamento_erp?.[k] ?? ""} inputMode="numeric" pattern="\d{0,9}" autoComplete="off" />
+              </Campo>
+            ))}
+          </div>
+        </fieldset>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" name="ativo" defaultChecked={estabelecimento?.ativo ?? true} className="size-4" />
           Ativo (usado na classificação)

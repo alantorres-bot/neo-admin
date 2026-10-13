@@ -438,5 +438,5 @@ verify_jwt = false
 [functions.crt-sincronizar-regras]
 verify_jwt = false
 
-[functions.crt-lancar-encargos]
+[functions.crt-lancar-no-consistem]
 verify_jwt = false

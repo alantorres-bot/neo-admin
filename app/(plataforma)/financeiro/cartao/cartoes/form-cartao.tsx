@@ -5,6 +5,7 @@ import { Campo, DialogoFormulario } from "@/components/formularios/dialogo-formu
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { CAMPOS_CONFIG_ENCARGOS, ROTULO_CAMPO_CONFIG } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
+import { CAMPOS_PADRAO_CARTAO, ROTULO_CAMPO_COMPRA } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
 import { LEITORES, ROTULO_LEITOR } from "@/lib/modulos/financeiro/cartao/modulo";
 import { salvarCartao } from "../acoes";
 import type { CartaoLinha } from "../dados";
@@ -65,6 +66,17 @@ export function DialogoCartao({ cartao }: { cartao?: CartaoLinha }) {
           {CAMPOS_CONFIG_ENCARGOS.map((k) => (
             <Campo key={k} id={`enc_${k}`} rotulo={ROTULO_CAMPO_CONFIG[k]}>
               <Input id={`enc_${k}`} name={`enc_${k}`} defaultValue={cartao?.lancamento_encargos?.[k] ?? ""} inputMode="numeric" pattern="\d{0,9}" autoComplete="off" />
+            </Campo>
+          ))}
+        </div>
+      </fieldset>
+      <fieldset className="space-y-2 rounded-[3px] border border-grade p-3">
+        <legend className="px-1 text-sm font-medium">Compras no Consistem (padrões do cartão)</legend>
+        <p className="text-xs text-muted-foreground">Sugeridos no lançamento das compras sem título; o estabelecimento e o operador podem trocar. Todos preenchidos, ou todos vazios.</p>
+        <div className="grid grid-cols-2 items-end gap-3 sm:grid-cols-4">
+          {CAMPOS_PADRAO_CARTAO.map((k) => (
+            <Campo key={k} id={`cmp_${k}`} rotulo={ROTULO_CAMPO_COMPRA[k]}>
+              <Input id={`cmp_${k}`} name={`cmp_${k}`} defaultValue={cartao?.lancamento_compras?.[k] ?? ""} inputMode="numeric" pattern="\d{0,9}" autoComplete="off" />
             </Campo>
           ))}
         </div>

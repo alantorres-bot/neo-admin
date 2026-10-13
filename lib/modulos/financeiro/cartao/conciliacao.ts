@@ -243,9 +243,10 @@ export function casar(linhas: readonly LinhaFatura[], titulos: readonly TituloPa
 
 // ---------------------------------------------------------------- classificação
 
-function doDicionario(descricao: string, dicionario: readonly Estabelecimento[]): Estabelecimento | null {
+/** Estabelecimento do dicionário cuja chave aparece na descrição (a chave mais longa vence). */
+export function doDicionario<E extends Pick<Estabelecimento, "padrao">>(descricao: string, dicionario: readonly E[]): E | null {
   const d = normalizar(descricao);
-  let melhor: Estabelecimento | null = null;
+  let melhor: E | null = null;
   for (const e of dicionario) {
     const p = normalizar(e.padrao);
     if (p && d.includes(p) && (!melhor || p.length > normalizar(melhor.padrao).length)) melhor = e;

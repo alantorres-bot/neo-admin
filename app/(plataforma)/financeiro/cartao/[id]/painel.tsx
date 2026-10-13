@@ -3,11 +3,14 @@
 import type { ResultadoConciliacao, TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import type { OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import type { DecisaoLinha, LinhaFaturaBanco, QuadroEncargos as DadosEncargos } from "../dados";
+import type { DecisaoLinha, LinhaFaturaBanco, QuadroCompras, QuadroEncargos as DadosEncargos } from "../dados";
+import { ListaComprasLancadas } from "./compras";
 import { AbasConciliacao } from "./componentes";
 import { QuadroEncargos } from "./encargos";
 
-export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false, faturaId = null, decisoesHistorico = [], encargos = null }: {
+export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false, faturaId = null, decisoesHistorico = [], encargos = null, compras = null }: {
+  /** Compras sem título (lançamento no Consistem); nulo = sem botão. */
+  compras?: QuadroCompras | null;
   /** Encargos do mês (lançamento no Consistem); nulo = não mostra. */
   encargos?: DadosEncargos | null;
   /** Fatura que aceita decisões (em conciliação); nulo = só leitura. */
@@ -39,7 +42,8 @@ export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura
         </p>
       )}
       {!congelado && encargos && <QuadroEncargos dados={encargos} faturaId={faturaId} podeOperar={podeOperar} />}
-      <AbasConciliacao resultado={r} outros={outros} linhas={linhas} podeOperar={podeOperar && !congelado} faturaId={congelado ? null : faturaId} decisoesHistorico={decisoesHistorico} />
+      {!congelado && compras && <ListaComprasLancadas compras={compras} podeOperar={podeOperar} />}
+      <AbasConciliacao compras={congelado ? null : compras} resultado={r} outros={outros} linhas={linhas} podeOperar={podeOperar && !congelado} faturaId={congelado ? null : faturaId} decisoesHistorico={decisoesHistorico} />
 
       {!congelado && (
         <p className={`rounded-[3px] border p-3 text-sm font-medium ${residuoZero ? "border-grade bg-cabecalho" : "border-red-300 bg-red-50 text-red-800"}`}>

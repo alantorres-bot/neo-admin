@@ -19,7 +19,7 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
 ## 3. Escopo
 | Entra | Fica fora |
 | --- | --- |
-| Cadastro dos cartões (fechamento, vencimento, tipo de título, leitor de PDF); dicionário estabelecimento → categoria → conta de fluxo; importar a fatura (PDF com ou sem senha, ou CSV) com conferência de integridade; cruzar com os títulos do espelho `cap_lancamentos`; abas A lançar / Divergências / Conciliados / Compensados / Quadro / Linhas / Outros títulos de cartão; planilha XLSX; cancelar fatura (com motivo) | Lançar, alterar ou baixar no Consistem (o Neo Admin só lê o ERP), **exceto o título de encargos do mês** (regras 31 a 36, 13/10/2026); gravar decisões humanas (reclassificar, casar à mão, "lançado no Consistem") e fechar a conciliação — **Fase 2**; pendências na Fila do dia — Fase 2; leitores Inter, Itaú, Nubank, Unicred — quando houver amostra/senha; PDF digitalizado como imagem (sem texto) |
+| Cadastro dos cartões (fechamento, vencimento, tipo de título, leitor de PDF); dicionário estabelecimento → categoria → conta de fluxo; importar a fatura (PDF com ou sem senha, ou CSV) com conferência de integridade; cruzar com os títulos do espelho `cap_lancamentos`; abas A lançar / Divergências / Conciliados / Compensados / Quadro / Linhas / Outros títulos de cartão; planilha XLSX; cancelar fatura (com motivo) | Lançar, alterar ou baixar no Consistem (o Neo Admin só lê o ERP), **exceto o título de encargos do mês e as compras sem título** (regras 31 a 43, 13/10/2026); gravar decisões humanas (reclassificar, casar à mão, "lançado no Consistem") e fechar a conciliação — **Fase 2**; pendências na Fila do dia — Fase 2; leitores Inter, Itaú, Nubank, Unicred — quando houver amostra/senha; PDF digitalizado como imagem (sem texto) |
 
 ## 4. Entradas
 - **Fatura do emissor**, enviada pela tela (até 8 MB): PDF (texto) ou CSV. O PDF vira **itens de texto posicionados** (x, y) e cada
@@ -145,6 +145,26 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     ("Foi criado" com o código, ou "Não foi criado"), registrando o que conferiu.
 36. Lançado: grava a decisão **casar** das linhas com o título criado (as linhas saem de "A lançar"). Tudo fica em
     `crt_lancamentos_erp` (o que foi enviado, a resposta, o código, erros e resoluções), nunca apagado.
+37. **Compras sem título lançadas pelo painel** (13/10/2026, decisões do Alan): linha pendente de "Despesa sem nota fiscal",
+    "Não identificado" ou "Parcela não desdobrada" (valor positivo, sem decisão) ganha o botão **Lançar**. Encargos têm o quadro
+    próprio; estornos não viram título.
+38. **Sugestão pelo estabelecimento**: o estabelecimento do dicionário (chave mais longa que aparece na descrição) traz os
+    códigos de `crt_estabelecimentos.lancamento_erp` (fornecedor, histórico, categoria, fluxo, contas, todos opcionais); o que
+    faltar vem dos padrões do cartão (`crt_cartoes.lancamento_compras`: portador, categoria, histórico, conta contábil de
+    crédito); o resto o operador escolhe. Cada estabelecimento terá um **fornecedor próprio cadastrado no Consistem**; o
+    operador busca o fornecedor no espelho `cap_fornecedores` da empresa.
+39. O operador pode **mudar todos os códigos**. Com **"Lembrar para as próximas compras de <trecho>"**, os códigos viram a
+    sugestão do estabelecimento (cria o estabelecimento no dicionário, se não existir).
+40. **Parcelada sem título** (ex.: 2/5): lança **todas as parcelas restantes** de uma vez, uma por mês: a da fatura no vencimento
+    da fatura; as seguintes no vencimento nominal das competências seguintes (Planilha Cartões). Emissão e entrada = data da
+    compra; documento = DDMM da compra (com "/k" quando parcelada); complemento `CARTÃO <NOME> <N>x — <DESCRIÇÃO> PARC k/N`
+    (até 70); valor = o da linha em todas as parcelas. Aviso no diálogo: conferir se a compra não foi lançada pelo total.
+41. Um clique = um **lote**. O envio é em ordem, um título de cada vez, sem repetir; para no primeiro que não voltar lançado.
+    Os seguintes ficam "Não lançado: envio interrompido" e o botão **Reenviar o que faltou** cria só as parcelas sem lançamento
+    ativo. Parcela já lançada nunca duplica (índice único por linha e parcela).
+42. Lançada: a decisão **casar** liga a linha só ao título da parcela **desta** fatura; as parcelas futuras casam sozinhas nas
+    próximas faturas (mesmo valor, cartão citado, vencimento na janela).
+43. Uma só chave libera encargos e compras: `financeiro.cartao.lancar_no_erp` (era `..._encargos_no_erp`), começa desligada.
 
 Exemplo numérico (ciclo correto, como a calibração da skill): fatura R$ 1.736,70 com 12 linhas (2 pares compensados; 4 pedágios de
 R$ 20) × 5 títulos (um de R$ 120,00 para linha de R$ 120,01) → 4 exatos + 1 agrupamento, diferença apurada R$ 0,01 = arredondamento,
@@ -167,9 +187,11 @@ zero a lançar, zero divergências (`conciliacao.test.ts`). Detecção: tirando 
 | **Faturas** (`/financeiro/cartao/faturas`) | Faturas importadas por empresa/cartão/vencimento (total, linhas, status, quem importou, link para o mês) + "Importar fatura avulsa" |
 | **Importar fatura** (`/nova`) | Empresa, cartão, vencimento efetivo, total da fatura, arquivo (PDF/CSV), senha do PDF (opcional) → **pré-visualização** das linhas lidas (data, descrição, parcela, valor, descartadas), soma × total, vencimento e total impressos pelo emissor, avisos do leitor. "Confirmar importação" só com a soma batendo |
 | **Conciliação** (`/[id]`) | Cartões: total da fatura, títulos, diferença apurada, **diferença não justificada** (vermelho se ≠ 0), conciliados com cartão divergente; abas A lançar · Divergências · Conciliados · Compensados · Quadro · Linhas da fatura · Outros títulos de cartão na janela; botões Baixar planilha, Cancelar fatura (motivo); rodapé "Não gerar o borderô enquanto houver diferença não justificada" |
-| **Cartões** (`/cartoes`) | Cadastro: código, nome, banco, PF/PJ, fechamento, vencimento, tipo de título, leitor, pasta, ativo e os **códigos do Consistem dos encargos** (gestor edita) |
+| **Cartões** (`/cartoes`) | Cadastro: código, nome, banco, PF/PJ, fechamento, vencimento, tipo de título, leitor, pasta, ativo, os **códigos do Consistem dos encargos** e os **padrões de compra** (gestor edita) |
+| **Lançar compra** (botão na aba A lançar; diálogo) | Fornecedor (busca por nome ou código), códigos com a origem (do estabelecimento, do cartão, informado, escolher), títulos que serão criados (parcela, vencimento, documento, valor, complemento), "Lembrar para as próximas compras de", botão "Lançar N títulos" |
+| **Compras lançadas no Consistem** (lista acima das abas) | Lotes do mês: compra, parcela, vencimento, valor, situação (Lançado nº, Sem resposta, Não enviado, Não lançado), quem e quando; Resolver e Reenviar o que faltou |
 | **Encargos do mês** (quadro na conciliação e no mês em conciliação) | Linhas de encargo pendentes, soma e o título que vai para o Consistem (fornecedor, documento, datas, valor, complemento, códigos); botão **Lançar no Consistem** com conferência; lançamento ativo (lançado com o código, ou sem resposta com **Resolver**); erros anteriores |
-| **Estabelecimentos** (`/estabelecimentos`) | Dicionário com busca; incluir/editar (operador). A aba A lançar tem o atalho "Cadastrar" para item não identificado |
+| **Estabelecimentos** (`/estabelecimentos`) | Dicionário com busca; incluir/editar (operador), com a **sugestão de lançamento no Consistem** (fornecedor, códigos). A aba A lançar tem o atalho "Cadastrar" para item não identificado |
 
 ## 8. Dados (prefixo `crt_`, tudo em `public`)
 | Tabela / objeto | Papel |
@@ -182,9 +204,9 @@ zero a lançar, zero divergências (`conciliacao.test.ts`). Detecção: tirando 
 | `crt_ciclos` | Mês do cartão: competência, fechamento, vencimento, situação, fatura vigente, última apuração, provisório, fechada/paga — sem delete; auditoria das mudanças de situação |
 | `crt_fechamentos` | Fechamentos (versão, foto do resultado em jsonb, totais, provisório, quem fechou/reabriu e motivo) — prova; planilha anexada |
 | `crt_vw_ciclos` | View dos meses com nomes e total da fatura |
-| `crt_lancamentos_erp` / `crt_vw_lancamentos_erp` | Títulos lançados pelo painel no Consistem: linhas, valor, complemento, payload enviado, situação (reservado → enviando → lançado/erro), código criado, resposta, quem/quando, resolução à mão; sem delete; auditoria |
+| `crt_lancamentos_erp` / `crt_vw_lancamentos_erp` | Títulos lançados pelo painel no Consistem (tipo encargos ou compra; lote; linha de origem; parcela/parcelas; vencimento): linhas, valor, complemento, payload enviado, situação (reservado → enviando → lançado/erro), código criado, resposta, quem/quando, resolução à mão; sem delete; auditoria |
 | `crt_decisoes` / `crt_vw_decisoes` | Decisões por item (tipo, linhas, títulos, categoria/conta, motivo, quem/quando, desfeita por/quando/motivo) — sem delete; auditoria |
-| Funções | `crt_importar_fatura` (com `p_ciclo`), `crt_cancelar_fatura`, `crt_salvar_cartao`, `crt_salvar_estabelecimento`, `crt_normalizar`, `crt_gerar_ciclos`, `crt_registrar_apuracao`, `crt_fechar_ciclo`, `crt_reabrir_ciclo`, `crt_calendario`, `crt_competencia_do_vencimento`, `crt_registrar_decisao`, `crt_desfazer_decisao`, `crt_reservar_lancamento_encargos`, `crt_iniciar_envio_encargos` e `crt_concluir_lancamento_encargos` (só service role), `crt_resolver_lancamento_encargos` |
+| Funções | `crt_importar_fatura` (com `p_ciclo`), `crt_cancelar_fatura`, `crt_salvar_cartao`, `crt_salvar_estabelecimento`, `crt_normalizar`, `crt_gerar_ciclos`, `crt_registrar_apuracao`, `crt_fechar_ciclo`, `crt_reabrir_ciclo`, `crt_calendario`, `crt_competencia_do_vencimento`, `crt_registrar_decisao`, `crt_desfazer_decisao`, `crt_reservar_lancamento_encargos`, `crt_reservar_lancamento_compra`, `crt_reenviar_lancamentos`, `crt_iniciar_envio_erp`, `crt_concluir_lancamento_erp` e `crt_interromper_lote` (só service role), `crt_resolver_lancamento_encargos` |
 | Agendamentos | `crt-gerar-ciclos-diario` (07:00 Cuiabá) e `cap-sincronizar-consistem-diario` (07:30; `cap_chamar_sincronizacao`, mesmo segredo do Vault de Recebíveis) |
 Migration: `0131_crt_base.sql`. Anexo: o PDF/CSV importado vai para o Storage (`anexos`, módulo `financeiro.cartao`, tabela `crt_faturas`).
 Código puro: `lib/modulos/financeiro/cartao/` (`texto`, `cartoes` — porta do motor do Neo Fiscal —, `leitores/`, `fatura-pdf`
@@ -326,3 +348,21 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
   (forçado localmente, porque estava justificada) e a recusa do banco com a chave desligada. **Ainda não houve envio real.**
 - **Falta:** confirmar se o token da API (CSMEN050) tem permissão de inclusão; ligar a chave e fazer o primeiro lançamento real
   acompanhado pelo Alan, conferindo no Consistem se o título ficou igual a um lançamento manual.
+
+## 17. Compras sem título lançadas no Consistem — o que foi feito (13/10/2026)
+- Pedido do Alan: lançar pelo painel toda linha sem título, com o sistema sugerindo de que se trata pelos estabelecimentos
+  recorrentes (Nuviagens, Petrobras, posto, pousada, restaurante, passagens), o operador escolhe o fornecedor, confere e lança.
+- Descoberta (só leitura): ação `exemplos_compras_cartao` de `cap-sincronizar-consistem`: 1.203 compras de cartão lançadas à mão
+  no último ano (173 fornecedores), com detalhe de 2 por fornecedor. Padrão recente das despesas sem nota fiscal: histórico 2,
+  categoria 17, portador 91 (77 nos títulos do Inter PJ), contábil crédito 2004; débito e fluxo variam com o tipo de despesa.
+  **Nenhum código foi carregado ainda**: a proposta foi apresentada ao Alan para aprovação (regra 7).
+- Migration `0138_crt_lancamento_compras.sql` (aplicada e registrada em produção): chave única `financeiro.cartao.lancar_no_erp`,
+  `crt_cartoes.lancamento_compras`, `crt_estabelecimentos.lancamento_erp`, colunas de lote e parcela em `crt_lancamentos_erp`,
+  funções de reservar compra, reenviar, interromper lote e as de envio com nomes genéricos.
+- Edge Function `crt-lancar-no-consistem` (publicada; substitui `crt-lancar-encargos`, que segue publicada mas sem uso e sem as
+  funções do banco que usava). Regra pura `lib/modulos/financeiro/cartao/lancamento-compras.ts`.
+- Telas: botão Lançar na aba A lançar, diálogo com fornecedor e códigos, lista "Compras lançadas no Consistem", campos de padrões
+  de compra no cartão e de sugestão no estabelecimento.
+- Testes: `lancamento-compras.test.ts` e `tests/db/crt-lancamento-compras.test.ts` (e os dos encargos ajustados à chave nova).
+- Testado ao vivo (servidor local): diálogo numa linha real (forçada localmente), busca de fornecedor, prévia do título com
+  documento, vencimento e complemento, legendas de origem. **Ainda não houve envio real.**

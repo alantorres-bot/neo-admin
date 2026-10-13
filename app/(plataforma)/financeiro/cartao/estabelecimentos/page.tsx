@@ -41,13 +41,14 @@ export default async function PaginaEstabelecimentos({ searchParams }: PageProps
       </div>
       <Table>
         <TableHeader>
-          <TableRow><TableHead>Trecho na fatura</TableHead><TableHead>Categoria</TableHead><TableHead>Conta de fluxo</TableHead><TableHead>Situação</TableHead>{podeOperar && <TableHead />}</TableRow>
+          <TableRow><TableHead>Trecho na fatura</TableHead><TableHead>Categoria</TableHead><TableHead>Conta de fluxo</TableHead><TableHead>Consistem (fornecedor · fluxo · contábil)</TableHead><TableHead>Situação</TableHead>{podeOperar && <TableHead />}</TableRow>
         </TableHeader>
         <TableBody>
           {lista.map((e) => (
             <TableRow key={e.id} className={e.ativo ? "" : "text-muted-foreground"}>
               <TableCell className="font-medium">{e.padrao}</TableCell><TableCell>{e.categoria}</TableCell>
               <TableCell>{e.conta_fluxo ?? <span className="font-bold text-amber-700">[CONFERIR]</span>}</TableCell>
+              <TableCell className="text-xs tabular-nums">{e.lancamento_erp ? [e.lancamento_erp.codFornecedor ?? "—", `${e.lancamento_erp.grupoContaFluxoCaixa ?? "—"}/${e.lancamento_erp.contaFluxoCaixa ?? "—"}`, e.lancamento_erp.contaContabilDebito ?? "—"].join(" · ") : <span className="text-muted-foreground">sem sugestão</span>}</TableCell>
               <TableCell>{e.ativo ? <Badge variant="outline" className="border-marca text-marca">Ativo</Badge> : <Badge variant="outline">Inativo</Badge>}</TableCell>
               {podeOperar && <TableCell><DialogoEstabelecimento estabelecimento={e} /></TableCell>}
             </TableRow>

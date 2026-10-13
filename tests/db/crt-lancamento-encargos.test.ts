@@ -13,7 +13,7 @@ const servico = (sql: string, p: unknown[] = []) => como(db, "service", () => q(
 const payload = (valor: number, complemento = "CARTÃO SICREDI PF — ENCARGOS: IOF, JUROS") => JSON.stringify({ valorDocumento: valor, complementoHistorico: complemento, codFornecedor: 80 });
 const reservar = (u: string, linhas: string[], valor: number, complemento = "CARTÃO SICREDI PF — ENCARGOS: IOF, JUROS", corpo = payload(valor, complemento)) =>
   rpc(u, `select crt_reservar_lancamento_encargos($1, $2::uuid[], $3, $4, $5::jsonb) as id`, [fatura, linhas, valor, complemento, corpo]);
-const ligar = (v: boolean) => q(`update configuracoes set valor = $1::jsonb where chave = 'financeiro.cartao.lancar_encargos_no_erp'`, [String(v)]);
+const ligar = (v: boolean) => q(`update configuracoes set valor = $1::jsonb where chave = 'financeiro.cartao.lancar_no_erp'`, [String(v)]);
 
 beforeAll(async () => {
   db = await criarBanco();
@@ -39,7 +39,7 @@ describe("configuração (0137)", () => {
     expect((await q(`select count(*)::int as n from crt_cartoes where lancamento_encargos is null`)).rows[0].n).toBe(0);
     await expect(q(`update crt_cartoes set lancamento_encargos = lancamento_encargos - 'codHistorico' where codigo = 'INTER PF'`)).rejects.toThrow(/lancamento_encargos_ck/);
     await expect(q(`update crt_cartoes set lancamento_encargos = jsonb_set(lancamento_encargos, '{codPortador}', '1.5') where codigo = 'INTER PF'`)).rejects.toThrow(/lancamento_encargos_ck/);
-    expect((await q(`select valor from configuracoes where chave = 'financeiro.cartao.lancar_encargos_no_erp'`)).rows[0].valor).toBe(false);
+    expect((await q(`select valor from configuracoes where chave = 'financeiro.cartao.lancar_no_erp'`)).rows[0].valor).toBe(false);
   });
 });
 
@@ -61,17 +61,17 @@ describe("reservar, enviar e concluir", () => {
   it("um lançamento ativo por mês; só a service role envia; erro libera nova tentativa", async () => {
     const id = (await reservar(finOperador, [linha[1], linha[2]], 62.34)).rows[0].id;
     await expect(reservar(finGestor, [linha[1], linha[2]], 62.34)).rejects.toThrow(/já tem lançamento de encargos/);
-    await expect(rpc(finOperador, `select crt_iniciar_envio_encargos($1)`, [id])).rejects.toThrow(/permission denied/);
-    expect((await servico(`select (crt_iniciar_envio_encargos($1)).situacao as s`, [id])).rows[0].s).toBe("enviando");
-    await expect(servico(`select crt_iniciar_envio_encargos($1)`, [id])).rejects.toThrow(/já enviado/);
-    await servico(`select crt_concluir_lancamento_encargos($1, null, '{"mensagem":"Fornecedor inválido"}'::jsonb, 'Consistem HTTP 400: Fornecedor inválido')`, [id]);
+    await expect(rpc(finOperador, `select crt_iniciar_envio_erp($1)`, [id])).rejects.toThrow(/permission denied/);
+    expect((await servico(`select (crt_iniciar_envio_erp($1)).situacao as s`, [id])).rows[0].s).toBe("enviando");
+    await expect(servico(`select crt_iniciar_envio_erp($1)`, [id])).rejects.toThrow(/já enviado/);
+    await servico(`select crt_concluir_lancamento_erp($1, null, '{"mensagem":"Fornecedor inválido"}'::jsonb, 'Consistem HTTP 400: Fornecedor inválido')`, [id]);
     expect((await q(`select situacao, erro from crt_lancamentos_erp where id = $1`, [id])).rows[0]).toEqual({ situacao: "erro", erro: "Consistem HTTP 400: Fornecedor inválido" });
-    await expect(servico(`select crt_concluir_lancamento_encargos($1, '1', null, null)`, [id])).rejects.toThrow(/não está em envio/);
+    await expect(servico(`select crt_concluir_lancamento_erp($1, '1', null, null)`, [id])).rejects.toThrow(/não está em envio/);
   });
   it("lançado grava o código e casa as linhas com o título; prova imutável e sem delete", async () => {
     const id = (await reservar(finGestor, [linha[1], linha[2]], 62.34)).rows[0].id;
-    await servico(`select crt_iniciar_envio_encargos($1)`, [id]);
-    await servico(`select crt_concluir_lancamento_encargos($1, '40001', '{"codLancamento":40001}'::jsonb, null)`, [id]);
+    await servico(`select crt_iniciar_envio_erp($1)`, [id]);
+    await servico(`select crt_concluir_lancamento_erp($1, '40001', '{"codLancamento":40001}'::jsonb, null)`, [id]);
     expect((await q(`select situacao, cod_lancamento_erp from crt_lancamentos_erp where id = $1`, [id])).rows[0]).toEqual({ situacao: "lancado", cod_lancamento_erp: "40001" });
     const casar = (await rpc(finConsulta, `select tipo, linhas, titulos, criado_por_nome, motivo from crt_vw_decisoes where fatura_id = $1 and tipo = 'casar' and desfeito_em is null`, [fatura])).rows;
     expect(casar).toHaveLength(1);
@@ -92,14 +92,14 @@ describe("resposta incerta resolvida à mão", () => {
     const db2 = await criarBanco();
     const op = await novoUsuario(db2, "op@neo.com", { financeiro: "operador" });
     const empresa = (await db2.query<Linha>(`insert into empresas (razao_social, nome_curto, codigo_erp) values ('Neo', 'Neo', '1') returning id`)).rows[0].id;
-    await db2.query(`update configuracoes set valor = 'true'::jsonb where chave = 'financeiro.cartao.lancar_encargos_no_erp'`);
+    await db2.query(`update configuracoes set valor = 'true'::jsonb where chave = 'financeiro.cartao.lancar_no_erp'`);
     const ls = JSON.stringify([{ ordem: 1, descricao: "IOF", valor: 10, descartada: false }]);
     const f = (await como(db2, op, () => db2.query<Linha>(`select crt_importar_fatura($1, 'INTER PJ', '2026-10-10', 10, 'generico', 'f.pdf', $2::jsonb) as id`, [empresa, ls]))).rows[0].id;
     const l1 = (await db2.query<Linha>(`select id from crt_fatura_linhas where fatura_id = $1`, [f])).rows[0].id;
     const p = JSON.stringify({ valorDocumento: 10, complementoHistorico: "C" });
     const res = (sql: string, args: unknown[]) => como(db2, op, () => db2.query<Linha>(sql, args));
     const a = (await res(`select crt_reservar_lancamento_encargos($1, array[$2]::uuid[], 10, 'C', $3::jsonb) as id`, [f, l1, p])).rows[0].id;
-    await como(db2, "service", () => db2.query(`select crt_iniciar_envio_encargos($1)`, [a]));
+    await como(db2, "service", () => db2.query(`select crt_iniciar_envio_erp($1)`, [a]));
     await expect(res(`select crt_resolver_lancamento_encargos($1, '123', '')`, [a])).rejects.toThrow(/o que foi conferido/);
     await expect(res(`select crt_resolver_lancamento_encargos($1, 'abc', 'conferido')`, [a])).rejects.toThrow(/só números/);
     await res(`select crt_resolver_lancamento_encargos($1, null, 'não aparece no Consistem')`, [a]);

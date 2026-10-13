@@ -137,7 +137,7 @@ function BotaoLancar({ faturaId, dados }: { faturaId: string; dados: Dados }) {
   );
 }
 
-function BotaoResolver({ l }: { l: LancamentoErpLinha }) {
+export function BotaoResolver({ l }: { l: LancamentoErpLinha }) {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
   const [cod, setCod] = useState("");
