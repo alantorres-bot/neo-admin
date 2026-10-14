@@ -288,6 +288,7 @@ async function sincronizarEmpresa(
     id: l.id, documento: l.documento, parcela: l.parcela, emissao: l.emissao, vencimento: l.vencimento,
     valorCentavos: Math.round(Number(l.valor) * 100), estagio: l.estagio, origem: l.origem,
     notaFiscal: l.nota_fiscal, chaveNfe: l.chave_nfe, codPortador: l.cod_portador, tipoCobranca: l.tipo_cobranca,
+    consistemPagoEm: l.consistem_pago_em,
   }));
   const contraparteDoTitulo = new Map(linhas.map((l) => [l.id, l.contraparte_id]));
   const linhaPorChave = new Map(linhas.map((l) => [chaveTitulo(l.documento, l.parcela), l]));
@@ -442,6 +443,10 @@ async function sincronizarEmpresa(
   const atualizacoes = new Map<string, Record<string, unknown>>();
   for (const a of plano.alterados) atualizacoes.set(a.id, { ...a.campos });
   for (const e of plano.enriquecidos) atualizacoes.set(e.id, { ...(atualizacoes.get(e.id) ?? {}), ...e.campos });
+  // Voltou à lista de abertos: a evidência de pagamento guardada quando ele saiu ficou velha e é apagada (o histórico registra).
+  for (const id of plano.voltaramAbertos) {
+    atualizacoes.set(id, { ...(atualizacoes.get(id) ?? {}), consistem_pago_em: null, consistem_valor_pago: null, consistem_tipo_baixa: null, consistem_verificado_em: null });
+  }
   let titulosLigados = 0;
   for (const t of titulosApi) {
     const chave = chaveTitulo(t.documento, t.parcela);
@@ -459,6 +464,25 @@ async function sincronizarEmpresa(
     if (falha?.error) throw new Error(`Falha ao atualizar títulos: ${falha.error.message}`);
   }
   resumo.titulosLigadosAgora = titulosLigados;
+
+  // 5a) Histórico do título: troca de portador e volta à lista de abertos (explica por que ele sumiu e voltou).
+  const pagoEmDe = new Map(linhas.map((l) => [l.id, l.consistem_pago_em]));
+  const historico = [
+    ...plano.portadorTrocado.map((p) => ({ id: p.id, tipo: "portador_alterado", descricao: `Portador alterado no Consistem: ${p.de} → ${p.para}.` })),
+    ...plano.voltaramAbertos.map((id) => ({
+      id, tipo: "voltou_aberto",
+      descricao: `O título voltou à lista de contas a receber em aberto do Consistem. A evidência de pagamento guardada (pago em ${(pagoEmDe.get(id) ?? "").split("-").reverse().join("/")}) foi descartada: ele segue em aberto.`,
+    })),
+  ].map((h) => ({
+    modulo: MODULO, contraparte_id: contraparteDoTitulo.get(h.id) ?? null, referencia_tabela: "rec_titulos", referencia_id: h.id,
+    canal: "interno", tipo: h.tipo, descricao: h.descricao, usuario_id: null,
+  }));
+  for (const lote of lotes(historico)) {
+    const { error } = await banco.from("interacoes").insert(lote);
+    if (error) throw new Error(`Falha ao registrar o histórico dos títulos: ${error.message}`);
+  }
+  resumo.portadoresAlterados = plano.portadorTrocado.length;
+  resumo.evidenciasDescartadas = plano.voltaramAbertos.length;
 
   // 5b) Pendência "Anexar boleto" para todo título aguardando boleto que ainda não tem uma aberta. Calculada do banco
   // (não só dos novos desta rodada): se uma rodada falhar no meio, a seguinte conserta.

@@ -225,6 +225,8 @@ export type TituloBanco = {
   chaveNfe?: string | null;
   codPortador?: string | null;
   tipoCobranca?: string | null;
+  /** Evidência de pagamento guardada quando o título saiu da lista de abertos (migration 0107). */
+  consistemPagoEm?: string | null;
 };
 
 export const ESTAGIOS_ENCERRADOS = ["pago", "renegociado", "cancelado"] as const;
@@ -246,6 +248,14 @@ export type Plano = {
   possiveisBaixas: TituloBanco[];
   /** Ids que a API lista e estão abertos no banco: encerram pendência de "possível baixa" antiga. */
   presentes: string[];
+  /**
+   * Ids que voltaram à lista de abertos com evidência de pagamento guardada (ex.: a troca de portador no Consistem tira o
+   * título da lista por um tempo e o mostra entre os pagos). A evidência ficou velha: tem de ser apagada, senão uma nova
+   * saída da lista reaproveita a data e o valor antigos em Baixas a conferir.
+   */
+  voltaramAbertos: string[];
+  /** Portador que mudou no Consistem (de um portador já gravado para outro): vai para o histórico do título. */
+  portadorTrocado: { id: string; de: string; para: string }[];
   /** A API diz "em aberto", mas o banco já encerrou (pago/renegociado/cancelado). Só informa. */
   divergentes: TituloBanco[];
   /** Chaves repetidas na resposta da API (mantida a primeira). */
@@ -256,7 +266,8 @@ export function planejarSincronizacao(titulosApi: TituloApi[], titulosBanco: Tit
   const banco = new Map(titulosBanco.map((t) => [chaveTitulo(t.documento, t.parcela), t]));
   const vistos = new Set<string>();
   const plano: Plano = {
-    novos: [], alterados: [], enriquecidos: [], inalterados: 0, possiveisBaixas: [], presentes: [], divergentes: [], duplicadosApi: [],
+    novos: [], alterados: [], enriquecidos: [], inalterados: 0, possiveisBaixas: [], presentes: [], voltaramAbertos: [], portadorTrocado: [],
+    divergentes: [], duplicadosApi: [],
   };
 
   for (const t of titulosApi) {
@@ -277,6 +288,7 @@ export function planejarSincronizacao(titulosApi: TituloApi[], titulosBanco: Tit
       continue;
     }
     plano.presentes.push(existente.id);
+    if (existente.consistemPagoEm) plano.voltaramAbertos.push(existente.id);
     const campos: Alteracao["campos"] = {};
     if (existente.vencimento !== t.vencimento) campos.vencimento = t.vencimento;
     if (existente.valorCentavos !== t.valorCentavos) campos.valor = t.valorCentavos / 100;
@@ -287,7 +299,10 @@ export function planejarSincronizacao(titulosApi: TituloApi[], titulosBanco: Tit
     const extra: Enriquecimento["campos"] = {};
     if (t.nota && !existente.notaFiscal) extra.nota_fiscal = t.nota;
     if (t.chaveNfe && !existente.chaveNfe) extra.chave_nfe = t.chaveNfe;
-    if (t.codPortador && t.codPortador !== (existente.codPortador ?? "")) extra.cod_portador = t.codPortador;
+    if (t.codPortador && t.codPortador !== (existente.codPortador ?? "")) {
+      extra.cod_portador = t.codPortador;
+      if (existente.codPortador) plano.portadorTrocado.push({ id: existente.id, de: existente.codPortador, para: t.codPortador });
+    }
     if (t.tipoCobranca && t.tipoCobranca !== (existente.tipoCobranca ?? "")) extra.tipo_cobranca = t.tipoCobranca;
     if (Object.keys(extra).length > 0) plano.enriquecidos.push({ id: existente.id, campos: extra });
   }

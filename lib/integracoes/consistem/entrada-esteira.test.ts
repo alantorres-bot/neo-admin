@@ -253,4 +253,27 @@ describe("planejarSincronizacao: enriquecimento com dados de nota", () => {
     const p = planejarSincronizacao([titulo("1371A")], [banco({ estagio: "pago" })]);
     expect(p.enriquecidos).toEqual([]);
   });
+
+  it("troca de portador vai para o histórico; o primeiro portador gravado não conta como troca", () => {
+    const p = planejarSincronizacao([titulo("1371A", { codPortador: "237" })], [banco({ notaFiscal: "1371", codPortador: "91", tipoCobranca: "1" })]);
+    expect(p.portadorTrocado).toEqual([{ id: "1", de: "91", para: "237" }]);
+    expect(planejarSincronizacao([titulo("1371A")], [banco()]).portadorTrocado).toEqual([]);
+  });
+  // Caso 1001266E (13/10/2026): a troca de portador tirou o título da lista de abertos por uma rodada, a sincronização
+  // guardou "pago em 09/10, tipo de baixa 3" e, na volta, a evidência ficava para sempre.
+  it("título que volta à lista de abertos com evidência de pagamento tem a evidência descartada", () => {
+    const p = planejarSincronizacao(
+      [titulo("1371A", { codPortador: "237" })],
+      [banco({ notaFiscal: "1371", codPortador: "91", tipoCobranca: "1", estagio: "vencido", consistemPagoEm: "2026-10-09" })],
+    );
+    expect(p.voltaramAbertos).toEqual(["1"]);
+    expect(p.possiveisBaixas).toEqual([]);
+    expect(p.portadorTrocado).toEqual([{ id: "1", de: "91", para: "237" }]);
+  });
+  it("sem evidência guardada, nada a descartar; título que segue fora da lista mantém a evidência", () => {
+    expect(planejarSincronizacao([titulo("1371A")], [banco()]).voltaramAbertos).toEqual([]);
+    const fora = planejarSincronizacao([], [banco({ consistemPagoEm: "2026-10-09" })]);
+    expect(fora.voltaramAbertos).toEqual([]);
+    expect(fora.possiveisBaixas.map((t) => t.id)).toEqual(["1"]);
+  });
 });
