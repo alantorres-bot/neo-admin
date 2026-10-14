@@ -57,3 +57,14 @@ export async function totaisDoAno(supabase: Cliente, ids: string[]): Promise<Map
   }
   return m;
 }
+
+export type ImportacaoLinha = { id: string; empregador: string; calculo: string; natureza: string; arquivo_nome: string | null; pessoas: number; total: number; aplicadas: number; ligadas: number; sem_cadastro: { codigo: string; nome: string; valor: number }[]; importado_em: string; importado_por_nome: string | null };
+
+/** Arquivos do escritório importados no mês (mais novo primeiro). */
+export async function lerImportacoes(supabase: Cliente, competenciaId: string): Promise<ImportacaoLinha[]> {
+  const { data } = await supabase.from("rh_fp_importacoes").select("id, empregador, calculo, natureza, arquivo_nome, pessoas, total, aplicadas, ligadas, sem_cadastro, importado_em, importado_por").eq("competencia_id", competenciaId).order("importado_em", { ascending: false });
+  const ids = [...new Set((data ?? []).map((i) => i.importado_por).filter(Boolean))] as string[];
+  const { data: perfis } = ids.length ? await supabase.from("perfis").select("id, nome").in("id", ids) : { data: [] };
+  const nome = new Map((perfis ?? []).map((p) => [p.id as string, p.nome as string]));
+  return (data ?? []).map((i) => ({ ...(i as Omit<ImportacaoLinha, "total" | "importado_por_nome">), total: Number(i.total), importado_por_nome: i.importado_por ? nome.get(i.importado_por) ?? null : null }));
+}

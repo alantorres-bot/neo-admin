@@ -10,7 +10,9 @@ import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { lerItens, lerMes, ROTULO_STATUS } from "../../dados";
+import { lerImportacoes, lerItens, lerMes, ROTULO_STATUS } from "../../dados";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ImportarLiquidos } from "./importar";
 import { GradeFolha } from "./grade";
 import { FluxoFolha, PixFolha } from "./paineis";
 
@@ -25,7 +27,7 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
   const podeOperar = temAcesso(sessao.acesso, "rh", "operador");
   const ehGestor = temAcesso(sessao.acesso, "rh", "gestor");
   const supabase = await criarClienteServidor();
-  const [mes, itens] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id)]);
+  const [mes, itens, importacoes] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id), lerImportacoes(supabase, id)]);
   if (!mes) notFound();
   const pix = itens.filter((i) => i.forma_pagamento !== "fopag" && i.valor > 0);
   const temFopag = itens.some((i) => i.forma_pagamento === "fopag" && i.valor > 0);
@@ -47,7 +49,36 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
         <FluxoFolha id={mes.id} status={mes.status} podeOperar={podeOperar} ehGestor={ehGestor} temFopag={temFopag} />
       </div>
 
+      {podeOperar && mes.status === "aberta" && (
+        <div className="flex flex-wrap items-center gap-3">
+          <ImportarLiquidos mesId={mes.id} />
+          <span className="text-xs text-muted-foreground">Relação Geral dos Líquidos (.xls) do escritório: um arquivo por empresa e por cálculo (Folha Mensal, 13º, Férias).</span>
+        </div>
+      )}
+
       <GradeFolha mesId={mes.id} editavel={podeOperar && mes.status === "aberta"} itens={itens} />
+
+      {importacoes.length > 0 && (
+        <section className="space-y-2">
+          <h3 className="text-base font-bold">Importações do escritório</h3>
+          <Table>
+            <TableHeader>
+              <TableRow><TableHead>Quando</TableHead><TableHead>Empresa</TableHead><TableHead>Cálculo</TableHead><TableHead className="text-right">Pessoas</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="text-right">Gravadas</TableHead><TableHead>De fora</TableHead><TableHead>Por</TableHead></TableRow>
+            </TableHeader>
+            <TableBody>
+              {importacoes.map((i) => (
+                <TableRow key={i.id}>
+                  <TableCell className="tabular-nums">{quando(i.importado_em)}</TableCell><TableCell>{i.empregador}</TableCell><TableCell>{i.calculo}</TableCell>
+                  <TableCell className="text-right tabular-nums">{i.pessoas}</TableCell><TableCell className="text-right tabular-nums">{i.total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</TableCell>
+                  <TableCell className="text-right tabular-nums">{i.aplicadas}{i.ligadas ? ` (${i.ligadas} ligada${i.ligadas > 1 ? "s" : ""} à mão)` : ""}</TableCell>
+                  <TableCell className="text-xs">{i.sem_cadastro.length ? i.sem_cadastro.map((s) => `${s.codigo} ${s.nome}`).join(", ") : "—"}</TableCell>
+                  <TableCell>{i.importado_por_nome ?? ""}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </section>
+      )}
 
       {(mes.status === "aprovada" || mes.status === "paga") && (
         <section className="space-y-2">

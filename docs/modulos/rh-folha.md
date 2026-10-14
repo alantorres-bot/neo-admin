@@ -1,6 +1,6 @@
 # Módulo: RH/SST / Folha de pagamento (fechamento mensal)
 
-Status: em construção. Especificação aprovada em 14/10/2026; **F1 (cadastro único) e F2 (mês e pagamento) entregues em 14/10/2026**.
+Status: em construção. Especificação aprovada em 14/10/2026; **F1 (cadastro único), F2 (mês e pagamento) e F6 (importação da Relação dos Líquidos) entregues em 14/10/2026**.
 
 ## 1. Objetivo
 Fechar todo mês a folha de Cuiabá no Neo Admin, a partir do que o escritório de contabilidade calcula. São seis frentes:
@@ -241,3 +241,27 @@ aceitar.
 - **F6:** importação da Relação Geral dos Líquidos (.xls). As amostras de setembro/2026 chegaram em 14/10/2026; esta fase pode
   vir antes da F3. Em 14/10/2026 a matrícula do escritório do cadastro foi corrigida a partir delas: na F1 ela tinha vindo da
   guia do FGTS (eSocial).
+  **Entregue em 14/10/2026.**
+  - Leitor de .xls próprio: `lib/integracoes/importador/xls.ts`, com testes num arquivo sintético que reproduz os defeitos
+    (`xls.fixture.ts`).
+    - Lê o contêiner OLE mesmo com o fim cortado e acha as planilhas percorrendo os registros, sem confiar no deslocamento do
+      BOUNDSHEET.
+    - Cobre textos (SST com CONTINUE), RK, MULRK, NUMBER e fórmulas.
+    - Conferido nos dois arquivos reais de 09/2026, só localmente.
+  - Intérprete: `lib/modulos/rh/folha/relacao-liquidos.ts`.
+    - Lê empresa, CNPJ (o CNPJ diz qual é a empregadora), cálculo (Folha Mensal → líquido, 13 → 13º, Férias →
+      férias/acréscimos), competência, pessoas e Total da Empresa.
+    - Recusa soma diferente do total, CNPJ fora da folha, cálculo desconhecido e código repetido.
+    - O casamento é pelo código do escritório dentro da empresa, com ligação manual.
+  - Migration `0512_rh_fp_importacao_liquidos.sql`:
+    - `rh_fp_importacoes` guarda cada arquivo: empresa, cálculo, total, gravadas, ligadas à mão e quem ficou de fora.
+    - `rh_fp_importar_relacao` grava a natureza só com o mês aberto e confere de novo que a soma das linhas é o total. As
+      ligações manuais gravam o código no cadastro e na foto do mês.
+  - Tela: botão "Importar do escritório" no mês aberto.
+    - O sistema lê o arquivo e confere a competência com o mês.
+    - A prévia mostra quem muda de valor, quem não casou (com a opção de ligar à pessoa certa) e quem tem valor na folha e não
+      veio no arquivo.
+    - "Gravar" lê o arquivo de novo antes de gravar.
+    - Abaixo da grade fica o quadro "Importações do escritório".
+  - Simulação com os arquivos de 09/2026 e o cadastro de produção: Neo Serviços casou 58 de 60 sozinhas (2 para ligar à mão);
+    Oeste casou 3 de 3.
