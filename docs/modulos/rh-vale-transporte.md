@@ -144,7 +144,8 @@ As abas de RH > Vale-transporte:
   - botões: Relatório, Enviar, Aprovar, Arquivo do BB, Marcar mês como pago, Reabrir;
   - depois de aprovado, aparecem os quadros **PIX** e **Contas a pagar no Consistem**.
 - **Resumo do ano**: o fechamento anual dividido por mês.
-- **Colaboradores**: o cadastro (Fase A).
+- **Colaboradores**: o cadastro. Desde 14/10/2026 é o **cadastro único do RH** (RH > Colaboradores, migration 0510; ver
+  `docs/modulos/rh-folha.md`, regra 1). O VT considera só quem está ativo **e** recebe VT.
 - **Parâmetros** (gestor): os códigos do título no Consistem, a cópia de um VT já lançado e a chave liga/desliga.
 
 Todas as grades usam `components/ui/table.tsx` (classificação e filtro).

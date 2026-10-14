@@ -21,7 +21,7 @@ beforeAll(async () => {
   soFinanceiro = await novoUsuario(db, "fin@neo.com", { financeiro: "gestor" });
   empresa = (await q(`insert into empresas (razao_social, nome_curto, codigo_erp) values ('Neo Formas', 'NEO FORMAS', '1') returning id`)).rows[0].id;
   const cad = (cod: string, cpf: string | null, forma: string, tarifa: number | null, fixo: number | null, ativo = true) =>
-    q(`insert into rh_vt_colaboradores (empresa_id, empregador, cod_fornecedor, nome, cpf, agencia, conta, forma_pagamento, tarifa, valor_fixo, ativo)
+    q(`insert into rh_colaboradores (empresa_id, empregador, cod_fornecedor, nome, cpf, agencia, conta, forma_pagamento, tarifa, valor_fixo, ativo)
        values ($1, 'NEO SERVIÇOS', $2::text, 'PESSOA ' || $2::text, $3::text, case when $3::text is null then null else '2764-2' end, case when $3::text is null then null else '9999-9' end, $4, $5::numeric, $6::numeric, $7)`,
       [empresa, cod, cpf, forma, tarifa, fixo, ativo]);
   await cad("660", null, "pix_neo_formas", 4.95, null);
@@ -83,12 +83,12 @@ describe("mês do VT (0502)", () => {
   });
 
   it("atualizar do cadastro: dados novos, quem entrou e quem saiu (sem VT)", async () => {
-    await q(`update rh_vt_colaboradores set tarifa = 5.95 where cod_fornecedor = '658'`);
-    await q(`update rh_vt_colaboradores set ativo = true where cod_fornecedor = '999'`);
+    await q(`update rh_colaboradores set tarifa = 5.95 where cod_fornecedor = '658'`);
+    await q(`update rh_colaboradores set ativo = true where cod_fornecedor = '999'`);
     const r = (await rpc(rhOperador, `select rh_vt_atualizar_do_cadastro($1) as r`, [comp])).rows[0].r;
     expect(r).toEqual({ atualizados: 1, incluidos: 1, desativados: 0 });
     expect(await item("658")).toMatchObject({ faltas: 1, valor: "226.10" });   // 19 × 2 × 5,95, ocorrências mantidas
-    await q(`update rh_vt_colaboradores set ativo = false where cod_fornecedor = '999'`);
+    await q(`update rh_colaboradores set ativo = false where cod_fornecedor = '999'`);
     expect((await rpc(rhOperador, `select rh_vt_atualizar_do_cadastro($1) as r`, [comp])).rows[0].r).toEqual({ atualizados: 0, incluidos: 0, desativados: 1 });
     const novo = (await rpc(rhConsulta, `select sem_vt, sem_vt_motivo, valor::text from rh_vt_itens where competencia_id = $1 and cod_fornecedor = '999'`, [comp])).rows[0];
     expect(novo).toEqual({ sem_vt: true, sem_vt_motivo: "Desativado no cadastro", valor: "0.00" });
@@ -97,8 +97,12 @@ describe("mês do VT (0502)", () => {
   it("enviar recusa FOPAG sem conta; com tudo certo, envia e troca a pendência", async () => {
     await salvar([{ id: (await rpc(rhConsulta, `select id from rh_vt_itens where competencia_id = $1 and cod_fornecedor = '999'`, [comp])).rows[0].id, sem_vt: false }]);
     await expect(rpc(rhOperador, `select rh_vt_enviar($1)`, [comp])).rejects.toThrow(/FOPAG sem CPF, agência ou conta.*999/);
-    await q(`update rh_vt_colaboradores set ativo = false where cod_fornecedor = '999'`);
+    await q(`update rh_colaboradores set ativo = false where cod_fornecedor = '999'`);
     await rpc(rhOperador, `select rh_vt_atualizar_do_cadastro($1)`, [comp]);
+    // quem não recebe VT (mas segue ativo) também sai do mês como "sem VT"
+    await q(`update rh_colaboradores set recebe_vt = false where cod_fornecedor = '700'`);
+    await rpc(rhOperador, `select rh_vt_atualizar_do_cadastro($1)`, [comp]);
+    expect(await item("700")).toMatchObject({ sem_vt: true, sem_vt_motivo: "Não recebe VT no cadastro", valor: "0.00" });
     await rpc(rhOperador, `select rh_vt_enviar($1)`, [comp]);
     const pend = (await q(`select titulo, status from pendencias where modulo = 'rh.vale_transporte' order by criado_em, titulo`)).rows;
     expect(pend).toEqual([{ titulo: "Fechar VT de novembro/2026", status: "concluida" }, { titulo: "Aprovar VT de novembro/2026", status: "aberta" }]);

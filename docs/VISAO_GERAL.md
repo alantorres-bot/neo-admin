@@ -22,7 +22,7 @@ uma rotina que hoje é feita em planilha, e-mail, ERP ou skill avulsa.
 | Financeiro | AKF | Títulos cedidos/antecipados na AKF Securitizadora: carteira, antecipação, borderôs, passivo "por fora", prorrogação (ver `modulos/financeiro-akf.md`; Fases 1 e 2 entregues: carteira e solicitação de antecipação com rascunho no Gmail) | em construção |
 | **Jurídico** | Processos e prazos | Processos (execuções, reclamatórias, ações), prazos, advogados, custos | 2 |
 | Jurídico | Notificações extrajudiciais | Emitidas e recebidas, prazos e respostas | 3 |
-| **RH/SST** | Rotinas de folha | Checklist mensal, conferência de folha, FGTS, rescisões | 4 |
+| **RH/SST** | Folha de pagamento | Fechamento mensal: pagamento dos líquidos e avulsos, conferências (extrato × pagamento × DARF/FGTS/consignado), arquivo do BB, PIX, títulos no Consistem, documentos e checklist (ver `modulos/rh-folha.md`; especificação em rascunho desde 14/10/2026) | em especificação |
 | RH/SST | EPIs | Entregas por colaborador, vencimentos, análise mensal | 4 |
 | RH/SST | Vale-transporte | Apuração mensal do VT de Cuiabá (dias, faltas, extras, tarifa), aprovação, arquivo do BB, PIX e títulos no Consistem (ver `modulos/rh-vale-transporte.md`; Fases A, B e C entregues em 14/10/2026: cadastro, mês a mês com ocorrências, aprovação, relatório, arquivo do BB, PIX, resumo do ano, histórico 2026 e títulos no Consistem) | em construção |
 | **Administrativo geral** | POPs | Procedimentos padrão por área, versionados | 5 |

@@ -6,7 +6,7 @@ import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { aplicarDoConsistem, conferirNoConsistem, type ResultadoConferencia } from "../acoes";
+import { aplicarDoConsistem, conferirNoConsistem, type ResultadoConferencia } from "./acoes";
 
 const ROTULO_CAMPO = { nome: "Nome", cpf: "CPF", situacao: "Situação" } as const;
 

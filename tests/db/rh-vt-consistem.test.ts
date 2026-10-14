@@ -25,7 +25,7 @@ beforeAll(async () => {
   rhGestor = await novoUsuario(db, "gestor@neo.com", { rh: "gestor" });
   const empresa = (await q(`insert into empresas (razao_social, nome_curto, codigo_erp) values ('Neo Formas', 'NEO FORMAS', '1') returning id`)).rows[0].id;
   for (const cod of ["660", "658"]) {
-    await q(`insert into rh_vt_colaboradores (empresa_id, empregador, cod_fornecedor, nome, forma_pagamento, tarifa) values ($1, 'OESTE', $2, 'PESSOA ' || $2::text, 'pix_neo_formas', 4.95)`, [empresa, cod]);
+    await q(`insert into rh_colaboradores (empresa_id, empregador, cod_fornecedor, nome, forma_pagamento, tarifa) values ($1, 'OESTE', $2, 'PESSOA ' || $2::text, 'pix_neo_formas', 4.95)`, [empresa, cod]);
   }
   comp = (await rpc(rhOperador, `select rh_vt_abrir_competencia('2026-11-01', 21) as id`)).rows[0].id;
   itens = (await q(`select id, cod_fornecedor, nome, valor from rh_vt_itens where competencia_id = $1 order by cod_fornecedor`, [comp])).rows;

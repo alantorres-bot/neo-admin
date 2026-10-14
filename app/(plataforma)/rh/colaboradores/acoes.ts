@@ -3,8 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { EstadoForm } from "@/components/formularios/dialogo-formulario";
-import { divergencias, lerTarifa, normalizarAgencia, normalizarCodFornecedor, normalizarConta, normalizarCpf, type Divergencia, type FornecedorConsistem } from "@/lib/modulos/rh/vale-transporte/cadastro";
-import { ehFormaPagamento, ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
+import { divergencias, lerTarifa, normalizarAgencia, normalizarCodFornecedor, normalizarConta, normalizarCpf, type Divergencia, type FornecedorConsistem } from "@/lib/modulos/rh/colaboradores/cadastro";
+import { ehFormaPagamento, ROTA_COLABORADORES } from "@/lib/modulos/rh/colaboradores/modulo";
+import { ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
@@ -13,7 +14,8 @@ import { COLUNAS_COLABORADOR, paraColaborador, type ColaboradorLinha } from "./d
 type Cliente = Awaited<ReturnType<typeof criarClienteServidor>>;
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
 const texto = (d: FormData, nome: string) => String(d.get(nome) ?? "").trim();
-const SEM_PERMISSAO = "Somente operador do RH (ou acima) altera o cadastro do vale-transporte.";
+const SEM_PERMISSAO = "Somente operador do RH (ou acima) altera o cadastro de colaboradores.";
+const revalidar = () => { revalidatePath(ROTA_COLABORADORES, "layout"); revalidatePath(ROTA_VT, "layout"); };
 
 // ---------------------------------------------------------------- cadastro
 
@@ -44,22 +46,25 @@ export async function salvarColaborador(_anterior: EstadoForm, dados: FormData):
   if (!conta.ok) return { erro: conta.erro };
   const forma = texto(dados, "formaPagamento");
   if (!ehFormaPagamento(forma)) return { erro: "Escolha a forma de pagamento." };
-  const tarifaBruta = texto(dados, "tarifa");
+  const recebeVt = dados.get("recebeVt") === "on";
+  const matricula = texto(dados, "matriculaEscritorio").replace(/^0+(?=\d)/, "");
+  if (matricula && !/^\d{1,9}$/.test(matricula)) return { erro: "Matrícula do escritório: só números." };
+  const tarifaBruta = recebeVt ? texto(dados, "tarifa") : "";
   const tarifa = tarifaBruta ? lerTarifa(tarifaBruta) : null;
   if (tarifaBruta && tarifa === null) return { erro: "Valor da passagem inválido (ex.: 4,95)." };
-  const fixoBruto = texto(dados, "valorFixo");
+  const fixoBruto = recebeVt ? texto(dados, "valorFixo") : "";
   const valorFixo = fixoBruto ? lerTarifa(fixoBruto) : null;
   if (fixoBruto && valorFixo === null) return { erro: "Valor fixo mensal inválido (ex.: 800,00)." };
-  if (tarifa === null && valorFixo === null) return { erro: "Informe o valor da passagem (ex.: 4,95) ou o valor fixo mensal." };
+  if (recebeVt && tarifa === null && valorFixo === null) return { erro: "Quem recebe VT precisa do valor da passagem (ex.: 4,95) ou do valor fixo mensal." };
   const d = v.data;
   const supabase = await criarClienteServidor();
-  const { error } = await supabase.rpc("rh_vt_salvar_colaborador", {
+  const { error } = await supabase.rpc("rh_salvar_colaborador", {
     p_id: d.id, p_empresa: d.empresaId, p_empregador: d.empregador, p_cod_fornecedor: cod.valor, p_nome: d.nome, p_cpf: cpf.valor,
-    p_agencia: agencia.valor, p_conta: conta.valor, p_forma_pagamento: forma, p_tarifa: tarifa, p_passagens_dia: d.passagensDia,
-    p_ativo: dados.get("ativo") === "on", p_observacao: d.observacao || null, p_valor_fixo: valorFixo,
+    p_agencia: agencia.valor, p_conta: conta.valor, p_forma_pagamento: forma, p_ativo: dados.get("ativo") === "on", p_observacao: d.observacao || null,
+    p_recebe_vt: recebeVt, p_tarifa: tarifa, p_valor_fixo: valorFixo, p_passagens_dia: d.passagensDia, p_matricula_escritorio: matricula || null,
   });
   if (error) return { erro: mensagemDeErro(error) };
-  revalidatePath(ROTA_VT, "layout");
+  revalidar();
   return { ok: true };
 }
 
@@ -108,7 +113,7 @@ export async function conferirNoConsistem(): Promise<ResultadoConferencia> {
   const sessao = await exigirSessao();
   if (!temAcesso(sessao.acesso, "rh", "operador")) return { ok: false, erro: SEM_PERMISSAO };
   const supabase = await criarClienteServidor();
-  const { data } = await supabase.from("rh_vt_colaboradores").select(COLUNAS_COLABORADOR).eq("ativo", true);
+  const { data } = await supabase.from("rh_colaboradores").select(COLUNAS_COLABORADOR).eq("ativo", true);
   const ativos = (data ?? []).map(paraColaborador);
   if (ativos.length === 0) return { ok: false, erro: "Nenhum colaborador ativo para conferir." };
   const porEmpresa = new Map<string, ColaboradorLinha[]>();
@@ -139,19 +144,19 @@ export async function aplicarDoConsistem(id: string): Promise<{ ok: true } | { o
   if (!temAcesso(sessao.acesso, "rh", "operador")) return { ok: false, erro: SEM_PERMISSAO };
   if (!z.string().uuid().safeParse(id).success) return { ok: false, erro: "Colaborador inválido." };
   const supabase = await criarClienteServidor();
-  const { data } = await supabase.from("rh_vt_colaboradores").select(COLUNAS_COLABORADOR).eq("id", id).maybeSingle();
+  const { data } = await supabase.from("rh_colaboradores").select(COLUNAS_COLABORADOR).eq("id", id).maybeSingle();
   const c = data ? paraColaborador(data) : null;
   if (!c) return { ok: false, erro: "Colaborador não encontrado." };
   const r = await consultar(supabase, c.empresa_id, [c.cod_fornecedor]);
   if (!r.ok) return r;
   const f = r.valor.fornecedores[0];
   if (!f) return { ok: false, erro: `Fornecedor ${c.cod_fornecedor} não encontrado no Consistem.` };
-  const { error } = await supabase.rpc("rh_vt_salvar_colaborador", {
+  const { error } = await supabase.rpc("rh_salvar_colaborador", {
     p_id: c.id, p_empresa: c.empresa_id, p_empregador: c.empregador, p_cod_fornecedor: c.cod_fornecedor, p_nome: f.nome, p_cpf: f.cpf ?? c.cpf,
-    p_agencia: c.agencia, p_conta: c.conta, p_forma_pagamento: c.forma_pagamento, p_tarifa: c.tarifa, p_passagens_dia: c.passagens_dia,
-    p_ativo: c.ativo, p_observacao: c.observacao, p_valor_fixo: c.valor_fixo,
+    p_agencia: c.agencia, p_conta: c.conta, p_forma_pagamento: c.forma_pagamento, p_ativo: c.ativo, p_observacao: c.observacao,
+    p_recebe_vt: c.recebe_vt, p_tarifa: c.tarifa, p_valor_fixo: c.valor_fixo, p_passagens_dia: c.passagens_dia, p_matricula_escritorio: c.matricula_escritorio,
   });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
-  revalidatePath(ROTA_VT, "layout");
+  revalidar();
   return { ok: true };
 }

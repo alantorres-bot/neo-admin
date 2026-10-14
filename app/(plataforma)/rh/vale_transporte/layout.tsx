@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { Abas } from "@/components/plataforma/abas";
+import { ROTA_COLABORADORES } from "@/lib/modulos/rh/colaboradores/modulo";
 import { MODULO_VT, ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
@@ -7,7 +8,7 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 const ABAS = [
   { href: `${ROTA_VT}/meses`, rotulo: "Meses" },
   { href: `${ROTA_VT}/ano`, rotulo: "Resumo do ano" },
-  { href: `${ROTA_VT}/colaboradores`, rotulo: "Colaboradores" },
+  { href: ROTA_COLABORADORES, rotulo: "Colaboradores" },
   { href: `${ROTA_VT}/parametros`, rotulo: "Parâmetros" },
 ];
 

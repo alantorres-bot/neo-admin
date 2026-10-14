@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Campo, DialogoFormulario } from "@/components/formularios/dialogo-formulario";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { EMPREGADORES_SUGERIDOS, FORMAS_PAGAMENTO, ROTULO_FORMA } from "@/lib/modulos/rh/vale-transporte/modulo";
-import { buscarFornecedor, salvarColaborador } from "../acoes";
-import type { ColaboradorLinha } from "../dados";
+import { EMPREGADORES_SUGERIDOS, FORMAS_PAGAMENTO, ROTULO_FORMA } from "@/lib/modulos/rh/colaboradores/modulo";
+import { buscarFornecedor, salvarColaborador } from "./acoes";
+import type { ColaboradorLinha } from "./dados";
 
 const SELECAO = "h-8 rounded-[3px] border border-input bg-white px-2 text-[13px]";
 const reais = (n: number) => n.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -63,7 +63,7 @@ export function DialogoColaborador({ colaborador, empresas, empregadores }: { co
   return (
     <DialogoFormulario
       titulo={colaborador ? `Editar ${colaborador.nome}` : "Novo colaborador"}
-      descricao="Nome e CPF vêm do fornecedor no Consistem. Agência e conta só são usadas no arquivo do BB (FOPAG)."
+      descricao="Cadastro único do RH (VT e folha). Nome e CPF vêm do fornecedor no Consistem. Agência e conta só são usadas no arquivo do BB (FOPAG)."
       botao={colaborador ? <><Pencil /> Editar</> : <><Plus /> Novo colaborador</>}
       variante={colaborador ? "ghost" : "default"}
       tamanho={colaborador ? "sm" : "default"}
@@ -82,14 +82,8 @@ export function DialogoColaborador({ colaborador, empresas, empregadores }: { co
             {FORMAS_PAGAMENTO.map((f) => <option key={f} value={f}>{ROTULO_FORMA[f]}</option>)}
           </select>
         </Campo>
-        <Campo id="tarifa" rotulo="Valor da passagem (R$)" dica="Vazio só com valor fixo mensal.">
-          <Input id="tarifa" name="tarifa" defaultValue={colaborador ? (colaborador.tarifa === null ? "" : reais(colaborador.tarifa)) : "4,95"} inputMode="decimal" maxLength={9} />
-        </Campo>
-        <Campo id="valorFixo" rotulo="Valor fixo mensal (R$)" dica="Se preenchido, substitui o cálculo por dias.">
-          <Input id="valorFixo" name="valorFixo" defaultValue={colaborador?.valor_fixo ? reais(colaborador.valor_fixo) : ""} inputMode="decimal" maxLength={10} placeholder="Vazio = por dias" />
-        </Campo>
-        <Campo id="passagensDia" rotulo="Passagens por dia">
-          <Input id="passagensDia" name="passagensDia" type="number" min={1} max={8} defaultValue={colaborador?.passagens_dia ?? 2} required inputMode="numeric" />
+        <Campo id="matriculaEscritorio" rotulo="Matrícula no escritório" dica="Código da pessoa no extrato e nos holerites do escritório.">
+          <Input id="matriculaEscritorio" name="matriculaEscritorio" defaultValue={colaborador?.matricula_escritorio ?? ""} inputMode="numeric" pattern="\d{0,9}" maxLength={9} autoComplete="off" />
         </Campo>
         <Campo id="agencia" rotulo="Agência (BB)">
           <Input id="agencia" name="agencia" defaultValue={colaborador?.agencia ?? ""} maxLength={8} placeholder="2764-2" autoComplete="off" />
@@ -98,13 +92,41 @@ export function DialogoColaborador({ colaborador, empresas, empregadores }: { co
           <Input id="conta" name="conta" defaultValue={colaborador?.conta ?? ""} maxLength={15} placeholder="99149-X" autoComplete="off" />
         </Campo>
       </div>
+      <CamposVt colaborador={colaborador} />
       <Campo id="observacao" rotulo="Observação">
         <Textarea id="observacao" name="observacao" defaultValue={colaborador?.observacao ?? ""} rows={2} maxLength={300} />
       </Campo>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="ativo" defaultChecked={colaborador?.ativo ?? true} className="size-4" />
-        Ativo (entra nas próximas competências)
+        Ativo (trabalha na empresa; entra na folha e, se recebe VT, no VT)
       </label>
     </DialogoFormulario>
+  );
+}
+
+/** Dados de vale-transporte: só para quem recebe VT. */
+function CamposVt({ colaborador }: { colaborador?: ColaboradorLinha }) {
+  const [recebe, setRecebe] = useState(colaborador?.recebe_vt ?? true);
+  return (
+    <fieldset className="space-y-3 rounded-[3px] border border-grade p-3">
+      <legend className="px-1 text-sm font-medium">Vale-transporte</legend>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" name="recebeVt" checked={recebe} onChange={(e) => setRecebe(e.target.checked)} className="size-4" />
+        Recebe vale-transporte
+      </label>
+      {recebe && (
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Campo id="tarifa" rotulo="Valor da passagem (R$)" dica="Vazio só com valor fixo mensal.">
+            <Input id="tarifa" name="tarifa" defaultValue={colaborador ? (colaborador.tarifa === null ? "" : reais(colaborador.tarifa)) : "4,95"} inputMode="decimal" maxLength={9} />
+          </Campo>
+          <Campo id="valorFixo" rotulo="Valor fixo mensal (R$)" dica="Se preenchido, substitui o cálculo por dias.">
+            <Input id="valorFixo" name="valorFixo" defaultValue={colaborador?.valor_fixo ? reais(colaborador.valor_fixo) : ""} inputMode="decimal" maxLength={10} placeholder="Vazio = por dias" />
+          </Campo>
+          <Campo id="passagensDia" rotulo="Passagens por dia">
+            <Input id="passagensDia" name="passagensDia" type="number" min={1} max={8} defaultValue={colaborador?.passagens_dia ?? 2} required inputMode="numeric" />
+          </Campo>
+        </div>
+      )}
+    </fieldset>
   );
 }
