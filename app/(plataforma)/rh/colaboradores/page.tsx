@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { ROTULO_FORMA } from "@/lib/modulos/rh/colaboradores/modulo";
+import { ROTA_COLABORADORES, ROTULO_FORMA } from "@/lib/modulos/rh/colaboradores/modulo";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
@@ -13,8 +14,9 @@ export const metadata: Metadata = { title: "Colaboradores" };
 
 const reais = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-export default async function PaginaColaboradores() {
+export default async function PaginaColaboradores({ searchParams }: PageProps<"/rh/colaboradores">) {
   const sessao = await exigirSessao();
+  const verInativos = (await searchParams).inativos === "1";
   const podeOperar = temAcesso(sessao.acesso, "rh", "operador");
   const supabase = await criarClienteServidor();
   const [colaboradores, empresas] = await Promise.all([lerColaboradores(supabase), lerEmpresas(supabase)]);
@@ -22,12 +24,20 @@ export default async function PaginaColaboradores() {
   const ativos = colaboradores.filter((c) => c.ativo);
   const comVt = ativos.filter((c) => c.recebe_vt).length;
   const fopagSemConta = ativos.filter((c) => c.forma_pagamento === "fopag" && (!c.cpf || !c.agencia || !c.conta));
+  const inativos = colaboradores.length - ativos.length;
+  // Inativos ficam escondidos: são ex-funcionários que seguem no histórico (VT e folha já pagos), por isso não se apagam.
+  const lista = verInativos ? colaboradores : ativos;
 
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          {ativos.length} ativos ({comVt} recebem VT){colaboradores.length > ativos.length ? ` · ${colaboradores.length - ativos.length} inativos` : ""}. Desligado não se apaga: desmarque “Ativo”.
+          {ativos.length} ativos ({comVt} recebem VT). Desligado não se apaga: desmarque “Ativo” (continua no histórico do VT e da folha).
+          {inativos > 0 && (
+            <Link href={verInativos ? ROTA_COLABORADORES : `${ROTA_COLABORADORES}?inativos=1`} className="ml-2 text-elo hover:underline">
+              {verInativos ? "Ocultar inativos" : `Mostrar inativos (${inativos})`}
+            </Link>
+          )}
         </p>
         {podeOperar && <DialogoColaborador empresas={empresas} empregadores={empregadores} />}
       </div>
@@ -47,7 +57,7 @@ export default async function PaginaColaboradores() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {colaboradores.map((c) => (
+          {lista.map((c) => (
             <TableRow key={c.id} className={c.ativo ? "" : "text-muted-foreground"}>
               <TableCell className="tabular-nums">{c.cod_fornecedor}</TableCell>
               <TableCell className="tabular-nums">{c.matricula_escritorio ?? ""}</TableCell>
