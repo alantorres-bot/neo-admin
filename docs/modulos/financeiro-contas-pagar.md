@@ -360,6 +360,9 @@ Confirmação disparada por `cap_autorizar` (Edge Function `cap-confirmar-consis
   chama a Edge Function todos os dias às 07:30 de Cuiabá (`cap_chamar_sincronizacao`, mesmo segredo do Vault do agendamento de
   Recebíveis). Necessário para o módulo Cartão de crédito detectar sozinho o pagamento da fatura (o título provisório some).
   A mesma Edge Function ganhou a ação só de leitura `titulos_vencimento` (nível consulta), usada pela conciliação do cartão.
+- **A cada 30 minutos (14/10/2026, migration `0166_fin_sincronizacao_30min.sql`):** o job diário saiu; o pg_cron
+  `cap-sincronizar-consistem-30min` roda aos 15 e 45 minutos, segunda a sexta, 07:15–18:45 de Cuiabá (Recebíveis roda aos 00 e
+  30, para os dois não baterem no Consistem juntos). O botão "Atualizar do Consistem" continua para forçar fora desses horários.
 
 ## 17. Fase 4e — conferência dos pagamentos com o banco (13/10/2026)
 

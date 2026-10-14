@@ -55,11 +55,12 @@ const moedaBr = (centavos: number) => {
 };
 const nomeTitulo = (t: Pick<TituloConfirmacao, "documento" | "parcela">) => `${t.documento}${t.parcela !== "1" ? `/${t.parcela}` : ""}`;
 
-/** Parcelas elegíveis à confirmação: sem confirmação, sem pagamento, não cedidas nem contestadas, vencendo na janela. */
+/** Parcelas elegíveis à confirmação: sem confirmação, sem pagamento, não contestadas, vencendo na janela. Cedidas entram (14/10/2026:
+ *  a confirmação é feita com o cliente também no título cedido à AKF). */
 export function elegiveis(titulos: readonly TituloConfirmacao[], hoje: string, janela = DIAS_JANELA_CONFIRMACAO): TituloConfirmacao[] {
   const ate = adicionarDias(hoje, janela);
   return titulos.filter((t) =>
-    (ESTAGIOS_CONFIRMAVEIS as readonly string[]).includes(t.estagio) && !t.cedido && !t.contestado && t.vencimento >= hoje && t.vencimento <= ate,
+    (ESTAGIOS_CONFIRMAVEIS as readonly string[]).includes(t.estagio) && !t.contestado && t.vencimento >= hoje && t.vencimento <= ate,
   );
 }
 

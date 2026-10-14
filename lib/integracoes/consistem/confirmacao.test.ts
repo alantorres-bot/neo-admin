@@ -58,7 +58,7 @@ describe("pendenciasConfirmacaoObsoletas", () => {
 });
 
 describe("elegiveis", () => {
-  it("vencimento de hoje até 7 dias, sem confirmação, sem pagamento", () => {
+  it("vencimento de hoje até 7 dias, sem confirmação, sem pagamento; cedido entra, contestado não", () => {
     const r = elegiveis([
       t("hoje", { vencimento: "2026-10-06" }),
       t("limite", { vencimento: "2026-10-13" }),
@@ -72,7 +72,7 @@ describe("elegiveis", () => {
       t("importado", { estagio: "importado" }),
       t("aguardando", { estagio: "aguardando_boleto" }),
     ], HOJE);
-    expect(r.map((x) => x.id)).toEqual(["hoje", "limite", "importado", "aguardando"]);
+    expect(r.map((x) => x.id)).toEqual(["hoje", "limite", "cedido", "importado", "aguardando"]);
   });
 });
 
