@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, useLinhasVisiveis } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { ROTA_AKF, ROTULO_STATUS_SOLICITACAO, valorParaSolicitar, type MarcacaoTitulo } from "@/lib/modulos/financeiro/akf/solicitacao";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -43,7 +43,9 @@ export function Seletor({ titulos, hoje, temDestinatario }: Props) {
 
   const termo = filtroCliente.trim().toLowerCase();
   const visiveis = titulos.filter((t) => !termo || t.cliente.toLowerCase().includes(termo) || t.documento.toLowerCase().includes(termo));
-  const selecionaveis = visiveis.filter((t) => !t.solicitacao);
+  const { visivel, aoFiltrar } = useLinhasVisiveis();
+  // Além do filtro de cliente acima, respeita o filtro da própria grade.
+  const selecionaveis = visiveis.filter((t) => !t.solicitacao && visivel(t.id));
   const todas = selecionaveis.length > 0 && selecionaveis.every((t) => marcadas.has(t.id));
 
   const alternar = (ids: string[]) => setMarcadas((atual) => {
@@ -99,7 +101,7 @@ export function Seletor({ titulos, hoje, temDestinatario }: Props) {
       )}
 
       <div className="overflow-x-auto rounded-[3px] border border-grade">
-        <Table className="cartoes">
+        <Table className="cartoes" aoFiltrar={aoFiltrar}>
           <TableHeader>
             <TableRow>
               <TableHead className="w-8">

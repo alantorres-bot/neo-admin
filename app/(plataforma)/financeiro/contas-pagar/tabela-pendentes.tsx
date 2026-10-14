@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, useLinhasVisiveis } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { compararComCaixa, descreverRascunho, parseReais, ROTULO_STATUS, totalParaCaixa, type RascunhoEmMontagem } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { descreverSituacao, estaPaga, estaPendente, ROTA_CONTAS_PAGAR, ROTULO_TIPO, type ItemPendente } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
@@ -61,8 +61,9 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, r
   const [dialogo, setDialogo] = useState(false);
   const [salvando, iniciarSalvar] = useTransition();
 
-  const selecionaveis = useMemo(() => itens.filter(estaPendente), [itens]);
-  const idsSelecionaveis = useMemo(() => selecionaveis.map((i) => i.id), [selecionaveis]);
+  const { visivel, aoFiltrar } = useLinhasVisiveis();
+  // "Marcar todos" pega só o que o filtro da grade deixou à vista.
+  const idsSelecionaveis = useMemo(() => itens.filter((i) => estaPendente(i) && visivel(i.id)).map((i) => i.id), [itens, visivel]);
   const porId = useMemo(() => new Map(itens.map((i) => [i.id, i])), [itens]);
   const selecionados = useMemo(() => [...marcadas].map((id) => porId.get(id)).filter((i): i is ItemPendente => Boolean(i)), [marcadas, porId]);
   const totalMarcado = selecionados.reduce((s, i) => s + i.saldoCentavos, 0);
@@ -155,12 +156,12 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, r
         />
       )}
       <div className="overflow-x-auto rounded-[3px] border border-grade">
-        <Table className="cartoes">
+        <Table className="cartoes" aoFiltrar={aoFiltrar}>
           <TableHeader>
             <TableRow>
               {podeOperar && (
                 <TableHead className="w-8">
-                  <input type="checkbox" className="size-4" aria-label="Marcar todos desta página" checked={todasMarcadas} onChange={() => alternar(idsSelecionaveis)} disabled={idsSelecionaveis.length === 0} />
+                  <input type="checkbox" className="size-4" aria-label="Marcar todos os visíveis desta página" checked={todasMarcadas} onChange={() => alternar(idsSelecionaveis)} disabled={idsSelecionaveis.length === 0} />
                 </TableHead>
               )}
               <TableHead><CabecalhoOrdenavel rotulo="Tipo" direcao={direcaoDe("tipo")} href={hrefOrdem("tipo")} /></TableHead>

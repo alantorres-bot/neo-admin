@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { DialogoContato } from "@/app/(plataforma)/configuracoes/contrapartes/dialogos";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, useLinhasVisiveis } from "@/components/ui/table";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { nomeParcela, type ContatoSugerido, type GrupoNota } from "@/lib/modulos/financeiro/recebiveis/tarefas";
 import { formatarWhatsapp } from "@/lib/nucleo/documentos";
@@ -54,7 +54,9 @@ export function TabelaParcelas({ grupos, tipo, podeOperar, hoje, mostrarUnidade 
     for (const g of grupos) for (const p of g.parcelas) m.set(p.id, { clienteId: g.clienteId, cliente: g.cliente, contatoId: p.contato?.id ?? null });
     return m;
   }, [grupos]);
-  const todasIds = useMemo(() => grupos.flatMap((g) => g.parcelas.map((p) => p.id)), [grupos]);
+  const { visivel, aoFiltrar } = useLinhasVisiveis();
+  // "Marcar todas" pega só os grupos que o filtro da grade deixou à vista.
+  const todasIds = useMemo(() => grupos.filter((g) => visivel(g.chave)).flatMap((g) => g.parcelas.map((p) => p.id)), [grupos, visivel]);
 
   const alternar = (ids: string[]) => setMarcadas((atual) => {
     const novo = new Set(atual);
@@ -120,12 +122,12 @@ export function TabelaParcelas({ grupos, tipo, podeOperar, hoje, mostrarUnidade 
           {tipo !== "anexar" && <span className="text-xs text-muted-foreground">Uma chamada por cliente: se um cliente falhar, os outros continuam.</span>}
         </div>
       )}
-      <Table className="cartoes">
+      <Table className="cartoes" aoFiltrar={aoFiltrar}>
         <TableHeader>
           <TableRow>
             {podeOperar && (
               <TableHead className="w-8">
-                <input type="checkbox" className="size-4" aria-label="Marcar todas desta página" checked={estaMarcado(todasIds)} onChange={() => alternar(todasIds)} />
+                <input type="checkbox" className="size-4" aria-label="Marcar todas as visíveis desta página" checked={estaMarcado(todasIds)} onChange={() => alternar(todasIds)} />
               </TableHead>
             )}
             <TableHead>Cliente</TableHead><TableHead>Título</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead>

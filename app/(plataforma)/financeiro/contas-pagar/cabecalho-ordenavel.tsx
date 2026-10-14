@@ -15,7 +15,7 @@ type Props = {
   alinharDireita?: boolean;
 };
 
-/** Título de coluna clicável: crescente ↔ decrescente, com a seta indicando a direção atual. Vai dentro de um `TableHead`. */
+/** Título de coluna clicável (a grade padrão mantém esta classificação e põe o funil ao lado, por `data-ordem-externa`): crescente ↔ decrescente, com a seta indicando a direção atual. Vai dentro de um `TableHead`. */
 export function CabecalhoOrdenavel({ rotulo, direcao, href, aoClicar, alinharDireita = false }: Props) {
   const Seta = direcao === "asc" ? ArrowUp : direcao === "desc" ? ArrowDown : ArrowUpDown;
   const titulo = direcao === "asc" ? `${rotulo}: crescente (clique para decrescente)` : direcao === "desc" ? `${rotulo}: decrescente (clique para crescente)` : `Ordenar por ${rotulo}`;
@@ -27,6 +27,6 @@ export function CabecalhoOrdenavel({ rotulo, direcao, href, aoClicar, alinharDir
     </>
   );
   // aria-sort pertence ao <th>; aqui o estado vai no title e na seta.
-  if (href) return <Link href={href} className={classe} title={titulo}>{conteudo}</Link>;
-  return <button type="button" onClick={aoClicar} className={classe} title={titulo}>{conteudo}</button>;
+  if (href) return <Link data-ordem-externa="" href={href} className={classe} title={titulo}>{conteudo}</Link>;
+  return <button data-ordem-externa="" type="button" onClick={aoClicar} className={classe} title={titulo}>{conteudo}</button>;
 }

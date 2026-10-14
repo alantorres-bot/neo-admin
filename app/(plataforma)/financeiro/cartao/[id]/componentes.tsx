@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, useLinhasVisiveis } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { chaveTitulo, CONFERIR, ROTULO_DECISAO, type ResultadoConciliacao } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { ROTA_CARTAO } from "@/lib/modulos/financeiro/cartao/modulo";
@@ -38,7 +38,10 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
   const agrupaveis = lancaCompra ? itensAgrupaveis(r.aLancar, compras!) : [];
   const agrupavel = new Set(agrupaveis.map((i) => i.linha.id));
   const marcar = (id: string, v: boolean) => { const n = new Set(selecionadas); if (v) n.add(id); else n.delete(id); setSelecionadas(n); };
-  const todasMarcadas = agrupaveis.length > 0 && agrupaveis.every((i) => selecionadas.has(i.linha.id));
+  const { visivel, aoFiltrar } = useLinhasVisiveis();
+  // "Selecionar todas" pega só as agrupáveis que o filtro da grade deixou à vista.
+  const agrupaveisVisiveis = agrupaveis.filter((i) => visivel(i.linha.id));
+  const todasMarcadas = agrupaveisVisiveis.length > 0 && agrupaveisVisiveis.every((i) => selecionadas.has(i.linha.id));
   // Por que a linha não entra num agrupado (dica na caixa desabilitada).
   const motivoFora = (a: (typeof r.aLancar)[number]): string => {
     if (a.justificativa) return "Já tem decisão (justificada)";
@@ -79,13 +82,20 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
         <p className="text-xs text-muted-foreground">Linhas da fatura sem título correspondente, classificadas por natureza. Lançar contra a instituição emissora, com o complemento sugerido (máscara do POP). Encargo: parcela única. Estorno: abater do título da compra, não lançar título novo. Parcela não desdobrada: localizar a compra de origem e desdobrar.</p>
         {lancaCompra && <BarraAgrupado faturaId={faturaId!} itens={agrupaveis} compras={compras!} selecionadas={selecionadas} setSelecionadas={setSelecionadas} />}
         {r.aLancar.length === 0 ? <Vazio texto="Nada a lançar: toda linha da fatura tem título." /> : (
-          <Table>
+          <Table aoFiltrar={aoFiltrar}>
             <TableHeader><TableRow>
               {agrupaveis.length >= 2 && (
                 <TableHead className="w-16">
                   <label className="flex items-center gap-1" title="Selecionar todas as linhas que podem ser agrupadas">
                     <input type="checkbox" className="size-4" checked={todasMarcadas} aria-label="Selecionar todas as linhas que podem ser agrupadas"
-                      onChange={(e) => setSelecionadas(e.target.checked ? new Set(agrupaveis.map((i) => i.linha.id)) : new Set())} />
+                      onChange={(e) => setSelecionadas((atual) => {
+                        const novo = new Set(atual);
+                        for (const i of agrupaveisVisiveis) {
+                          if (e.target.checked) novo.add(i.linha.id);
+                          else novo.delete(i.linha.id);
+                        }
+                        return novo;
+                      })} />
                     Agrupar
                   </label>
                 </TableHead>
@@ -197,6 +207,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
 
       <TabsContent value="quadro">
         <Table className="max-w-2xl">
+          <TableHeader><TableRow><TableHead>Item</TableHead><TableHead className="text-right">Valor</TableHead></TableRow></TableHeader>
           <TableBody>
             {r.quadro.map((q) => (
               <TableRow key={q.rotulo} className={q.destaque ? "font-bold" : ""}>

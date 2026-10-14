@@ -6,8 +6,10 @@
  * - o funil do título filtra a coluna (trecho de texto ou valores marcados, como no Excel);
  * - a partir de 8 linhas aparece a busca geral "Filtrar nesta tabela".
  * Funciona sobre o texto exibido nas células (datas dd/mm/aaaa, R$ 1.234,56 e texto), sem configurar colunas.
- * Ficam de fora, sozinhos: títulos vazios ou com link/botão/caixa (ex.: classificação feita no servidor) e,
- * nas grades com "marcar todos" no cabeçalho, o filtro (para a seleção não pegar linha escondida).
+ * Títulos vazios ou com link/botão/caixa ficam de fora. Coluna com classificação própria (ex.: no servidor, que vale
+ * para todas as páginas) marca o controle com `data-ordem-externa`: mantém a classificação dela e ganha o funil.
+ * Grade com "marcar todos" no cabeçalho só filtra se passar `aoFiltrar`: recebe as chaves (key) das linhas visíveis
+ * (null = sem filtro) para o "marcar todos" marcar só o que está à vista.
  * Linhas com célula mesclada (colSpan) ficam sempre visíveis: avisos, subtotais, títulos de grupo.
  * `<Table interativa={false}>` desliga tudo (use só em quadros que não são grade, ex.: resumo de totais).
  */
@@ -22,7 +24,7 @@ import {
 } from "@/lib/nucleo/tabela"
 
 type Ordem = { coluna: number; direcao: Direcao } | null
-type Medicao = { linhas: string[][]; total: number; visiveis: number; ordenavel: boolean }
+type Medicao = { linhas: string[][]; total: number; visiveis: number; ordenavel: boolean; mapeado: boolean }
 
 type ContextoTabela = {
   ordem: Ordem
@@ -34,6 +36,7 @@ type ContextoTabela = {
   colunas: number
   medicao: Medicao
   publicar: (m: Medicao) => void
+  informarVisiveis: (chaves: string[] | null) => void
 }
 
 const Contexto = React.createContext<ContextoTabela | null>(null)
@@ -44,16 +47,25 @@ const LINHAS_PARA_BUSCA = 8
 const MAX_VALORES_LISTA = 200
 
 function mesmaMedicao(a: Medicao, b: Medicao) {
-  return a.total === b.total && a.visiveis === b.visiveis && a.ordenavel === b.ordenavel && JSON.stringify(a.linhas) === JSON.stringify(b.linhas)
+  return a.total === b.total && a.visiveis === b.visiveis && a.ordenavel === b.ordenavel && a.mapeado === b.mapeado && JSON.stringify(a.linhas) === JSON.stringify(b.linhas)
 }
 
-function Table({ className, interativa = true, children, ...props }: React.ComponentProps<"table"> & { interativa?: boolean }) {
+type PropsTabela = React.ComponentProps<"table"> & {
+  interativa?: boolean
+  /** Obrigatório para filtrar grade com "marcar todos": chaves das linhas visíveis, ou null quando nada está filtrado. */
+  aoFiltrar?: (chaves: string[] | null) => void
+}
+
+function Table({ className, interativa = true, aoFiltrar, children, ...props }: PropsTabela) {
   const ref = React.useRef<HTMLTableElement>(null)
   const [ordem, setOrdem] = React.useState<Ordem>(null)
   const [filtros, setFiltros] = React.useState<Record<number, FiltroColuna>>({})
   const [busca, setBusca] = React.useState("")
-  const [estrutura, setEstrutura] = React.useState({ colunas: 0, filtroPermitido: true })
-  const [medicao, setMedicao] = React.useState<Medicao>({ linhas: [], total: 0, visiveis: 0, ordenavel: false })
+  const [estrutura, setEstrutura] = React.useState({ colunas: 0, comSelecao: false })
+  const [medicao, setMedicao] = React.useState<Medicao>({ linhas: [], total: 0, visiveis: 0, ordenavel: false, mapeado: false })
+  const aoFiltrarRef = React.useRef(aoFiltrar)
+  const informado = React.useRef<string | undefined>(undefined)
+  React.useEffect(() => { aoFiltrarRef.current = aoFiltrar })
 
   // Estrutura lida do cabeçalho já desenhado: nº de colunas e se há "marcar todos".
   // eslint-disable-next-line react-hooks/exhaustive-deps -- relê o DOM a cada desenho; o estado só muda quando o valor lido muda
@@ -62,8 +74,8 @@ function Table({ className, interativa = true, children, ...props }: React.Compo
     if (!interativa || !t) return
     const cab = t.tHead?.rows[t.tHead.rows.length - 1]
     const colunas = cab ? Array.from(cab.cells).reduce((s, c) => s + c.colSpan, 0) : 0
-    const filtroPermitido = !t.tHead?.querySelector("input[type=checkbox],[role=checkbox]")
-    setEstrutura((e) => (e.colunas === colunas && e.filtroPermitido === filtroPermitido ? e : { colunas, filtroPermitido }))
+    const comSelecao = !!t.tHead?.querySelector("input[type=checkbox],[role=checkbox]")
+    setEstrutura((e) => (e.colunas === colunas && e.comSelecao === comSelecao ? e : { colunas, comSelecao }))
   })
 
   const setFiltro = React.useCallback((coluna: number, f: FiltroColuna | null) => {
@@ -75,14 +87,22 @@ function Table({ className, interativa = true, children, ...props }: React.Compo
     })
   }, [])
   const publicar = React.useCallback((m: Medicao) => setMedicao((atual) => (mesmaMedicao(atual, m) ? atual : m)), [])
+  const informarVisiveis = React.useCallback((chaves: string[] | null) => {
+    const assinatura = chaves === null ? "" : JSON.stringify(chaves)
+    if (informado.current === assinatura) return
+    informado.current = assinatura
+    aoFiltrarRef.current?.(chaves)
+  }, [])
 
+  // Com "marcar todos", só filtra quem sabe marcar apenas as linhas visíveis (aoFiltrar) e com as linhas identificadas.
+  const filtroPermitido = !estrutura.comSelecao || (!!aoFiltrar && medicao.mapeado)
   const valor = React.useMemo<ContextoTabela>(
-    () => ({ ordem, setOrdem, filtros, setFiltro, busca, publicar, medicao, ...estrutura }),
-    [ordem, filtros, setFiltro, busca, publicar, medicao, estrutura],
+    () => ({ ordem, setOrdem, filtros, setFiltro, busca, publicar, informarVisiveis, medicao, colunas: estrutura.colunas, filtroPermitido }),
+    [ordem, filtros, setFiltro, busca, publicar, informarVisiveis, medicao, estrutura.colunas, filtroPermitido],
   )
 
   const algumFiltro = busca.trim() !== "" || Object.keys(filtros).length > 0
-  const mostrarBarra = interativa && estrutura.filtroPermitido && (medicao.total >= LINHAS_PARA_BUSCA || algumFiltro)
+  const mostrarBarra = interativa && filtroPermitido && (medicao.total >= LINHAS_PARA_BUSCA || algumFiltro)
 
   const tabela = (
     <div data-slot="table-container" className="relative w-full overflow-x-auto">
@@ -157,6 +177,11 @@ function celulasDe(tr: HTMLTableRowElement): string[] {
   return valores
 }
 
+/** Desfaz o prefixo e o escape que React.Children.toArray põe na key (".$" e "=0"/"=2"). */
+function chaveOriginal(chave: string): string {
+  return chave.replace(/^\.\$/, "").replace(/=2/g, ":").replace(/=0/g, "=")
+}
+
 type Grupo = { chave: string; elemento: React.ReactNode; tamanho: number }
 type Leitura = { porChave: Record<string, string[]>; fixas: string[]; ordenavel: boolean; assinatura: string }
 
@@ -220,6 +245,7 @@ function TableBody({ className, children, ...props }: React.ComponentProps<"tbod
     const filtros = ctx.filtroPermitido ? ctx.filtros : {}
     const busca = ctx.filtroPermitido ? ctx.busca : ""
     const linhas: string[][] = []
+    const chavesVisiveis: string[] = []
     let visiveis = 0
     for (const u of unidades) {
       const fixa = fixas.includes(u.chave)
@@ -227,7 +253,10 @@ function TableBody({ className, children, ...props }: React.ComponentProps<"tbod
       const passa = fixa || linhaPassa(valores, filtros, busca)
       if (!fixa && u.trs.length) {
         linhas.push(valores)
-        if (passa) visiveis++
+        if (passa) {
+          visiveis++
+          chavesVisiveis.push(chaveOriginal(u.chave))
+        }
       }
       for (const tr of u.trs) {
         if (!passa) {
@@ -242,7 +271,9 @@ function TableBody({ className, children, ...props }: React.ComponentProps<"tbod
 
     const assinatura = JSON.stringify([porChave, fixas, ordenavel])
     setLeitura((l) => (l.assinatura === assinatura ? l : { porChave, fixas, ordenavel, assinatura }))
-    ctx.publicar({ linhas, total: linhas.length, visiveis, ordenavel })
+    ctx.publicar({ linhas, total: linhas.length, visiveis, ordenavel, mapeado })
+    const algumFiltro = busca.trim() !== "" || Object.keys(filtros).length > 0
+    ctx.informarVisiveis(algumFiltro && mapeado ? chavesVisiveis : null)
   })
 
   const semResultado = !!ctx && ctx.filtroPermitido && ctx.medicao.total > 0 && ctx.medicao.visiveis === 0
@@ -296,25 +327,28 @@ const SELETOR_INTERATIVO = "a,button,input,select,textarea,[role=checkbox],[role
 function TableHead({ className, children, ...props }: React.ComponentProps<"th">) {
   const ctx = React.useContext(Contexto)
   const ref = React.useRef<HTMLTableCellElement>(null)
-  const [coluna, setColuna] = React.useState<{ indice: number; rotulo: string } | null>(null)
+  const [coluna, setColuna] = React.useState<{ indice: number; rotulo: string; externa: boolean } | null>(null)
 
   // Só o título da última linha do cabeçalho, com texto e sem controles próprios, vira classificável.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- relê o DOM a cada desenho; o estado só muda quando o valor lido muda
   React.useLayoutEffect(() => {
     const th = ref.current
-    let c: { indice: number; rotulo: string } | null = null
+    let c: { indice: number; rotulo: string; externa: boolean } | null = null
     const rotulo = th?.querySelector<HTMLElement>(":scope > [data-tabela-rotulo]")
     const thead = th?.closest("thead")
     const tr = th?.parentElement
     const texto = rotulo ? textoDe(rotulo).replace(/\s+/g, " ").trim() : ""
-    if (ctx && th && rotulo && thead && tr && thead.rows[thead.rows.length - 1] === tr && th.colSpan === 1 && texto && !rotulo.querySelector(SELETOR_INTERATIVO)) {
+    // Classificação própria da tela (link/botão marcado com data-ordem-externa): fica a dela, e a coluna ganha o funil.
+    const externa = !!rotulo?.querySelector("[data-ordem-externa]")
+    const outrosControles = rotulo ? Array.from(rotulo.querySelectorAll(SELETOR_INTERATIVO)).filter((el) => !el.closest("[data-ordem-externa]")) : []
+    if (ctx && th && rotulo && thead && tr && thead.rows[thead.rows.length - 1] === tr && th.colSpan === 1 && texto && outrosControles.length === 0) {
       let indice = 0
       for (let irmao = th.previousElementSibling; irmao; irmao = irmao.previousElementSibling) {
         indice += (irmao as HTMLTableCellElement).colSpan || 1
       }
-      c = { indice, rotulo: texto }
+      c = { indice, rotulo: texto, externa }
     }
-    setColuna((atual) => (atual?.indice === c?.indice && atual?.rotulo === c?.rotulo ? atual : c))
+    setColuna((atual) => (atual?.indice === c?.indice && atual?.rotulo === c?.rotulo && atual?.externa === c?.externa ? atual : c))
   })
 
   const classe = cn(
@@ -325,7 +359,7 @@ function TableHead({ className, children, ...props }: React.ComponentProps<"th">
     return <th data-slot="table-head" className={classe} {...props}>{children}</th>
   }
 
-  const classificavel = !!coluna && ctx.medicao.ordenavel
+  const classificavel = !!coluna && !coluna.externa && ctx.medicao.ordenavel
   const direcao = classificavel && ctx.ordem?.coluna === coluna.indice ? ctx.ordem.direcao : null
   const alternar = () => {
     if (!coluna || !classificavel) return
@@ -372,14 +406,14 @@ function TableHead({ className, children, ...props }: React.ComponentProps<"th">
               className={cn("size-3.5 cursor-pointer", direcao ? "text-foreground" : "opacity-0 group-hover/cabecalho:opacity-40")}
             />
           )}
-          {ctx.filtroPermitido && <FiltroDaColuna coluna={coluna.indice} rotulo={coluna.rotulo} />}
+          {ctx.filtroPermitido && <FiltroDaColuna coluna={coluna.indice} rotulo={coluna.rotulo} classificavel={classificavel} />}
         </span>
       )}
     </th>
   )
 }
 
-function FiltroDaColuna({ coluna, rotulo }: { coluna: number; rotulo: string }) {
+function FiltroDaColuna({ coluna, rotulo, classificavel }: { coluna: number; rotulo: string; classificavel: boolean }) {
   const ctx = React.useContext(Contexto)!
   const ativo = filtroAtivo(ctx.filtros[coluna])
   return (
@@ -397,7 +431,7 @@ function FiltroDaColuna({ coluna, rotulo }: { coluna: number; rotulo: string }) 
       <Popover.Portal>
         <Popover.Positioner side="bottom" align="start" sideOffset={4} className="isolate z-50 outline-none">
           <Popover.Popup className="w-64 rounded-md bg-popover p-2 text-[12px] font-normal text-popover-foreground shadow-md ring-1 ring-foreground/10 outline-none">
-            <ConteudoFiltro coluna={coluna} />
+            <ConteudoFiltro coluna={coluna} classificavel={classificavel} />
           </Popover.Popup>
         </Popover.Positioner>
       </Popover.Portal>
@@ -405,7 +439,7 @@ function FiltroDaColuna({ coluna, rotulo }: { coluna: number; rotulo: string }) 
   )
 }
 
-function ConteudoFiltro({ coluna }: { coluna: number }) {
+function ConteudoFiltro({ coluna, classificavel }: { coluna: number; classificavel: boolean }) {
   const ctx = React.useContext(Contexto)!
   const atual = ctx.filtros[coluna] ?? { texto: "", valores: null }
   const distintos = React.useMemo(() => valoresDistintos(ctx.medicao.linhas, coluna), [ctx.medicao.linhas, coluna])
@@ -428,7 +462,7 @@ function ConteudoFiltro({ coluna }: { coluna: number }) {
 
   return (
     <div className="flex flex-col gap-1.5">
-      {ctx.medicao.ordenavel && <div className="flex flex-col">
+      {classificavel && <div className="flex flex-col">
         <button type="button" className={cn(botao, direcao === "asc" && "font-bold")} onClick={() => ordenar("asc")}>
           <ArrowUp className="size-3.5" aria-hidden /> Classificar crescente
         </button>
@@ -506,7 +540,19 @@ function TableCaption({
   )
 }
 
+/**
+ * Para grades com "marcar todos": `<Table aoFiltrar={aoFiltrar}>` e `visivel(key)` diz se a linha está à vista,
+ * para o "marcar todos" marcar só o que o filtro deixou aparecer.
+ */
+function useLinhasVisiveis() {
+  const [chaves, setChaves] = React.useState<Set<string> | null>(null)
+  const aoFiltrar = React.useCallback((c: string[] | null) => setChaves(c && new Set(c)), [])
+  const visivel = React.useCallback((chave: string) => chaves === null || chaves.has(chave), [chaves])
+  return { visivel, aoFiltrar }
+}
+
 export {
+  useLinhasVisiveis,
   Table,
   TableHeader,
   TableBody,

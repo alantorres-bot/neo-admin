@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, useLinhasVisiveis } from "@/components/ui/table";
 import { desdobrarTitulo, encerrarParte, marcarNaAkf } from "./acoes";
 
 export type LinhaAkf = {
@@ -152,9 +152,19 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
   }
 
   // Em "marcar", só dá para marcar o que ainda não está na AKF (a busca de títulos traz também os que já estão).
-  const selecionaveis = (acao === "retirar" ? linhas : linhas.filter((l) => !l.naAkf)).filter((l) => !l.parteId);
+  const { visivel, aoFiltrar } = useLinhasVisiveis();
+  // "Marcar todos" pega só o que o filtro da grade deixou à vista.
+  const selecionaveis = (acao === "retirar" ? linhas : linhas.filter((l) => !l.naAkf)).filter((l) => !l.parteId && visivel(l.id));
   const temPartes = linhas.some((l) => l.parteId);
-  const todas = selecionaveis.length > 0 && marcadas.size === selecionaveis.length;
+  const todas = selecionaveis.length > 0 && selecionaveis.every((l) => marcadas.has(l.id));
+  const alternarTodas = () => setMarcadas((atual) => {
+    const novo = new Set(atual);
+    for (const l of selecionaveis) {
+      if (todas) novo.delete(l.id);
+      else novo.add(l.id);
+    }
+    return novo;
+  });
   return (
     <div className="space-y-3">
       {podeOperar && (
@@ -169,12 +179,12 @@ export function TabelaAkf({ linhas, podeOperar, acao }: { linhas: LinhaAkf[]; po
         </div>
       )}
       <div className="overflow-x-auto rounded-[3px] border border-grade">
-        <Table className="cartoes">
+        <Table className="cartoes" aoFiltrar={aoFiltrar}>
           <TableHeader>
             <TableRow>
               {podeOperar && (
                 <TableHead className="w-8">
-                  <input type="checkbox" className="size-4" aria-label="Marcar todos" checked={todas} onChange={() => setMarcadas(todas ? new Set() : new Set(selecionaveis.map((l) => l.id)))} />
+                  <input type="checkbox" className="size-4" aria-label="Marcar todos" checked={todas} onChange={alternarTodas} />
                 </TableHead>
               )}
               <TableHead>Documento</TableHead>
