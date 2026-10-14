@@ -24,7 +24,7 @@ uma rotina que hoje é feita em planilha, e-mail, ERP ou skill avulsa.
 | Jurídico | Notificações extrajudiciais | Emitidas e recebidas, prazos e respostas | 3 |
 | **RH/SST** | Rotinas de folha | Checklist mensal, conferência de folha, FGTS, rescisões | 4 |
 | RH/SST | EPIs | Entregas por colaborador, vencimentos, análise mensal | 4 |
-| RH/SST | Vale-transporte | Apuração mensal do VT de Cuiabá (dias, faltas, extras, tarifa), aprovação, arquivo do BB, PIX e títulos no Consistem (ver `modulos/rh-vale-transporte.md`; Fase A entregue em 14/10/2026: cadastro e conferência com o Consistem) | em construção |
+| RH/SST | Vale-transporte | Apuração mensal do VT de Cuiabá (dias, faltas, extras, tarifa), aprovação, arquivo do BB, PIX e títulos no Consistem (ver `modulos/rh-vale-transporte.md`; Fases A, B e C entregues em 14/10/2026: cadastro, mês a mês com ocorrências, aprovação, relatório, arquivo do BB, PIX, resumo do ano, histórico 2026 e títulos no Consistem) | em construção |
 | **Administrativo geral** | POPs | Procedimentos padrão por área, versionados | 5 |
 
 Prioridade: 1 = primeiro a construir. Ajustável.

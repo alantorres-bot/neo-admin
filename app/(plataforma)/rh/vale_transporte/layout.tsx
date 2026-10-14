@@ -4,7 +4,12 @@ import { MODULO_VT, ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 
-const ABAS = [{ href: `${ROTA_VT}/colaboradores`, rotulo: "Colaboradores" }];
+const ABAS = [
+  { href: `${ROTA_VT}/meses`, rotulo: "Meses" },
+  { href: `${ROTA_VT}/ano`, rotulo: "Resumo do ano" },
+  { href: `${ROTA_VT}/colaboradores`, rotulo: "Colaboradores" },
+  { href: `${ROTA_VT}/parametros`, rotulo: "Parâmetros" },
+];
 
 export default async function LayoutValeTransporte({ children }: LayoutProps<"/rh/vale_transporte">) {
   const sessao = await exigirSessao();
@@ -16,7 +21,7 @@ export default async function LayoutValeTransporte({ children }: LayoutProps<"/r
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Vale-transporte</h1>
         <p className="text-sm text-muted-foreground">
-          Quem recebe VT em Cuiabá: código de fornecedor no Consistem (nome e CPF vêm de lá), forma de pagamento habitual, valor da passagem e conta para o arquivo do BB.
+          VT de Cuiabá mês a mês: faltas, atestados, extras, férias e abatimentos por pessoa; aprovação do gestor; relatório, arquivo do BB, PIX e títulos no Consistem.
         </p>
       </div>
       <Abas abas={ABAS} />

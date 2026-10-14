@@ -1,0 +1,32 @@
+// Download do arquivo de crédito do BB (FOPAG) do mês aprovado: igual à aba "EXPORTA BB" da planilha. Só gestor do RH.
+// Cada geração fica registrada no mês (rh_vt_registrar_arquivo_bb), e o "marcar como pago" exige que tenha sido gerado.
+import { NextResponse, type NextRequest } from "next/server";
+import { gerarArquivoBB, linhasBB, nomeArquivoBB } from "@/lib/modulos/rh/vale-transporte/planilha-bb";
+import { temAcesso } from "@/lib/nucleo/permissoes";
+import { exigirSessao } from "@/lib/nucleo/sessao";
+import { criarClienteServidor } from "@/lib/supabase/servidor";
+import { lerItens, lerMes } from "../../../dados";
+
+export async function GET(_request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "rh", "gestor")) return new NextResponse("Somente gestor do RH gera o arquivo do BB.", { status: 403 });
+  const { id } = await params;
+  if (!/^[0-9a-f-]{36}$/i.test(id)) return new NextResponse("Mês inválido.", { status: 400 });
+  const supabase = await criarClienteServidor();
+  const mes = await lerMes(supabase, id);
+  if (!mes) return new NextResponse("Mês não encontrado.", { status: 404 });
+  if (mes.status !== "aprovada" && mes.status !== "paga") return new NextResponse("O arquivo do BB só sai do mês aprovado.", { status: 409 });
+  const r = linhasBB(await lerItens(supabase, id));
+  if (!r.ok) return new NextResponse(r.erro, { status: 409 });
+  const { error } = await supabase.rpc("rh_vt_registrar_arquivo_bb", { p_id: id });
+  if (error) return new NextResponse(error.code === "P0001" ? error.message : "Não foi possível registrar a geração.", { status: 409 });
+  const arquivo = await gerarArquivoBB(r.linhas);
+  const nome = nomeArquivoBB(mes.competencia);
+  return new NextResponse(new Blob([arquivo as BlobPart]), {
+    headers: {
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": `attachment; filename="${nome}"; filename*=UTF-8''${encodeURIComponent(nome)}`,
+      "Cache-Control": "no-store",
+    },
+  });
+}
