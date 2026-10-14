@@ -23,6 +23,17 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: CABECALHOS_DE_SEGURANCA }];
   },
+  // OCR do boleto em PDF-imagem (lib/modulos/financeiro/recebiveis/boleto-ocr.ts): o tesseract.js abre o worker, o WASM e o idioma
+  // por caminho de arquivo, que o empacotador não enxerga. Fica fora do bundle e os arquivos entram no servidor autônomo (contêiner).
+  serverExternalPackages: ["tesseract.js"],
+  outputFileTracingIncludes: {
+    "/financeiro/**": [
+      "./node_modules/tesseract.js/**/*",
+      "./node_modules/tesseract.js-core/**/*",
+      "./node_modules/@tesseract.js-data/eng/4.0.0_best_int/*",
+      "./node_modules/{bmp-js,is-url,node-fetch,whatwg-url,tr46,webidl-conversions,regenerator-runtime,wasm-feature-detect,zlibjs}/**/*",
+    ],
+  },
   // Server actions recebem arquivos (fatura de cartão em PDF, até 8 MB em lib/modulos/financeiro/cartao/modulo.ts; o padrão é 1 MB).
   experimental: {
     serverActions: { bodySizeLimit: "10mb" },

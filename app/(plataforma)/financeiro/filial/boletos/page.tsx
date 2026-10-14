@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { MODULO_FILIAL, ROTA_FILIAL } from "@/lib/modulos/financeiro/filial/arquivos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
-import { BoletosEmLote } from "./componentes";
+import { BoletosEmLote } from "../../cobranca/anexar/lote/componentes";
 
 export const metadata: Metadata = { title: "Anexar boletos da filial" };
 
@@ -26,7 +26,7 @@ export default async function PaginaBoletosFilial() {
           recebe a pendência para enviar ao cliente.
         </p>
       </div>
-      <BoletosEmLote />
+      <BoletosEmLote unidade="contagem" linkDepois={{ href: `${ROTA_FILIAL}?ver=pronta`, rotulo: "Ver as notas prontas para envio" }} />
     </div>
   );
 }

@@ -81,7 +81,7 @@ Regras:
 2. **Painel:** aging (a vencer, 1–15, 16–30, 31–60, +60), inadimplência %, previsão de recebimento por semana, top 10 devedores. Filtros por empresa, cliente, contrato.
 3. **Carteira:** lista de títulos com estágio, vencimento, valor, valor atualizado, último contato; ações em lote.
 4. **Ficha do cliente:** contatos, títulos, histórico de mensagens/interações, promessas, acordos, contratos.
-5. **Boletos:** upload em lote; extrair linha digitável, valor e vencimento do PDF e sugerir o título correspondente.
+5. **Boletos:** upload em lote; extrair linha digitável, valor e vencimento do PDF e sugerir o título correspondente. **Feito** em Cobrança > Boletos a anexar > "Anexar boletos em lote" (seção 37).
 6. **Renegociações:** simulador, propostas, aprovações, acordos ativos/quebrados.
 7. **Importações:** títulos em aberto e pagos, com pré-visualização (novos, alterados, baixados, divergentes) antes de gravar.
 8. **Configurações:** régua, modelos de mensagem, encargos padrão, alçadas, usuários.
@@ -129,7 +129,7 @@ Decisão do usuário (06/10/2026): usar a API REST do Consistem, a mesma já em 
 
 1. **Fase 1 — Base do módulo:** migration 0100, configuração de clientes no módulo, contratos (encargos, cedido), menu Financeiro > Recebíveis. (Login, empresas e contrapartes já vêm do núcleo.)
 2. **Fase 2 — Carteira:** sincronização pela API (Edge Function `rec-sincronizar-consistem`, **feita**), tela Carteira e botão "Sincronizar agora" (**feitos**, `app/(plataforma)/financeiro/recebiveis`), agendamento (pg_cron, **feito**; de hora em hora em dias úteis desde a etapa 1a), entrada do título pela NF e pendência "Anexar boleto" (**feitas**, seção 14), anexo do boleto, mensagem pronta e registro do envio (**feitos**, seção 15), rascunho no Gmail (código pronto, falta autorizar a caixa, seção 16), confirmação de pagamento (**feita**, seção 17), importação de títulos pagos, contratos (percentuais de multa e juros por cliente) e testes de encargos.
-3. **Fase 3 — Boletos:** upload, leitura do PDF, vínculo com títulos.
+3. **Fase 3 — Boletos:** upload, leitura do PDF, vínculo com títulos (**feita**, seção 37).
 4. **Fase 4 — Régua e e-mail:** modelos, motor da régua, Fila do dia, rascunhos no Gmail.
 5. **Fase 5 — Painel e ficha do cliente.**
 6. **Fase 6 — Renegociação.**
@@ -211,7 +211,7 @@ Ficha da NF em `/financeiro/recebiveis/<id de uma parcela>` (a pendência "Anexa
 - **Anexar boleto** (operador ou acima): um PDF ou imagem por parcela, enviado ao bucket privado `anexos` (caminho `financeiro.recebiveis/rec_titulos/<id>/…`, tipo `boleto`) e registrado em `anexos`. Anexo não se apaga: "Substituir" envia outro e vale o mais recente. Link de abertura assinado (15 min). **Linha digitável** opcional, validada só pelo tamanho (47 dígitos, ou 48 em convênio); não confere dígito verificador.
 - **Mensagem pronta:** modelos `Envio de boleto — e-mail` (assunto + corpo, termina em "Atenciosamente," sem assinatura) e `Envio de boleto — WhatsApp`, semeados na migration 0105 em `modelos_mensagem` (editáveis). Variáveis: `{contato} {cliente} {referencia} {parcelas} {linhas_digitaveis} {total} {qtd_parcelas}`. O contato é o que tem a finalidade `boleto` (ou o primeiro ativo; com vários, há seletor). Botões "Copiar E-mail" / "Copiar WhatsApp". **O sistema não envia nada**; o rascunho no Gmail está na seção 16.
 - **Registrar o envio** ("Marcar como enviado"): função de banco `rec_marcar_boleto_enviado` (migration 0105, SECURITY INVOKER, numa transação, com a RLS de quem chama). Exige parcelas em `aguardando_boleto` **e com boleto anexado**; passa para `boleto_enviado` (+ `boleto_enviado_em`), grava uma `interacoes` (canal, descrição com contato e observação, usuário) por parcela e **conclui a pendência "Anexar boleto"** da NF quando nenhuma parcela dela continua aguardando. Pendência que está com outra pessoa não é concluída por operador (o envio fica registrado); gestor conclui. Pode-se enviar parcelas em momentos diferentes.
-- **Fora desta etapa:** leitura da linha digitável a partir do PDF e confirmação de pagamento (etapa 1c). O rascunho no Gmail é a etapa 1b-2 (seção 16).
+- **Fora desta etapa:** leitura da linha digitável a partir do PDF (feita depois no lote, seção 37) e confirmação de pagamento (etapa 1c). O rascunho no Gmail é a etapa 1b-2 (seção 16).
 - **Testado:** 10 testes de banco da função (permissões, transação, pendências), 27 de lógica pura, e na interface com a API real: 4 boletos anexados, linha digitável inválida recusada, envio parcial (pendência segue aberta) e envio do restante (pendência concluída com data e autor).
 
 ## 16. Rascunho no Gmail — Etapa 1b-2 (feita e testada em 06/10/2026)
@@ -492,13 +492,13 @@ Agora cada NF da filial vira um **kit** (menu Financeiro > Faturamento Filial, m
     - O restrito lê só os títulos da unidade (`rec_titulos_ler_unidade`), os clientes com título na unidade e o boleto dessas parcelas. Não cadastra nem altera cliente ou contato.
   - **No app:** `Acesso.restrito` (sessão) e `temAcessoModulo` (`lib/nucleo/permissoes.ts`). O menu mostra só Financeiro > Faturamento Filial (e o Início), e Configurações some.
   - **Para liberar a filial:** criar o usuário, dar Operador no Financeiro e marcar "Restrito à unidade: Filial Contagem".
-- **Boletos em lote (Fase B):** a tela é Faturamento Filial > **Anexar boletos** (`/financeiro/filial/boletos`), só para Cuiabá: operador do Financeiro, não restrito.
+- **Boletos em lote (Fase B):** a tela é Faturamento Filial > **Anexar boletos** (`/financeiro/filial/boletos`), só para Cuiabá: operador do Financeiro, não restrito. Desde 14/10/2026 ela usa a tela comum de boletos em lote (seção 37), com a busca fixa na Filial Contagem; o que segue continua valendo.
   - Recebe vários PDFs de uma vez. Cada boleto é ligado à parcela pelo nº do arquivo ("002345.pdf"), ou pelo nº do documento impresso.
-  - **Do boleto com texto** (os da AKF/Bradesco) sai a **linha digitável**, conferida pelos dígitos verificadores. Dela vêm o **vencimento** (fator FEBRABAN, base 22/02/2025) e o **valor** (`decodificarLinhaDigitavel` e `lerBoletoPdf`, `lib/modulos/financeiro/filial/boleto-pdf.ts`). Boleto escaneado só é ligado pelo nome.
+  - **Do boleto com texto** (os da AKF/Bradesco) sai a **linha digitável**, conferida pelos dígitos verificadores. Dela vêm o **vencimento** (fator FEBRABAN, base 22/02/2025) e o **valor** (`decodificarLinhaDigitavel` e `lerBoleto`, hoje em `lib/modulos/financeiro/recebiveis/boleto-pdf.ts`). O PDF-imagem do Bradesco é lido por OCR (seção 37).
   - **Escolha da parcela:** NF com várias parcelas usa a que bate em vencimento e valor; se nenhuma bater, a pessoa escolhe (`escolherTitulo`).
   - **Avisos da conferência:** vencimento ou valor diferentes; boleto da AKF em título não cedido; boleto da AKF para cliente que **não aceita boleto de factoring**; título que já tem boleto (o novo passa a valer); dois boletos na mesma parcela.
   - **Gravação:** o anexo vai do navegador para `rec_titulos` (tipo `boleto`, como na ficha do título) e a linha digitável é gravada. O gatilho do kit o deixa **pronto** e abre "Enviar kit ao cliente".
-  - Calibração opcional: `NEO_AMOSTRAS_BOLETOS=<pasta com 0023xx.pdf> npx vitest run lib/modulos/financeiro/filial/boleto-pdf.test.ts`.
+  - Calibração opcional: ver a seção 37.
 - **E-mail ao cliente pelo Gmail de quem prepara (Fase C, 0153):** a ficha do kit pronto tem o bloco "E-mail ao cliente".
   - **Conectar meu Gmail:** cada pessoa autoriza o próprio Gmail uma vez (escopo `gmail.compose`). O refresh token fica no Vault (`gmail_contas` guarda só o e-mail e o id do segredo). Edge Function `nucleo-gmail-conectar`, com `state` de uso único. A conta do Google precisa ser a do usuário. A configuração está em `docs/GMAIL_POR_USUARIO.md`.
   - **Rascunho:** a Edge Function `rec-kit-rascunho-gmail` cria, no Gmail de quem clica, o e-mail com a nota fatura, o demonstrativo, o boleto de cada parcela e a carta de cessão, se houver.
@@ -578,3 +578,24 @@ As abas por etapa e a ficha do kit deram lugar a **uma fila só** em `/financeir
   - `[id]` vai para `?ver=todas&nf=`;
   - `a-implantar`, `boletos-a-anexar`, `a-enviar` e `enviadas` vão para o filtro correspondente.
 - **Sem comodato (0163, 13/10/2026):** o comodato não faz parte do kit e não é citado em nenhum lugar: fila, painel, envio em lote, e-mail ao cliente, aviso a Cuiabá, Edge `rec-kit-rascunho-gmail` e textos da pendência "Enviar kit" e do histórico do envio. O histórico já gravado não muda.
+
+## 37. Boletos em lote — Matriz e Filial (Fase 3, 14/10/2026)
+
+Tela **Cobrança > Boletos a anexar > "Anexar boletos em lote"** (`/financeiro/cobranca/anexar/lote`), só para Cuiabá: operador do Financeiro, não restrito. A tela da Filial (`/financeiro/filial/boletos`) é o mesmo componente com a busca fixa na Filial Contagem. Sem migration: usa `rec_titulos.linha_digitavel`, `nota_fiscal`, `cedido` e `anexos` (tipo `boleto`).
+
+- **Leitura** (`lib/modulos/financeiro/recebiveis/boleto-pdf.ts`, regra pura; server action `lerArquivoBoleto`). Um PDF por boleto.
+  - **PDF com texto** (AKF da Matriz e da Filial): lido direto (`extrairPaginasDoPdf`).
+  - **PDF que é só imagem** (Bradesco Net Empresa: uma figura de 720×997): **OCR** com `tesseract.js` no servidor (`boleto-ocr.ts`). A imagem é ampliada 3× em tons de cinza; o idioma `eng` vem do pacote `@tesseract.js-data/eng`, de dentro do `node_modules` (nada é baixado). Leva ~4 a 8 s por boleto. `next.config.ts` deixa o `tesseract.js` fora do bundle e inclui os arquivos dele no servidor autônomo (contêiner).
+  - Imagem solta (JPG/PNG) não é lida: a pessoa informa a NF ou escolhe o título.
+  - **Linha digitável:** 47 dígitos, conferida pelos 3 DVs de campo (módulo 10) **e o DV geral** (módulo 11). Dela vêm banco, vencimento (fator FEBRABAN, base 22/02/2025) e valor. Leitura errada, inclusive do OCR, nunca passa. Convênio (48 dígitos) não é lido.
+  - **Nº do documento:** o valor logo abaixo do rótulo. Filial: a NF (`002316`). Matriz AKF: **NF/parcela** (`1237/8` = NF 1237, 8ª parcela = título `1001237H`; a letra é a parcela: A = 1). Série Z (sem NF): `226/2026/4` (contrato/ano/parcela). Bradesco: a NF (`2335`). Sem documento no boleto, vale o nº do nome do arquivo.
+  - **Pagador:** CPF/CNPJ só quando os DVs conferem (o OCR às vezes erra um dígito; o Bradesco imprime o CNPJ com um zero a mais).
+  - **Beneficiário AKF:** "AKF SECURITIZADORA" no texto.
+- **Ligação com o título** (`escolherTitulo`): candidatos = títulos em aberto da NF lida **e** os de mesmo vencimento + valor da linha digitável (server action `titulosParaBoletos`).
+  1. Pela NF: a letra da parcela (quando o boleto diz "NF/parcela"); senão a única parcela da NF; senão a que bate vencimento e valor.
+  2. Sem NF (série Z ou leitura falha): vencimento + valor exatos; com mais de um, desempata pelo CPF/CNPJ do pagador e pela parcela.
+  3. Só liga sozinho com **um** resultado; senão a pessoa escolhe na lista. A pessoa pode corrigir o nº do documento (aceita "NF" ou "NF/parcela").
+- **Conferência** (`conferir`): vencimento ou valor diferentes; NF ou parcela do boleto diferente da do título; CPF/CNPJ do pagador diferente do cliente; boleto da AKF em título não cedido; título cedido com boleto que não é da AKF; boleto da AKF para cliente que não aceita pagar à AKF; título que já tem boleto (o novo passa a valer); dois boletos no mesmo título (bloqueia).
+- **Cliente que não paga à AKF:** a Neo emite o boleto próprio, recebe na conta e repassa à AKF no dia seguinte. Nesse caso, título cedido com boleto próprio **não** gera aviso; o aviso é o contrário (boleto da AKF para esse cliente). Quem é: a marcação "Sem boleto" do título na solicitação de antecipação (a mais recente não cancelada); sem solicitação, o kit da filial (`aceita_boleto_factoring`); por fim a lista `financeiro.akf.clientes_sem_boleto` (`clienteSemBoleto`, palavra inteira do nome) — a mesma regra da tela "Solicitar antecipação".
+- **Gravação:** só quando a pessoa clica "Anexar". O anexo vai do navegador para `rec_titulos` (tipo `boleto`, como na ficha do título) e a linha digitável é gravada. O título sai de "Boletos a anexar"; na Filial, o gatilho do kit o deixa pronto.
+- **Testes:** `lib/modulos/financeiro/recebiveis/boleto-pdf.test.ts` (linha digitável com DV geral, documento NF/parcela, CPF/CNPJ, leitura posicional, OCR em expressões, escolha e conferência). Calibração com os PDFs reais (fora do repositório): `NEO_AMOSTRAS_BOLETOS=<pasta> npx vitest run lib/modulos/financeiro/recebiveis/boleto-pdf.test.ts`. Em 14/10/2026: 8 de 8 lidos certos (3 AKF Filial, 3 AKF Matriz, 2 Bradesco por OCR), conferidos com os títulos do banco.

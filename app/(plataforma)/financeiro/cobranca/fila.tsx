@@ -212,6 +212,7 @@ export async function PaginaFila({ filas, caminho, searchParams }: { filas: read
           <Button type="submit" variant="secondary">Filtrar</Button>
           {busca && <Button variant="ghost" render={<Link href={href({ q: null })} />}>Limpar</Button>}
         </form>
+        {aba === "anexar" && podeOperar && !restrito && <Button render={<Link href="/financeiro/cobranca/anexar/lote" />}>Anexar boletos em lote</Button>}
       </div>
 
       {filas.length > 1 && <nav aria-label="Filas desta aba" className="flex flex-wrap gap-px overflow-hidden rounded-[3px] border border-grade bg-grade">
