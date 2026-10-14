@@ -1,6 +1,6 @@
 # Módulo: RH/SST / Folha de pagamento (fechamento mensal)
 
-Status: em construção. Especificação aprovada em 14/10/2026; **F1 (cadastro único) entregue em 14/10/2026**.
+Status: em construção. Especificação aprovada em 14/10/2026; **F1 (cadastro único) e F2 (mês e pagamento) entregues em 14/10/2026**.
 
 ## 1. Objetivo
 Fechar todo mês a folha de Cuiabá no Neo Admin, a partir do que o escritório de contabilidade calcula. São seis frentes:
@@ -187,6 +187,29 @@ Nenhum dado pessoal vai para `docs/amostras/` (LGPD).
     quem estava inativo, vindo do histórico do VT, e está na folha volta a ativo, sem VT. A matrícula do escritório vem do
     "Detalhe da guia" do FGTS (casada pelo CPF); CPF, agência e conta vêm da planilha só onde estavam vazios.
 - **F2:** mês por empresa, pagamento, avulsos, aprovação, arquivo do BB, PIX e relatório. A grade pode ser preenchida à mão.
+  **Entregue em 14/10/2026.**
+  - Migration `0511_rh_fp_base.sql`:
+    - `rh_fp_competencias`: um mês para as três empresas. Cada linha guarda a empresa empregadora; os totais saem por empresa.
+    - `rh_fp_itens`: foto do cadastro, com líquido, férias/acréscimos, 13º e avulso (com motivo); o "a pagar" é uma coluna
+      gerada.
+    - Fluxo aberta → conferida (operador) → aprovada (gestor) → paga. Fora de "aberta" só os PIX mudam. Reabrir é só do gestor,
+      com motivo.
+    - Pendências "Fechar", "Aprovar" e "Pagar folha de <mês>", todas com prazo no dia do pagamento.
+    - `rh_enesimo_dia_util` e `rh_exigir`.
+  - Nesta fase, "conferida" é a confirmação à mão do operador. A F3 põe as conferências automáticas como condição.
+  - A F2 recusa só mês vazio e FOPAG com valor sem CPF, agência ou conta.
+  - Regras puras:
+    - `lib/modulos/rh/calendario.ts`: o 5º dia útil (`pagamentoDaFolha`); calendário compartilhado com o VT.
+    - `lib/modulos/rh/arquivo-bb.ts`: arquivo do BB do RH; a folha usa o cabeçalho `CPF | AG | CONTA | SALÁRIO`.
+    - `lib/modulos/rh/folha/modulo.ts`: naturezas, valor a pagar e leitura de reais digitados.
+  - Telas em `app/(plataforma)/rh/folha/`:
+    - Meses: total por empresa.
+    - Mês: grade editável, filtro "só quem tem valor", "Atualizar do cadastro", totais por empresa, forma e avulsos, PIX e
+      botões do fluxo.
+    - Download do BB.
+    - Relatório `app/(impressao)/imprimir/rh/folha/[id]`: por empresa, com Nº, funcionário, valor e pagamento; avulsos à parte;
+      totais por forma.
+  - Testes: `tests/db/rh-fp-base.test.ts` e `lib/modulos/rh/folha/modulo.test.ts`.
 - **F3:** guias e conferências C1–C6.
 - **F4:** títulos no Consistem (funcionários e guias).
 - **F5:** documentos e checklist com prazos na Fila do dia.

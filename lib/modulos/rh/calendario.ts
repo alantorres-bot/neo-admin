@@ -1,4 +1,4 @@
-// Calendário do vale-transporte (docs/modulos/rh-vale-transporte.md, regras 1, 4 e 10). Dia útil = segunda a sexta; feriados
+// Calendário do RH: vale-transporte (docs/modulos/rh-vale-transporte.md, regras 1, 7 e 13) e folha (docs/modulos/rh-folha.md, regra 2). Dia útil = segunda a sexta; feriados
 // não são considerados nesta versão (o RH ajusta os dias úteis da competência à mão). Datas ISO "AAAA-MM-DD", sem fuso.
 
 const MS_DIA = 86_400_000;
@@ -48,6 +48,15 @@ export function ultimoDiaUtil(mes: string): string {
   while (!ehDiaUtil(d)) d = new Date(d.getTime() - MS_DIA);
   return paraIso(d);
 }
+
+/** n-ésimo dia útil do mês (1 = primeiro). Ex.: 5º dia útil de outubro/2026 = 07/10/2026. */
+export function enesimoDiaUtil(mes: string, n: number): string {
+  let d = paraData(inicioDoMes(mes));
+  for (let i = 0; ; d = new Date(d.getTime() + MS_DIA)) if (ehDiaUtil(d) && ++i >= Math.max(n, 1)) return paraIso(d);
+}
+
+/** Folha do mês M: paga no 5º dia útil de M+1. */
+export const pagamentoDaFolha = (competencia: string) => enesimoDiaUtil(somarMeses(competencia, 1), 5);
 
 /** Volta `n` dias úteis a partir de uma data (que não conta). */
 export function voltarDiasUteis(data: string, n: number): string {

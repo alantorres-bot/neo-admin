@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { inicioDoMes } from "@/lib/modulos/rh/vale-transporte/calendario";
+import { inicioDoMes } from "@/lib/modulos/rh/calendario";
 import { itensALancar, montarTituloVt } from "@/lib/modulos/rh/vale-transporte/lancamento";
 import { FORMAS_PAGAMENTO, ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";

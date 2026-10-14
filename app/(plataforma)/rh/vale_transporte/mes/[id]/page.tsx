@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { rotuloMes } from "@/lib/modulos/rh/vale-transporte/calendario";
+import { rotuloMes } from "@/lib/modulos/rh/calendario";
 import { ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";

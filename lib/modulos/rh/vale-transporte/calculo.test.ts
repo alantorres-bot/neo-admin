@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { calcularItem, type EntradaCalculo } from "./calculo";
-import { diasUteisDoMes, diasUteisDoPeriodoNoMes, prazosDaCompetencia, rotuloMes, somarMeses, ultimoDiaUtil } from "./calendario";
+import { diasUteisDoMes, diasUteisDoPeriodoNoMes, enesimoDiaUtil, pagamentoDaFolha, prazosDaCompetencia, rotuloMes, somarMeses, ultimoDiaUtil } from "@/lib/modulos/rh/calendario";
 
 const base: EntradaCalculo = {
   competencia: "2026-11-01", dias_uteis: 21, faltas: 0, atestados: 0, extras: 0, ferias_inicio: null, ferias_fim: null,
@@ -23,6 +23,11 @@ describe("calendário do VT", () => {
     expect(diasUteisDoPeriodoNoMes("2026-10-20", "2026-11-04", "2026-11-01")).toBe(3);
     expect(diasUteisDoPeriodoNoMes("2026-12-01", "2026-12-20", "2026-11-01")).toBe(0);
     expect(diasUteisDoPeriodoNoMes("2026-11-10", null, "2026-11-01")).toBe(0);
+  });
+  it("folha: 5º dia útil do mês seguinte", () => {
+    expect(enesimoDiaUtil("2026-10-01", 5)).toBe("2026-10-07");
+    expect(pagamentoDaFolha("2026-09-01")).toBe("2026-10-07");
+    expect(pagamentoDaFolha("2026-12-01")).toBe("2027-01-07");
   });
   it("rótulos e virada de ano", () => {
     expect(rotuloMes("2026-11-01")).toBe("novembro/2026");

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { diasUteisDoMes, prazosDaCompetencia, rotuloMes, somarMeses } from "@/lib/modulos/rh/vale-transporte/calendario";
+import { diasUteisDoMes, prazosDaCompetencia, rotuloMes, somarMeses } from "@/lib/modulos/rh/calendario";
 import { ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";

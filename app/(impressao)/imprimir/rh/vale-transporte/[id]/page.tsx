@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BotaoImprimir } from "@/app/(impressao)/imprimir/contas-pagar/autorizacao/[id]/botao-imprimir";
 import { lerItens, lerMes, ROTULO_STATUS, type ItemLinha } from "@/app/(plataforma)/rh/vale_transporte/dados";
-import { rotuloMes } from "@/lib/modulos/rh/vale-transporte/calendario";
+import { rotuloMes } from "@/lib/modulos/rh/calendario";
 import { FORMAS_PAGAMENTO, MODULO_VT, ROTULO_FORMA } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";

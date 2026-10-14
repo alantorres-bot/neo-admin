@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cpfBB, gerarArquivoBB, linhasBB, nomeArquivoBB, type ItemBB } from "./planilha-bb";
+import { CABECALHO_FOLHA, cpfBB, gerarArquivoBB, linhasBB, nomeArquivoBB, type ItemBB } from "./arquivo-bb";
 
 const item = (m: Partial<ItemBB>): ItemBB => ({ cod_fornecedor: "1", nome: "B", cpf: "071.225.481-12", agencia: "2764-2", conta: "98657-7", forma_pagamento: "fopag", valor: 198, ...m });
 
@@ -30,5 +30,9 @@ describe("arquivo do BB", () => {
     expect(ws.getRow(1).values).toEqual([undefined, "CPF", "AGENCIA", "CONTA", "VALOR"]);
     expect(ws.getRow(2).values).toEqual([undefined, "071225481-12", "2764-2", "98657-7", 198]);
     expect(nomeArquivoBB("2026-11-01")).toBe("VT 11-2026 - EXPORTA BB.xlsx");
+    expect(nomeArquivoBB("2026-09-01", "FOLHA")).toBe("FOLHA 09-2026 - EXPORTA BB.xlsx");
+    const folha = new Workbook();
+    await folha.xlsx.load((await gerarArquivoBB(r.linhas, CABECALHO_FOLHA)).buffer as ArrayBuffer);
+    expect(folha.getWorksheet("EXPORTA BB")!.getRow(1).values).toEqual([undefined, "CPF", "AG", "CONTA", "SALÁRIO"]);
   });
 });

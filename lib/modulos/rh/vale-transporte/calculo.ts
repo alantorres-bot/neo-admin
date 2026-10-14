@@ -1,6 +1,6 @@
 // Cálculo do VT de uma pessoa no mês (docs/modulos/rh-vale-transporte.md, regras 2 e 3). Espelho EXATO da função SQL
 // rh_vt_calcular_item (migration 0502): o banco grava o valor; esta conta só mostra na tela antes de salvar.
-import { diasUteisDoPeriodoNoMes } from "./calendario";
+import { diasUteisDoPeriodoNoMes } from "@/lib/modulos/rh/calendario";
 
 export type EntradaCalculo = {
   competencia: string;          // 1º dia do mês do VT

@@ -1,7 +1,7 @@
 // Download do arquivo de crédito do BB (FOPAG) do mês aprovado: igual à aba "EXPORTA BB" da planilha. Só gestor do RH.
 // Cada geração fica registrada no mês (rh_vt_registrar_arquivo_bb), e o "marcar como pago" exige que tenha sido gerado.
 import { NextResponse, type NextRequest } from "next/server";
-import { gerarArquivoBB, linhasBB, nomeArquivoBB } from "@/lib/modulos/rh/vale-transporte/planilha-bb";
+import { gerarArquivoBB, linhasBB, nomeArquivoBB } from "@/lib/modulos/rh/arquivo-bb";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";

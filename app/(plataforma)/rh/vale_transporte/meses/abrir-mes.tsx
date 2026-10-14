@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { diasUteisDoMes, prazosDaCompetencia } from "@/lib/modulos/rh/vale-transporte/calendario";
+import { diasUteisDoMes, prazosDaCompetencia } from "@/lib/modulos/rh/calendario";
 import { ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { abrirMes } from "../mes/acoes";
 

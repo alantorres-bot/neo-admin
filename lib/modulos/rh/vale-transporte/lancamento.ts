@@ -3,7 +3,7 @@
 // emissão/entrada = dia do lançamento; documento = "VT" + MMAA; códigos (histórico, portador, categoria, fluxo, contas contábeis)
 // vêm dos Parâmetros do módulo: nada é inventado aqui. A reserva (rh_vt_reservar_lancamentos) confere tudo de novo no banco.
 import type { NovoLancamentoContaPagar } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
-import { rotuloMes } from "./calendario";
+import { rotuloMes } from "@/lib/modulos/rh/calendario";
 import type { FormaPagamento } from "./modulo";
 
 export const CAMPOS_LANCAMENTO = ["codHistorico", "codPortador", "categoriaDoc", "grupoContaFluxoCaixa", "contaFluxoCaixa", "contaContabilDebito", "contaContabilCredito"] as const;

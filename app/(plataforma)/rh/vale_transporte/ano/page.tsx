@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { somarMeses } from "@/lib/modulos/rh/vale-transporte/calendario";
+import { somarMeses } from "@/lib/modulos/rh/calendario";
 import { ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { exigirSessao } from "@/lib/nucleo/sessao";
