@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { CAMPOS_LANCAMENTO, ROTULO_CAMPO_LANCAMENTO, type CodigosLancamento } from "@/lib/modulos/rh/vale-transporte/lancamento";
 import { buscarModelo, salvarParametros, type Modelo } from "./acoes";
 
@@ -17,14 +18,16 @@ export function FormParametros({ inicial, ligado, empresas, editavel }: { inicia
   const [liga, setLiga] = useState(ligado);
   const [empresaId, setEmpresaId] = useState(empresas[0]?.id ?? "");
   const [codLancamento, setCodLancamento] = useState("");
-  const [codFornecedor, setCodFornecedor] = useState("660");
+  const [codFornecedor, setCodFornecedor] = useState("");
+  const [valor, setValor] = useState("");
   const [modelo, setModelo] = useState<Modelo>();
   const [pendente, iniciar] = useTransition();
 
-  const buscar = (porLancamento: boolean) => iniciar(async () => {
-    const r = await buscarModelo({ empresaId, ...(porLancamento ? { codLancamento } : { codFornecedor }) });
+  const buscar = (porLancamento: boolean, codigo = codLancamento) => iniciar(async () => {
+    const r = await buscarModelo({ empresaId, ...(porLancamento ? { codLancamento: codigo } : { codFornecedor, valor }) });
     if (!r.ok) { toast.error(r.erro); return; }
-    setModelo(r.modelo);
+    // Ao escolher um da lista, mantém a lista da busca por fornecedor.
+    setModelo((anterior) => ({ ...r.modelo, outros: r.modelo.outros.length ? r.modelo.outros : anterior?.outros ?? [] }));
     const achados = r.modelo.codigos as Partial<CodigosLancamento>;
     setCodigos((c) => ({ ...c, ...Object.fromEntries(Object.entries(achados).map(([k, v]) => [k, String(v)])) }));
     const faltam = CAMPOS_LANCAMENTO.filter((k) => achados[k] === undefined);
@@ -52,9 +55,10 @@ export function FormParametros({ inicial, ligado, empresas, editavel }: { inicia
               </div>
             )}
             <div className="grid gap-1">
-              <Label htmlFor="codFornecedor" className="text-xs">Último título do fornecedor (Nº)</Label>
+              <Label htmlFor="codFornecedor" className="text-xs">Títulos do fornecedor (Nº) de um VT pago</Label>
               <div className="flex gap-2">
-                <Input id="codFornecedor" value={codFornecedor} onChange={(e) => setCodFornecedor(e.target.value)} inputMode="numeric" className="h-8 w-24" />
+                <Input id="codFornecedor" value={codFornecedor} onChange={(e) => setCodFornecedor(e.target.value)} inputMode="numeric" placeholder="Nº" className="h-8 w-20" />
+                <Input aria-label="Valor do VT (R$)" value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" placeholder="Valor (R$)" className="h-8 w-28" />
                 <Button variant="outline" size="sm" disabled={pendente || !codFornecedor} onClick={() => buscar(false)}><Search /> Buscar</Button>
               </div>
             </div>
@@ -68,10 +72,32 @@ export function FormParametros({ inicial, ligado, empresas, editavel }: { inicia
           </div>
           {pendente && <p className="text-xs text-muted-foreground">Consultando o Consistem… a busca por fornecedor lê os títulos dos últimos 120 dias e pode levar até um minuto.</p>}
           {modelo && (
-            <div className="space-y-1 text-sm">
-              <p>Modelo: {modelo.resumo}</p>
+            <div className="space-y-2 text-sm">
+              <p>Modelo em uso: <strong>{modelo.resumo}</strong></p>
               {modelo.outros.length > 1 && (
-                <p className="text-xs text-muted-foreground">Outros títulos do fornecedor: {modelo.outros.slice(1).map((o) => `${o.codLancamento} (${o.emissao ?? "?"}, ${o.complemento})`).join("; ")}</p>
+                <>
+                  <p className="text-xs text-muted-foreground">Títulos encontrados (mais recentes primeiro). Se o modelo não for o VT, use o certo:</p>
+                  <Table>
+                    <TableHeader>
+                      <TableRow><TableHead>Lançamento</TableHead><TableHead>Emissão</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Complemento</TableHead><TableHead /></TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {modelo.outros.map((o) => (
+                        <TableRow key={o.codLancamento} className={o.codLancamento === modelo.codLancamento ? "bg-cabecalho font-medium" : ""}>
+                          <TableCell className="tabular-nums">{o.codLancamento}</TableCell>
+                          <TableCell className="tabular-nums">{o.emissao ? o.emissao.split("-").reverse().join("/") : ""}</TableCell>
+                          <TableCell className="text-right tabular-nums">{o.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</TableCell>
+                          <TableCell className="text-xs">{o.complemento}</TableCell>
+                          <TableCell>
+                            {o.codLancamento !== modelo.codLancamento && (
+                              <Button variant="ghost" size="sm" disabled={pendente} onClick={() => { setCodLancamento(o.codLancamento); buscar(true, o.codLancamento); }}>Usar este</Button>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </>
               )}
             </div>
           )}

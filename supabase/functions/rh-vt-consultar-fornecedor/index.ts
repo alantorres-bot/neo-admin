@@ -9,8 +9,9 @@
 // Ação "modelo" (gestor do RH; também SÓ LEITURA): o título de VT já lançado que serve de modelo para os códigos do
 // lançamento (histórico, portador, categoria, fluxo, contas contábeis). Regra 11 da especificação.
 //   { "acao": "modelo", "empresa_id", "codLancamento": "12345" }        → detalhe desse lançamento
-//   { "acao": "modelo", "empresa_id", "codFornecedor": "660", "dias": 120 } → o título (C) mais recente do fornecedor emitido
-//                                                                          nos últimos `dias` (até 400), com o detalhe
+//   { "acao": "modelo", "empresa_id", "codFornecedor": "662", "dias": 120, "valor": 217.8 }
+//        → os títulos (C) do fornecedor emitidos nos últimos `dias` (até 400), do mais recente para o mais antigo (até 30), só os
+//          do `valor` quando informado (o funcionário também tem títulos de folha); detalhe do primeiro.
 // Resposta: { detalhe: {...cru da API...}, codLancamento, emissao, complemento, outros: [{codLancamento, emissao, complemento, valor}] }.
 // Segredos: CONSISTEM_API_KEY (token do CSMEN050) e CONSISTEM_BASE_URL (opcional).
 //
@@ -37,7 +38,7 @@ Deno.serve(async (req) => {
   const { data: permitido } = await comoUsuario.rpc("tem_acesso_area", { p_area: "rh", p_minimo: "operador" });
   if (permitido !== true) return responder({ erro: "Somente operador do RH (ou acima) consulta fornecedores do vale-transporte." }, 403);
 
-  let corpo: { acao?: string; empresa_id?: string; codigos?: unknown; codLancamento?: unknown; codFornecedor?: unknown; dias?: unknown } = {};
+  let corpo: { acao?: string; empresa_id?: string; codigos?: unknown; codLancamento?: unknown; codFornecedor?: unknown; dias?: unknown; valor?: unknown } = {};
   try { corpo = await req.json(); } catch { /* vazio */ }
   if (!corpo.empresa_id || !UUID.test(corpo.empresa_id)) return responder({ erro: "Empresa inválida." }, 400);
   if (corpo.acao === "modelo") {
@@ -67,13 +68,15 @@ Deno.serve(async (req) => {
         const dias = Math.min(400, Math.max(1, Number(corpo.dias) || 120));
         const hoje = new Date();
         const ini = new Date(hoje.getTime() - dias * 86_400_000).toISOString().slice(0, 10);
+        const valorCentavos = Number(corpo.valor) > 0 ? Math.round(Number(corpo.valor) * 100) : null;
         const regs = await buscarTodasPaginas(buscar, cfg, ROTA_CONTAS_PAGAR, { dataEmissaoIni: ini, dataEmissaoFim: hoje.toISOString().slice(0, 10), paginacao: PAGINACAO });
         outros = regs.map(normalizarLancamentoPagar)
-          .flatMap((r) => (r.ok && r.lancamento.tipo === "C" && r.lancamento.codFornecedor.replace(/^0+(?=\d)/, "") === fornecedor ? [r.lancamento] : []))
+          .flatMap((r) => (r.ok && r.lancamento.tipo === "C" && r.lancamento.codFornecedor.replace(/^0+(?=\d)/, "") === fornecedor
+            && (valorCentavos === null || r.lancamento.valorDocumentoCentavos === valorCentavos) ? [r.lancamento] : []))
           .sort((a, b) => (b.emissao ?? "").localeCompare(a.emissao ?? "") || Number(b.codLancamento) - Number(a.codLancamento))
-          .slice(0, 10)
+          .slice(0, 30)
           .map((l) => ({ codLancamento: l.codLancamento, emissao: l.emissao, complemento: l.complemento, valor: l.valorDocumentoCentavos / 100 }));
-        if (!outros.length) return responder({ erro: `Nenhum título do fornecedor ${fornecedor} emitido nos últimos ${dias} dias.` }, 404);
+        if (!outros.length) return responder({ erro: `Nenhum título do fornecedor ${fornecedor}${valorCentavos ? ` de R$ ${(valorCentavos / 100).toFixed(2).replace(".", ",")}` : ""} emitido nos últimos ${dias} dias.` }, 404);
         cod = outros[0].codLancamento;
       }
       if (!/^\d{1,12}$/.test(cod)) return responder({ erro: "Código do lançamento inválido." }, 400);
