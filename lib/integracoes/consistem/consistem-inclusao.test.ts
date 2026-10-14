@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alterarPortador, conferirTroca, incluirLancamento, jaMarcado, lerRespostaInclusao, type Enviar } from "@/supabase/functions/_shared/consistem-inclusao";
+import { alterarPortador, alterarTitulo, conferirAlteracao, conferirTroca, incluirLancamento, jaAlterado, jaMarcado, lerRespostaInclusao, type Enviar } from "@/supabase/functions/_shared/consistem-inclusao";
 
 const cfg = { baseUrl: "https://erp.exemplo/api/", token: "tok", empresa: "1" };
 
@@ -94,5 +94,35 @@ describe("troca do portador e do histórico (0162/0164)", () => {
     expect(conferirTroca(antes, antes, M)).toMatchObject({ ok: false, mensagem: /histórico continua 2 \(esperado 80\)/ });
     // Sem histórico no cartão, mudar o histórico é diferença.
     expect(conferirTroca(antes, { ...antes, codHistorico: 80 }, { codPortador: 992 })).toMatchObject({ ok: false, diferencas: ["codHistorico: 2 → 80"] });
+  });
+});
+
+describe("alteração do título no desdobramento (0165)", () => {
+  const antes = { codLancamento: 40000, codDocumento: "3615152/1", valorDocumento: 2994.78, valorOriginalDocumento: 2994.78, complementoHistorico: "CARTÃO UNICRED 1 X", codPortador: 91, dataVencimento: "2026-10-20", dataVencimentoOriginal: "" };
+  const esperado = { valorDocumento: 499.13, codDocumento: "3615152/1", complementoHistorico: "CARTÃO UNICRED PF 6x — MP*TERABYTESHOP PARC 1/6" };
+
+  it("PUT na rota do título com só os campos pedidos; 2xx sem código = aceito; 5xx = incerto", async () => {
+    const chamadas: { url: string; body: string; method: string }[] = [];
+    const ok: Enviar = async (url, init) => { chamadas.push({ url, body: init.body, method: init.method }); return { status: 200, text: async () => "" }; };
+    expect(await alterarTitulo(ok, cfg, "40000", esperado)).toMatchObject({ tipo: "ok" });
+    expect(chamadas).toEqual([{ url: "https://erp.exemplo/api/financeiro/v10/lancamentoContasPagar/40000", body: JSON.stringify(esperado), method: "PUT" }]);
+    const falha: Enviar = async () => ({ status: 502, text: async () => "" });
+    expect(await alterarTitulo(falha, cfg, "40000", esperado)).toMatchObject({ tipo: "incerto", mensagem: expect.stringContaining("conferida pelo detalhe") });
+    expect(await alterarTitulo(ok, cfg, "40000;1", esperado)).toMatchObject({ tipo: "erro" });
+  });
+
+  it("confere: campos novos gravados, valor original acompanhando e o resto igual", () => {
+    const depois = { ...antes, ...esperado, valorOriginalDocumento: 499.13, dataVencimentoOriginal: "2026-10-20" };
+    expect(conferirAlteracao(antes, depois, esperado)).toEqual({ ok: true });
+    expect(jaAlterado(depois, esperado)).toBe(true);
+    expect(jaAlterado(antes, esperado)).toBe(false);
+    expect(conferirAlteracao(antes, { ...depois, valorOriginalDocumento: 2994.78 }, esperado)).toEqual({ ok: true });
+  });
+
+  it("recusa: campo não gravado ou outro campo mudou", () => {
+    const naoGravou = conferirAlteracao(antes, { ...antes, codDocumento: "3615152/1", complementoHistorico: esperado.complementoHistorico }, esperado);
+    expect(naoGravou).toMatchObject({ ok: false, mensagem: expect.stringContaining("valorDocumento = 2994.78 (esperado 499.13)") });
+    const mudouOutro = conferirAlteracao(antes, { ...antes, ...esperado, codPortador: 1 }, esperado);
+    expect(mudouOutro).toMatchObject({ ok: false, diferencas: ["codPortador: 91 → 1"] });
   });
 });

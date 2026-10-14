@@ -62,7 +62,8 @@ export async function gerarPlanilha(r: ResultadoConciliacao): Promise<Uint8Array
     ["Itens conciliados", r.contagens.conciliados],
     ["Agrupamentos (várias linhas em um título)", r.contagens.agrupamentos],
     ["Itens a lançar", r.contagens.aLancar],
-    ["Itens pendentes (sem título e sem justificativa)", r.pendentes ?? r.contagens.aLancar],
+    ["Compras parceladas lançadas pelo total (a desdobrar)", (r.aDesdobrar ?? []).length],
+    ["Itens pendentes (sem título e sem justificativa, ou a desdobrar)", r.pendentes ?? r.contagens.aLancar],
     ["Decisões registradas", (r.decisoes ?? []).length],
     ["Títulos sem correspondência", r.contagens.divergencias],
     ["Conciliados com cartão divergente", r.contagens.cartaoDivergente], ["", ""],
@@ -84,6 +85,14 @@ export async function gerarPlanilha(r: ResultadoConciliacao): Promise<Uint8Array
     r.aLancar.map((a) => [formatarData(a.linha.dataCompra), a.linha.descricao, brl(a.linha.valorCentavos), a.natureza, a.categoria, a.contaFluxo, a.parcelas, formatarData(a.vencimento), a.complementoSugerido,
       textoDecisoes([a.justificativa, a.classificacao, ...(a.observacoes ?? [])])]),
     [14, 40, 14, 24, 24, 22, 10, 14, 52, 40]);
+
+  if ((r.aDesdobrar ?? []).length) {
+    aba(wb, "A Desdobrar",
+      ["Data da compra", "Descrição na fatura", "Parcela (R$)", "Parcelas", "Nº do título", "Fornecedor", "Vencimento", "Valor do título (R$)", "Situação"],
+      (r.aDesdobrar ?? []).map((p) => [formatarData(p.linha.dataCompra), p.linha.descricao, brl(p.parcelaCentavos), p.parcelas, p.titulo.numeroTitulo, p.titulo.fornecedor,
+        formatarData(p.titulo.vencimento), brl(p.titulo.valorCentavos), "Compra parcelada lançada pelo total: desdobrar no Consistem"]),
+      [14, 36, 14, 10, 14, 30, 14, 18, 52]);
+  }
 
   aba(wb, "Divergências",
     ["Nº do título", "Fornecedor", "Vencimento", "Valor (R$)", "Complemento", "Causa provável", "Decisão"],

@@ -22,7 +22,8 @@ import { montarTituloAgrupado } from "@/lib/modulos/financeiro/cartao/lancamento
 import { comMarcasDaFatura, titulosParaTrocar } from "@/lib/modulos/financeiro/cartao/portador-fatura";
 import type { ResultadoConciliacao } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { normalizar } from "@/lib/modulos/financeiro/cartao/texto";
-import { categoriasDosFornecedores, codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerCompras, lerEncargos, lerEstabelecimentos, lerProvisorio, paraCartaoInfo, type FotoFechamento } from "./dados";
+import { categoriasDosFornecedores, codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerCompras, lerDesdobrar, lerDetalheDoConsistem, lerEncargos, lerEstabelecimentos, lerProvisorio, paraCartaoInfo, type FotoFechamento } from "./dados";
+import { montarDesdobramento } from "@/lib/modulos/financeiro/cartao/desdobramento";
 
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
 const texto = (d: FormData, nome: string) => String(d.get(nome) ?? "").trim();
@@ -263,7 +264,7 @@ export async function fecharCiclo(entrada: { id: string }): Promise<Resultado> {
   const c = await conciliacaoDaRequisicao(ciclo.fatura_id);
   if (!c) return { ok: false, erro: "Fatura do mês não encontrada." };
   if (c.origemTitulos !== "consistem") return { ok: false, erro: `Não foi possível consultar o Consistem agora (${c.avisoOrigem}); o fechamento precisa dos títulos lidos do ERP. Tente de novo.` };
-  const bloqueio = bloqueioDoFechamento({ itensALancar: c.resultado.pendentes, residuoCentavos: c.resultado.residuoCentavos });
+  const bloqueio = bloqueioDoFechamento({ itensALancar: c.resultado.pendentes, residuoCentavos: c.resultado.residuoCentavos, aDesdobrar: c.resultado.aDesdobrar?.length });
   if (bloqueio) return { ok: false, erro: bloqueio };
 
   const foto: FotoFechamento = { resultado: c.resultado, outros: c.outros, tituloDaFatura: c.tituloDaFatura, origemTitulos: c.origemTitulos };
@@ -725,4 +726,84 @@ export async function trocarPortador(entrada: { cicloId: string }): Promise<Resu
   const r = await trocarPortadorDoCiclo(supabase, ciclo.id, foto.resultado, { portador: cartao.portador_fatura, historico: cartao.historico_fatura }, ciclo.provisorio_cod_lancamento ?? vigente.provisorio_cod_lancamento);
   revalidatePath(ROTA_CARTAO, "layout");
   return r.ok ? { ok: true, aviso: r.aviso } : { ok: false, erro: r.aviso };
+}
+
+// ---------------------------------------------------------------- compra lançada pelo total: desdobrar no Consistem (0165)
+
+const esquemaDesdobrar = z.object({ faturaId: z.string().uuid(), linhaId: z.string().uuid(), codLancamento: z.string().regex(/^\d{1,12}$/) });
+
+/**
+ * Desdobra no Consistem a compra parcelada cuja NF foi lançada pelo total (operador ou acima): recalcula a conciliação, confere que
+ * o par (linha 1/N × título cheio) ainda existe, lê o detalhe do título no Consistem, monta a alteração e as parcelas 2..N
+ * (`montarDesdobramento`), reserva (crt_reservar_desdobramento) e chama a Edge Function crt-desdobrar-no-consistem.
+ */
+export async function desdobrarNoConsistem(entrada: z.input<typeof esquemaDesdobrar>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) desdobra títulos no Consistem." };
+  const dados = esquemaDesdobrar.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: "Dados inválidos." };
+  const d = dados.data;
+  const c = await conciliacaoDaRequisicao(d.faturaId);
+  if (!c) return { ok: false, erro: "Fatura não encontrada." };
+  if (c.origemTitulos !== "consistem") return { ok: false, erro: `Não foi possível consultar o Consistem agora (${c.avisoOrigem}). Tente de novo.` };
+  const par = (c.resultado.aDesdobrar ?? []).find((p) => p.linha.id === d.linhaId && codigoDoLancamento(p.titulo) === d.codLancamento);
+  if (!par) return { ok: false, erro: "Esta compra não está mais entre as lançadas pelo total. Recarregue a página." };
+  const supabase = await criarClienteServidor();
+  const q = await lerDesdobrar(supabase, c);
+  if (!q.ligado) return { ok: false, erro: "O desdobramento no Consistem está desligado." };
+  if (!q.mesAberto || !q.competencia) return { ok: false, erro: "Só se desdobra compra de fatura de um mês em conciliação." };
+  let detalhe: Record<string, unknown>;
+  try {
+    detalhe = await lerDetalheDoConsistem(supabase, c.fatura.empresa_id, d.codLancamento);
+  } catch (e) {
+    return { ok: false, erro: `Não foi possível ler o título ${d.codLancamento} no Consistem: ${(e as Error).message}. Nada foi alterado.` };
+  }
+  const m = montarDesdobramento({ par, detalhe, cartao: q.cartao, competencia: q.competencia, marcas: { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura } });
+  if (!m.ok) return { ok: false, erro: m.erro };
+
+  const { data: lote, error } = await supabase.rpc("crt_reservar_desdobramento", {
+    p_fatura: c.fatura.id, p_linha: d.linhaId, p_cod: d.codLancamento, p_titulo: { num_documento: par.titulo.numeroTitulo, fornecedor: par.titulo.fornecedor },
+    p_antes: detalhe, p_alteracao: m.alteracao, p_parcelas: m.parcelas.map((x) => ({ parcela: x.parcela, vencimento: x.vencimento, payload: x.payload })),
+  });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  const { data, error: erroFuncao } = await supabase.functions.invoke("crt-desdobrar-no-consistem", { body: { lote } });
+  revalidatePath(ROTA_CARTAO, "layout");
+  if (erroFuncao) {
+    const { mensagem } = await mensagemDaFuncao(erroFuncao, "Não foi possível falar com a função de desdobramento.");
+    await supabase.rpc("crt_falha_desdobramento", { p_lote: lote, p_motivo: mensagem });
+    return { ok: false, erro: mensagem };
+  }
+  const r = data as { lancados?: { codLancamento: string }[] } | null;
+  const codigos = (r?.lancados ?? []).map((x) => x.codLancamento);
+  return { ok: true, aviso: `Título ${d.codLancamento} desdobrado no Consistem: agora é a parcela 1 (${(par.parcelaCentavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}); parcelas 2 a ${par.parcelas} criadas: ${codigos.join(", ")}.` };
+}
+
+const esquemaResolverDesdobramento = z.object({ id: z.string().uuid(), motivo: z.string().trim().min(3, "Informe o que foi conferido no Consistem.").max(300) });
+
+/** "Já está alterado no Consistem": conferido à mão, libera as parcelas para "Reenviar o que faltou". */
+export async function resolverDesdobramento(entrada: z.input<typeof esquemaResolverDesdobramento>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) resolve desdobramentos." };
+  const dados = esquemaResolverDesdobramento.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("crt_resolver_desdobramento", { p_id: dados.data.id, p_motivo: dados.data.motivo });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidatePath(ROTA_CARTAO, "layout");
+  return { ok: true, aviso: "Registrado: o título original já está alterado. Use “Reenviar o que faltou” para criar as parcelas." };
+}
+
+const esquemaExclusao = z.object({ id: z.string().uuid(), motivo: z.string().trim().min(10, "Informe o motivo (ex.: duplicava a NF 3615152).").max(500) });
+
+/** Registra que um título lançado pelo painel foi EXCLUÍDO no Consistem (gestor). Nada é apagado no Neo Admin. */
+export async function registrarExclusaoErp(entrada: z.input<typeof esquemaExclusao>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "gestor")) return { ok: false, erro: "Somente gestor do Financeiro (ou acima) registra a exclusão de um título no Consistem." };
+  const dados = esquemaExclusao.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("crt_registrar_exclusao_erp", { p_id: dados.data.id, p_motivo: dados.data.motivo });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidatePath(ROTA_CARTAO, "layout");
+  return { ok: true, aviso: "Exclusão no Consistem registrada. O título deixa de contar como lançado pelo painel." };
 }

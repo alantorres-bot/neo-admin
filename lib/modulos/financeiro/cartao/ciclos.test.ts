@@ -30,6 +30,7 @@ describe("apoio de tela", () => {
     expect(bloqueioDoFechamento({ itensALancar: 3, residuoCentavos: 0 })).toMatch(/3 itens/);
     expect(bloqueioDoFechamento({ itensALancar: 0, residuoCentavos: 3 })).toMatch(/zero/);
     expect(bloqueioDoFechamento({ itensALancar: 0, residuoCentavos: 0 })).toBeNull();
+    expect(bloqueioDoFechamento({ itensALancar: 2, residuoCentavos: 0, aDesdobrar: 1 })).toMatch(/1 compra parcelada lançada pelo total/);
   });
 });
 

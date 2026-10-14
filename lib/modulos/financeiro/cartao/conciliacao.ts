@@ -109,6 +109,20 @@ export type Conciliado = {
   titulosExtras?: TituloPagar[];
   decisao?: DecisaoItem;
 };
+/**
+ * Compra parcelada cuja NF foi lançada pelo valor CHEIO (regra 61): a linha "1/N" da fatura e o título de ≈ N × parcela. Não
+ * vira "a lançar" (seria lançar de novo a mesma compra): o título precisa ser DESDOBRADO no Consistem (parcela 1 no próprio
+ * título, parcelas 2 a N novas). Bloqueia o fechamento até o desdobramento.
+ */
+export type ADesdobrar = {
+  linha: LinhaFatura;
+  titulo: TituloPagar;
+  parcelas: number;
+  /** Valor da parcela (o da linha). */
+  parcelaCentavos: number;
+  /** Título − N × parcela (arredondamento do emissor; vai para a última parcela). */
+  diferencaCentavos: number;
+};
 export type Divergencia = { titulo: TituloPagar; causa: string; justificativa?: DecisaoItem; observacoes?: DecisaoItem[] };
 export type Compensado = { credito: LinhaFatura; debito: LinhaFatura; outras?: LinhaFatura[]; decisao?: DecisaoItem };
 /** Decisão que não teve efeito nesta apuração (o item sumiu, já foi resolvido ou o título saiu da janela). */
@@ -137,9 +151,13 @@ export type ResultadoConciliacao = {
   conciliados: Conciliado[];
   compensados: Compensado[];
   aLancar: ItemALancar[];
+  /** Compras parceladas lançadas pelo total (regra 61). Resultados gravados antes de 14/10/2026 não têm o campo. */
+  aDesdobrar?: ADesdobrar[];
+  /** Soma de (linha − título) dos pares a desdobrar: justificada até o desdobramento. */
+  desdobrarCentavos?: number;
   divergencias: Divergencia[];
   quadro: LinhaQuadro[];
-  contagens: { linhas: number; compensados: number; titulos: number; conciliados: number; agrupamentos: number; manuais: number; aLancar: number; pendentes: number; divergencias: number; cartaoDivergente: number };
+  contagens: { linhas: number; compensados: number; titulos: number; conciliados: number; agrupamentos: number; manuais: number; aLancar: number; pendentes: number; divergencias: number; cartaoDivergente: number; aDesdobrar?: number };
 };
 
 export type EntradaConciliacao = {
@@ -245,6 +263,34 @@ export function casar(linhas: readonly LinhaFatura[], titulos: readonly TituloPa
   return { casamentos, linhasSemTitulo: linhas.filter((l) => !casadosL.has(l.id)), titulosSemLinha: titulos.filter((t) => !casadosT.has(t.id)) };
 }
 
+// ---------------------------------------------------------------- compra parcelada lançada pelo total (regra 61)
+
+/**
+ * Linha "1/N" (N ≥ 2) sem título × título sem linha de ≈ N × parcela: a NF foi lançada pelo total e não foi desdobrada.
+ * Tolerância: N centavos (arredondamento do emissor ao dividir a compra) + a tolerância do casamento. Um título por linha; o
+ * de menor diferença vence, e a descrição desempata. Antecipação (já paga) fica de fora.
+ */
+export function compraPeloTotal(linhas: readonly LinhaFatura[], titulos: readonly TituloPagar[], tolerancia: number): { pares: ADesdobrar[]; linhasSemTitulo: LinhaFatura[]; titulosSemLinha: TituloPagar[] } {
+  const usados = new Set<string>();
+  const pares: ADesdobrar[] = [];
+  const restantes: LinhaFatura[] = [];
+  for (const linha of linhas) {
+    const n = linha.parcelaTotal ?? 1;
+    if (linha.parcelaNum !== 1 || n < 2 || linha.valorCentavos <= 0) { restantes.push(linha); continue; }
+    const cheio = n * linha.valorCentavos;
+    const cand = titulos.filter((t) => !usados.has(t.id) && !t.antecipacao && Math.abs(t.valorCentavos - cheio) <= n + tolerancia);
+    if (cand.length === 0) { restantes.push(linha); continue; }
+    const nota = (t: TituloPagar) => [Math.abs(t.valorCentavos - cheio), -semelhanca(linha.descricao, `${t.complemento} ${t.fornecedor}`)] as const;
+    const t = cand.reduce((m, c) => {
+      const [a, b] = nota(c), [x, y] = nota(m);
+      return a < x || (a === x && b < y) ? c : m;
+    });
+    usados.add(t.id);
+    pares.push({ linha, titulo: t, parcelas: n, parcelaCentavos: linha.valorCentavos, diferencaCentavos: t.valorCentavos - cheio });
+  }
+  return { pares, linhasSemTitulo: restantes, titulosSemLinha: titulos.filter((t) => !usados.has(t.id)) };
+}
+
 // ---------------------------------------------------------------- classificação
 
 /** Estabelecimento do dicionário cuja chave aparece na descrição (a chave mais longa vence). */
@@ -339,22 +385,29 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
   const auto = casar(restantes, titulosDoCartao.filter((t) => !usadosT.has(chaveTitulo(t))), tolerancia);
   const compensados = [...compensadosManuais, ...compensadosAuto];
   const casamentos = auto.casamentos;
-  const { titulosSemLinha } = auto;
 
   // 3b) Antecipações sem o cartão no texto: só valor idêntico, uma para uma, com linha que sobrou (conferir).
   const casamentosAntecipacao: Casamento[] = [];
   const antecipacoesLivres = (e.antecipacoes ?? []).filter((a) => !usadosT.has(chaveTitulo(a)));
-  const linhasSemTitulo: LinhaFatura[] = [];
+  const linhasSemAntecipacao: LinhaFatura[] = [];
   for (const l of auto.linhasSemTitulo) {
     const a = l.valorCentavos > 0 ? antecipacoesLivres.find((x) => !usadosT.has(chaveTitulo(x)) && x.valorCentavos === l.valorCentavos) : undefined;
-    if (!a) { linhasSemTitulo.push(l); continue; }
+    if (!a) { linhasSemAntecipacao.push(l); continue; }
     usadosT.add(chaveTitulo(a));
     titulosDoCartao.push(a);
     casamentosAntecipacao.push({ linhas: [l], titulo: a, modo: "Antecipação", diferencaCentavos: 0, semelhanca: semelhanca(l.descricao, a.complemento) });
   }
 
-  // 4) Decisões sobre os itens que restaram.
+  // 3c) Compra parcelada com a NF lançada pelo total (regra 61). Linha justificada à mão fica como a pessoa decidiu.
   const ativasPorLinha = (id: string, tipo: TipoDecisao) => decisoes.filter((d) => d.tipo === tipo && d.linhas.includes(id));
+  const justificadas = new Set(linhasSemAntecipacao.filter((l) => ativasPorLinha(l.id, "justificar").length > 0).map((l) => l.id));
+  const peloTotal = compraPeloTotal(linhasSemAntecipacao.filter((l) => !justificadas.has(l.id)), auto.titulosSemLinha, tolerancia);
+  const aDesdobrar = peloTotal.pares;
+  const desdobradas = new Set(aDesdobrar.map((p) => p.linha.id));
+  const linhasSemTitulo = linhasSemAntecipacao.filter((l) => !desdobradas.has(l.id));
+  const { titulosSemLinha } = peloTotal;
+
+  // 4) Decisões sobre os itens que restaram.
   const ativasPorTitulo = (t: TituloPagar, tipo: TipoDecisao) => decisoes.filter((d) => d.tipo === tipo && d.titulos.includes(chaveTitulo(t)));
 
   const porNatureza = Object.fromEntries(NATUREZAS.map((n) => [n, 0])) as Record<Natureza, number>;
@@ -406,8 +459,9 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
   const justificado = NATUREZAS.reduce((s, n) => s + porNatureza[n], 0);
   const arredondamentoCentavos = casamentos.reduce((s, c) => s + c.diferencaCentavos, 0);
   const ajusteManualCentavos = casamentosManuais.reduce((s, c) => s + c.diferencaCentavos, 0);
-  const residuoCentavos = diferencaCentavos - justificado - arredondamentoCentavos - ajusteManualCentavos + orfaosCentavos;
-  const pendentes = aLancar.filter((a) => !a.justificativa).length;
+  const desdobrarCentavos = aDesdobrar.reduce((s, p) => s + p.linha.valorCentavos - p.titulo.valorCentavos, 0);
+  const residuoCentavos = diferencaCentavos - justificado - arredondamentoCentavos - ajusteManualCentavos - desdobrarCentavos + orfaosCentavos;
+  const pendentes = aLancar.filter((a) => !a.justificativa).length + aDesdobrar.length;
   const cartaoDivergenteN = conciliados.filter((c) => c.aderencia.startsWith("ALERTA")).length;
 
   const quadro: LinhaQuadro[] = [
@@ -417,6 +471,7 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
     ...NATUREZAS.map((n) => ({ rotulo: `Justificativa: ${n.toLowerCase()}`, centavos: porNatureza[n] })),
     { rotulo: "Justificativa: arredondamento de desdobramento (acertar como desconto na baixa)", centavos: arredondamentoCentavos },
     { rotulo: "Justificativa: diferença de casamentos à mão (decisão registrada)", centavos: ajusteManualCentavos },
+    ...(aDesdobrar.length ? [{ rotulo: "Justificativa: compra parcelada lançada pelo total (desdobrar no Consistem)", centavos: desdobrarCentavos }] : []),
     { rotulo: "(–) Títulos sem correspondência na fatura", centavos: orfaosCentavos },
     { rotulo: "(=) DIFERENÇA NÃO JUSTIFICADA — deve ser zero", centavos: residuoCentavos, destaque: true },
   ];
@@ -425,11 +480,12 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
     cartao: e.cartao, vencimento: e.vencimento, totalInformadoCentavos: e.totalInformadoCentavos, somaLinhasCentavos,
     integridadeOk: somaLinhasCentavos === e.totalInformadoCentavos, totalTitulosCentavos, diferencaCentavos, residuoCentavos, porNatureza, arredondamentoCentavos,
     ajusteManualCentavos, pendentes, decisoes, decisoesSemEfeito: semEfeito, orfaosCentavos,
-    conciliados, compensados, aLancar, divergencias, quadro,
+    conciliados, compensados, aLancar, aDesdobrar, desdobrarCentavos, divergencias, quadro,
     contagens: {
       linhas: e.linhas.length, compensados: compensados.length, titulos: titulosDoCartao.length,
       conciliados: casamentos.filter((c) => c.modo !== "Agrupado").length + casamentosAntecipacao.length, agrupamentos: casamentos.filter((c) => c.modo === "Agrupado").length,
       manuais: casamentosManuais.length, aLancar: aLancar.length, pendentes, divergencias: divergencias.length, cartaoDivergente: cartaoDivergenteN,
+      aDesdobrar: aDesdobrar.length,
     },
   };
 }

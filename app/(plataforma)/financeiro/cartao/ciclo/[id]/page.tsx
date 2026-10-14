@@ -11,7 +11,7 @@ import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { conciliacaoDaRequisicao, lerCiclo, lerCompras, lerEncargos, lerFatura, lerProvisorio, lerTrocas, quandoEm, registrarApuracao } from "../../dados";
+import { conciliacaoDaRequisicao, lerCiclo, lerCompras, lerDesdobrar, lerEncargos, lerFatura, lerProvisorio, lerTrocas, quandoEm, registrarApuracao } from "../../dados";
 import { BotaoResolver } from "../../[id]/encargos";
 import { PainelConciliacao } from "../../[id]/painel";
 import { BotaoCancelarFatura } from "../../[id]/componentes";
@@ -38,7 +38,7 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
   // Em conciliação: calcula ao vivo e grava a apuração (mantém as pendências). Fechada/paga: mostra a foto do fechamento.
   const aoVivo = ciclo.situacao === "em_conciliacao" && ciclo.fatura_id ? await conciliacaoDaRequisicao(ciclo.fatura_id) : null;
   if (aoVivo) await registrarApuracao(supabase, ciclo.id, aoVivo);
-  const [encargos, compras] = aoVivo ? await Promise.all([lerEncargos(supabase, aoVivo), lerCompras(supabase, aoVivo)]) : [null, null];
+  const [encargos, compras, desdobrar] = aoVivo ? await Promise.all([lerEncargos(supabase, aoVivo), lerCompras(supabase, aoVivo), lerDesdobrar(supabase, aoVivo)]) : [null, null, null];
   const linhasCongeladas = !aoVivo && vigente ? (await lerFatura(supabase, vigente.fatura_id))?.linhas ?? [] : [];
   const provisorio = ciclo.situacao === "em_conciliacao" || (ciclo.situacao === "fechada" && !ciclo.provisorio_cod_lancamento) ? await lerProvisorio(supabase, ciclo) : null;
   const previaProvisorio = provisorio && aoVivo && !aoVivo.tituloDaFatura
@@ -56,7 +56,7 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
   // Pronto = trocado com o histórico atual do cartão (troca antiga só de portador não conta).
   const trocados = trocas?.trocas.filter((t) => t.situacao === "trocado" && (!trocas.historico || t.historico_novo === trocas.historico)).length ?? 0;
   const comErro = trocas?.trocas.filter((t) => t.situacao === "erro") ?? [];
-  const bloqueio = aoVivo ? (aoVivo.origemTitulos !== "consistem" ? "Os títulos não foram lidos do Consistem agora; recarregue para tentar de novo." : bloqueioDoFechamento({ itensALancar: aoVivo.resultado.pendentes, residuoCentavos: aoVivo.resultado.residuoCentavos })) : null;
+  const bloqueio = aoVivo ? (aoVivo.origemTitulos !== "consistem" ? "Os títulos não foram lidos do Consistem agora; recarregue para tentar de novo." : bloqueioDoFechamento({ itensALancar: aoVivo.resultado.pendentes, residuoCentavos: aoVivo.resultado.residuoCentavos, aDesdobrar: aoVivo.resultado.aDesdobrar?.length })) : null;
   const podeCancelarFatura = fatura?.status === "importada" && ciclo.situacao === "em_conciliacao" && (ehGestor || (podeOperar && fatura.importado_por === sessao.userId));
 
   const etapas: { rotulo: string; quando: string | null; detalhe?: string }[] = [
@@ -170,7 +170,7 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
             {" "}<Link href={`${ROTA_CARTAO}/${aoVivo.fatura.id}`} className="text-elo hover:underline">Abrir só a fatura</Link>
           </p>
           <PainelConciliacao resultado={aoVivo.resultado} outros={aoVivo.outros} linhas={aoVivo.linhas} tituloDaFatura={aoVivo.tituloDaFatura} podeOperar={podeOperar}
-            faturaId={aoVivo.fatura.id} decisoesHistorico={aoVivo.decisoesHistorico} encargos={encargos} compras={compras} />
+            faturaId={aoVivo.fatura.id} decisoesHistorico={aoVivo.decisoesHistorico} encargos={encargos} compras={compras} desdobrar={desdobrar} podeGestor={ehGestor} />
         </>
       )}
 

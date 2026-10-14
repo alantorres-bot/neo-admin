@@ -86,10 +86,18 @@ export function competenciasAte(ate: string, n: number): string[] {
   return Array.from({ length: n }, (_, i) => diaDoMes(ano, mes - (n - 1 - i), 1));
 }
 
-export type Apuracao = { itensALancar: number; residuoCentavos: number };
+export type Apuracao = {
+  /** Pendentes da conciliação (inclui as compras a desdobrar). */
+  itensALancar: number;
+  residuoCentavos: number;
+  /** Compras parceladas lançadas pelo total que ainda não foram desdobradas no Consistem (regra 61). */
+  aDesdobrar?: number;
+};
 
 /** Regra para fechar o mês: nada a lançar e diferença não justificada zero. Devolve o motivo do bloqueio, ou null. */
 export function bloqueioDoFechamento(a: Apuracao): string | null {
+  const desdobrar = a.aDesdobrar ?? 0;
+  if (desdobrar > 0) return `Ainda há ${desdobrar} ${desdobrar === 1 ? "compra parcelada lançada" : "compras parceladas lançadas"} pelo total no Consistem: desdobre antes de fechar.`;
   if (a.itensALancar > 0) return `Ainda há ${a.itensALancar} ${a.itensALancar === 1 ? "item" : "itens"} da fatura sem título no Consistem e sem justificativa.`;
   if (a.residuoCentavos !== 0) return "A diferença não justificada precisa ser zero.";
   return null;

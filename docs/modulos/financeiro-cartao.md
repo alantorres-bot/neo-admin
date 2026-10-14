@@ -239,6 +239,32 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
 60. **Prova e pendência:** `crt_trocas_portador` (um registro por título e mês, sem delete). Erro abre a pendência "Trocar o banco
     dos títulos da fatura …" (concluída quando não sobra erro). Falha não desfaz o fechamento. Chave
     `financeiro.cartao.trocar_portador_no_erp` (começa desligada: o primeiro envio real é acompanhado pelo Alan).
+61. **Compra parcelada com a NF lançada pelo total** (caso real Unicred PF 10/2026, 14/10/2026; migration 0165): linha "1/N"
+    (N ≥ 2, valor positivo, sem justificativa) sem título × título do cartão sem linha (não antecipação) de valor ≈ N × parcela,
+    com tolerância de **N centavos + 5** (arredondamento do emissor). Um título por linha; vence a menor diferença, a descrição
+    desempata. O par vai para **"a desdobrar"** (`aDesdobrar`): sai de "A lançar" (lançar de novo duplicaria a compra) e das
+    divergências; conta como **pendente** e **bloqueia o fechamento**; no quadro, "compra parcelada lançada pelo total (desdobrar
+    no Consistem)" = linha − título (o resíduo continua zero). Parcela k/N com k > 1 continua "parcela não desdobrada". **Limite:**
+    só acha a NF cheia que esteja na janela do vencimento da fatura (±5 dias); fora dela, a linha continua "a lançar" (o diálogo
+    "Lançar compra" avisa para conferir se a compra não foi lançada pelo total).
+62. **Desdobramento** (botão "Desdobrar no Consistem", operador, com confirmação; chave `financeiro.cartao.desdobrar_no_erp`,
+    começa ligada, e a chave geral `lancar_no_erp`): parcela 1 = o próprio título (valor da linha, documento `<NF>/1`,
+    complemento `CARTÃO <NOME> Nx — <DESCRIÇÃO> PARC 1/N`); parcelas 2 a N = títulos novos copiados do original (fornecedor,
+    categoria, emissão, entrada, conta de fluxo, contas contábeis), portador e histórico da fatura do cartão por cima, documento
+    `<NF>/k`, vencimentos nominais das competências seguintes (mesma regra do "Lançar compra"); todas com o valor da linha e a
+    **última com o arredondamento** (soma = total da NF). Não desdobra pela API (desdobrar à mão): título pago, em borderô, com
+    rateio por centro de custo, sem algum código, ou com valor diferente do que a conciliação viu.
+63. **Ordem e falhas** (Edge Function `crt-desdobrar-no-consistem`): lê o detalhe (o painel já leu na reserva; tem de estar igual
+    em valor, documento, fornecedor, vencimento e pagamento) → `PUT lancamentoContasPagar/{id}` só com `{ valorDocumento,
+    codDocumento, complementoHistorico }` → lê de novo e confere (esses três novos, `valorOriginalDocumento` pode acompanhar, todo
+    o resto igual) → só então cria as parcelas 2..N (mesmo envio das compras: em ordem, sem repetir). Alteração recusada ou
+    diferente = nada é criado (as parcelas ficam "Não enviada") e abre a pendência "Desdobrar no Consistem a compra parcelada da
+    fatura …". Sem resposta: conferir no Consistem e usar "Já está alterado no Consistem" (libera as parcelas) ou desdobrar de
+    novo. Parcela que falhar: "Reenviar o que faltou" (as parcelas só saem com o original alterado). Depois do desdobramento a
+    linha casa sozinha com o título (valor exato) e as parcelas seguintes casam nas próximas faturas.
+64. **Título excluído no Consistem** (gestor, botão "Excluído no Consistem" na lista de compras lançadas): registra que um título
+    lançado pelo painel foi excluído no ERP (ex.: duplicava a NF), com motivo, quem e quando. Nada é apagado no Neo Admin; o título
+    deixa de contar como lançamento ativo (a linha pode ser lançada ou desdobrada de novo). O painel não exclui no Consistem.
 49. Cadastro com a mesma regra de envio dos títulos: reserva, envio único, erro (nada criado) ou sem resposta (conferir e
     resolver à mão); cadastrado vai na hora para o espelho `cap_fornecedores`. Prova em `crt_fornecedores_cadastrados`.
 
@@ -265,7 +291,8 @@ zero a lançar, zero divergências (`conciliacao.test.ts`). Detecção: tirando 
 | **Conciliação** (`/[id]`) | Cartões: total da fatura, títulos, diferença apurada, **diferença não justificada** (vermelho se ≠ 0), conciliados com cartão divergente; abas A lançar · Divergências · Conciliados · Compensados · Quadro · Linhas da fatura · Outros títulos de cartão na janela; botões Baixar planilha, Cancelar fatura (motivo); rodapé "Não gerar o borderô enquanto houver diferença não justificada" |
 | **Cartões** (`/cartoes`) | Cadastro: código, nome, banco, PF/PJ, fechamento, vencimento, tipo de título, leitor, pasta, ativo, os **códigos do Consistem dos encargos** e os **padrões de compra** (gestor edita) |
 | **Lançar compra** (botão na aba A lançar; diálogo) | Fornecedor (busca por nome ou código), códigos com a origem (do estabelecimento, do cartão, informado, escolher), títulos que serão criados (parcela, vencimento, documento, valor, complemento), "Lembrar para as próximas compras de", botão "Lançar N títulos" |
-| **Compras lançadas no Consistem** (lista acima das abas) | Lotes do mês: compra, parcela, vencimento, valor, situação (Lançado nº, Sem resposta, Não enviado, Não lançado), quem e quando; Resolver e Reenviar o que faltou |
+| **Compras lançadas no Consistem** (lista acima das abas) | Lotes do mês: compra (ou desdobramento), parcela, vencimento, valor, situação (Lançado nº, Sem resposta, Não enviado, Não lançado), quem e quando; Resolver e Reenviar o que faltou; **Excluído no Consistem** (gestor, com motivo) |
+| **Compras parceladas lançadas pelo total** (quadro acima das abas, regras 61 a 64) | Cada par linha 1/N × título cheio, a prévia das N parcelas (vencimento, documento, valor, complemento) e o botão **Desdobrar no Consistem** (confirmação em dois cliques); erro do último desdobramento com "Já está alterado no Consistem"; desdobramentos feitos no mês |
 | **Encargos do mês** (quadro na conciliação e no mês em conciliação) | Linhas de encargo pendentes, soma e o título que vai para o Consistem (fornecedor, documento, datas, valor, complemento, códigos); botão **Lançar no Consistem** com conferência; lançamento ativo (lançado com o código, ou sem resposta com **Resolver**); erros anteriores |
 | **Estabelecimentos** (`/estabelecimentos`) | Dicionário com busca; incluir/editar (operador), com a **sugestão de lançamento no Consistem** (fornecedor, códigos). A aba A lançar tem o atalho "Cadastrar" para item não identificado |
 
@@ -282,6 +309,7 @@ zero a lançar, zero divergências (`conciliacao.test.ts`). Detecção: tirando 
 | `crt_vw_ciclos` | View dos meses com nomes e total da fatura |
 | `crt_lancamentos_erp` / `crt_vw_lancamentos_erp` | Títulos lançados pelo painel no Consistem (tipo encargos ou compra; lote; linha de origem; parcela/parcelas; vencimento): linhas, valor, complemento, payload enviado, situação (reservado → enviando → lançado/erro), código criado, resposta, quem/quando, resolução à mão; sem delete; auditoria |
 | `crt_trocas_portador` | Troca do portador dos títulos da fatura no Consistem (0162): mês, título, documento, fornecedor, valor, portador anterior/novo, lote, situação (reservado → enviando → trocado/erro; erro → reservado ao tentar de novo), detalhe antes/depois, resposta, erro, tentativas, quem/quando; sem delete; auditoria |
+| `crt_desdobramentos` | Desdobramento da compra lançada pelo total (0165): linha, título original, parcelas, valor original e da parcela, alteração enviada, detalhe antes/depois, resposta, lote (o mesmo das parcelas 2..N em `crt_lancamentos_erp`, tipo `desdobramento`), situação (reservado → enviando → alterado/erro; erro → alterado só "resolvido à mão"), quem/quando; sem delete; auditoria. `crt_lancamentos_erp` ganhou `desdobramento_id` e a exclusão no ERP registrada (`excluido_no_erp_em/por`, `motivo_exclusao_erp`) |
 | `crt_fornecedores_cadastrados` | Fornecedores "Outros" cadastrados pelo painel: nome, corpo enviado, situação, código, resposta, quem/quando; sem delete; auditoria |
 | `crt_decisoes` / `crt_vw_decisoes` | Decisões por item (tipo, linhas, títulos, categoria/conta, motivo, quem/quando, desfeita por/quando/motivo) — sem delete; auditoria |
 | Funções | `crt_importar_fatura` (com `p_ciclo`), `crt_cancelar_fatura`, `crt_salvar_cartao`, `crt_salvar_estabelecimento`, `crt_normalizar`, `crt_gerar_ciclos`, `crt_registrar_apuracao`, `crt_fechar_ciclo`, `crt_reabrir_ciclo`, `crt_calendario`, `crt_competencia_do_vencimento`, `crt_registrar_decisao`, `crt_desfazer_decisao`, `crt_reservar_lancamento_encargos`, `crt_reservar_lancamento_compra`, `crt_reenviar_lancamentos`, `crt_iniciar_envio_erp`, `crt_concluir_lancamento_erp` e `crt_interromper_lote` (só service role), `crt_resolver_lancamento_encargos` |
@@ -493,3 +521,31 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
 - **Falta (Alan):** cadastrar no Consistem um banco/portador por cartão e informar os códigos; aplicar a migration, publicar as
   funções `crt-trocar-portador` e `cap-sincronizar-consistem`; primeiro envio real acompanhado (um mês fechado, "Trocar de novo"),
   conferindo no Consistem que só o portador mudou e que o CCFFE065 filtra por ele. Só então deixar a chave ligada.
+
+## 20. Compra parcelada lançada pelo total: desdobrar no Consistem — o que foi feito (14/10/2026)
+- Caso real: no fechamento do Unicred PF 10/2026 a fatura tinha duas linhas "MP*TERABYTESHOP Parc. 1/6" de R$ 499,13. A NF estava no
+  Consistem pelo total; a conciliação só casa pelo valor da parcela, então a linha ficou "a lançar" e foi lançada pelo painel em 6
+  títulos (33650 a 33655, documento 2309-14/1..6, fornecedor 1345) que **duplicam a NF** (confirmado pelo Alan). A outra linha
+  casou com o 33658 (NF 3615152/1), desdobrado à mão.
+- Decisões do Alan: detectar sempre a linha 1/N com a NF pelo total; desdobrar **pela API** (primeiro uso acompanhado: alterar o
+  valor de título de NF pela API nunca foi testado).
+- Código puro: `conciliacao.ts` (`compraPeloTotal`, `aDesdobrar`, quadro e pendentes), `desdobramento.ts` (`previaDesdobramento`,
+  `montarDesdobramento`, `valoresDasParcelas`), `ciclos.ts` (bloqueio do fechamento com a mensagem própria), `planilha.ts` (aba
+  "A Desdobrar"); `_shared/consistem-inclusao.ts` ganhou `alterarTitulo` (generaliza `alterarPortador`), `conferirAlteracao` e
+  `jaAlterado`; o laço de envio dos lotes foi para `_shared/crt-envio-lote.ts` (usado por `crt-lancar-no-consistem` e pela nova
+  `crt-desdobrar-no-consistem`).
+- Migration `0165_crt_desdobramento.sql`: chave `financeiro.cartao.desdobrar_no_erp` (true), `crt_desdobramentos`, tipo
+  `desdobramento` em `crt_lancamentos_erp`, `crt_reservar_desdobramento` (operador; confere linha, título, valores, soma = total),
+  `crt_iniciar_desdobramento`/`crt_concluir_desdobramento` (service role), `crt_falha_desdobramento`, `crt_resolver_desdobramento`,
+  `crt_sincronizar_pendencia_desdobramentos`, `crt_registrar_exclusao_erp` (gestor); `crt_iniciar_envio_erp` só envia parcela de
+  desdobramento com o original alterado; `crt_reenviar_lancamentos` aceita o desdobramento; título excluído no ERP deixa de ser
+  lançamento ativo (índices e `crt_linhas_em_lancamento`).
+- App: `lerDesdobrar` e `lerDetalheDoConsistem` (ação só de leitura `detalhe_lancamentos`) em `dados.ts`; ações
+  `desdobrarNoConsistem`, `resolverDesdobramento`, `registrarExclusaoErp`; quadro `[id]/desdobrar.tsx` na fatura e no mês em
+  conciliação.
+- Testes: `conciliacao.test.ts` (regra 61), `desdobramento.test.ts`, `consistem-inclusao.test.ts`, `ciclos.test.ts`,
+  `tests/db/crt-desdobramentos.test.ts`.
+- **Correção do Unicred PF 10/2026 (Alan):** excluir no Consistem os 6 títulos duplicados (33650 a 33655); registrar cada um como
+  "Excluído no Consistem" na fatura; reabrir o mês; conferir a linha `MP*TERABYTESHOP` que casava com o 33650 (a decisão "casar"
+  fica sem efeito): casa com a parcela da NF, ou aparece em "a desdobrar" se a NF ainda estiver cheia; fechar de novo.
+

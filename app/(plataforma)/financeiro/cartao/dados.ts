@@ -225,8 +225,11 @@ export type LancamentoErpLinha = {
   id: string; fatura_id: string; situacao: "reservado" | "enviando" | "lancado" | "erro"; valor: number | string; complemento: string; linhas: string[];
   payload: NovoLancamentoContaPagar; cod_lancamento_erp: string | null; erro: string | null; criado_por: string | null; criado_por_nome: string | null; criado_em: string;
   enviado_em: string | null; concluido_em: string | null; resolvido_por_nome: string | null; motivo_resolucao: string | null;
-  tipo: "encargos" | "compra" | "agrupado"; lote: string; linha_origem: string | null; linha_descricao: string | null; parcela: number | null; parcelas: number | null; vencimento: string | null;
+  tipo: "encargos" | "compra" | "agrupado" | "provisorio" | "desdobramento"; lote: string; linha_origem: string | null; linha_descricao: string | null; parcela: number | null; parcelas: number | null; vencimento: string | null;
+  /** Título excluído no Consistem (ex.: duplicidade), registrado pelo gestor (0165). */
+  excluido_no_erp_em: string | null; excluido_no_erp_por_nome: string | null; motivo_exclusao_erp: string | null;
 };
+const COLUNAS_LANCAMENTO_ERP = "id, fatura_id, situacao, valor, complemento, linhas, payload, cod_lancamento_erp, erro, criado_por, criado_por_nome, criado_em, enviado_em, concluido_em, resolvido_por_nome, motivo_resolucao, tipo, lote, linha_origem, linha_descricao, parcela, parcelas, vencimento, excluido_no_erp_em, excluido_no_erp_por_nome, motivo_exclusao_erp";
 
 export type QuadroEncargos = {
   /** Chave geral financeiro.cartao.lancar_encargos_no_erp. */
@@ -246,7 +249,7 @@ export async function lerEncargos(supabase: Cliente, c: Conciliacao): Promise<Qu
   const [{ data: config }, { data: lancs, error }, { data: cic }] = await Promise.all([
     supabase.from("configuracoes").select("valor").eq("chave", CHAVE_LANCAR_NO_ERP).maybeSingle(),
     ciclo
-      ? supabase.from("crt_vw_lancamentos_erp").select("id, fatura_id, situacao, valor, complemento, linhas, payload, cod_lancamento_erp, erro, criado_por, criado_por_nome, criado_em, enviado_em, concluido_em, resolvido_por_nome, motivo_resolucao, tipo, lote, linha_origem, linha_descricao, parcela, parcelas, vencimento")
+      ? supabase.from("crt_vw_lancamentos_erp").select(COLUNAS_LANCAMENTO_ERP)
         .eq("ciclo_id", ciclo).eq("tipo", "encargos").order("criado_em", { ascending: false }).limit(50)
       : Promise.resolve({ data: [], error: null }),
     ciclo ? supabase.from("crt_ciclos").select("fechamento, situacao").eq("id", ciclo).maybeSingle() : Promise.resolve({ data: null }),
@@ -331,8 +334,8 @@ export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<Qua
   const [{ data: config }, { data: lancs, error }, { data: cic }, estabelecimentos, cadastro, listas] = await Promise.all([
     supabase.from("configuracoes").select("valor").eq("chave", CHAVE_LANCAR_NO_ERP).maybeSingle(),
     ciclo
-      ? supabase.from("crt_vw_lancamentos_erp").select("id, fatura_id, situacao, valor, complemento, linhas, payload, cod_lancamento_erp, erro, criado_por, criado_por_nome, criado_em, enviado_em, concluido_em, resolvido_por_nome, motivo_resolucao, tipo, lote, linha_origem, linha_descricao, parcela, parcelas, vencimento")
-        .eq("ciclo_id", ciclo).in("tipo", ["compra", "agrupado"]).order("criado_em", { ascending: false }).order("parcela").limit(500)
+      ? supabase.from("crt_vw_lancamentos_erp").select(COLUNAS_LANCAMENTO_ERP)
+        .eq("ciclo_id", ciclo).in("tipo", ["compra", "agrupado", "desdobramento"]).order("criado_em", { ascending: false }).order("parcela").limit(500)
       : Promise.resolve({ data: [], error: null }),
     ciclo ? supabase.from("crt_ciclos").select("competencia, fechamento, situacao").eq("id", ciclo).maybeSingle() : Promise.resolve({ data: null }),
     lerEstabelecimentos(supabase),
@@ -341,7 +344,7 @@ export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<Qua
   ]);
   if (error) throw new Error(`Falha ao ler os lançamentos de compras: ${error.message}`);
   const lancamentos = (lancs ?? []) as LancamentoErpLinha[];
-  const emLancamento = new Set(lancamentos.filter((l) => l.situacao !== "erro").flatMap((l) => [l.linha_origem, ...(l.linhas ?? [])]));
+  const emLancamento = new Set(lancamentos.filter((l) => l.situacao !== "erro" && !l.excluido_no_erp_em).flatMap((l) => [l.linha_origem, ...(l.linhas ?? [])]));
   const ativos = estabelecimentos.filter((e) => e.ativo);
   const estabs: EstabelecimentoCodigos[] = ativos.map((e) => ({ padrao: e.padrao, lancamentoErp: lerCampos(e.lancamento_erp) }));
   const marketplace: Record<string, string> = {};
@@ -373,6 +376,56 @@ export async function lerCompras(supabase: Cliente, c: Conciliacao): Promise<Qua
     empresaId: c.fatura.empresa_id, competencia: cc?.competencia ?? null, fechamento: cc?.fechamento ?? null, creditoPadrao: padroesCartao.contaContabilCredito ?? null, vencimentoFatura: c.fatura.vencimento, cartao: paraCartaoInfo(c.cartao), propostas, lancamentos,
     marketplace, cadastro, listas,
   };
+}
+
+// ---------------------------------------------------------------- compra lançada pelo total: desdobrar no Consistem (0165)
+
+export const CHAVE_DESDOBRAR_NO_ERP = "financeiro.cartao.desdobrar_no_erp";
+
+export type DesdobramentoLinha = {
+  id: string; linha_id: string; cod_lancamento: string; num_documento: string | null; fornecedor: string | null; parcelas: number;
+  valor_original: number | string; valor_parcela: number | string; situacao: "reservado" | "enviando" | "alterado" | "erro"; erro: string | null;
+  lote: string; criado_em: string; criado_por: string | null; motivo_resolucao: string | null;
+};
+export type QuadroDesdobrar = {
+  /** As duas chaves: desdobrar_no_erp e lancar_no_erp (as parcelas são inclusões). */
+  ligado: boolean;
+  mesAberto: boolean;
+  /** Competência do mês da fatura (AAAA-MM-01): vencimentos das parcelas 2..N. */
+  competencia: string | null;
+  cartao: CartaoInfo;
+  /** Desdobramentos do mês (mais novos primeiro). */
+  desdobramentos: DesdobramentoLinha[];
+};
+
+/** Pares a desdobrar (já na conciliação) e os desdobramentos feitos no mês. */
+export async function lerDesdobrar(supabase: Cliente, c: Conciliacao): Promise<QuadroDesdobrar> {
+  const ciclo = c.fatura.ciclo_id;
+  const [{ data: chaves }, { data: desd, error }, { data: cic }] = await Promise.all([
+    supabase.from("configuracoes").select("chave, valor").in("chave", [CHAVE_DESDOBRAR_NO_ERP, CHAVE_LANCAR_NO_ERP]),
+    ciclo
+      ? supabase.from("crt_desdobramentos").select("id, linha_id, cod_lancamento, num_documento, fornecedor, parcelas, valor_original, valor_parcela, situacao, erro, lote, criado_em, criado_por, motivo_resolucao")
+        .eq("ciclo_id", ciclo).order("criado_em", { ascending: false }).limit(200)
+      : Promise.resolve({ data: [], error: null }),
+    ciclo ? supabase.from("crt_ciclos").select("competencia, situacao").eq("id", ciclo).maybeSingle() : Promise.resolve({ data: null }),
+  ]);
+  if (error) throw new Error(`Falha ao ler os desdobramentos: ${error.message}`);
+  const ligadas = new Set(((chaves ?? []) as { chave: string; valor: unknown }[]).filter((k) => k.valor === true).map((k) => k.chave));
+  const cc = cic as { competencia: string; situacao: string } | null;
+  return {
+    ligado: ligadas.has(CHAVE_DESDOBRAR_NO_ERP) && ligadas.has(CHAVE_LANCAR_NO_ERP),
+    mesAberto: cc?.situacao === "em_conciliacao" && c.fatura.status === "importada",
+    competencia: cc?.competencia ?? null, cartao: paraCartaoInfo(c.cartao), desdobramentos: (desd ?? []) as DesdobramentoLinha[],
+  };
+}
+
+/** Detalhe do lançamento lido agora do Consistem (GET lancamentoContasPagar/{id}, ação só de leitura). */
+export async function lerDetalheDoConsistem(supabase: Cliente, empresaId: string, cod: string): Promise<Record<string, unknown>> {
+  const { data, error } = await supabase.functions.invoke("cap-sincronizar-consistem", { body: { acao: "detalhe_lancamentos", empresaId, codigos: [cod] } });
+  if (error) throw new Error("não foi possível consultar o Consistem");
+  const d = (data as { detalhes?: Record<string, unknown>[] } | null)?.detalhes?.[0];
+  if (!d || d.erro) throw new Error(d?.erro ? String(d.erro) : "o Consistem não devolveu o título");
+  return d;
 }
 
 // ---------------------------------------------------------------- provisório da fatura no fechamento (0154)

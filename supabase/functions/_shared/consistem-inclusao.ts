@@ -90,13 +90,21 @@ export type ResultadoAlteracao =
   | { tipo: "incerto"; mensagem: string; resposta: unknown };
 
 /** Envia a troca UMA vez e interpreta a resposta (2xx = aceito; 4xx = recusado; 5xx/sem resposta = incerto). */
-export async function alterarPortador(enviar: Enviar, cfg: Cfg, codLancamento: string, marcas: MarcasFatura, opcoes: { tempoMs?: number } = {}): Promise<ResultadoAlteracao> {
-  if (!/^\d{1,12}$/.test(codLancamento)) return { tipo: "erro", mensagem: `Código de lançamento inválido: ${codLancamento}.`, resposta: null };
+export function alterarPortador(enviar: Enviar, cfg: Cfg, codLancamento: string, marcas: MarcasFatura, opcoes: { tempoMs?: number } = {}): Promise<ResultadoAlteracao> {
   const corpo = marcas.codHistorico ? { codPortador: marcas.codPortador, codHistorico: marcas.codHistorico } : { codPortador: marcas.codPortador };
+  return alterarTitulo(enviar, cfg, codLancamento, corpo, "a troca é conferida pelo detalhe do título", opcoes);
+}
+
+/**
+ * PUT financeiro/v10/lancamentoContasPagar/{id} UMA vez, só com os campos de `corpo` (2xx = aceito; 4xx = recusado; 5xx/sem
+ * resposta = incerto). Quem chama SEMPRE lê o detalhe depois e confere (`conferirAlteracao`).
+ */
+export async function alterarTitulo(enviar: Enviar, cfg: Cfg, codLancamento: string, corpo: Record<string, unknown>, comoConferir = "a alteração é conferida pelo detalhe do título", opcoes: { tempoMs?: number } = {}): Promise<ResultadoAlteracao> {
+  if (!/^\d{1,12}$/.test(codLancamento)) return { tipo: "erro", mensagem: `Código de lançamento inválido: ${codLancamento}.`, resposta: null };
   const r = await incluir(enviar, cfg, `${ROTA_INCLUSAO_LANCAMENTO}/${codLancamento}`, "codLancamento", corpo, opcoes);
   // 2xx: aceito (com ou sem o código na resposta; a conferência é pelo detalhe lido depois).
   if (r.tipo === "lancado" || (r.tipo === "incerto" && /respondeu 2\d\d sem o código/.test(r.mensagem))) return { tipo: "ok", resposta: r.resposta };
-  return r.tipo === "erro" ? r : { tipo: "incerto", mensagem: r.mensagem.replace(CONFERIR, "a troca é conferida pelo detalhe do título"), resposta: r.resposta };
+  return r.tipo === "erro" ? r : { tipo: "incerto", mensagem: r.mensagem.replace(CONFERIR, comoConferir), resposta: r.resposta };
 }
 
 /** Campos que mudam sozinhos numa alteração (data/usuário da alteração): fora da conferência. */
@@ -132,5 +140,36 @@ export function conferirTroca(antes: Record<string, unknown>, depois: Record<str
   if (diferencas.length) {
     return { ok: false, mensagem: `As marcas da fatura mudaram, mas outros campos também mudaram no Consistem (corrija lá): ${diferencas.join("; ")}`, diferencas };
   }
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------- desdobramento da compra lançada pelo total (cartão, 0165)
+
+const mesmoValor = (esperado: unknown, lido: unknown) =>
+  typeof esperado === "number" ? Math.round(Number(lido) * 100) === Math.round(esperado * 100) : String(lido ?? "").trim() === String(esperado ?? "").trim();
+
+/** O título já está com os campos da alteração (a alteração foi feita)? */
+export function jaAlterado(d: Record<string, unknown>, esperado: Record<string, unknown>): boolean {
+  return Object.entries(esperado).every(([k, v]) => mesmoValor(v, d[k]));
+}
+
+/**
+ * Confere uma alteração pelo detalhe lido antes e depois do PUT: os campos de `esperado` com o valor novo e TODO o resto igual.
+ * `valorOriginalDocumento` pode acompanhar o valor novo; o vencimento original vazio pode virar o próprio vencimento.
+ */
+export function conferirAlteracao(antes: Record<string, unknown>, depois: Record<string, unknown>, esperado: Record<string, unknown>):
+  { ok: true } | { ok: false; mensagem: string; diferencas: string[] } {
+  const naoGravados = Object.entries(esperado).filter(([k, v]) => !mesmoValor(v, depois[k])).map(([k, v]) => `${k} = ${String(depois[k] ?? "vazio")} (esperado ${String(v)})`);
+  const diferencas: string[] = [];
+  for (const k of Object.keys(antes)) {
+    if (k in esperado || VOLATEIS.test(k)) continue;
+    if (k === "dataVencimentoOriginal" && !antes[k] && depois[k] === antes.dataVencimento) continue;
+    if (k === "valorOriginalDocumento" && "valorDocumento" in esperado && mesmoValor(esperado.valorDocumento, depois[k])) continue;
+    const a = JSON.stringify(antes[k] ?? null);
+    const d = JSON.stringify(depois[k] ?? null);
+    if (a !== d) diferencas.push(`${k}: ${a.slice(0, 80)} → ${d.slice(0, 80)}`);
+  }
+  if (naoGravados.length) return { ok: false, mensagem: `O Consistem aceitou, mas não gravou: ${naoGravados.join("; ")}.`, diferencas };
+  if (diferencas.length) return { ok: false, mensagem: `A alteração foi gravada, mas outros campos também mudaram no Consistem (corrija lá): ${diferencas.join("; ")}`, diferencas };
   return { ok: true };
 }

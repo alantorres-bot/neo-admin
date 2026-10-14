@@ -15,6 +15,7 @@ import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis
 import { buscarFornecedores, lancarCompra, reenviarLote } from "../acoes";
 import type { LancamentoErpLinha, PropostaCompra, QuadroCompras } from "../dados";
 import { BotaoResolver } from "./encargos";
+import { BotaoExcluidoNoConsistem } from "./desdobrar";
 import { BotaoCadastrarFornecedor } from "../fornecedores";
 import { SeletorContaFluxo } from "../listas";
 
@@ -171,14 +172,14 @@ const SELO: Record<LancamentoErpLinha["situacao"], { rotulo: string; classe: str
   erro: { rotulo: "Não lançado", classe: "border-red-300 text-red-800" },
 };
 
-export function ListaComprasLancadas({ compras, podeOperar }: { compras: QuadroCompras; podeOperar: boolean }) {
+export function ListaComprasLancadas({ compras, podeOperar, podeGestor = false }: { compras: QuadroCompras; podeOperar: boolean; podeGestor?: boolean }) {
   const lotes = useMemo(() => {
     const m = new Map<string, LancamentoErpLinha[]>();
     for (const l of compras.lancamentos) m.set(l.lote, [...(m.get(l.lote) ?? []), l]);
     return [...m.values()].map((ls) => ls.sort((a, b) => (a.parcela ?? 0) - (b.parcela ?? 0)));
   }, [compras.lancamentos]);
   if (lotes.length === 0) return null;
-  const ativas = new Set(compras.lancamentos.filter((l) => l.situacao !== "erro").map((l) => `${l.linha_origem}:${l.parcela}`));
+  const ativas = new Set(compras.lancamentos.filter((l) => l.situacao !== "erro" && !l.excluido_no_erp_em).map((l) => `${l.tipo}:${l.linha_origem}:${l.parcela}`));
   const pode = podeOperar && compras.mesAberto;
   return (
     <section className="space-y-2 rounded-[3px] border border-grade bg-card p-3">
@@ -188,12 +189,12 @@ export function ListaComprasLancadas({ compras, podeOperar }: { compras: QuadroC
         <tbody>
           {lotes.map((ls) => {
             // Só o que nem chegou a ser enviado (envio interrompido) é reenviado; recusa do Consistem pede correção e novo lançamento.
-            const faltando = ls.some((l) => l.tipo === "compra" && l.situacao === "erro" && (l.erro ?? "").startsWith("Envio interrompido") && !ativas.has(`${l.linha_origem}:${l.parcela}`));
+            const faltando = ls.some((l) => (l.tipo === "compra" || l.tipo === "desdobramento") && l.situacao === "erro" && (l.erro ?? "").startsWith("Envio interrompido") && !ativas.has(`${l.tipo}:${l.linha_origem}:${l.parcela}`));
             return (
               <Fragment key={ls[0].lote}>
                 {ls.map((l, i) => (
-                  <tr key={l.id} className="border-t border-grade/60 align-top">
-                    <td>{i === 0 ? (l.tipo === "agrupado" ? `${l.linhas.length} linhas · ${l.complemento}` : l.linha_descricao ?? "") : ""}</td>
+                  <tr key={l.id} className={`border-t border-grade/60 align-top ${l.excluido_no_erp_em ? "text-muted-foreground" : ""}`}>
+                    <td>{i === 0 ? (l.tipo === "agrupado" ? `${l.linhas.length} linhas · ${l.complemento}` : l.tipo === "desdobramento" ? `${l.linha_descricao ?? ""} · desdobramento (parcela 1 = título original)` : l.linha_descricao ?? "") : ""}</td>
                     <td className="tabular-nums">{l.parcela}/{l.parcelas}</td>
                     <td className="tabular-nums">{formatarData(l.vencimento)}</td>
                     <td className="text-right tabular-nums">{formatarMoeda(centavos(l.valor))}</td>
@@ -201,11 +202,17 @@ export function ListaComprasLancadas({ compras, podeOperar }: { compras: QuadroC
                       <Badge variant="outline" className={SELO[l.situacao].classe}>{SELO[l.situacao].rotulo}{l.cod_lancamento_erp ? ` ${l.cod_lancamento_erp}` : ""}</Badge>
                       {l.erro && <p className="text-xs text-muted-foreground">{l.erro}</p>}
                       {l.motivo_resolucao && <p className="text-xs text-muted-foreground">Conferido: {l.motivo_resolucao}</p>}
+                      {l.excluido_no_erp_em && (
+                        <p className="text-xs font-medium text-red-800">
+                          Excluído no Consistem ({new Date(l.excluido_no_erp_em).toLocaleDateString("pt-BR", { timeZone: "America/Cuiaba" })}{l.excluido_no_erp_por_nome ? `, ${l.excluido_no_erp_por_nome}` : ""}): {l.motivo_exclusao_erp}
+                        </p>
+                      )}
                     </td>
                     <td className="text-xs text-muted-foreground">{l.criado_por_nome ?? ""} · {new Date(l.criado_em).toLocaleDateString("pt-BR", { timeZone: "America/Cuiaba" })}</td>
                     <td className="space-y-1 text-right">
                       {pode && (l.situacao === "enviando" || l.situacao === "reservado") && <BotaoResolver l={l} />}
                       {pode && i === ls.length - 1 && faltando && <BotaoReenviar lote={l.lote} />}
+                      {podeGestor && l.situacao === "lancado" && !l.excluido_no_erp_em && <BotaoExcluidoNoConsistem l={l} />}
                     </td>
                   </tr>
                 ))}

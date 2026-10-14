@@ -260,3 +260,74 @@ describe("conciliar com antecipações candidatas", () => {
     expect(r.pendentes).toBe(0);
   });
 });
+
+describe("compra parcelada lançada pelo total (regra 61)", () => {
+  const base = { cartao: NUBANK, cartoes: CARTOES_TESTE, vencimento: "2026-06-27", estabelecimentos: DICIONARIO };
+  const compra = () => linha("MP*TERABYTESHOP", 499.13, { parcelaNum: 1, parcelaTotal: 6 });
+
+  it("1/6 com a NF de 6 × parcela: vai para 'a desdobrar', fora de 'a lançar' e das divergências; bloqueia e o resíduo é zero", () => {
+    const l = compra();
+    const nf = titulo("CARTAO NUBANK 1 X", 2994.78, { fornecedor: "TERABYTE ATACADO" });
+    const r = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [l], titulos: [nf] });
+    expect(r.aDesdobrar).toEqual([{ linha: l, titulo: nf, parcelas: 6, parcelaCentavos: 49_913, diferencaCentavos: 0 }]);
+    expect(r.aLancar).toEqual([]);
+    expect(r.divergencias).toEqual([]);
+    expect(r.pendentes).toBe(1);
+    expect(r.contagens.aDesdobrar).toBe(1);
+    expect(r.desdobrarCentavos).toBe(49_913 - 299_478);
+    expect(r.quadro.find((q) => q.rotulo.includes("parcelada lançada pelo total"))?.centavos).toBe(-249_565);
+    expect(r.residuoCentavos).toBe(0);
+  });
+
+  it("tolerância: arredondamento do emissor de até N centavos (+ 5); acima disso não casa", () => {
+    const perto = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [compra()], titulos: [titulo("NF", 2994.8)] });
+    expect(perto.aDesdobrar?.[0].diferencaCentavos).toBe(2);
+    const limite = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [compra()], titulos: [titulo("NF", 2994.89)] });
+    expect(limite.aDesdobrar).toHaveLength(1);
+    const longe = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [compra()], titulos: [titulo("NF", 2994.9)] });
+    expect(longe.aDesdobrar).toEqual([]);
+    expect(longe.aLancar).toHaveLength(1);
+    expect(longe.divergencias).toHaveLength(1);
+  });
+
+  it("2/6 continua 'parcela não desdobrada'; sem título cheio a 1/6 continua 'a lançar'; à vista nunca entra", () => {
+    const r = conciliar({
+      ...base, totalInformadoCentavos: 3 * 49_913,
+      linhas: [linha("LOJA A", 499.13, { parcelaNum: 2, parcelaTotal: 6 }), compra(), linha("LOJA B", 499.13)],
+      titulos: [titulo("OUTRA NF", 1000)],
+    });
+    expect(r.aDesdobrar).toEqual([]);
+    expect(r.aLancar.map((a) => a.natureza)).toEqual(["Parcela não desdobrada", "Não identificado", "Não identificado"]);
+  });
+
+  it("título com o valor exato da parcela casa primeiro (já desdobrado); dois candidatos: o de menor diferença, depois a descrição", () => {
+    const l = compra();
+    const parcela = titulo("CARTAO NUBANK - TERABYTE PARC 1/6", 499.13);
+    const r1 = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [l], titulos: [parcela, titulo("NF", 2994.78)] });
+    expect(r1.conciliados.map((c) => c.titulo)).toEqual([parcela]);
+    expect(r1.aDesdobrar).toEqual([]);
+    const outra = titulo("CARTAO NUBANK - ACADEMIA", 2994.78, { fornecedor: "ACADEMIA" });
+    const certa = titulo("CARTAO NUBANK - TERABYTESHOP", 2994.78, { fornecedor: "TERABYTE" });
+    const r2 = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [compra()], titulos: [outra, certa] });
+    expect(r2.aDesdobrar?.[0].titulo).toBe(certa);
+    expect(r2.divergencias.map((d) => d.titulo)).toEqual([outra]);
+    const r3 = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [compra()], titulos: [titulo("CARTAO NUBANK - TERABYTE", 2994.83), titulo("NF", 2994.79)] });
+    expect(r3.aDesdobrar?.[0].titulo.valorCentavos).toBe(299_479);
+  });
+
+  it("duas linhas 1/6 iguais e uma só NF cheia: uma desdobra, a outra fica a lançar", () => {
+    const r = conciliar({ ...base, totalInformadoCentavos: 2 * 49_913, linhas: [compra(), compra()], titulos: [titulo("NF", 2994.78)] });
+    expect(r.aDesdobrar).toHaveLength(1);
+    expect(r.aLancar).toHaveLength(1);
+  });
+
+  it("linha justificada à mão não é detectada; antecipação não serve de título cheio", () => {
+    const l = compra();
+    const justificar: DecisaoItem = { id: "d1", tipo: "justificar", linhas: [l.id], titulos: [], categoria: null, contaFluxo: null, motivo: "x", autor: null, em: "" };
+    const r = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [l], titulos: [titulo("NF", 2994.78)], decisoes: [justificar] });
+    expect(r.aDesdobrar).toEqual([]);
+    expect(r.aLancar[0].justificativa?.id).toBe("d1");
+    const r2 = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [compra()], titulos: [titulo("NF", 2994.78, { antecipacao: true })] });
+    expect(r2.aDesdobrar).toEqual([]);
+  });
+});

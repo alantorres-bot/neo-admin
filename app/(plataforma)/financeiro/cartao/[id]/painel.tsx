@@ -3,12 +3,17 @@
 import type { ResultadoConciliacao, TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import type { OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import type { DecisaoLinha, LinhaFaturaBanco, QuadroCompras, QuadroEncargos as DadosEncargos } from "../dados";
+import type { DecisaoLinha, LinhaFaturaBanco, QuadroCompras, QuadroDesdobrar as DadosDesdobrar, QuadroEncargos as DadosEncargos } from "../dados";
+import { QuadroDesdobrar } from "./desdobrar";
 import { ListaComprasLancadas } from "./compras";
 import { AbasConciliacao } from "./componentes";
 import { QuadroEncargos } from "./encargos";
 
-export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false, faturaId = null, decisoesHistorico = [], encargos = null, compras = null }: {
+export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false, faturaId = null, decisoesHistorico = [], encargos = null, compras = null, desdobrar = null, podeGestor = false }: {
+  /** Compras parceladas lançadas pelo total (desdobrar no Consistem); nulo = não mostra. */
+  desdobrar?: DadosDesdobrar | null;
+  /** Gestor: registra a exclusão no Consistem de título lançado pelo painel. */
+  podeGestor?: boolean;
   /** Compras sem título (lançamento no Consistem); nulo = sem botão. */
   compras?: QuadroCompras | null;
   /** Encargos do mês (lançamento no Consistem); nulo = não mostra. */
@@ -42,14 +47,15 @@ export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura
         </p>
       )}
       {!congelado && encargos && <QuadroEncargos dados={encargos} faturaId={faturaId} podeOperar={podeOperar} />}
-      {!congelado && compras && <ListaComprasLancadas compras={compras} podeOperar={podeOperar} />}
+      {!congelado && desdobrar && <QuadroDesdobrar pares={r.aDesdobrar ?? []} dados={desdobrar} faturaId={faturaId} podeOperar={podeOperar} />}
+      {!congelado && compras && <ListaComprasLancadas compras={compras} podeOperar={podeOperar} podeGestor={podeGestor} />}
       <AbasConciliacao compras={congelado ? null : compras} resultado={r} outros={outros} linhas={linhas} podeOperar={podeOperar && !congelado} faturaId={congelado ? null : faturaId} decisoesHistorico={decisoesHistorico} />
 
       {!congelado && (
         <p className={`rounded-[3px] border p-3 text-sm font-medium ${residuoZero ? "border-grade bg-cabecalho" : "border-red-300 bg-red-50 text-red-800"}`}>
           {residuoZero
             ? (r.pendentes ?? r.aLancar.length) > 0
-              ? "Diferença não justificada igual a zero. Lance no Consistem o que está pendente em “A lançar” (ou registre a decisão: justificar, casar, compensar); quando não houver pendência, o gestor fecha o mês."
+              ? `Diferença não justificada igual a zero. ${(r.aDesdobrar ?? []).length ? "Desdobre no Consistem as compras parceladas lançadas pelo total e lance" : "Lance"} no Consistem o que está pendente em “A lançar” (ou registre a decisão: justificar, casar, compensar); quando não houver pendência, o gestor fecha o mês.`
               : "Nada pendente e diferença não justificada zero: o mês pode ser fechado pelo gestor."
             : "Não gerar o borderô enquanto houver diferença não justificada. Apure os itens não identificados com o portador do cartão e os títulos sem correspondência."}
         </p>
