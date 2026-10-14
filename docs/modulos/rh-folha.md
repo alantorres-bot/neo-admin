@@ -23,6 +23,7 @@ Pasta do mês: `ADMINISTRATIVO\01 - RH\01 - FOLHA DE PAGAMENTO\<ano>\<MM - MÊS>
 | `FOLHA PGTO CBA - SETEMBRO-2026.xlsx`, aba "ESCRITÓRIO (2)" | Planilha do RH. Por pessoa: EMPRESA (Neo Serviços, Oeste), NATUREZA (salário, 13º), MAT. (= Nº de fornecedor no Consistem), FUNCIONÁRIO, SAL. LÍQUIDO, FÉRIAS/ACRÉSCIMOS, 13º SALÁRIO, A RECEBER (= líquido + férias/acréscimos), PAGAMENTO (FOPAG, PIX - NEO FORMAS, PIX - NEO SERVIÇOS) e, ao lado, "IMPORTAÇÃO BB" (CPF, AG, CONTA, SALÁRIO). As abas Planilha1/Planilha3 são a exportação para o BB. |
 | `IMPORTAÇÃO BANCO BB/EXPORTAÇÃO BB.xlsx` | Cópia da planilha usada para gerar o arquivo do BB. |
 | `EXTRATO MENSAL.pdf` (Neo Serviços e Oeste) | Do escritório. Por pessoa: código do escritório, CPF, situação (trabalhando, transferido, afastado…), eventos com referência e valor, proventos, descontos, **líquido**, bases de INSS, FGTS e IRRF. Na última página: proventos, descontos e líquido gerais; INSS (segurados, empresa, RAT, terceiros, total); FGTS; IRRF (cálculo e pagamento); contagem de situações. **PDF só imagem (sem texto).** |
+| `<EMPRESA> - Relatório de Líquidos.xls` (do escritório, um por empresa e por cálculo) | **Relação Geral dos Líquidos**: empresa, CNPJ, cálculo (Folha Mensal, 13º…), competência e, por pessoa, **código do escritório**, nome (até 30 letras), identidade e **líquido**; no fim, "Empregados: N" e "Total da Empresa". Recebido em 14/10/2026 (setembro/2026, Neo Serviços e Oeste). O arquivo é Excel 97 com o envelope fora do padrão: o Excel abre, mas as bibliotecas comuns recusam (ver regra 12). |
 | `HOLERITES/HOLERITES.pdf`, `13º SALARIO/1ª PARCELA 13º SALARIO.pdf`, `EXTRATO MENSAL 13º.pdf` | Recibos por pessoa (folha mensal e adiantamento do 13º). |
 | `INSSIR*.pdf` (uma por empresa) | DARF (DCTFWeb) com INSS segurados, patronal, GILRAT, terceiros e IRRF. Vencimento no dia 20. |
 | `FGTS*.pdf` (por empresa) | GFD do FGTS Digital: **mensal** e **consignado** (Crédito do Trabalhador). Vencimento no dia 20. |
@@ -42,8 +43,18 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
   ainda sem explicação.
 - **Líquido Neo Serviços:** na planilha do RH soma R$ 199.618,51; no extrato, "Líquido Geral" R$ 197.895,75. Diferença de
   **R$ 1.722,76**, a explicar pessoa a pessoa.
-- **Códigos:** o extrato usa o **código do escritório** e a planilha usa o **Nº de fornecedor do Consistem**. Os dois só batem
-  pelo **CPF**.
+- **Códigos:** o extrato e a Relação dos Líquidos usam o **código do escritório**; a planilha usa o **Nº de fornecedor do
+  Consistem**; a guia do FGTS usa a **matrícula do eSocial**. A matrícula do eSocial **não é o código do escritório**: em
+  setembro/2026, 19 de 60 pessoas da Neo Serviços tinham números diferentes, quase sempre +1. O casamento do relatório é feito
+  pelo **código do escritório**, guardado no cadastro (`matricula_escritorio`).
+- **Relação dos Líquidos de setembro/2026 contra a planilha do RH:**
+  - Neo Serviços: **59 de 60 iguais**. A diferença é o Nº 1072, com R$ 2.004,26 na planilha e **R$ 1.954,26** no escritório
+    (R$ 50,00).
+  - Oeste: 3 de 3 iguais.
+  - A soma de cada relatório bate com o "Total da Empresa" (Neo Serviços R$ 197.895,75 = Líquido Geral do extrato; Oeste
+    R$ 12.292,78).
+  - A diferença de R$ 1.722,76 do item anterior se explica: são R$ 1.672,76 do 13º adiantado de uma pessoa, que entrou na
+    planilha como linha "13º SALÁRIO" e vem em outro cálculo do escritório, mais esses R$ 50,00.
 - **SUBTOTAIS:** os da planilha usam faixas inconsistentes (ex.: `SUBTOTAL(9,F7:G83)`), o mesmo tipo de erro achado no VT.
 
 ## 3. Escopo
@@ -52,9 +63,15 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
 | Mês da folha por empresa; lista de pagamento (líquido, férias/acréscimos, 13º, avulsos) com forma FOPAG/PIX; conferências automáticas; guias (DARF, FGTS mensal, FGTS consignado); aprovação; arquivo do BB; PIX; títulos no Consistem (funcionários e guias); documentos do mês; checklist e prazos na Fila do dia; relatório | Cálculo da folha (continua com o escritório); eSocial, DCTFWeb e transmissões; rescisões e férias pagas fora do fechamento do mês (ver ponto em aberto 7); ponto eletrônico (o módulo só guarda o relatório e controla o prazo) |
 
 ## 4. Entradas
-- **Folha do escritório em Excel/TXT**, a pedir ao escritório: por empresa, por pessoa, com CPF, código, situação, eventos, proventos,
-  descontos e líquido, mais os totais do fim (INSS, FGTS, IRRF, líquido geral). O layout fica definido quando chegar a amostra
-  (ponto em aberto 1). Enquanto isso, a grade do mês pode ser preenchida à mão.
+- **Relação Geral dos Líquidos** (.xls do escritório): um arquivo por empresa e por cálculo. "Folha Mensal" preenche o
+  **líquido**; o do 13º preenche o **13º**; o de férias, quando houver, preenche **férias/acréscimos**.
+  - O arquivo é identificado pelo CNPJ e pela competência do cabeçalho.
+  - Cada pessoa é casada pelo **código do escritório** (`rh_colaboradores.matricula_escritorio`).
+  - A soma das linhas tem de bater com o "Total da Empresa".
+  - Quem não casar fica para o operador ligar ao cadastro (o código fica gravado para os meses seguintes).
+  - A grade continua editável para o que não vier do escritório (avulsos).
+- **Extrato Mensal** (totais de INSS, FGTS, IRRF): ainda em PDF só imagem. Para as conferências C2–C5 é preciso pedir a versão
+  em Excel/TXT ao escritório, ou ler os totais da última página.
 - **Guias em PDF:** DARF, GFD mensal, GFD consignado e o "Detalhe da guia" (tem texto). Do PDF se leem valor, vencimento,
   competência e número; o que não for lido, digita-se.
 - **Documentos do mês:** extrato, holerites, avisos, ponto. Ficam guardados como anexos do mês.
@@ -159,8 +176,11 @@ Nenhum dado pessoal vai para `docs/amostras/` (LGPD).
 - Extrato, holerites e guias trazem salário e CPF: ficam só na área RH.
 
 ## 10. Pontos em aberto
-1. **Arquivo do escritório:** pedir ao escritório a folha em Excel/TXT e mandar uma amostra. Para cada empresa: por pessoa, CPF,
-   código, situação, eventos, proventos, descontos e líquido, mais os totais do fim.
+1. **Arquivo do escritório:** os **líquidos** estão resolvidos com a Relação Geral dos Líquidos em .xls (14/10/2026).
+   - Falta confirmar que o escritório manda todo mês um arquivo por empresa e por cálculo (Folha Mensal, 13º 1ª e 2ª parcela,
+     férias).
+   - Falta pedir a amostra da Neo Formas Concreto.
+   - Para as conferências de INSS/FGTS/IRRF falta o **Extrato Mensal** em Excel/TXT (hoje é PDF só imagem).
 2. **Ponto:** quem envia ao escritório o ponto e as inconsistências de cada quinzena, e até que dia.
 3. **Tolerância das conferências:** qual diferença é aceita sem justificativa (ex.: R$ 0,05, por causa do centavo da DARF) e quem
    pode justificar.
@@ -172,6 +192,11 @@ Nenhum dado pessoal vai para `docs/amostras/` (LGPD).
 7. **Férias, rescisões e 13º:** se entram como natureza no mês (como hoje na planilha) ou como lançamentos com data própria.
 8. **Neo Formas para Concreto:** quem está nessa folha (pró-labore?) e quais guias ela gera.
 9. **Avulsos:** como aparecem no relatório e nos títulos, e se precisam de aprovação própria.
+10. **Os R$ 50,00 do Nº 1072 em setembro/2026:** a planilha pagaria R$ 2.004,26, e o escritório calculou R$ 1.954,26. Qual vale?
+
+Regra 12 (leitura do .xls do escritório): o arquivo é um Excel 97 válido por dentro, mas com o índice que aponta para a planilha
+errado. O Neo Admin lê os registros em sequência, sem depender desse índice, e confere a soma com o "Total da Empresa" antes de
+aceitar.
 
 ## Fases (proposta)
 - **F1:** cadastro único do RH (migra o VT, sem mudar o uso do VT). **Entregue em 14/10/2026.**
@@ -213,4 +238,6 @@ Nenhum dado pessoal vai para `docs/amostras/` (LGPD).
 - **F3:** guias e conferências C1–C6.
 - **F4:** títulos no Consistem (funcionários e guias).
 - **F5:** documentos e checklist com prazos na Fila do dia.
-- **F6:** importação do arquivo do escritório, quando chegar a amostra.
+- **F6:** importação da Relação Geral dos Líquidos (.xls). As amostras de setembro/2026 chegaram em 14/10/2026; esta fase pode
+  vir antes da F3. Em 14/10/2026 a matrícula do escritório do cadastro foi corrigida a partir delas: na F1 ela tinha vindo da
+  guia do FGTS (eSocial).
