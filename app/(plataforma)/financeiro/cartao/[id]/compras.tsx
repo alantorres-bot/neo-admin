@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableHead, TableHeader } from "@/components/ui/table";
 import type { ItemALancar } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { CAMPOS_COMPRA, conferirContas, montarTitulosCompra, ROTULO_CAMPO_COMPRA, type CampoCompra, type CamposCompra } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -132,9 +133,9 @@ export function DialogoLancarCompra({ faturaId, item, proposta, compras }: { fat
               ))}
             </div>
             {titulos.ok ? (
-              <table className="w-full text-sm [&_td]:px-2 [&_td]:py-0.5 [&_th]:px-2">
-                <thead><tr className="text-left text-xs text-muted-foreground"><th>Parcela</th><th>Vencimento</th><th>Documento</th><th className="text-right">Valor</th><th>Complemento</th></tr></thead>
-                <tbody>
+              <Table className="w-full text-sm [&_td]:px-2 [&_td]:py-0.5 [&_th]:px-2">
+                <TableHeader><tr className="text-left text-xs text-muted-foreground"><TableHead>Parcela</TableHead><TableHead>Vencimento</TableHead><TableHead>Documento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Complemento</TableHead></tr></TableHeader>
+                <TableBody>
                   {titulos.titulos.map((t) => (
                     <tr key={t.parcela}>
                       <td className="tabular-nums">{t.parcela}/{t.parcelas}</td><td className="tabular-nums">{formatarData(t.vencimento)}</td>
@@ -142,8 +143,8 @@ export function DialogoLancarCompra({ faturaId, item, proposta, compras }: { fat
                       <td className="font-mono text-xs">{t.payload.complementoHistorico}</td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             ) : <p className="text-sm font-medium text-amber-800">{titulos.erro}</p>}
             <label className="flex flex-wrap items-center gap-2 text-sm">
               <input type="checkbox" checked={lembrar} onChange={(e) => setLembrar(e.target.checked)} className="size-4" />
@@ -184,9 +185,9 @@ export function ListaComprasLancadas({ compras, podeOperar, podeGestor = false }
   return (
     <section className="space-y-2 rounded-[3px] border border-grade bg-card p-3">
       <h3 className="text-sm font-bold">Compras lançadas no Consistem pelo painel</h3>
-      <table className="w-full text-sm [&_td]:px-2 [&_td]:py-1 [&_th]:px-2">
-        <thead><tr className="text-left text-xs text-muted-foreground"><th>Compra</th><th>Parcela</th><th>Vencimento</th><th className="text-right">Valor</th><th>Situação</th><th>Quem · quando</th><th /></tr></thead>
-        <tbody>
+      <Table className="w-full text-sm [&_td]:px-2 [&_td]:py-1 [&_th]:px-2">
+        <TableHeader><tr className="text-left text-xs text-muted-foreground"><TableHead>Compra</TableHead><TableHead>Parcela</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Situação</TableHead><TableHead>Quem · quando</TableHead><TableHead /></tr></TableHeader>
+        <TableBody>
           {lotes.map((ls) => {
             // Só o que nem chegou a ser enviado (envio interrompido) é reenviado; recusa do Consistem pede correção e novo lançamento.
             const faltando = ls.some((l) => (l.tipo === "compra" || l.tipo === "desdobramento") && l.situacao === "erro" && (l.erro ?? "").startsWith("Envio interrompido") && !ativas.has(`${l.tipo}:${l.linha_origem}:${l.parcela}`));
@@ -219,8 +220,8 @@ export function ListaComprasLancadas({ compras, podeOperar, podeGestor = false }
               </Fragment>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </section>
   );
 }

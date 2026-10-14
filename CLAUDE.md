@@ -61,6 +61,10 @@ docs/modulos/                -> uma especificação por módulo
    Workspace ("Entrar com Google", `docs/LOGIN_GOOGLE.md`). O painel organiza o acesso por área.
 9. Login por e-mail/senha ou Google (só `@neoformas.com.br`; cadastro fechado, o admin cria o usuário). A troca de senha
    pendente só prende sessão iniciada por senha (claim `amr`; funções `acesso_liberado()`/`sessao_por_oauth()`, migration 0007).
+10. Toda grade/tabela tem **classificação e filtro**: usar sempre `Table`, `TableHeader`, `TableHead`, `TableBody`…
+   de `components/ui/table.tsx`, que já trazem isso (clique no título classifica; funil filtra a coluna; busca geral a
+   partir de 8 linhas). Nunca `<table>` cru nas telas da plataforma (só nas de impressão). Título de coluna com texto
+   simples; linha + detalhe juntos num `Fragment` com `key`. `interativa={false}` só em quadro que não é grade.
 
 ## Segurança
 - Nunca commitar chaves (`.env.local` no `.gitignore`); `.env.example` com os nomes das variáveis.

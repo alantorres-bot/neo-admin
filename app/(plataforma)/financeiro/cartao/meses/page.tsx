@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Table, TableBody, TableHead, TableHeader } from "@/components/ui/table";
 import { cicloDaCompetencia, CLASSE_ATRASADA, CLASSE_SITUACAO, classeDoCiclo, estaAtrasado, ROTULO_SITUACAO, rotuloCompetencia, somarMeses, type SituacaoCiclo } from "@/lib/modulos/financeiro/cartao/ciclos";
 import { ROTA_CARTAO } from "@/lib/modulos/financeiro/cartao/modulo";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -74,14 +75,14 @@ export default async function PaginaMeses({ searchParams }: PageProps<"/financei
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[13px]">
-          <thead>
+        <Table className="w-full border-collapse text-[13px]">
+          <TableHeader>
             <tr className="bg-cabecalho">
-              <th className="border border-grade px-2 py-1.5 text-left">Cartão</th>
-              {competencias.map((c) => <th key={c} className="border border-grade px-2 py-1.5 text-center tabular-nums">{rotuloCompetencia(c)}</th>)}
+              <TableHead className="border border-grade px-2 py-1.5 text-left">Cartão</TableHead>
+              {competencias.map((c) => <TableHead key={c} className="border border-grade px-2 py-1.5 text-center tabular-nums">{rotuloCompetencia(c)}</TableHead>)}
             </tr>
-          </thead>
-          <tbody>
+          </TableHeader>
+          <TableBody>
             {ativos.map((k) => (
               <tr key={k.codigo}>
                 <th className="border border-grade px-2 py-1.5 text-left font-medium">
@@ -113,8 +114,8 @@ export default async function PaginaMeses({ searchParams }: PageProps<"/financei
                 })}
               </tr>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

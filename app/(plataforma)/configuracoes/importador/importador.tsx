@@ -5,6 +5,7 @@ import { FileSpreadsheet, Save, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableHead, TableHeader } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { TAMANHO_MAXIMO_IMPORTACAO, lerArquivo, type Planilha } from "@/lib/integracoes/importador/ler-arquivo";
 import {
@@ -206,11 +207,11 @@ export function ImportadorGenerico({ modulos, modelos }: { modulos: { codigo: st
             {campos.length === 0 && <p className="text-sm text-muted-foreground">Informe os campos de destino no passo 1 para poder mapear.</p>}
 
             <div className="overflow-x-auto rounded-md border">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50 text-left">
-                  <tr><th className="px-3 py-2 font-medium">Coluna do arquivo</th><th className="px-3 py-2 font-medium">Exemplos</th><th className="px-3 py-2 font-medium">Campo de destino</th></tr>
-                </thead>
-                <tbody>
+              <Table className="w-full text-sm">
+                <TableHeader className="bg-muted/50 text-left">
+                  <tr><TableHead className="px-3 py-2 font-medium">Coluna do arquivo</TableHead><TableHead className="px-3 py-2 font-medium">Exemplos</TableHead><TableHead className="px-3 py-2 font-medium">Campo de destino</TableHead></tr>
+                </TableHeader>
+                <TableBody>
                   {tabela.colunas.map((coluna, i) => (
                     <tr key={coluna} className="border-t">
                       <td className="px-3 py-2 font-medium">{coluna}</td>
@@ -232,8 +233,8 @@ export function ImportadorGenerico({ modulos, modelos }: { modulos: { codigo: st
                       </td>
                     </tr>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
             {problemas.length > 0 && (
               <ul role="alert" className="list-disc space-y-0.5 pl-5 text-sm text-destructive">
@@ -247,14 +248,14 @@ export function ImportadorGenerico({ modulos, modelos }: { modulos: { codigo: st
               <p className="text-sm text-muted-foreground">Ligue ao menos uma coluna a um campo para ver a prévia.</p>
             ) : (
               <div className="overflow-x-auto rounded-md border">
-                <table className="w-full text-sm">
-                  <thead className="bg-muted/50 text-left"><tr>{camposMapeados.map((c) => <th key={c.chave} className="px-3 py-2 font-medium">{c.rotulo}</th>)}</tr></thead>
-                  <tbody>
+                <Table className="w-full text-sm">
+                  <TableHeader className="bg-muted/50 text-left"><tr>{camposMapeados.map((c) => <TableHead key={c.chave} className="px-3 py-2 font-medium">{c.rotulo}</TableHead>)}</tr></TableHeader>
+                  <TableBody>
                     {previa.map((linha, i) => (
                       <tr key={i} className="border-t">{camposMapeados.map((c) => <td key={c.chave} className="px-3 py-2">{linha[c.chave] || "—"}</td>)}</tr>
                     ))}
-                  </tbody>
-                </table>
+                  </TableBody>
+                </Table>
               </div>
             )}
             <p className="text-xs text-muted-foreground">Valores aparecem como vieram no arquivo. A conversão de datas e valores é regra de cada módulo.</p>

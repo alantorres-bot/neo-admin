@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableHead, TableHeader } from "@/components/ui/table";
 import type { ADesdobrar } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { previaDesdobramento } from "@/lib/modulos/financeiro/cartao/desdobramento";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -47,9 +48,9 @@ export function QuadroDesdobrar({ pares, dados, faturaId, podeOperar }: { pares:
               {p.diferencaCentavos !== 0 && <span className="text-muted-foreground"> · arredondamento de {formatarMoeda(p.diferencaCentavos)} na última parcela</span>}
               {p.titulo.emBordero && <Badge variant="outline" className="ml-1 border-red-300 text-red-800">em borderô: desdobre à mão</Badge>}
             </p>
-            <table className="w-full text-sm [&_td]:px-2 [&_td]:py-0.5 [&_th]:px-2">
-              <thead><tr className="text-left text-xs text-muted-foreground"><th>Parcela</th><th>Vencimento</th><th>Documento</th><th className="text-right">Valor</th><th>Complemento</th><th /></tr></thead>
-              <tbody>
+            <Table className="w-full text-sm [&_td]:px-2 [&_td]:py-0.5 [&_th]:px-2">
+              <TableHeader><tr className="text-left text-xs text-muted-foreground"><TableHead>Parcela</TableHead><TableHead>Vencimento</TableHead><TableHead>Documento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Complemento</TableHead><TableHead /></tr></TableHeader>
+              <TableBody>
                 {previa.map((x) => (
                   <tr key={x.parcela}>
                     <td className="tabular-nums">{x.parcela}/{p.parcelas}</td><td className="tabular-nums">{x.vencimento ? formatarData(x.vencimento) : "—"}</td>
@@ -58,8 +59,8 @@ export function QuadroDesdobrar({ pares, dados, faturaId, podeOperar }: { pares:
                     <td className="text-xs text-muted-foreground">{x.parcela === 1 ? `altera o título ${cod(p)}` : "título novo"}</td>
                   </tr>
                 ))}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
             {erro && <ErroDesdobramento d={erro} pode={pode} />}
             {pode && !p.titulo.emBordero && <BotaoDesdobrar faturaId={faturaId!} par={p} />}
           </div>
