@@ -88,6 +88,9 @@ export type MenuArea = {
  * depois os aplicativos externos ativos (na ordem cadastrada). Por padrão, áreas sem nada ativo ficam de fora (cartões do
  * Início); o menu lateral pede `incluirVazias` para mostrar todas as áreas (a vazia abre "Nenhum módulo ainda").
  */
+/** O painel da área (módulo "<area>.painel", ex.: rh.painel) abre a lista de módulos dela; os demais seguem na ordem do código. */
+const painelPrimeiro = (a: Modulo, b: Modulo) => Number(b.codigo.endsWith(".painel")) - Number(a.codigo.endsWith(".painel"));
+
 export function montarMenu(
   areas: readonly Area[], modulos: readonly Modulo[], acesso: Acesso, aplicativos: readonly Aplicativo[] = [], opcoes: { incluirVazias?: boolean } = {},
 ): MenuArea[] {
@@ -110,6 +113,7 @@ export function montarMenu(
       modulos: [
         ...modulos
           .filter((m) => m.area === area.codigo && m.ativo)
+          .sort(painelPrimeiro)
           .map((m): ItemMenu => ({ codigo: m.codigo, nome: m.nome, rota: rotaDoModulo(m.codigo) })),
         ...aplicativos
           .filter((a) => a.area === area.codigo && a.ativo)

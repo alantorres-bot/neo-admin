@@ -50,6 +50,12 @@ describe("menu lateral", () => {
     expect(menu[0].modulos).toEqual([{ codigo: "financeiro.recebiveis", nome: "Recebíveis", rota: "/financeiro/recebiveis" }]);
   });
 
+  it("o painel da área vem primeiro; os demais módulos seguem a ordem do código", () => {
+    const rh = [{ codigo: "rh", nome: "RH / SST", sensivel: true, ordem: 5 }];
+    const mods = ["rh.colaboradores", "rh.folha", "rh.painel", "rh.vale_transporte"].map((codigo) => ({ codigo, area: "rh", nome: codigo, ativo: true }));
+    expect(montarMenu(rh, mods, admin)[0].modulos.map((m) => m.codigo)).toEqual(["rh.painel", "rh.colaboradores", "rh.folha", "rh.vale_transporte"]);
+  });
+
   it("admin_geral vê todas as áreas que têm módulo ativo", () => {
     expect(montarMenu(areas, modulos, admin).map((m) => m.area.codigo)).toEqual(["financeiro", "juridico"]);
   });
