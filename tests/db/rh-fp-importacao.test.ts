@@ -59,4 +59,11 @@ describe("folha: importação da Relação Geral dos Líquidos (0512)", () => {
     await expect(importar(rhOperador, { total: 1, linhas: [{ item_id: itens["658"], valor: 1 }] })).rejects.toThrow(/esta ação não vale/);
     await rpc(rhGestor, `select rh_fp_reabrir($1, 'teste')`, [comp]);
   });
+
+  it("código do escritório não se repete entre ativos da mesma empresa (0513); em empresas diferentes pode", async () => {
+    await expect(q(`update rh_colaboradores set matricula_escritorio = '133' where cod_fornecedor = '662'`)).rejects.toThrow(/código do escritório 133 já está com 658/);
+    await q(`update rh_colaboradores set matricula_escritorio = '133' where cod_fornecedor = '660'`);   // OESTE: pode
+    await q(`update rh_colaboradores set ativo = false where cod_fornecedor = '658'`);
+    await q(`update rh_colaboradores set matricula_escritorio = '133' where cod_fornecedor = '662'`);   // o outro está inativo: pode
+  });
 });

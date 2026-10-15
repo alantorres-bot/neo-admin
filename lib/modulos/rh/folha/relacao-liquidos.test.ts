@@ -57,7 +57,20 @@ describe("Relação Geral dos Líquidos", () => {
     expect(c.casados).toEqual([{ item_id: "a", nome: "A", codigo: "133", atualCentavos: 10000, novoCentavos: 239859 }]);
     expect(c.semCadastro.map((p) => p.codigo)).toEqual(["18", "207"]);   // o 18 da OESTE não serve para a NEO SERVIÇOS
     expect(c.foraDoRelatorio).toEqual([{ item_id: "d", nome: "D", atualCentavos: 5000 }]);
+    expect(c.ambiguos).toEqual([]);
     const ligado = casarRelacao(r.relacao, itens, { "207": "c" });
     expect(ligado.casados.map((x) => [x.item_id, x.codigo])).toEqual([["a", "133"], ["c", "207"]]);
+  });
+
+  it("código repetido na mesma empresa não grava em ninguém (aponta); ligação à mão resolve", () => {
+    const r = interpretarRelacao(relatorio());
+    if (!r.ok) throw new Error(r.erro);
+    const item = (id: string, mat: string): ItemCasavel => ({ id, nome: id.toUpperCase(), empregador: "NEO SERVIÇOS", matricula_escritorio: mat, liquido: 0, ferias_acrescimos: 0, decimo_terceiro: 0 });
+    const itens = [item("x", "207"), item("y", "207"), item("a", "133")];
+    const c = casarRelacao(r.relacao, itens);
+    expect(c.ambiguos).toEqual([{ codigo: "207", nomes: ["X", "Y"] }]);
+    expect(c.casados.map((k) => k.item_id)).toEqual(["a"]);
+    expect(c.semCadastro.map((p) => p.codigo)).toEqual(["18", "207"]);
+    expect(casarRelacao(r.relacao, itens, { "207": "y" }).casados.map((k) => [k.item_id, k.codigo])).toEqual([["a", "133"], ["y", "207"]]);
   });
 });

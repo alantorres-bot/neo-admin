@@ -16,7 +16,7 @@ const SEM_PERMISSAO = "Somente operador do RH (ou acima) importa a folha do escr
 
 export type Previa = {
   arquivo: string; empresa: string; empregador: string; calculo: string; coluna: string; competencia: string; totalCentavos: number; pessoas: number;
-  casados: Casamento["casados"]; semCadastro: Casamento["semCadastro"]; foraDoRelatorio: Casamento["foraDoRelatorio"];
+  casados: Casamento["casados"]; semCadastro: Casamento["semCadastro"]; ambiguos: Casamento["ambiguos"]; foraDoRelatorio: Casamento["foraDoRelatorio"];
   /** Pessoas da folha (mesma empresa) que ainda não casaram: opções para ligar um código à mão. */
   candidatos: { item_id: string; nome: string; matricula: string | null }[];
 };
@@ -57,7 +57,7 @@ export async function previaRelacao(mesId: string, dados: FormData): Promise<{ o
     ok: true,
     previa: {
       arquivo: l.arquivo, empresa: r.empresa, empregador: r.empregador, calculo: r.calculo, coluna: ROTULO_NATUREZA[r.natureza], competencia: r.competencia,
-      totalCentavos: r.totalCentavos, pessoas: r.pessoas.length, casados: c.casados, semCadastro: c.semCadastro, foraDoRelatorio: c.foraDoRelatorio, candidatos: l.candidatos,
+      totalCentavos: r.totalCentavos, pessoas: r.pessoas.length, casados: c.casados, semCadastro: c.semCadastro, ambiguos: c.ambiguos, foraDoRelatorio: c.foraDoRelatorio, candidatos: l.candidatos,
     },
   };
 }

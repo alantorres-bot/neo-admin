@@ -100,6 +100,8 @@ export type ItemCasavel = { id: string; nome: string; empregador: string; matric
 export type Casamento = {
   casados: { item_id: string; nome: string; codigo: string; atualCentavos: number; novoCentavos: number }[];
   semCadastro: PessoaRelacao[];
+  /** Códigos que estão em mais de uma pessoa da mesma empresa no cadastro: não grava em ninguém até corrigir (ou ligar à mão). */
+  ambiguos: { codigo: string; nomes: string[] }[];
   /** Pessoas da mesma empresa com valor nessa natureza que não vieram no relatório (ficam como estão). */
   foraDoRelatorio: { item_id: string; nome: string; atualCentavos: number }[];
 };
@@ -107,13 +109,16 @@ export type Casamento = {
 /** Casa as pessoas do relatório com a folha do mês pelo código do escritório, dentro da empresa. `ligacoes`: código → item escolhido pelo operador. */
 export function casarRelacao(rel: Relacao, itens: readonly ItemCasavel[], ligacoes: Record<string, string> = {}): Casamento {
   const daEmpresa = itens.filter((i) => i.empregador === rel.empregador);
-  const porCodigo = new Map(daEmpresa.filter((i) => i.matricula_escritorio).map((i) => [i.matricula_escritorio!, i]));
+  const porCodigo = new Map<string, ItemCasavel[]>();
+  for (const i of daEmpresa) if (i.matricula_escritorio) porCodigo.set(i.matricula_escritorio, [...(porCodigo.get(i.matricula_escritorio) ?? []), i]);
+  const ambiguos = [...porCodigo].filter(([, l]) => l.length > 1).map(([codigo, l]) => ({ codigo, nomes: l.map((i) => i.nome) }));
   const porId = new Map(itens.map((i) => [i.id, i]));
   const casados: Casamento["casados"] = [];
   const semCadastro: PessoaRelacao[] = [];
   const usados = new Set<string>();
   for (const p of rel.pessoas) {
-    const item = (ligacoes[p.codigo] && porId.get(ligacoes[p.codigo])) || porCodigo.get(p.codigo);
+    const doCodigo = porCodigo.get(p.codigo);
+    const item = (ligacoes[p.codigo] && porId.get(ligacoes[p.codigo])) || (doCodigo?.length === 1 ? doCodigo[0] : undefined);
     if (!item || usados.has(item.id)) { semCadastro.push(p); continue; }
     usados.add(item.id);
     casados.push({ item_id: item.id, nome: item.nome, codigo: p.codigo, atualCentavos: centavos(item[rel.natureza]), novoCentavos: p.centavos });
@@ -121,5 +126,5 @@ export function casarRelacao(rel: Relacao, itens: readonly ItemCasavel[], ligaco
   const foraDoRelatorio = daEmpresa
     .filter((i) => !usados.has(i.id) && i[rel.natureza] > 0)
     .map((i) => ({ item_id: i.id, nome: i.nome, atualCentavos: centavos(i[rel.natureza]) }));
-  return { casados, semCadastro, foraDoRelatorio };
+  return { casados, semCadastro, ambiguos, foraDoRelatorio };
 }

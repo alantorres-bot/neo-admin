@@ -76,6 +76,12 @@ export function ImportarLiquidos({ mesId }: { mesId: string }) {
                 </TableBody>
               </Table>
             )}
+            {previa.ambiguos.length > 0 && (
+              <p role="alert" className="rounded-[3px] border border-destructive/50 p-3 text-destructive">
+                Código do escritório repetido no cadastro (não grava em nenhuma das pessoas até corrigir em Colaboradores, ou ligue abaixo à pessoa certa):{" "}
+                {previa.ambiguos.map((a) => `${a.codigo}: ${a.nomes.join(" e ")}`).join("; ")}.
+              </p>
+            )}
             {previa.semCadastro.length > 0 && (
               <div className="space-y-2 rounded-[3px] border border-amber-600/50 p-3">
                 <p className="font-medium text-amber-800">{previa.semCadastro.length} pessoa(s) do arquivo sem código do escritório na folha. Ligue à pessoa certa (o código fica gravado no cadastro) ou deixe de fora:</p>
