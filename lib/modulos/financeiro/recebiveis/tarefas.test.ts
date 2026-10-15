@@ -166,7 +166,7 @@ describe("totalDaFila", () => {
     const t: Tarefas = {
       ...vazio(),
       anexar: [parcela("A", "1", "2026-10-20"), parcela("B", "2", "2026-10-21")],
-      confirmar: [{ ...base("C"), parcelas: [], totalCentavos: 500_00, vencimentoMaisProximo: "2026-10-20", prazo: "2026-10-16", ligar: false, contato: null, andamento: null, mensagem: null, linkWhatsApp: null }],
+      confirmar: [{ ...base("C"), parcelas: [], totalCentavos: 500_00, vencimentoMaisProximo: "2026-10-20", prazo: "2026-10-16", ligar: false, contato: null, andamento: null, mensagem: null, linkWhatsApp: null, emailDestino: null }],
     };
     expect(totalDaFila(t, "anexar")).toBe(200_00);
     expect(totalDaFila(t, "confirmar")).toBe(500_00);

@@ -227,6 +227,7 @@ export async function carregarTarefas(supabase: Cliente, opcoes: { restrito?: bo
       prazo: prazoConfirmacao(g.vencimentoMaisProximo, hoje, regra.prazoContatoAntesDias), ligar: ligar.has(`${g.contraparteId}|${g.unidade}`), contato: contatoMensagem(g.contraparteId),
       andamento: g.titulos.map((t) => ultimo.get(t.id)).find((a) => a) ?? null,
       mensagem, linkWhatsApp: linkWhatsApp(zap?.whatsapp, mensagem),
+      emailDestino: escolherContato(contatosPorCliente.get(g.contraparteId) ?? [], ["confirmacao", "cobranca", "boleto"], "email")?.email ?? null,
     };
   });
 

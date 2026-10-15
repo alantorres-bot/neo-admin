@@ -2,10 +2,11 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { ExternalLink, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { registrarConfirmacao } from "./acoes";
+import { criarRascunhoConfirmacao, registrarConfirmacao } from "./acoes";
 
 export type ParcelaConfirmacao = { id: string; rotulo: string };
 
@@ -70,5 +71,39 @@ export function RegistrarConfirmacao({ parcelas }: { parcelas: ParcelaConfirmaca
         </Button>
       </div>
     </div>
+  );
+}
+
+/** "Criar rascunho no Gmail" do e-mail de confirmação de pagamento: nunca envia; uma pessoa confere e envia no Gmail. */
+export function CriarRascunhoConfirmacao({ clienteId, unidade, desabilitadoPor, rotulo = "Criar rascunho no Gmail", compacto = false }: {
+  clienteId: string; unidade: "matriz" | "contagem"; desabilitadoPor: string | null; rotulo?: string; compacto?: boolean;
+}) {
+  const [pendente, iniciar] = useTransition();
+  const [link, setLink] = useState<string>();
+
+  function criar() {
+    iniciar(async () => {
+      const r = await criarRascunhoConfirmacao(clienteId, unidade);
+      if (r.ok) {
+        setLink(r.url);
+        toast.success(r.aviso ?? (r.anexos > 0 ? `Rascunho criado no Gmail, com ${r.anexos} ${r.anexos === 1 ? "boleto" : "boletos"} em anexo.` : "Rascunho criado no Gmail."));
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
+
+  return (
+    <span className="inline-flex flex-wrap items-center gap-2">
+      <Button type="button" variant="secondary" size="sm" disabled={pendente || desabilitadoPor !== null} onClick={criar} title={desabilitadoPor ?? undefined}>
+        <Mail /> {pendente ? "Criando rascunho…" : rotulo}
+      </Button>
+      {desabilitadoPor && !compacto && <span className="text-xs text-muted-foreground">{desabilitadoPor}</span>}
+      {link && (
+        <Button variant="outline" size="sm" render={<a href={link} target="_blank" rel="noreferrer" />}>
+          <ExternalLink /> {compacto ? "Abrir no Gmail" : "Abrir o rascunho no Gmail"}
+        </Button>
+      )}
+    </span>
   );
 }

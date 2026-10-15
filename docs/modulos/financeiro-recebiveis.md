@@ -628,3 +628,8 @@ Pedidos do Alan no uso diário (migration `0167_rec_cobranca_ajustes_filial_posi
    para "anexar", "enviar" e "dados" (`filaDaParcela`). Na filial, a pendência "Enviar kit/boleto ao cliente" só abre dentro da
    janela (`rec_janela_boleto_dias()`); o job diário `rec-kits-envio-janela-diario` (06:05 de Cuiabá) abre as que entraram e
    cancela as que saíram. A fila da filial mostra "Pronta para envio · enviar a partir de dd/mm" e não dá a tarefa antes disso.
+5. **E-mail de confirmação de pagamento** (pedido no mesmo dia): botão "E-mail no Gmail" em cada linha de "Confirmar pagamento" e
+   cartão "E-mail pronto" na ficha `/financeiro/cobranca/confirmar/<cliente>`. Texto aprovado pelo Alan (`emailConfirmacao` em
+   `_shared/confirmacao.ts`): mesmo conteúdo do WhatsApp, só as parcelas do vencimento mais próximo, termina em "Atenciosamente,".
+   O boleto de cada parcela vai anexado quando existe (`rec-rascunho-gmail`, modo `confirmacao`). Destinatário: contato com e-mail
+   e finalidade confirmação, cobrança ou boleto. A ficha e a ação leem o grupo de `confirmar/[id]/dados.ts` (mesmas regras).

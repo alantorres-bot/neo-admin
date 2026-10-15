@@ -4,6 +4,7 @@ import {
   criticidadeConfirmacao,
   descricaoPendenciaConfirmacao,
   elegiveis,
+  emailConfirmacao,
   mensagemWhatsAppConfirmacao,
   observacaoDemaisParcelas,
   pendenciasConfirmacaoObsoletas,
@@ -128,6 +129,33 @@ describe("prazo, criticidade e títulos da pendência", () => {
     expect(tituloPendenciaConfirmacao({ nomeCliente: "", vencimentoMaisProximo: "2026-10-08" })).toBe("Confirmar pagamento: cliente — vence 08/10");
     expect(tituloPendenciaLigar({ nomeCliente: "ACME", vencimentoMaisProximo: "2026-10-08" })).toBe("Ligar para confirmar pagamento: ACME — vence 08/10");
     expect(tituloPendenciaConfirmacao({ nomeCliente: "A", vencimentoMaisProximo: "2026-10-08" }).startsWith(PREFIXO_CONFIRMACAO)).toBe(true);
+  });
+});
+
+describe("emailConfirmacao (texto aprovado em 15/10/2026)", () => {
+  it("uma parcela, com o nome do contato, termina em Atenciosamente, sem assinatura", () => {
+    const [g] = agruparPorCliente([t("1", { documento: "1001360U", valorCentavos: 200_000_00, vencimento: "2026-10-16" })], "2026-10-12");
+    expect(emailConfirmacao(g, " Ana ")).toEqual({
+      assunto: "Confirmação de pagamento — vencimento 16/10/2026",
+      corpo: [
+        "Prezado(a) Ana,",
+        "Estamos entrando em contato para confirmar a programação do pagamento da parcela abaixo, com vencimento em 16/10/2026:",
+        "• título 1001360U — R$ 200.000,00",
+        "Poderia nos confirmar que o pagamento está programado para essa data? Caso precise do boleto ou dos dados para PIX/transferência, é só nos avisar.",
+        "Atenciosamente,",
+      ].join("\n\n"),
+    });
+  });
+  it("várias parcelas do mesmo vencimento: lista e total; sem contato, \"Prezados,\"", () => {
+    const [g] = agruparPorCliente([
+      t("1", { documento: "A", valorCentavos: 1_000_00 }),
+      t("2", { documento: "B", parcela: "2", valorCentavos: 2_500_50 }),
+    ], HOJE);
+    const { corpo } = emailConfirmacao(g);
+    expect(corpo.startsWith("Prezados,")).toBe(true);
+    expect(corpo).toContain("das parcelas abaixo");
+    expect(corpo).toContain("• título A — R$ 1.000,00\n• título B/2 — R$ 2.500,50\n\nTotal: R$ 3.500,50");
+    expect(corpo.endsWith("Atenciosamente,")).toBe(true);
   });
 });
 

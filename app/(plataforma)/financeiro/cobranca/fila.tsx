@@ -20,6 +20,7 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criticidadeCobranca, nomeDoMarco, ROTULO_UNIDADE, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import { BotaoCopiar } from "@/app/(plataforma)/financeiro/recebiveis/[id]/componentes";
 import { CriarRascunhoCobranca, JaTemosPosicao } from "./cobrar/[id]/componentes";
+import { CriarRascunhoConfirmacao } from "./confirmar/[id]/componentes";
 import { TabelaParcelas } from "./tabela-parcelas";
 import { tarefasDaRequisicao } from "./dados";
 
@@ -143,6 +144,10 @@ export async function PaginaFila({ filas, caminho, searchParams }: { filas: read
                 <TableCell className="text-right">
                   <span className="inline-flex flex-wrap items-center justify-end gap-1">
                     {atalhosMensagem(i)}
+                    {podeOperar && (
+                      <CriarRascunhoConfirmacao clienteId={i.clienteId} unidade={i.unidade} rotulo="E-mail no Gmail" compacto
+                        desabilitadoPor={i.emailDestino ? null : "Cadastre um contato com e-mail (finalidade confirmação, cobrança ou boleto)."} />
+                    )}
                     <Button size="sm" render={<Link href={`/financeiro/cobranca/confirmar/${i.clienteId}${i.unidade === "contagem" ? "?unidade=contagem" : ""}`} />}>{i.ligar ? "Ligar" : "Confirmar"}</Button>
                   </span>
                 </TableCell>

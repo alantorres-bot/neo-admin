@@ -4,23 +4,20 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { DialogoContato } from "@/app/(plataforma)/configuracoes/contrapartes/dialogos";
 import { Badge } from "@/components/ui/badge";
-import { lerPartes } from "@/lib/modulos/financeiro/akf/parcial";
 import { formatarWhatsapp } from "@/lib/nucleo/documentos";
 import { escolherContato } from "@/supabase/functions/_shared/contatos";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import { FUSO, hojeEmCuiaba } from "@/lib/nucleo/fila";
+import { FUSO } from "@/lib/nucleo/fila";
 import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
-import { carregarRegra } from "@/lib/modulos/financeiro/recebiveis/regra";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import {
-  agruparPorCliente, mensagemWhatsAppConfirmacao, observacaoDemaisParcelas, prazoConfirmacao, type TituloConfirmacao,
-} from "@/supabase/functions/_shared/confirmacao";
+import { emailConfirmacao, mensagemWhatsAppConfirmacao, observacaoDemaisParcelas, prazoConfirmacao } from "@/supabase/functions/_shared/confirmacao";
 import { ROTULO_UNIDADE } from "@/supabase/functions/_shared/cobranca";
 import { BotaoCopiar } from "@/app/(plataforma)/financeiro/recebiveis/[id]/componentes";
-import { RegistrarConfirmacao } from "./componentes";
+import { CriarRascunhoConfirmacao, RegistrarConfirmacao } from "./componentes";
+import { carregarConfirmacao } from "./dados";
 
 export const metadata: Metadata = { title: "Confirmação de pagamento" };
 
@@ -29,8 +26,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const nomeParcela = (t: { documento: string; parcela: string }) => `${t.documento}${t.parcela !== "1" ? `/${t.parcela}` : ""}`;
 const quando = (iso: string) => new Intl.DateTimeFormat("pt-BR", { timeZone: FUSO, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(iso));
 
-type Linha = { id: string; documento: string; parcela: string; vencimento: string; valor: number | string; estagio: string; cedido: boolean; contestado: boolean };
-type Contato = { id: string; nome: string; funcao: string | null; whatsapp: string | null; email: string | null; telefone: string | null; finalidades: string[]; canal_preferido: string | null; ativo: boolean };
 
 export default async function PaginaConfirmacao({ params, searchParams }: PageProps<"/financeiro/cobranca/confirmar/[id]">) {
   const { id } = await params;
@@ -44,32 +39,20 @@ export default async function PaginaConfirmacao({ params, searchParams }: PagePr
   const podeOperar = temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.cobranca", "operador");
 
   const supabase = await criarClienteServidor();
-  const { data: cliente } = await supabase.from("contrapartes").select("nome, codigo_erp").eq("id", id).maybeSingle();
-  if (!cliente) notFound();
-  const nomeCliente = cliente.nome as string;
-
-  const hoje = hojeEmCuiaba();
-  const [{ parametros: regra }, { data: linhasBrutas }, { data: contatosBrutos }, { data: interacoesBrutas }] = await Promise.all([
-    carregarRegra(supabase),
-    supabase.from("rec_titulos").select("id, documento, parcela, vencimento, valor, estagio, cedido, contestado").eq("contraparte_id", id).eq("unidade", unidade)
-      .in("estagio", ["importado", "aguardando_boleto", "boleto_enviado", "confirmado_cliente"]).gte("vencimento", hoje).order("vencimento").limit(200),
-    supabase.from("contatos").select("id, nome, funcao, whatsapp, email, telefone, finalidades, canal_preferido, ativo").eq("contraparte_id", id).eq("ativo", true).order("nome"),
+  const [dados, { data: interacoesBrutas }] = await Promise.all([
+    carregarConfirmacao(supabase, id, unidade),
     supabase.from("interacoes").select("id, referencia_id, canal, tipo, descricao, criado_em, usuario_id").eq("contraparte_id", id).in("modulo", ["financeiro.recebiveis", MODULO])
       .in("tipo", ["confirmacao", "sem_resposta_confirmacao"]).order("criado_em", { ascending: false }).limit(10),
   ]);
-  const linhas = (linhasBrutas ?? []) as Linha[];
-  const contatos = (contatosBrutos ?? []) as Contato[];
+  if (!dados) notFound();
+  const { nomeCliente, hoje, regra, linhas, contatos, grupo } = dados;
+  const cliente = { codigo_erp: dados.codigoErp };
   // Regra única de escolha (`_shared/contatos.ts`): o WhatsApp da mensagem vai para quem tem WhatsApp; o telefone, para ligar.
   const contato = escolherContato(contatos, ["confirmacao", "cobranca"], "whatsapp");
   const contatoLigar = escolherContato(contatos, ["confirmacao", "cobranca"], "telefone");
 
-  // Título com parte antecipada na AKF: a confirmação fala só do que resta com a Neo (migration 0113).
-  const partes = await lerPartes(supabase, linhas.map((l) => l.id));
-  const titulos: TituloConfirmacao[] = linhas.map((l) => ({
-    id: l.id, contraparteId: id, nomeCliente, documento: l.documento, parcela: l.parcela, vencimento: l.vencimento,
-    valorCentavos: partes.get(l.id)?.restanteCentavos ?? Math.round(Number(l.valor) * 100), estagio: l.estagio, cedido: l.cedido, contestado: l.contestado, unidade,
-  }));
-  const [grupo] = agruparPorCliente(titulos, hoje, regra.janelaConfirmacaoDias);
+  const contatoEmail = escolherContato(contatos, ["confirmacao", "cobranca", "boleto"], "email");
+  const email = grupo ? emailConfirmacao(grupo, contatoEmail?.nome ?? "") : null;
   const jaConfirmadas = linhas.filter((l) => l.estagio === "confirmado_cliente" && l.vencimento <= new Date(Date.parse(`${hoje}T00:00:00Z`) + regra.janelaConfirmacaoDias * 86_400_000).toISOString().slice(0, 10));
   const prazoContato = grupo ? prazoConfirmacao(grupo.vencimentoMaisProximo, hoje, regra.prazoContatoAntesDias) : hoje;
   const mensagem = grupo ? mensagemWhatsAppConfirmacao(grupo, contato?.nome ?? "") : null;
@@ -104,6 +87,26 @@ export default async function PaginaConfirmacao({ params, searchParams }: PagePr
             <div className="flex justify-end"><BotaoCopiar texto={mensagem} rotulo="WhatsApp" /></div>
             <pre className="whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 font-sans text-sm">{mensagem}</pre>
             {observacao && <p className="text-xs text-muted-foreground">{observacao}</p>}
+          </CardContent>
+        </Card>
+      )}
+
+      {grupo && email && (
+        <Card size="sm">
+          <CardHeader>
+            <CardTitle>E-mail pronto</CardTitle>
+            <CardDescription>
+              Crie o rascunho no Gmail (o boleto de cada parcela, quando houver, vai anexado) e envie de lá; o sistema não envia.{" "}
+              {contatoEmail ? <>Para <strong>{contatoEmail.nome}</strong> · {contatoEmail.email}.</> : "Nenhum contato deste cliente tem e-mail."}
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <BotaoCopiar texto={email.corpo} rotulo="E-mail" />
+              {podeOperar && <CriarRascunhoConfirmacao clienteId={id} unidade={unidade} desabilitadoPor={contatoEmail?.email ? null : "Cadastre um contato com e-mail."} />}
+            </div>
+            <p className="text-sm"><span className="text-muted-foreground">Assunto:</span> {email.assunto}</p>
+            <pre className="whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 font-sans text-sm">{email.corpo}</pre>
           </CardContent>
         </Card>
       )}

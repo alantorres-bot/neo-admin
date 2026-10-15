@@ -161,6 +161,27 @@ export function mensagemWhatsAppConfirmacao(g: Pick<GrupoConfirmacao, "titulosDo
   ].join("\n\n");
 }
 
+/**
+ * E-mail de confirmação de pagamento (texto aprovado em 15/10/2026): o mesmo conteúdo do WhatsApp, só as parcelas do vencimento
+ * mais próximo. Termina em "Atenciosamente," sem assinatura (regra 3 do projeto). `contato` personaliza a saudação.
+ */
+export function emailConfirmacao(g: Pick<GrupoConfirmacao, "titulosDoFoco" | "vencimentoMaisProximo">, contato = ""): { assunto: string; corpo: string } {
+  const foco = g.titulosDoFoco;
+  const data = dataBr(g.vencimentoMaisProximo);
+  const lista = foco.map((t) => `• título ${nomeTitulo(t)} — ${moedaBr(t.valorCentavos)}`).join("\n");
+  const total = foco.length > 1 ? `\n\nTotal: ${moedaBr(foco.reduce((s, t) => s + t.valorCentavos, 0))}` : "";
+  return {
+    assunto: `Confirmação de pagamento — vencimento ${data}`,
+    corpo: [
+      contato.trim() ? `Prezado(a) ${contato.trim()},` : "Prezados,",
+      `Estamos entrando em contato para confirmar a programação do pagamento ${foco.length === 1 ? "da parcela abaixo" : "das parcelas abaixo"}, com vencimento em ${data}:`,
+      `${lista}${total}`,
+      `Poderia nos confirmar que o pagamento está programado para essa data? Caso precise do boleto ou dos dados para PIX/transferência, é só nos avisar.`,
+      "Atenciosamente,",
+    ].join("\n\n"),
+  };
+}
+
 /** Observação para quem envia (não vai na mensagem): as parcelas de vencimentos seguintes do mesmo cliente. */
 export function observacaoDemaisParcelas(g: Pick<GrupoConfirmacao, "demais">): string {
   if (g.demais.length === 0) return "";

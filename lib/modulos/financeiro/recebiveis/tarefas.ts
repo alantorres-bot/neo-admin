@@ -80,6 +80,8 @@ export type ItemConfirmar = ItemBase & {
   parcelas: ParcelaItem[]; totalCentavos: number; vencimentoMaisProximo: string; prazo: string; ligar: boolean; contato: ContatoSugerido; andamento: Andamento;
   /** Mensagem pronta (WhatsApp) e o link `wa.me` já com o texto, quando o contato tem WhatsApp. O sistema nunca envia. */
   mensagem: string | null; linkWhatsApp: string | null;
+  /** E-mail de destino do rascunho de confirmação no Gmail (contato de confirmação, cobrança ou boleto). */
+  emailDestino: string | null;
 };
 export type ItemCobrar = ItemBase & {
   marco: MarcoCobranca; parcelas: ParcelaItem[]; totalCentavos: number; vencimentoMaisAntigo: string; diasAtraso: number; contato: ContatoSugerido; andamento: Andamento;
