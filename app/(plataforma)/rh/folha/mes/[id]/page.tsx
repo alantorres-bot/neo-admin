@@ -10,7 +10,8 @@ import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { lerImportacoes, lerItens, lerMes, ROTULO_STATUS } from "../../dados";
+import { lerImportacoes, lerItens, lerMes, lerPessoasRecibo, lerRecibos, lerRubricas, lerVigencias, ROTULO_STATUS } from "../../dados";
+import { RecibosDoMes } from "./recibos";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ImportarLiquidos } from "./importar";
 import { GradeFolha } from "./grade";
@@ -27,8 +28,12 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
   const podeOperar = temAcesso(sessao.acesso, "rh", "operador");
   const ehGestor = temAcesso(sessao.acesso, "rh", "gestor");
   const supabase = await criarClienteServidor();
-  const [mes, itens, importacoes] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id), lerImportacoes(supabase, id)]);
+  const [mes, itens, importacoes, pessoas, rubricas, vigencias] = await Promise.all([
+    lerMes(supabase, id), lerItens(supabase, id), lerImportacoes(supabase, id), lerPessoasRecibo(supabase), lerRubricas(supabase), lerVigencias(supabase),
+  ]);
   if (!mes) notFound();
+  const recibos = await lerRecibos(supabase, { competencia: mes.competencia });
+  const naFolha = new Set(itens.map((i) => i.colaborador_id));
   const pix = itens.filter((i) => i.forma_pagamento !== "fopag" && i.valor > 0);
   const temFopag = itens.some((i) => i.forma_pagamento === "fopag" && i.valor > 0);
 
@@ -57,6 +62,9 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
       )}
 
       <GradeFolha mesId={mes.id} editavel={podeOperar && mes.status === "aberta"} itens={itens} />
+
+      <RecibosDoMes mesId={mes.id} competencia={mes.competencia} aberta={mes.status === "aberta"} podeOperar={podeOperar} recibos={recibos}
+        pessoas={pessoas.filter((p) => p.ativo || naFolha.has(p.id))} rubricas={rubricas} vigencias={vigencias} />
 
       {importacoes.length > 0 && (
         <section className="space-y-2">

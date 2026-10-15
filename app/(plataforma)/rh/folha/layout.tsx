@@ -7,6 +7,8 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 
 const ABAS = [
   { href: `${ROTA_FOLHA}/meses`, rotulo: "Meses" },
+  { href: `${ROTA_FOLHA}/recorrentes`, rotulo: "Recibos recorrentes" },
+  { href: `${ROTA_FOLHA}/parametros`, rotulo: "Parâmetros" },
   { href: ROTA_COLABORADORES, rotulo: "Colaboradores" },
 ];
 
@@ -20,7 +22,7 @@ export default async function LayoutFolha({ children }: LayoutProps<"/rh/folha">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Folha de pagamento</h1>
         <p className="text-sm text-muted-foreground">
-          Fechamento mensal da folha (Neo Serviços, Oeste e Neo Formas): líquido, férias/acréscimos, 13º e avulsos por pessoa; conferência; aprovação do gestor; relatório, arquivo do BB e PIX. O cálculo continua com o escritório.
+          Fechamento mensal da folha (Neo Serviços, Oeste e Neo Formas): líquido, férias/acréscimos, 13º e recibos avulsos por pessoa; conferência; aprovação do gestor; relatório, arquivo do BB e PIX. O cálculo continua com o escritório.
         </p>
       </div>
       <Abas abas={ABAS} />

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { FORMAS_PAGAMENTO } from "@/lib/modulos/rh/colaboradores/modulo";
 import { inicioDoMes } from "@/lib/modulos/rh/calendario";
 import { ROTA_FOLHA } from "@/lib/modulos/rh/folha/modulo";
+import { gerarRecorrentes } from "../recibos-acoes";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
@@ -28,15 +29,17 @@ async function chamar(funcao: string, args: Record<string, unknown>, nivel: "ope
   return { ok: true };
 }
 
-export async function abrirMes(mes: string): Promise<{ ok: true; id: string } | { ok: false; erro: string }> {
+export async function abrirMes(mes: string): Promise<{ ok: true; id: string; aviso?: string } | { ok: false; erro: string }> {
   const negado = await exigir("operador");
   if (negado) return { ok: false, erro: negado };
   if (!/^\d{4}-\d{2}$/.test(mes)) return { ok: false, erro: "Escolha o mês da folha." };
   const supabase = await criarClienteServidor();
   const { data, error } = await supabase.rpc("rh_fp_abrir_competencia", { p_competencia: inicioDoMes(mes) });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
+  // Os recibos recorrentes nascem com o mês (modelos ativos de quem está na folha).
+  const rec = await gerarRecorrentes(data as string);
   revalidatePath(ROTA_FOLHA, "layout");
-  return { ok: true, id: data as string };
+  return { ok: true, id: data as string, aviso: rec.ok ? rec.aviso : rec.erro };
 }
 
 export async function atualizarDoCadastro(id: string): Promise<Resultado> {
@@ -62,12 +65,11 @@ const esquemaItem = z.object({
 export type ItemEditado = z.input<typeof esquemaItem>;
 
 /** Grava a grade do mês (só as linhas alteradas). */
-export async function salvarItens(id: string, itens: ItemEditado[], nomes: Record<string, string>): Promise<Resultado> {
+export async function salvarItens(id: string, itens: ItemEditado[]): Promise<Resultado> {
   if (!uuid.safeParse(id).success) return { ok: false, erro: "Mês inválido." };
   if (!itens.length) return { ok: true, aviso: "Nada mudou." };
   const lista = z.array(esquemaItem).max(1000).safeParse(itens);
   if (!lista.success) return { ok: false, erro: "Há valores inválidos na grade (valores em reais, não negativos)." };
-  for (const i of lista.data) if (i.avulso > 0 && !i.avulso_motivo) return { ok: false, erro: `Avulso de ${nomes[i.id] ?? "uma pessoa"}: informe o motivo.` };
   const r = await chamar("rh_fp_salvar_itens", { p_id: id, p_itens: lista.data });
   return r.ok ? { ok: true, aviso: `${lista.data.length} linha(s) gravada(s).` } : r;
 }

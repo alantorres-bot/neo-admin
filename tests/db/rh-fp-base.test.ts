@@ -51,14 +51,13 @@ describe("folha de pagamento: mês e pagamento (0511)", () => {
     expect((await como(db, soFinanceiro, () => q(`select count(*)::int as n from rh_fp_itens`))).rows[0].n).toBe(0);
   });
 
-  it("valor a pagar = líquido + férias/acréscimos + 13º + avulso; avulso exige motivo", async () => {
+  it("valor a pagar = líquido + férias/acréscimos + 13º (+ avulso dos recibos)", async () => {
     await salvar([
       { id: itens["658"], liquido: 2398.59 },
-      { id: itens["662"], liquido: 5112.46, ferias_acrescimos: 1000, decimo_terceiro: 500.005, avulso: 4749.27, avulso_motivo: "complemento" },
+      { id: itens["662"], liquido: 5112.46, ferias_acrescimos: 1000, decimo_terceiro: 500.005, avulso: 4749.27, avulso_motivo: "ignorado: vem dos recibos" },
       { id: itens["660"], liquido: 3775.57, forma_pagamento: "pix_neo_formas" },
     ]);
-    expect(await item("662")).toMatchObject({ decimo_terceiro: "500.01", valor: "11361.74" });
-    await expect(salvar([{ id: itens["658"], liquido: 1, avulso: 10 }])).rejects.toThrow(/check/i);
+    expect(await item("662")).toMatchObject({ decimo_terceiro: "500.01", avulso: "0.00", valor: "6612.47" });   // avulso só pelos recibos (0514)
     await expect(salvar([{ id: itens["658"], liquido: -1 }])).rejects.toThrow(/check/i);
     await expect(rpc(rhOperador, `update rh_fp_itens set liquido = 5 where id = $1`, [itens["658"]])).resolves.toMatchObject({ affectedRows: 0 });
   });

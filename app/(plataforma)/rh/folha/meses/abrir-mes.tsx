@@ -26,7 +26,7 @@ export function AbrirMesFolha({ sugestao }: { sugestao: string | null }) {
   const confirmar = () => iniciar(async () => {
     const r = await abrirMes(mes);
     if (!r.ok) { setErro(r.erro); return; }
-    toast.success("Folha aberta com os colaboradores ativos.");
+    toast.success(`Folha aberta com os colaboradores ativos.${r.aviso ? ` ${r.aviso}` : ""}`);
     setAberto(false);
     router.push(`${ROTA_FOLHA}/mes/${r.id}`);
   });

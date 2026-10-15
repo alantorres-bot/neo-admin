@@ -1,5 +1,6 @@
 // Leituras do módulo Folha de pagamento (RLS de quem chama; nada é gravado aqui).
 import type { FormaPagamento } from "@/lib/modulos/rh/colaboradores/modulo";
+import type { ChaveParametro, Rubrica, TipoRecibo, Vigencia } from "@/lib/modulos/rh/folha/recibos";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
 type Cliente = Awaited<ReturnType<typeof criarClienteServidor>>;
@@ -67,4 +68,65 @@ export async function lerImportacoes(supabase: Cliente, competenciaId: string): 
   const { data: perfis } = ids.length ? await supabase.from("perfis").select("id, nome").in("id", ids) : { data: [] };
   const nome = new Map((perfis ?? []).map((p) => [p.id as string, p.nome as string]));
   return (data ?? []).map((i) => ({ ...(i as Omit<ImportacaoLinha, "total" | "importado_por_nome">), total: Number(i.total), importado_por_nome: i.importado_por ? nome.get(i.importado_por) ?? null : null }));
+}
+
+// ---------------------------------------------------------------- recibos avulsos (0514)
+
+
+export async function lerRubricas(supabase: Cliente, soAtivas = true): Promise<(Rubrica & { ordem: number; ativo: boolean })[]> {
+  let q = supabase.from("rh_fp_rubricas").select("codigo, descricao, natureza, forma, parametro, pct_campo, ordem, ativo").order("ordem");
+  if (soAtivas) q = q.eq("ativo", true);
+  const { data } = await q;
+  return (data ?? []) as (Rubrica & { ordem: number; ativo: boolean })[];
+}
+
+export async function lerVigencias(supabase: Cliente): Promise<Vigencia[]> {
+  const { data } = await supabase.from("rh_parametros").select("chave, valor, vigente_desde").order("chave").order("vigente_desde");
+  return (data ?? []).map((v) => ({ chave: v.chave as ChaveParametro, valor: Number(v.valor), vigente_desde: v.vigente_desde as string }));
+}
+
+export type PessoaRecibo = { id: string; cod_fornecedor: string; nome: string; empregador: string; cpf: string | null; funcao: string | null; salario: number | null; insalubridade_pct: number; adicional_noturno_pct: number; ativo: boolean };
+
+export async function lerPessoasRecibo(supabase: Cliente): Promise<PessoaRecibo[]> {
+  const { data } = await supabase.from("rh_colaboradores").select("id, cod_fornecedor, nome, empregador, cpf, funcao, salario, insalubridade_pct, adicional_noturno_pct, ativo").order("nome");
+  return (data ?? []).map((p) => ({ ...(p as PessoaRecibo), salario: p.salario === null ? null : Number(p.salario) }));
+}
+
+export type LinhaRecibo = { ordem: number; rubrica: string; descricao: string; natureza: "provento" | "desconto"; referencia: number; valor: number };
+export type Recibo = {
+  id: string; competencia: string; colaborador_id: string; tipo: TipoRecibo; salario: number | null; funcao: string | null; insalubridade_pct: number; adicional_noturno_pct: number;
+  periodo_inicio: string | null; periodo_fim: string | null; mensagem: string | null; proventos: number; descontos: number; total: number;
+  cancelado: boolean; cancelado_motivo: string | null; criado_em: string; linhas: LinhaRecibo[];
+  nome: string; cod_fornecedor: string; cpf: string | null; empregador: string;
+};
+
+/** Recibos de uma competência (ou um recibo pelo id), com linhas e dados da pessoa. */
+export async function lerRecibos(supabase: Cliente, filtro: { competencia?: string; id?: string; incluirCancelados?: boolean }): Promise<Recibo[]> {
+  let q = supabase.from("rh_fp_recibos").select("id, competencia, colaborador_id, tipo, salario, funcao, insalubridade_pct, adicional_noturno_pct, periodo_inicio, periodo_fim, mensagem, proventos, descontos, total, cancelado, cancelado_motivo, criado_em").order("criado_em");
+  if (filtro.competencia) q = q.eq("competencia", filtro.competencia);
+  if (filtro.id) q = q.eq("id", filtro.id);
+  if (!filtro.incluirCancelados) q = q.eq("cancelado", false);
+  const { data } = await q;
+  const recibos = data ?? [];
+  if (!recibos.length) return [];
+  const [{ data: linhas }, { data: pessoas }] = await Promise.all([
+    supabase.from("rh_fp_recibo_linhas").select("recibo_id, ordem, rubrica, descricao, natureza, referencia, valor").in("recibo_id", recibos.map((r) => r.id)).order("ordem"),
+    supabase.from("rh_colaboradores").select("id, nome, cod_fornecedor, cpf, empregador").in("id", [...new Set(recibos.map((r) => r.colaborador_id))]),
+  ]);
+  const pessoa = new Map((pessoas ?? []).map((p) => [p.id as string, p]));
+  return recibos.map((r) => {
+    const p = pessoa.get(r.colaborador_id as string);
+    return {
+      ...(r as Omit<Recibo, "linhas" | "nome" | "cod_fornecedor" | "cpf" | "empregador">),
+      salario: r.salario === null ? null : Number(r.salario), proventos: Number(r.proventos), descontos: Number(r.descontos), total: Number(r.total),
+      linhas: (linhas ?? []).filter((l) => l.recibo_id === r.id).map((l) => ({ ...(l as LinhaRecibo), referencia: Number(l.referencia), valor: Number(l.valor) })),
+      nome: (p?.nome as string) ?? "", cod_fornecedor: (p?.cod_fornecedor as string) ?? "", cpf: (p?.cpf as string | null) ?? null, empregador: (p?.empregador as string) ?? "",
+    } as Recibo;
+  }).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+}
+
+export type Modelo = { colaborador_id: string; linhas: { rubrica: string; referencia: number; valor?: number | null }[]; ativo: boolean };
+export async function lerModelos(supabase: Cliente): Promise<Modelo[]> {
+  const { data } = await supabase.from("rh_fp_recibo_modelos").select("colaborador_id, linhas, ativo");
+  return (data ?? []) as Modelo[];
 }

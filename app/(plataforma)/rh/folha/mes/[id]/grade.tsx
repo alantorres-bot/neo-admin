@@ -57,7 +57,7 @@ export function GradeFolha({ mesId, editavel, itens }: { mesId: string; editavel
     const envio: ItemEditado[] = alteradas.map(({ i, e, v }) => ({
       id: i.id, forma_pagamento: e.forma_pagamento, ...v, avulso_motivo: e.avulso_motivo.trim() || null, observacao: e.observacao.trim() || null,
     }));
-    const r = await salvarItens(mesId, envio, Object.fromEntries(alteradas.map((l) => [l.i.id, l.i.nome])));
+    const r = await salvarItens(mesId, envio);
     if (!r.ok) { toast.error(r.erro); return; }
     toast.success(r.aviso ?? "Gravado.");
     setMudancas({});
@@ -89,7 +89,7 @@ export function GradeFolha({ mesId, editavel, itens }: { mesId: string; editavel
           <TableRow>
             <TableHead>Nº</TableHead><TableHead>Funcionário</TableHead><TableHead>Empresa</TableHead><TableHead>Pagamento</TableHead>
             <TableHead className="text-right">Líquido</TableHead><TableHead className="text-right">Férias/acréscimos</TableHead><TableHead className="text-right">13º</TableHead>
-            <TableHead className="text-right">Avulso</TableHead><TableHead>Motivo do avulso</TableHead><TableHead className="text-right">A pagar</TableHead>
+            <TableHead className="text-right">Avulso (recibos)</TableHead><TableHead>Recibos</TableHead><TableHead className="text-right">A pagar</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -107,17 +107,15 @@ export function GradeFolha({ mesId, editavel, itens }: { mesId: string; editavel
               </TableCell>
               {NATUREZAS.map((n) => (
                 <TableCell key={n} className="text-right tabular-nums">
-                  {editavel ? (
+                  {editavel && n !== "avulso" ? (
                     <Input aria-label={`${n} de ${i.nome}`} inputMode="decimal" value={e[n]} onChange={(x) => alterar(i, { [n]: x.target.value })}
                       aria-invalid={Number.isNaN(lerReais(e[n]))} className={DINHEIRO} />
                   ) : (i[n] ? reais(Math.round(i[n] * 100)) : "")}
                 </TableCell>
               ))}
               <TableCell>
-                {editavel ? (
-                  <Input aria-label={`Motivo do avulso de ${i.nome}`} value={e.avulso_motivo} maxLength={200} onChange={(x) => alterar(i, { avulso_motivo: x.target.value })}
-                    placeholder={lerReais(e.avulso) > 0 ? "obrigatório" : ""} className="h-7 w-40 px-1 text-xs" />
-                ) : <span className="text-xs">{i.avulso_motivo ?? ""}</span>}
+                {/* avulso e motivo vêm dos recibos avulsos do mês (0514) */}
+                <span className="text-xs">{i.avulso_motivo ?? ""}</span>
               </TableCell>
               <TableCell className="text-right font-medium tabular-nums">{invalido ? "—" : reais(centavos)}</TableCell>
             </TableRow>

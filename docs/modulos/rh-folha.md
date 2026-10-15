@@ -110,8 +110,10 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
    - Cada geração fica registrada.
 8. **PIX:** lista por pagadora (Neo Formas / Neo Serviços), cada linha marcada como "paga". O mês só vai para "pago" com o arquivo
    do BB gerado e todos os PIX marcados.
-9. **Avulsos** (decisão de 14/10/2026): lançados no mês com pessoa, valor, motivo e forma.
-   - Aparecem **separados** da folha do escritório no relatório e nos totais.
+9. **Avulsos** (decisões de 14 e 15/10/2026): o valor vem **só dos recibos avulsos** do mês (capítulo "Recibos avulsos").
+   - O avulso da pessoa na folha é a soma dos recibos dela no mês, e o motivo é montado pelos recibos. Na grade, a coluna fica
+     travada.
+   - Os avulsos aparecem **separados** da folha do escritório no relatório e nos totais.
    - Não entram nas conferências C1–C5.
    - Entram no arquivo do BB, no PIX e nos títulos, conforme a forma de pagamento.
 10. **Títulos no Consistem** (decisão de 14/10/2026). Nada sai sozinho: a chave liga/desliga começa desligada e o operador confere
@@ -198,6 +200,49 @@ Regra 12 (leitura do .xls do escritório): o arquivo é um Excel 97 válido por 
 errado. O Neo Admin lê os registros em sequência, sem depender desse índice, e confere a soma com o "Total da Empresa" antes de
 aceitar.
 
+## Recibos avulsos (padronizados em 15/10/2026)
+Antes, o RH fazia os recibos à mão em .xls (pasta `AVULSO`); foram analisados os 76 de jan–set/2026.
+
+**Tipos**
+- **Recorrente:** modelo por pessoa (rubricas e referências). O recibo nasce ao abrir a folha do mês, ou pelo botão "Gerar
+  recorrentes", com o salário do cadastro. Ex.: salário por fora, horas normais + assiduidade, reembolso IRRF digitado no mês.
+- **Compra de férias:** pessoa e período (dias corridos), com **um recibo por mês** tocado pelo período e **sem 1/3** (o 1/3 é
+  rubrica opcional). As linhas são salário – férias + assiduidade + insalubridade e adicional noturno de quem tem.
+- **Início antes do registro:** pessoa e período, com dias normais + assiduidade (+ insalubridade/noturno).
+- **Eventual:** linhas livres do catálogo (bonificação, diferença de salário, gratificação, descontos de lote/VT…).
+
+**Cálculo** (`lib/modulos/rh/folha/recibos.ts`): cada linha é arredondada em centavos e o líquido é proventos − descontos.
+- `dias` = salário ÷ 30 × dias.
+- `horas` = salário ÷ 220 × horas (220 = mês cheio).
+- **Assiduidade** = valor mensal da CCT ÷ 30 × dias: R$ 120 até 05/2026, **R$ 185 desde 06/2026**.
+- **Insalubridade** = % da pessoa × **salário mínimo** ÷ 30 × dias. O salário mínimo é R$ 1.621,00 desde 01/2026.
+- **Adicional noturno** = % da pessoa × salário ÷ 30 × dias.
+- **Fração do salário** = salário × ref (1/3 férias; bonificação 5%).
+- **Valor** = digitado.
+- Assiduidade e salário mínimo ficam nos **Parâmetros**, com vigência: cada recibo usa o valor do mês dele.
+- O percentual de insalubridade (0/10/20/40) e o de adicional noturno ficam no cadastro da pessoa, junto com salário e função.
+  O assistente oferece gravá-los.
+
+**Na folha** (migration 0514):
+- `rh_fp_gravar_recibo` grava e soma no avulso da pessoa.
+- `rh_fp_cancelar_recibo` cancela com motivo; nada se apaga. Corrigir um recibo é substituí-lo: o antigo fica cancelado.
+- Recibo de mês ainda não aberto entra quando o mês abrir.
+- Folha conferida ou aprovada não aceita mudança de recibo; o gestor reabre a folha.
+
+**Impressão:** modelo novo, uma folha A4 por recibo com duas vias (empregador e empregado) e linha de corte. Tem:
+- cabeçalho da empresa;
+- quadro da pessoa: Nº, nome, função, CPF, salário e período;
+- rubricas com código, referência, proventos e descontos;
+- líquido em destaque, com o valor por extenso;
+- mensagem, declaração, data e assinatura.
+
+Há o recibo avulso (`/imprimir/rh/folha/recibo/<id>`) e todos os do mês (`/imprimir/rh/folha/recibos/<mês>`).
+
+**Carga de 09/2026:** os 9 recibos da Neo Serviços (4 recorrentes, 3 compras de férias, 2 inícios antes do registro) e os 4
+modelos recorrentes.
+- Conferidos com os .xls: 7 iguais e 2 com R$ 0,01 a menos (Rubens e Thiago), porque o .xls não arredondava cada linha.
+- Os recibos de "Roberto Felicio" (outro empregador) ficaram fora.
+
 ## Fases (proposta)
 - **F1:** cadastro único do RH (migra o VT, sem mudar o uso do VT). **Entregue em 14/10/2026.**
   - Migration `0510_rh_colaboradores.sql`: `rh_vt_colaboradores` vira `rh_colaboradores`, com os mesmos registros e ids, e com
@@ -238,6 +283,7 @@ aceitar.
 - **F3:** guias e conferências C1–C6.
 - **F4:** títulos no Consistem (funcionários e guias).
 - **F5:** documentos e checklist com prazos na Fila do dia.
+- **F7 — recibos avulsos padronizados:** entregue em 15/10/2026 (capítulo acima; migration 0514).
 - **F6:** importação da Relação Geral dos Líquidos (.xls). As amostras de setembro/2026 chegaram em 14/10/2026; esta fase pode
   vir antes da F3. Em 14/10/2026 a matrícula do escritório do cadastro foi corrigida a partir delas: na F1 ela tinha vindo da
   guia do FGTS (eSocial).
