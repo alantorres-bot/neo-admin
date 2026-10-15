@@ -78,7 +78,7 @@ Regras:
 ## 6. Telas
 
 1. **Fila do dia** (inicial): boletos faltando, mensagens aguardando aprovação, clientes sem resposta, promessas vencendo, acordos em risco. Ação direta em cada item.
-2. **Painel:** aging (a vencer, 1–15, 16–30, 31–60, +60), inadimplência %, previsão de recebimento por semana, top 10 devedores. Filtros por empresa, cliente, contrato.
+2. **Painel:** aging (a vencer, 1–15, 16–30, 31–60, +60), inadimplência %, previsão de recebimento por semana, top 10 devedores. Filtros por empresa, cliente, contrato. **Feito** (seção 39), sem o filtro por contrato.
 3. **Carteira:** lista de títulos com estágio, vencimento, valor, valor atualizado, último contato; ações em lote.
 4. **Ficha do cliente:** contatos, títulos, histórico de mensagens/interações, promessas, acordos, contratos.
 5. **Boletos:** upload em lote; extrair linha digitável, valor e vencimento do PDF e sugerir o título correspondente. **Feito** em Cobrança > Boletos a anexar > "Anexar boletos em lote" (seção 37).
@@ -131,7 +131,7 @@ Decisão do usuário (06/10/2026): usar a API REST do Consistem, a mesma já em 
 2. **Fase 2 — Carteira:** sincronização pela API (Edge Function `rec-sincronizar-consistem`, **feita**), tela Carteira e botão "Sincronizar agora" (**feitos**, `app/(plataforma)/financeiro/recebiveis`), agendamento (pg_cron, **feito**; a cada 30 minutos em dias úteis desde a 0166), entrada do título pela NF e pendência "Anexar boleto" (**feitas**, seção 14), anexo do boleto, mensagem pronta e registro do envio (**feitos**, seção 15), rascunho no Gmail (código pronto, falta autorizar a caixa, seção 16), confirmação de pagamento (**feita**, seção 17), importação de títulos pagos, contratos (percentuais de multa e juros por cliente) e testes de encargos.
 3. **Fase 3 — Boletos:** upload, leitura do PDF, vínculo com títulos (**feita**, seção 37).
 4. **Fase 4 — Régua e e-mail:** modelos, motor da régua, Fila do dia, rascunhos no Gmail.
-5. **Fase 5 — Painel e ficha do cliente.**
+5. **Fase 5 — Painel e ficha do cliente.** O Painel está feito (seção 39).
 6. **Fase 6 — Renegociação.**
 7. **Fase 7 — WhatsApp** (depende de número e modelos aprovados pela Meta).
 8. **Fase 8 — Carga real e testes com 3 a 5 clientes.**
@@ -633,3 +633,15 @@ Pedidos do Alan no uso diário (migration `0167_rec_cobranca_ajustes_filial_posi
    `_shared/confirmacao.ts`): mesmo conteúdo do WhatsApp, só as parcelas do vencimento mais próximo, termina em "Atenciosamente,".
    O boleto de cada parcela vai anexado quando existe (`rec-rascunho-gmail`, modo `confirmacao`). Destinatário: contato com e-mail
    e finalidade confirmação, cobrança ou boleto. A ficha e a ação leem o grupo de `confirmar/[id]/dados.ts` (mesmas regras).
+
+## 39. Painel (Fase 5, 15/10/2026)
+
+Aba **Painel** em Financeiro > Recebíveis (`/financeiro/recebiveis/painel`), entre Carteira e Fila do dia. Só leitura, com a RLS de quem vê; o usuário restrito à unidade vê só a Filial Contagem. Desenho aprovado: modelo "clássico" (15/10/2026). Sem migration.
+
+- **Filtros** (os da Carteira): unidade (Todas · Matriz · Filial Contagem, com a quantidade), cliente (nome, código ou CNPJ) e **"Ocultar vencidos há mais de 90 dias"**, que é a mesma preferência salva da Carteira (`?ocultar90=1|0` vale só para a visita). O filtro por contrato da seção 6 ficou de fora: os títulos não têm contrato.
+- **Indicadores:** carteira em aberto (com Matriz e Filial em "Todas"); a vencer, com o cedido à AKF; vencido, com o que passa de 60 dias; **inadimplência** = vencido ÷ carteira (com Matriz e Filial); **recebido em 30 dias** = títulos com `consistem_pago_em` nos últimos 30 dias, pelo `consistem_valor_pago` (sem ele, o valor do título).
+- **Aging:** barra e tabela das 5 faixas (quantidade, valor, %, **cedido à AKF**); a faixa abre a Carteira filtrada. Os totais vêm de `resumirCarteira`, os mesmos da Carteira.
+- **Previsão de recebimento:** 8 semanas (segunda a domingo, a 1ª é a de hoje no fuso de Cuiabá), pelo vencimento dos títulos **a vencer**, separando **caixa da Neo** (não cedido) e **AKF** (cedido). Título cedido de cliente que não paga à AKF conta como AKF: a Neo recebe e repassa no dia seguinte.
+- **10 maiores devedores:** pelo valor vencido do cliente; títulos vencidos, maior atraso, parte do vencido e selo AKF quando algum título vencido está cedido. O nome abre a ficha do cliente.
+- **Regras puras:** `lib/modulos/financeiro/recebiveis/painel.ts` (`montarPainel`, `somarRecebido`, `segundaDaSemana`, `inadimplencia`), com testes em `painel.test.ts`.
+- **Conferido em 15/10/2026:** mesmos números do desenho (carteira R$ 12,7 mi, inadimplência 53%, previsão de R$ 4.578.058,28 em 61 títulos, 10 maiores devedores = 94% do vencido).
