@@ -171,6 +171,7 @@ export const ROTULO_ANDAMENTO: Record<string, string> = {
   sem_resposta_confirmacao: "Sem resposta à confirmação",
   cobranca: "Cobrança enviada",
   promessa: "Cliente prometeu pagar",
+  posicao: "Posição do cliente",
   contestacao: "Cliente contestou",
 };
 

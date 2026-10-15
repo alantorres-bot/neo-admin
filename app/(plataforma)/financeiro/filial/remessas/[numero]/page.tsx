@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MODULO_FILIAL, ROTA_FILIAL } from "@/lib/modulos/financeiro/filial/arquivos";
-import { ROTULO_ESTAGIO_FILA, ROTULO_URGENCIA, textoVencimento, type Papel } from "@/lib/modulos/financeiro/filial/estagios";
+import { rotuloSituacao, ROTULO_URGENCIA, textoVencimento, type Papel } from "@/lib/modulos/financeiro/filial/estagios";
 import { divergencias, type ParcelaConsistem } from "@/lib/modulos/financeiro/filial/remessa";
 import { emCentavos } from "@/lib/modulos/financeiro/recebiveis/carteira";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -105,7 +105,7 @@ export default async function PaginaRemessa({ params, searchParams }: PageProps<
                       : l.parcelasNota.map((x) => <div key={x.vencimento}>{formatarData(x.vencimento)} · {formatarMoeda(x.valorCentavos)}</div>)}
                   </TableCell>
                   <TableCell className="text-[12px]">
-                    <Badge variant={l.situacao.estagio === "cancelada" ? "outline" : "secondary"}>{ROTULO_ESTAGIO_FILA[l.situacao.estagio]}</Badge>
+                    <Badge variant={l.situacao.estagio === "cancelada" ? "outline" : "secondary"}>{rotuloSituacao(l.situacao)}</Badge>
                     {tarefas.map((t) => <div key={t} className="text-muted-foreground">{t}</div>)}
                   </TableCell>
                   <TableCell className="space-x-2 text-[12px]">
@@ -132,7 +132,7 @@ export default async function PaginaRemessa({ params, searchParams }: PageProps<
       {nf && (
         <PainelLateral
           titulo={kitAberto ? `NF ${Number(kitAberto.nota)} — ${kitAberto.cliente}` : "NF"}
-          descricao={kitAberto ? `${ROTULO_ESTAGIO_FILA[kitAberto.situacao.estagio]} · remessa nº ${r.numero}` : undefined}
+          descricao={kitAberto ? `${rotuloSituacao(kitAberto.situacao)} · remessa nº ${r.numero}` : undefined}
           fecharHref={aqui}>
           <ConteudoKit kitId={nf} sessao={sessao} papel={papel} podeOperar={podeOperar} />
         </PainelLateral>

@@ -4,7 +4,7 @@
 import type { GrupoCobranca, MarcoCobranca, Unidade } from "../../../../supabase/functions/_shared/cobranca";
 import { dentroDaJanelaDoBoleto, prazoBoleto } from "../../../../supabase/functions/_shared/consistem-receber";
 
-export const FILAS = ["anexar", "enviar", "dados", "confirmar", "cobrar", "baixa", "contato"] as const;
+export const FILAS = ["anexar", "enviar", "dados", "confirmar", "cobrar", "baixa", "contato", "confirmados"] as const;
 export type Fila = (typeof FILAS)[number];
 export const ehFila = (v: string): v is Fila => (FILAS as readonly string[]).includes(v);
 
@@ -16,6 +16,7 @@ export const ROTULO_FILA: Record<Fila, string> = {
   cobrar: "Cobrar",
   baixa: "Registrar baixa",
   contato: "Cadastrar contato",
+  confirmados: "Confirmados",
 };
 
 export const EXPLICACAO_FILA: Record<Fila, string> = {
@@ -26,6 +27,7 @@ export const EXPLICACAO_FILA: Record<Fila, string> = {
   cobrar: "Parcelas vencidas na régua de cobrança (D+1, D+5 e D+10, vencimentos a partir de 06/10/2026), por cliente e marco. Só aparece o que ainda não foi cobrado naquele marco.",
   baixa: "Títulos que saíram da lista de contas a receber em aberto do Consistem: confira e dê a baixa (pago ou cancelado).",
   contato: "Clientes de Cuiabá (Matriz) com título a vencer ou vencido há menos de 60 dias e sem nenhum contato cadastrado.",
+  confirmados: "Parcelas com posição do cliente: confirmou o pagamento (a vencer) ou deu uma data (promessa ou posição na cobrança). Saem quando o pagamento é baixado; a posição sem baixa no prazo volta para Cobrar. Só consulta.",
 };
 
 /** A explicação da fila com os números da regra em vigor (janelas e data de corte editáveis em Cobrança > Regra de cobrança). */
@@ -35,6 +37,12 @@ export function explicacaoDaFila(
   const dia = (n: number) => `${n} ${n === 1 ? "dia" : "dias"}`;
   if (fila === "anexar") {
     return `Parcelas pagas por boleto, sem o PDF, que vencem em ${dia(regra.janelaBoletoDias)} ou menos (antes disso ainda não é hora de anexar). Anexe aqui mesmo; se o cliente paga por transferência, use “Pago por transferência”.`;
+  }
+  if (fila === "enviar") {
+    return `O boleto já está anexado e a parcela vence em ${dia(regra.janelaBoletoDias)} ou menos, mas ainda não foi enviado ao cliente. Abra a ficha para criar o rascunho no Gmail ou copiar a mensagem; depois marque como enviado. Filial Contagem: o envio é da filial.`;
+  }
+  if (fila === "dados") {
+    return `Parcelas pagas por transferência (PIX/TED) que vencem em ${dia(regra.janelaBoletoDias)} ou menos: falta enviar ao cliente os dados bancários da Neo. Abra a ficha para a mensagem pronta. Filial Contagem: o envio é da filial.`;
   }
   if (fila === "confirmar") {
     return `Clientes com parcelas vencendo nos próximos ${dia(regra.janelaConfirmacaoDias)} e soma a partir do valor mínimo: contatar para confirmar a programação do pagamento. “Ligar” = o cliente não respondeu à mensagem.`;
@@ -76,6 +84,19 @@ export type ItemConfirmar = ItemBase & {
 export type ItemCobrar = ItemBase & {
   marco: MarcoCobranca; parcelas: ParcelaItem[]; totalCentavos: number; vencimentoMaisAntigo: string; diasAtraso: number; contato: ContatoSugerido; andamento: Andamento;
   mensagem: string | null; linkWhatsApp: string | null;
+  /** O marco tem e-mail na régua e o e-mail de destino (contato de cobrança/boleto), para o rascunho no Gmail direto da fila. */
+  marcoTemEmail: boolean; emailDestino: string | null;
+  /** Havia posição/promessa do cliente e o prazo passou sem baixa: o último dia do prazo (o título voltou para a cobrança). */
+  posicaoVencidaEm: string | null;
+};
+/** Parcela com posição do cliente (confirmou, prometeu ou deu posição na cobrança), acompanhada até a baixa. */
+export type ItemConfirmado = ItemBase & ParcelaItem & {
+  origem: "confirmou" | "promessa" | "posicao";
+  /** Data que o cliente deu (promessa/posição); na confirmação, o próprio vencimento. */
+  dataInformada: string;
+  /** Até quando a cobrança fica pausada (promessa/posição). */
+  pausadaAte: string | null;
+  observacao: string | null; registradoEm: string | null; possivelBaixa: boolean; diasAtraso: number;
 };
 export type ItemBaixa = ItemBase & ParcelaItem & { diasAtraso: number; pagoEm: string | null; valorPagoCentavos: number | null };
 export type ItemContato = ItemBase & { titulos: number; totalCentavos: number; menorVencimento: string; maiorAtraso: number };
@@ -83,7 +104,7 @@ export type ItemContato = ItemBase & { titulos: number; totalCentavos: number; m
 export type Tarefas = {
   hoje: string;
   anexar: ItemParcela[]; enviar: ItemParcela[]; dados: ItemParcela[];
-  confirmar: ItemConfirmar[]; cobrar: ItemCobrar[]; baixa: ItemBaixa[]; contato: ItemContato[];
+  confirmar: ItemConfirmar[]; cobrar: ItemCobrar[]; baixa: ItemBaixa[]; contato: ItemContato[]; confirmados: ItemConfirmado[];
 };
 
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -98,15 +119,16 @@ export const montarTextoBusca = (cliente: string, codigo: string | null, documen
   normalizarBusca([cliente, codigo ?? "", ...documentos].join(" "));
 
 /**
- * Em qual fila de boleto/dados a parcela está? Só parcela aguardando boleto entra: com PDF vai para "enviar", sem PDF para "anexar";
- * quem paga por transferência não tem boleto e vai para "dados de pagamento".
+ * Em qual fila de boleto/dados a parcela está? Só parcela aguardando boleto e dentro da janela entra: com PDF vai para "enviar", sem
+ * PDF para "anexar"; quem paga por transferência não tem boleto e vai para "dados de pagamento".
  */
 export function filaDaParcela(t: { estagio: string; forma: string; temBoleto: boolean; vencimento?: string; hoje?: string; janelaBoletoDias?: number }): "anexar" | "enviar" | "dados" | null {
   if (t.estagio !== "aguardando_boleto") return null;
+  // Anexar, enviar e dados só viram tarefa dentro da janela (30 dias, editável na Regra de cobrança; a mesma regra da pendência da
+  // sincronização). Desde 15/10/2026 vale também para o envio: boleto anexado cedo não entra em "a enviar" meses antes do vencimento.
+  if (t.vencimento && t.hoje && !dentroDaJanelaDoBoleto(t.vencimento, t.hoje, t.janelaBoletoDias)) return null;
   if (t.forma === "transferencia") return "dados";
   if (t.temBoleto) return "enviar";
-  // "Anexar boleto" só vira tarefa dentro da janela (30 dias, editável na Regra de cobrança; a mesma regra da pendência da sincronização).
-  if (t.vencimento && t.hoje && !dentroDaJanelaDoBoleto(t.vencimento, t.hoje, t.janelaBoletoDias)) return null;
   return "anexar";
 }
 
@@ -154,20 +176,24 @@ export function aplicarFiltros(t: Tarefas, f: Filtros): Tarefas {
     hoje: t.hoje,
     anexar: t.anexar.filter((i) => passa(i, f)), enviar: t.enviar.filter((i) => passa(i, f)), dados: t.dados.filter((i) => passa(i, f)),
     confirmar: t.confirmar.filter((i) => passa(i, f)), cobrar: t.cobrar.filter((i) => passa(i, f)),
-    baixa: t.baixa.filter((i) => passa(i, f)), contato: t.contato.filter((i) => passa(i, f)),
+    baixa: t.baixa.filter((i) => passa(i, f)), contato: t.contato.filter((i) => passa(i, f)), confirmados: t.confirmados.filter((i) => passa(i, f)),
   };
 }
 
 export const contarFilas = (t: Tarefas): Record<Fila, number> => ({
   anexar: t.anexar.length, enviar: t.enviar.length, dados: t.dados.length, confirmar: t.confirmar.length, cobrar: t.cobrar.length,
-  baixa: t.baixa.length, contato: t.contato.length,
+  baixa: t.baixa.length, contato: t.contato.length, confirmados: t.confirmados.length,
 });
 
-export const totalDeTarefas = (t: Tarefas): number => Object.values(contarFilas(t)).reduce((s, n) => s + n, 0);
+/** Filas só de consulta: não contam como tarefa nem decidem a aba de abertura. */
+export const FILAS_CONSULTA: readonly Fila[] = ["confirmados"];
+
+export const totalDeTarefas = (t: Tarefas): number =>
+  Object.entries(contarFilas(t)).reduce((s, [f, n]) => (FILAS_CONSULTA.includes(f as Fila) ? s : s + n), 0);
 
 /** A aba que abre sem escolha: a primeira com itens (na ordem das abas); se todas vazias, a primeira. */
 export function abaInicial(contagens: Record<Fila, number>): Fila {
-  return FILAS.find((f) => contagens[f] > 0) ?? FILAS[0];
+  return FILAS.find((f) => !FILAS_CONSULTA.includes(f) && contagens[f] > 0) ?? FILAS[0];
 }
 
 // ---------------------------------------------------------------------------------------------------------------------------
@@ -228,6 +254,7 @@ export function totalDaFila(t: Tarefas, fila: Fila): number {
     case "confirmar": return somaTotal(t.confirmar);
     case "cobrar": return somaTotal(t.cobrar);
     case "contato": return somaTotal(t.contato);
+    case "confirmados": return soma(t.confirmados);
   }
 }
 

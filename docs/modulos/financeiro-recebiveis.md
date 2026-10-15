@@ -600,3 +600,31 @@ Tela **Cobrança > Boletos a anexar > "Anexar boletos em lote"** (`/financeiro/c
 - **Cliente que não paga à AKF:** a Neo emite o boleto próprio, recebe na conta e repassa à AKF no dia seguinte. Nesse caso, título cedido com boleto próprio **não** gera aviso; o aviso é o contrário (boleto da AKF para esse cliente). Quem é: a marcação "Sem boleto" do título na solicitação de antecipação (a mais recente não cancelada); sem solicitação, o kit da filial (`aceita_boleto_factoring`); por fim a lista `financeiro.akf.clientes_sem_boleto` (`clienteSemBoleto`, palavra inteira do nome) — a mesma regra da tela "Solicitar antecipação".
 - **Gravação:** só quando a pessoa clica "Anexar". O anexo vai do navegador para `rec_titulos` (tipo `boleto`, como na ficha do título) e a linha digitável é gravada. O título sai de "Boletos a anexar"; na Filial, o gatilho do kit o deixa pronto.
 - **Testes:** `lib/modulos/financeiro/recebiveis/boleto-pdf.test.ts` (linha digitável com DV geral, documento NF/parcela, CPF/CNPJ, leitura posicional, OCR em expressões, escolha e conferência). Calibração com os PDFs reais (fora do repositório): `NEO_AMOSTRAS_BOLETOS=<pasta> npx vitest run lib/modulos/financeiro/recebiveis/boleto-pdf.test.ts`. Em 14/10/2026: 8 de 8 lidos certos (3 AKF Filial, 3 AKF Matriz, 2 Bradesco por OCR), conferidos com os títulos do banco.
+
+## 38. Ajustes da Cobrança — 15/10/2026
+
+Pedidos do Alan no uso diário (migration `0167_rec_cobranca_ajustes_filial_posicao.sql`).
+
+1. **Filial Contagem: Cuiabá só anexa.** O boleto (ou a forma transferência) da parcela da filial sai da fila "A enviar" de quem
+   não é restrito à unidade (`carregarTarefas(..., { restrito })` em `app/(plataforma)/financeiro/cobranca/dados.ts`); o envio
+   ao cliente fica com a filial (pendência "Enviar kit/boleto ao cliente" e a aba "A enviar" da usuária restrita). Quando todas
+   as parcelas do kit têm boleto, `rec_kit_atualizar_estagio` conclui o "Anexar boleto" de Cuiabá, e a sincronização não o reabre
+   para parcela da filial que já tem boleto.
+2. **Aba Confirmados** (`/financeiro/cobranca/confirmados`, fila `confirmados`, só consulta): parcela em `confirmado_cliente` que
+   ainda não venceu e parcela em `promessa` com a pausa valendo (promessa ou posição do cliente). Mostra a origem, a data que o
+   cliente deu, até quando fica fora da cobrança, a observação e o selo "Possível baixa". Sai com a baixa (`pago`); confirmada que
+   vence sem pagamento vai para `vencido` (régua) e a promessa/posição vencida volta para Cobrar. Não conta como tarefa nem decide
+   a aba de abertura (`FILAS_CONSULTA`). A filial também vê.
+3. **Fila Cobrar:**
+   - Botão **"E-mail no Gmail"** em cada linha cujo marco tem e-mail: o mesmo rascunho da ficha (`criarRascunhoCobranca`,
+     `rec-rascunho-gmail` modo `cobranca`), desabilitado sem contato de e-mail (finalidade cobrança ou boleto).
+   - Botão **"Já temos posição"** (também no select da ficha, "Já temos posição do cliente"): cobrança informal ou o cliente avisou
+     que pagou/vai pagar. `rec_registrar_cobranca` com resultado `posicao`: data entre hoje − 30 e hoje + 90, descrição obrigatória;
+     o título vai para `promessa`, `regua_pausada_ate` = data (ou hoje, se passou) + 5 dias, linha em `rec_promessas` e interação
+     `posicao`; conclui a pendência do marco.
+   - **Promessa/posição vencida sem baixa volta para a fila** mesmo no marco já registrado, com o selo "Posição vencida em dd/mm".
+     A pendência "Cobrar D+n" da Fila do dia não reabre (já existe concluída com o mesmo título); a fila Cobrar mostra.
+4. **Envio só a 30 dias ou menos do vencimento:** a janela do boleto (`janela_anexar_boleto_dias`, 30, Regra de cobrança) vale
+   para "anexar", "enviar" e "dados" (`filaDaParcela`). Na filial, a pendência "Enviar kit/boleto ao cliente" só abre dentro da
+   janela (`rec_janela_boleto_dias()`); o job diário `rec-kits-envio-janela-diario` (06:05 de Cuiabá) abre as que entraram e
+   cancela as que saíram. A fila da filial mostra "Pronta para envio · enviar a partir de dd/mm" e não dá a tarefa antes disso.

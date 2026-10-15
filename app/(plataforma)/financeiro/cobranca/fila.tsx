@@ -19,6 +19,7 @@ import { carregarRegra } from "@/lib/modulos/financeiro/recebiveis/regra";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criticidadeCobranca, nomeDoMarco, ROTULO_UNIDADE, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import { BotaoCopiar } from "@/app/(plataforma)/financeiro/recebiveis/[id]/componentes";
+import { CriarRascunhoCobranca, JaTemosPosicao } from "./cobrar/[id]/componentes";
 import { TabelaParcelas } from "./tabela-parcelas";
 import { tarefasDaRequisicao } from "./dados";
 
@@ -167,16 +168,65 @@ export async function PaginaFila({ filas, caminho, searchParams }: { filas: read
                 {nomeCliente(i)}
                 <TableCell><Badge variant={criticidadeCobranca(i.marco, marcos) === "alta" ? "destructive" : "secondary"}>{nomeDoMarco(i.marco)}</Badge></TableCell>
                 <TableCell className="text-[12px]">{i.parcelas.length} · {resumoParcelas(i.parcelas)}</TableCell>
-                <TableCell className="tabular-nums">{formatarData(i.vencimentoMaisAntigo)}<span className="block text-[11px] text-red-700">{i.diasAtraso} {i.diasAtraso === 1 ? "dia" : "dias"} de atraso</span></TableCell>
+                <TableCell className="tabular-nums">
+                  {formatarData(i.vencimentoMaisAntigo)}<span className="block text-[11px] text-red-700">{i.diasAtraso} {i.diasAtraso === 1 ? "dia" : "dias"} de atraso</span>
+                  {i.posicaoVencidaEm && <Badge variant="outline" className="mt-0.5 border-marca text-marca">Posição vencida em {formatarData(i.posicaoVencidaEm)}</Badge>}
+                </TableCell>
                 <TableCell className="text-right tabular-nums">{formatarMoeda(i.totalCentavos)}</TableCell>
                 <TableCell className="text-[12px]">{textoContato(i.contato, i.clienteId)}</TableCell>
                 <TableCell>{andamento(i.andamento)}</TableCell>
                 <TableCell className="text-right">
                   <span className="inline-flex flex-wrap items-center justify-end gap-1">
                     {atalhosMensagem(i)}
+                    {podeOperar && i.marcoTemEmail && (
+                      <CriarRascunhoCobranca clienteId={i.clienteId} marco={i.marco} unidade={i.unidade} rotulo="E-mail no Gmail" compacto
+                        desabilitadoPor={i.emailDestino ? null : "Cadastre um contato com e-mail (finalidade cobrança ou boleto)."} />
+                    )}
+                    {podeOperar && <JaTemosPosicao marco={i.marco} tituloIds={i.parcelas.map((x) => x.id)} cliente={i.cliente} hoje={hoje} />}
                     <Button size="sm" render={<Link href={`/financeiro/cobranca/cobrar/${i.clienteId}`} />}>Cobrar</Button>
                   </span>
                 </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        {pager(p.total, p.pagina, p.totalPaginas)}
+      </>
+    );
+  }
+
+  else if (aba === "confirmados") {
+    const p = paginar(tarefas.confirmados, paginaPedida);
+    const ROTULO_ORIGEM = { confirmou: "Cliente confirmou", promessa: "Promessa", posicao: "Posição do cliente" } as const;
+    tabela = p.total === 0 ? null : (
+      <>
+        <Table className="cartoes">
+          <TableHeader><TableRow>
+            <TableHead>Cliente</TableHead><TableHead>Parcela</TableHead><TableHead>Vencimento</TableHead><TableHead className="text-right">Valor</TableHead>
+            <TableHead>Posição</TableHead><TableHead>Data do cliente</TableHead><TableHead>Observação</TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {p.itens.map((i) => (
+              <TableRow key={i.id}>
+                {nomeCliente(i)}
+                <TableCell className="tabular-nums">
+                  <Link href={`/financeiro/recebiveis/${i.id}`} className="hover:underline">{nomeParcela(i)}</Link>
+                  {i.possivelBaixa && <Badge variant="secondary" className="ml-1.5 align-middle">Possível baixa</Badge>}
+                </TableCell>
+                <TableCell className="tabular-nums">
+                  {formatarData(i.vencimento)}
+                  {i.diasAtraso > 0 && <span className="block text-[11px] text-red-700">{i.diasAtraso} {i.diasAtraso === 1 ? "dia" : "dias"} de atraso</span>}
+                </TableCell>
+                <TableCell className="text-right tabular-nums">{formatarMoeda(i.valorCentavos)}</TableCell>
+                <TableCell className="text-[12px]">
+                  <Badge variant={i.origem === "confirmou" ? "default" : "secondary"}>{ROTULO_ORIGEM[i.origem]}</Badge>
+                  {i.registradoEm && <span className="block text-muted-foreground">em {i.registradoEm}</span>}
+                </TableCell>
+                <TableCell className="tabular-nums">
+                  {i.origem === "confirmou" ? "—" : formatarData(i.dataInformada)}
+                  {i.pausadaAte && <span className="block text-[11px] text-muted-foreground">fora da cobrança até {formatarData(i.pausadaAte)}</span>}
+                </TableCell>
+                <TableCell className="max-w-80 text-[12px] text-muted-foreground" title={i.observacao ?? undefined}><span className="line-clamp-2">{i.observacao ?? "—"}</span></TableCell>
               </TableRow>
             ))}
           </TableBody>
@@ -235,7 +285,7 @@ export async function PaginaFila({ filas, caminho, searchParams }: { filas: read
 
       {tabela === null ? (
         <p className="rounded-[3px] border border-dashed p-8 text-center text-sm text-muted-foreground">
-          {busca || unidade ? "Nenhum item nesta fila com os filtros escolhidos." : "Nada a fazer nesta fila. Tudo em dia."}
+          {busca || unidade ? "Nenhum item nesta fila com os filtros escolhidos." : aba === "confirmados" ? "Nenhuma parcela com posição do cliente aguardando pagamento." : "Nada a fazer nesta fila. Tudo em dia."}
         </p>
       ) : (
         <div className="overflow-x-auto rounded-[3px] border border-grade">{tabela}</div>

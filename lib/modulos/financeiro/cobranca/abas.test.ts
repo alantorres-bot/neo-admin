@@ -18,6 +18,9 @@ describe("abas da Cobrança", () => {
     expect(abaInicialDaCobranca({ ...zeradas, confirmar: 1, cobrar: 9 })).toBe("/financeiro/cobranca/confirmar");
     expect(abaInicialDaCobranca({ ...zeradas, dados: 2 })).toBe("/financeiro/cobranca/enviar");
     expect(abaInicialDaCobranca({ ...zeradas, baixa: 1 })).toBe("/financeiro/cobranca/baixas");
+    // Confirmados é só consulta: com itens, não vira a aba de abertura.
+    expect(abaInicialDaCobranca({ ...zeradas, confirmados: 5 })).toBe(ABAS_COBRANCA[0].href);
+    expect(abaInicialDaCobranca({ ...zeradas, confirmados: 5, cobrar: 1 })).toBe("/financeiro/cobranca/cobrar");
   });
 
   it("sem nada pendente, abre na primeira aba", () => {

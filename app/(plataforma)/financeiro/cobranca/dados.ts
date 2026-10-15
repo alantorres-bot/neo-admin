@@ -4,13 +4,14 @@ import { MODULO_RECEBIVEIS, TIPO_ANEXO_BOLETO } from "@/lib/modulos/financeiro/r
 import { ROTULO_ANDAMENTO } from "@/lib/modulos/financeiro/recebiveis/carteira";
 import {
   filaDaParcela, linkWhatsApp, marcoDaDescricao, montarTextoBusca, ordenarContatos, ordenarParcelas, prazoDaParcela, removerCobrancasFeitas,
-  type Andamento, type ContatoSugerido, type ItemBase, type ItemBaixa, type ItemCobrar, type ItemConfirmar, type ItemContato, type ItemParcela, type ParcelaItem, type Tarefas,
+  type Andamento, type ContatoSugerido, type ItemBase, type ItemBaixa, type ItemCobrar, type ItemConfirmado, type ItemConfirmar, type ItemContato, type ItemParcela, type ParcelaItem, type Tarefas,
 } from "@/lib/modulos/financeiro/recebiveis/tarefas";
 import { titulaNoEscopoDeCadastro } from "@/lib/modulos/financeiro/recebiveis/clientes";
 import { FUSO, hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { carregarRegra } from "@/lib/modulos/financeiro/recebiveis/regra";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { ESTAGIOS_COBRAVEIS, mensagemWhatsAppCobranca, planejarCobrancas, unidadeDaPendencia, type TituloCobranca, type Unidade } from "@/supabase/functions/_shared/cobranca";
+import { exigirSessao } from "@/lib/nucleo/sessao";
+import { canaisDoMarco, ESTAGIOS_COBRAVEIS, mensagemWhatsAppCobranca, planejarCobrancas, unidadeDaPendencia, type TituloCobranca, type Unidade } from "@/supabase/functions/_shared/cobranca";
 import {
   ESTAGIOS_CONFIRMAVEIS, mensagemWhatsAppConfirmacao, planejarConfirmacoes, prazoConfirmacao, type TituloConfirmacao,
 } from "@/supabase/functions/_shared/confirmacao";
@@ -19,7 +20,9 @@ import { escolherContato, temContatoUtil, type ContatoEscolha } from "@/supabase
 type Cliente = Awaited<ReturnType<typeof criarClienteServidor>>;
 
 const ENCERRADOS = ["pago", "renegociado", "cancelado"];
-const TIPOS_COBRANCA_FEITA = ["cobranca", "promessa", "contestacao"];
+const TIPOS_COBRANCA_FEITA = ["cobranca", "promessa", "contestacao", "posicao"];
+/** Registros que dão a posição do cliente (lista Confirmados): confirmou, prometeu ou deu posição na cobrança. */
+const TIPOS_POSICAO = ["confirmacao", "promessa", "posicao"];
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
 const em = (iso: string) => new Intl.DateTimeFormat("pt-BR", { timeZone: FUSO, day: "2-digit", month: "2-digit" }).format(new Date(iso));
 const lotes = <T,>(lista: readonly T[], tamanho = 100): T[][] => Array.from({ length: Math.ceil(lista.length / tamanho) }, (_, i) => lista.slice(i * tamanho, (i + 1) * tamanho));
@@ -37,13 +40,16 @@ type ContatoLinha = ContatoEscolha & { contraparte_id: string; funcao?: string |
  * As tarefas desta requisição, calculadas UMA vez: a tela Tarefas e os contadores da Carteira (botão e aba, que carregam à parte
  * dentro de <Suspense>) usam o mesmo resultado, sem repetir as leituras.
  */
-export const tarefasDaRequisicao = cache(async (): Promise<Tarefas> => carregarTarefas(await criarClienteServidor()));
+export const tarefasDaRequisicao = cache(async (): Promise<Tarefas> => {
+  const sessao = await exigirSessao();
+  return carregarTarefas(await criarClienteServidor(), { restrito: !!sessao.acesso.restrito });
+});
 
 /**
  * Calcula todas as filas de tarefas do contas a receber, hoje, com a sessão de quem chama (a RLS vale). Usa as mesmas regras
  * puras da sincronização (confirmação, régua, escopo do cadastro) para a tela e as pendências nunca discordarem. Nada é gravado.
  */
-export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
+export async function carregarTarefas(supabase: Cliente, opcoes: { restrito?: boolean } = {}): Promise<Tarefas> {
   const hoje = hojeEmCuiaba();
 
   // Cada ida ao banco custa a latência da rede (~200 ms com o banco no Canadá), então as leituras que não dependem uma da outra
@@ -135,6 +141,12 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     )
     : [];
 
+  // Confirmados (consulta): confirmou e ainda não venceu, ou promessa/posição com a pausa valendo. Saem com a baixa (pago).
+  const comPosicao = emAberto.filter((t) =>
+    (t.estagio === "confirmado_cliente" && t.vencimento >= hoje) || (t.estagio === "promessa" && t.regua_pausada_ate !== null && t.regua_pausada_ate >= hoje));
+  const posicoes = new Map<string, { tipo: string; descricao: string | null; criadoEm: string }>();
+  const datasPrometidas = new Map<string, string>();
+
   // Onda 3: clientes dos grupos formados + último registro do histórico de cada parcela das filas ("o que já foi feito") e as
   // cobranças já registradas por marco.
   const idsHistorico = [...new Set([
@@ -143,7 +155,21 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
   const ultimo = new Map<string, Andamento>();
   const cobrancasFeitas = new Set<string>(); // "parcelaId|marco"
   await Promise.all([
-    carregarClientes([...gruposConfirmacao, ...gruposCobranca].map((g) => g.contraparteId)),
+    carregarClientes([...[...gruposConfirmacao, ...gruposCobranca].map((g) => g.contraparteId), ...comPosicao.map((t) => t.contraparte_id)]),
+    ...lotes(comPosicao.map((t) => t.id)).map(async (lote) => {
+      const [{ data: inter, error }, { data: promessas }] = await Promise.all([
+        supabase.from("interacoes").select("referencia_id, tipo, descricao, criado_em")
+          .eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "rec_titulos").in("referencia_id", lote).in("tipo", TIPOS_POSICAO)
+          .order("criado_em", { ascending: false }).limit(1000),
+        supabase.from("rec_promessas").select("titulo_id, data_prometida, criado_em").in("titulo_id", lote).order("criado_em", { ascending: false }).limit(1000),
+      ]);
+      if (error) throw new Error(`Falha ao ler as posições dos clientes: ${error.message}`);
+      for (const i of inter ?? []) {
+        const id = i.referencia_id as string;
+        if (!posicoes.has(id)) posicoes.set(id, { tipo: i.tipo as string, descricao: (i.descricao as string | null) ?? null, criadoEm: i.criado_em as string });
+      }
+      for (const pr of promessas ?? []) if (!datasPrometidas.has(pr.titulo_id as string)) datasPrometidas.set(pr.titulo_id as string, pr.data_prometida as string);
+    }),
     ...lotes(idsHistorico).map(async (lote) => {
       const { data, error } = await supabase.from("interacoes").select("referencia_id, tipo, descricao, criado_em")
         .eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "rec_titulos").in("referencia_id", lote).in("tipo", Object.keys(ROTULO_ANDAMENTO))
@@ -168,6 +194,7 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     return sugerido(escolherContato(lista, "boleto", "email") ?? escolherContato(lista, "boleto", "whatsapp"));
   };
   const contatoWhatsapp = (id: string) => escolherContato(contatosPorCliente.get(id) ?? [], ["confirmacao", "cobranca"], "whatsapp");
+  const emailCobranca = (id: string) => escolherContato(contatosPorCliente.get(id) ?? [], ["cobranca", "boleto"], "email")?.email ?? null;
   const contatoMensagem = (id: string) => {
     const lista = contatosPorCliente.get(id) ?? [];
     return sugerido(escolherContato(lista, ["confirmacao", "cobranca"], "whatsapp") ?? escolherContato(lista, ["confirmacao", "cobranca"], "telefone"));
@@ -183,6 +210,8 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
   const filas = { anexar: [] as ItemParcela[], enviar: [] as ItemParcela[], dados: [] as ItemParcela[] };
   for (const t of aguardando) {
     const fila = filaDaParcela({ estagio: t.estagio, forma: t.forma_pagamento, temBoleto: comBoleto.has(t.id), vencimento: t.vencimento, hoje, janelaBoletoDias: regra.janelaBoletoDias });
+    // Filial Contagem: Cuiabá só anexa; o envio ao cliente (boleto ou dados de pagamento) é da Filial (15/10/2026).
+    if (fila && fila !== "anexar" && unidadeDe(t) === "contagem" && !opcoes.restrito) continue;
     if (fila) filas[fila].push(itemParcela(t));
   }
 
@@ -201,7 +230,10 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     };
   });
 
-  const cobrar: ItemCobrar[] = removerCobrancasFeitas(gruposCobranca, (id, marco) => cobrancasFeitas.has(`${id}|${marco}`)).map((g) => {
+  // Promessa/posição cujo prazo passou sem baixa volta para a cobrança mesmo no marco já registrado.
+  const pausaVencida = new Map(emAberto.filter((t) => t.estagio === "promessa" && t.regua_pausada_ate !== null && t.regua_pausada_ate < hoje)
+    .map((t) => [t.id, t.regua_pausada_ate as string]));
+  const cobrar: ItemCobrar[] = removerCobrancasFeitas(gruposCobranca, (id, marco) => cobrancasFeitas.has(`${id}|${marco}`) && !pausaVencida.has(id)).map((g) => {
     const zap = contatoWhatsapp(g.contraparteId);
     // D+10 é por e-mail: sem mensagem de WhatsApp.
     const mensagem = mensagemWhatsAppCobranca(g, zap?.nome ?? "", marcos, hoje);
@@ -211,8 +243,23 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
       diasAtraso: diasEntre(hoje, g.vencimentoMaisAntigo), contato: contatoMensagem(g.contraparteId),
       andamento: g.titulos.map((t) => ultimo.get(t.id)).find((a) => a) ?? null,
       mensagem, linkWhatsApp: mensagem ? linkWhatsApp(zap?.whatsapp, mensagem) : null,
+      marcoTemEmail: canaisDoMarco(g.marco, marcos).includes("email"), emailDestino: emailCobranca(g.contraparteId),
+      posicaoVencidaEm: g.titulos.map((t) => pausaVencida.get(t.id)).filter((d): d is string => !!d).sort().pop() ?? null,
     };
   });
+
+  const confirmados: ItemConfirmado[] = ordenarParcelas(comPosicao.map((t): ItemConfirmado => {
+    const pos = posicoes.get(t.id);
+    const origem: ItemConfirmado["origem"] = t.estagio === "confirmado_cliente" ? "confirmou" : pos?.tipo === "posicao" ? "posicao" : "promessa";
+    return {
+      ...base(t.contraparte_id, unidadeDe(t), [t.documento]),
+      id: t.id, documento: t.documento, parcela: t.parcela, vencimento: t.vencimento, valorCentavos: valorRestante(t),
+      origem, dataInformada: origem === "confirmou" ? t.vencimento : datasPrometidas.get(t.id) ?? t.regua_pausada_ate ?? t.vencimento,
+      pausadaAte: origem === "confirmou" ? null : t.regua_pausada_ate,
+      observacao: pos?.descricao ?? null, registradoEm: pos ? em(pos.criadoEm) : null, possivelBaixa: idsPossivelBaixa.has(t.id),
+      diasAtraso: Math.max(t.dias_atraso, 0),
+    };
+  }));
 
   const baixa: ItemBaixa[] = ordenarParcelas(
     emAberto.filter((t) => idsPossivelBaixa.has(t.id)).map((t): ItemBaixa => ({
@@ -237,6 +284,6 @@ export async function carregarTarefas(supabase: Cliente): Promise<Tarefas> {
     anexar: ordenarParcelas(filas.anexar), enviar: ordenarParcelas(filas.enviar), dados: ordenarParcelas(filas.dados),
     confirmar: confirmar.sort((a, b) => a.vencimentoMaisProximo.localeCompare(b.vencimentoMaisProximo) || b.totalCentavos - a.totalCentavos),
     cobrar: cobrar.sort((a, b) => b.marco - a.marco || a.vencimentoMaisAntigo.localeCompare(b.vencimentoMaisAntigo) || a.cliente.localeCompare(b.cliente, "pt-BR")),
-    baixa, contato,
+    baixa, contato, confirmados,
   };
 }

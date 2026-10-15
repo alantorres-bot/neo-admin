@@ -12,7 +12,7 @@ const parcela = (cliente: string, documento: string, vencimento: string, unidade
   ...base(cliente, unidade, [documento]), id: `p-${documento}`, documento, parcela: "1", vencimento, valorCentavos: 100_00, estagio: "aguardando_boleto",
   prazo: vencimento, contato: null, andamento: null, diasAtraso: 0, notaSaidaId: null, nota: null, ...extra,
 });
-const vazio = (): Tarefas => ({ hoje: "2026-10-20", anexar: [], enviar: [], dados: [], confirmar: [], cobrar: [], baixa: [], contato: [] });
+const vazio = (): Tarefas => ({ hoje: "2026-10-20", anexar: [], enviar: [], dados: [], confirmar: [], cobrar: [], baixa: [], contato: [], confirmados: [] });
 
 describe("filaDaParcela", () => {
   it("só parcela aguardando boleto entra; com PDF vai para enviar, sem PDF para anexar", () => {
@@ -22,13 +22,16 @@ describe("filaDaParcela", () => {
     expect(filaDaParcela({ estagio: "importado", forma: "boleto", temBoleto: false })).toBeNull();
   });
 
-  it("anexar só entra a 30 dias ou menos do vencimento; enviar e dados não dependem da janela", () => {
+  it("anexar, enviar e dados só entram a 30 dias ou menos do vencimento", () => {
     const base = { estagio: "aguardando_boleto", forma: "boleto", hoje: "2026-10-06" };
     expect(filaDaParcela({ ...base, temBoleto: false, vencimento: "2026-11-05" })).toBe("anexar");
     expect(filaDaParcela({ ...base, temBoleto: false, vencimento: "2026-11-06" })).toBeNull();
     expect(filaDaParcela({ ...base, temBoleto: false, vencimento: "2026-09-20" })).toBe("anexar"); // vencido
-    expect(filaDaParcela({ ...base, temBoleto: true, vencimento: "2027-03-01" })).toBe("enviar");
-    expect(filaDaParcela({ ...base, forma: "transferencia", temBoleto: false, vencimento: "2027-03-01" })).toBe("dados");
+    expect(filaDaParcela({ ...base, temBoleto: true, vencimento: "2026-11-05" })).toBe("enviar");
+    expect(filaDaParcela({ ...base, temBoleto: true, vencimento: "2026-11-06" })).toBeNull();
+    expect(filaDaParcela({ ...base, temBoleto: true, vencimento: "2026-12-15" })).toBeNull(); // caso Cumbres Molinho
+    expect(filaDaParcela({ ...base, forma: "transferencia", temBoleto: false, vencimento: "2026-11-05" })).toBe("dados");
+    expect(filaDaParcela({ ...base, forma: "transferencia", temBoleto: false, vencimento: "2027-03-01" })).toBeNull();
   });
 
   it("transferência sai das filas de boleto e vai para os dados de pagamento, com ou sem PDF", () => {
@@ -114,6 +117,9 @@ describe("filtros e contagens", () => {
     expect(abaInicial(contarFilas(tarefas()))).toBe("anexar");
     expect(abaInicial(contarFilas({ ...vazio(), cobrar: [{} as never] }))).toBe("cobrar");
     expect(abaInicial(contarFilas(vazio()))).toBe("anexar");
+    // Confirmados é só consulta: não abre a tela nem conta como tarefa.
+    expect(abaInicial(contarFilas({ ...vazio(), confirmados: [{} as never] }))).toBe("anexar");
+    expect(totalDeTarefas({ ...vazio(), confirmados: [{} as never] })).toBe(0);
   });
 });
 

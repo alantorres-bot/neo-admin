@@ -2,7 +2,7 @@
 // as tarefas de cada lado, a urgência e o nº da remessa. Só leitura, com a sessão do usuário (a RLS vale).
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
-  ORDEM_URGENCIA, proximaAcao, situacaoDaNota, urgenciaDaNota, type EstagioFila, type Papel, type Situacao, type Urgencia,
+  inicioDaJanelaDeEnvio, ORDEM_URGENCIA, proximaAcao, situacaoDaNota, urgenciaDaNota, type EstagioFila, type Papel, type Situacao, type Urgencia,
 } from "@/lib/modulos/financeiro/filial/estagios";
 import { lerParcelasInformadas, type ParcelaInformada } from "@/lib/modulos/financeiro/filial/remessa";
 import { emCentavos } from "@/lib/modulos/financeiro/recebiveis/carteira";
@@ -40,10 +40,13 @@ export async function carregarFila(supabase: SupabaseClient, opcoes: { papel: Pa
     .select("id, nota_fiscal, cliente_nome, obra, estagio, aceita_boleto_factoring, parcelas, valor_total, primeiro_vencimento, cedido, boletos, notas, demonstrativos, cartas, exige_carta, enviado_em")
     .in("estagio", ESTAGIOS_BANCO[opcoes.estagios]);
   if (opcoes.ids) consulta = consulta.in("id", opcoes.ids.length ? opcoes.ids : ["00000000-0000-0000-0000-000000000000"]);
-  const [{ data: kits, error }, { data: remessas }] = await Promise.all([
+  const [{ data: kits, error }, { data: remessas }, { data: janela }] = await Promise.all([
     consulta.order(soEnviadas ? "enviado_em" : "nota_fiscal", { ascending: !soEnviadas }).limit(soEnviadas ? 200 : 1000),
     supabase.from("rec_remessa_kits").select("kit_id, rec_remessas(numero)").limit(10000),
+    // Janela do envio (a mesma do "Anexar boleto", Regra de cobrança); a função existe porque a filial não lê `configuracoes`.
+    supabase.rpc("rec_janela_boleto_dias"),
   ]);
+  const janelaDias = typeof janela === "number" && janela > 0 ? janela : 30;
   if (error) throw new Error(`Falha ao ler a fila: ${error.message}`);
   const ids = (kits ?? []).map((k) => k.id as string);
   const extras: { id: string; parcelas_informadas: unknown; nota_enviada_em: string | null }[] = [];
@@ -61,11 +64,12 @@ export async function carregarFila(supabase: SupabaseClient, opcoes: { papel: Pa
   const linhas = (kits ?? []).map((k): LinhaFila => {
     const e = extraDe.get(k.id as string);
     const informadas = lerParcelasInformadas(e?.parcelas_informadas);
+    const vencimento = (k.primeiro_vencimento as string | null) ?? informadas[0]?.vencimento ?? null;
     const situacao = situacaoDaNota({
       estagio: k.estagio, notas: k.notas, demonstrativos: k.demonstrativos, cartas: k.cartas, exigeCarta: !!k.exige_carta,
       parcelas: k.parcelas ?? 0, boletos: k.boletos ?? 0, notaEnviada: !!e?.nota_enviada_em,
+      envioAPartirDe: inicioDaJanelaDeEnvio((k.primeiro_vencimento as string | null) ?? null, opcoes.hoje, janelaDias),
     });
-    const vencimento = (k.primeiro_vencimento as string | null) ?? informadas[0]?.vencimento ?? null;
     const urgencia = urgenciaDaNota(situacao.estagio, vencimento, opcoes.hoje);
     return {
       id: k.id as string, nota: k.nota_fiscal as string, cliente: k.cliente_nome as string, obra: (k.obra as string | null) ?? null,

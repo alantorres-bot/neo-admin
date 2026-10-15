@@ -19,7 +19,7 @@ const esquema = z.object({
   tituloIds: z.array(z.string().uuid()).min(1, "Marque pelo menos uma parcela.").max(100),
   // O banco confere se o marco existe na régua em vigor (rec_registrar_cobranca).
   marco: z.number().int().min(1).max(365),
-  resultado: z.enum(["enviada", "promessa", "contestou"]),
+  resultado: z.enum(["enviada", "promessa", "contestou", "posicao"]),
   canal: z.enum(["whatsapp", "telefone", "email", "interno"]),
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
   observacao: z.string().trim().max(500).default(""),
@@ -27,7 +27,8 @@ const esquema = z.object({
 
 /**
  * Registra o resultado da cobrança (`rec_registrar_cobranca`, numa transação, com a RLS de quem chama): "enviada" fica no
- * histórico; "promessa" pausa a régua até a data; "contestou" pausa a régua e guarda o motivo. A pendência do marco é concluída.
+ * histórico; "promessa" pausa a régua até a data; "posicao" (o cliente deu uma data, inclusive "já paguei") pausa até a data
+ * + 5 dias; "contestou" pausa a régua e guarda o motivo. A pendência do marco é concluída.
  * O sistema não envia a mensagem: quem enviou registra aqui.
  */
 export async function registrarCobranca(entrada: z.input<typeof esquema>): Promise<Resultado> {
@@ -38,10 +39,12 @@ export async function registrarCobranca(entrada: z.input<typeof esquema>): Promi
   const { tituloIds, marco, resultado, canal, data, observacao } = dados.data;
   if (resultado === "promessa" && !data) return { ok: false, erro: "Informe a data prometida para o pagamento." };
   if (resultado === "contestou" && observacao.length < 5) return { ok: false, erro: "Informe o motivo da contestação." };
+  if (resultado === "posicao" && !data) return { ok: false, erro: "Informe a data que o cliente deu." };
+  if (resultado === "posicao" && observacao.length < 5) return { ok: false, erro: "Descreva a posição do cliente." };
 
   const supabase = await criarClienteServidor();
   const { error } = await supabase.rpc("rec_registrar_cobranca", {
-    p_titulos: tituloIds, p_marco: marco, p_resultado: resultado, p_canal: canal, p_data_prometida: resultado === "promessa" ? data : null, p_descricao: observacao || null,
+    p_titulos: tituloIds, p_marco: marco, p_resultado: resultado, p_canal: canal, p_data_prometida: resultado === "promessa" || resultado === "posicao" ? data : null, p_descricao: observacao || null,
   });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
 
@@ -50,7 +53,10 @@ export async function registrarCobranca(entrada: z.input<typeof esquema>): Promi
   revalidatePath("/financeiro/recebiveis/fila");
   return {
     ok: true,
-    aviso: resultado === "enviada" ? "Cobrança registrada." : resultado === "promessa" ? "Promessa registrada: a régua fica pausada até a data." : "Contestação registrada: a régua fica pausada para estes títulos.",
+    aviso: resultado === "enviada" ? "Cobrança registrada."
+      : resultado === "promessa" ? "Promessa registrada: a régua fica pausada até a data."
+        : resultado === "posicao" ? "Posição registrada: o título sai da cobrança e aparece em Confirmados; sem baixa em 5 dias da data, volta para Cobrar."
+          : "Contestação registrada: a régua fica pausada para estes títulos.",
   };
 }
 

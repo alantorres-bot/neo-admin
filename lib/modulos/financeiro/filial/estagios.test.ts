@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { proximaAcao, situacaoDaNota, textoVencimento, urgenciaDaNota, type KitParaSituacao } from "./estagios";
+import { inicioDaJanelaDeEnvio, proximaAcao, rotuloSituacao, situacaoDaNota, textoVencimento, urgenciaDaNota, type KitParaSituacao } from "./estagios";
 
 const kit = (extra: Partial<KitParaSituacao> = {}): KitParaSituacao => ({
   estagio: "recebida", notas: 1, demonstrativos: 0, cartas: 0, exigeCarta: false, parcelas: 0, boletos: 0, notaEnviada: false, ...extra,
@@ -26,6 +26,18 @@ describe("situacaoDaNota", () => {
     expect(situacaoDaNota(kit({ demonstrativos: 1, estagio: "implantada", parcelas: 1, notaEnviada: true })).estagio).toBe("nota_enviada");
     expect(situacaoDaNota(kit({ demonstrativos: 1, estagio: "pronta", parcelas: 1, boletos: 1, notaEnviada: true })))
       .toEqual({ estagio: "boleto_a_enviar", tarefas: { filial: ["Enviar boleto"], cuiaba: [] } });
+  });
+  it("pronta fora da janela de envio: sem tarefa da filial e o rótulo diz quando enviar", () => {
+    const s = situacaoDaNota(kit({ demonstrativos: 1, estagio: "pronta", parcelas: 1, boletos: 1, envioAPartirDe: "2026-11-15" }));
+    expect(s).toEqual({ estagio: "pronta", tarefas: { filial: [], cuiaba: [] }, envioAPartirDe: "2026-11-15" });
+    expect(rotuloSituacao(s)).toBe("Pronta para envio · enviar a partir de 15/11");
+    expect(rotuloSituacao({ estagio: "pronta" })).toBe("Pronta para envio");
+  });
+  it("início da janela de envio: vencimento menos a janela; vazio quando já está dentro", () => {
+    expect(inicioDaJanelaDeEnvio("2026-12-15", "2026-10-15", 30)).toBe("2026-11-15");
+    expect(inicioDaJanelaDeEnvio("2026-11-14", "2026-10-15", 30)).toBeNull(); // 30 dias: já na janela
+    expect(inicioDaJanelaDeEnvio("2026-11-15", "2026-10-15", 30)).toBe("2026-10-16");
+    expect(inicioDaJanelaDeEnvio(null, "2026-10-15", 30)).toBeNull();
   });
   it("7 Enviada e 8 Cancelada sem tarefas", () => {
     expect(situacaoDaNota(kit({ estagio: "enviada" }))).toEqual({ estagio: "enviada", tarefas: { filial: [], cuiaba: [] } });

@@ -16,11 +16,11 @@ const novaNota = () => String(++nf).padStart(6, "0");
 
 const registrar = (nota: string, quem = operador, aceita = true) =>
   como(db, quem, async () => (await q(`select rec_kit_registrar($1, 'QRTZ 39', $2, 'Obra X', null, null, null) as id`, [nota, aceita])).rows[0].id as string);
-async function titulo(documento: string, extra: { cedido?: boolean; forma?: string } = {}) {
+async function titulo(documento: string, extra: { cedido?: boolean; forma?: string; diasParaVencer?: number } = {}) {
   return (await q(
     `insert into rec_titulos (empresa_id, contraparte_id, documento, parcela, vencimento, valor, estagio, cedido, forma_pagamento)
-     values ($1, $2, $3, '1', current_date + 20, 1500, 'aguardando_boleto', $4, $5) returning id`,
-    [empresa, cliente, documento, extra.cedido ?? false, extra.forma ?? "boleto"],
+     values ($1, $2, $3, '1', (now() at time zone 'America/Cuiaba')::date + $6::int, 1500, 'aguardando_boleto', $4, $5) returning id`,
+    [empresa, cliente, documento, extra.cedido ?? false, extra.forma ?? "boleto", extra.diasParaVencer ?? 20],
   )).rows[0].id as string;
 }
 const anexar = (tabela: string, id: string, tipo: string, modulo = MOD) =>
@@ -98,6 +98,37 @@ describe("esteira do kit", () => {
     expect(k.boletos).toBe(1);
     expect(k.notas).toBe(1);
     expect(await pendencias(id)).toEqual({ "Implantar fatura da filial": "concluida", "Enviar kit ao cliente": "aberta" });
+  });
+
+  it("0167: todos os boletos anexados concluem o \"Anexar boleto\" de Cuiabá; o envio fica só com a filial", async () => {
+    const nota = novaNota();
+    const id = await registrar(nota);
+    await anexar("rec_kits", id, "nota_fatura");
+    const t = await titulo(`4${nota}U`);
+    await q(`insert into pendencias (modulo, titulo, prazo, referencia_tabela, referencia_id) values ('financeiro.recebiveis', $1, current_date, 'rec_titulos', $2)`,
+      [`Anexar boleto: 4${nota}U — QRTZ 39`, t]);
+    await anexar("rec_titulos", t, "boleto", "financeiro.recebiveis");
+    expect((await q(`select status from pendencias where referencia_id = $1`, [t])).rows[0].status).toBe("concluida");
+    expect((await pendencias(id))["Enviar kit ao cliente"]).toBe("aberta");
+  });
+
+  it("0167: kit pronto que vence em mais de 30 dias não pede o envio; o job abre quando entra na janela", async () => {
+    const nota = novaNota();
+    const id = await registrar(nota);
+    await anexar("rec_kits", id, "nota_fatura");
+    const t = await titulo(`4${nota}U`, { diasParaVencer: 45 });
+    await anexar("rec_titulos", t, "boleto", "financeiro.recebiveis");
+    expect((await kit(id)).estagio).toBe("pronta");
+    expect((await pendencias(id))["Enviar kit ao cliente"]).toBeUndefined();
+
+    await q(`update rec_titulos set vencimento = (now() at time zone 'America/Cuiaba')::date + 30 where id = $1`, [t]);
+    await q(`select rec_kits_abrir_envios_na_janela()`);
+    expect((await pendencias(id))["Enviar kit ao cliente"]).toBe("aberta");
+
+    // Voltou para fora da janela (vencimento prorrogado): a pendência é cancelada.
+    await q(`update rec_titulos set vencimento = (now() at time zone 'America/Cuiaba')::date + 31 where id = $1`, [t]);
+    await q(`select rec_kits_abrir_envios_na_janela()`);
+    expect((await pendencias(id))["Enviar kit ao cliente"]).toBe("cancelada");
   });
 
   it("kit criado depois do título liga na hora", async () => {

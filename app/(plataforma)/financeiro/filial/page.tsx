@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MODULO_FILIAL, ROTA_FILIAL } from "@/lib/modulos/financeiro/filial/arquivos";
-import { ehEstagioFila, ROTULO_ESTAGIO_FILA, ROTULO_URGENCIA, textoVencimento, type EstagioFila, type Papel } from "@/lib/modulos/financeiro/filial/estagios";
+import { ehEstagioFila, ROTULO_ESTAGIO_FILA, rotuloSituacao, ROTULO_URGENCIA, textoVencimento, type EstagioFila, type Papel } from "@/lib/modulos/financeiro/filial/estagios";
 import { formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { sanitizarBusca } from "@/lib/nucleo/erros";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
@@ -146,7 +146,7 @@ export default async function PaginaFilaFilial({ searchParams }: PageProps<"/fin
                       {l.cedido && <Badge variant="outline">AKF</Badge>}
                     </span>
                   </TableCell>
-                  <TableCell className="text-[12px]"><Badge variant="secondary">{ROTULO_ESTAGIO_FILA[l.situacao.estagio]}</Badge></TableCell>
+                  <TableCell className="text-[12px]"><Badge variant="secondary">{rotuloSituacao(l.situacao)}</Badge></TableCell>
                   <TableCell className="space-x-2 text-[12px]">
                     <Marca rotulo="NF" ok={l.docs.nota} /><Marca rotulo="Dem" ok={l.docs.demonstrativo} />
                     <Marca rotulo="Boleto" ok={l.docs.boleto} /><Marca rotulo="Carta" ok={l.docs.carta} />
@@ -168,7 +168,7 @@ export default async function PaginaFilaFilial({ searchParams }: PageProps<"/fin
       {nf && (
         <PainelLateral
           titulo={kitAberto ? `NF ${Number(kitAberto.nota)} — ${kitAberto.cliente}` : "NF"}
-          descricao={kitAberto ? `${ROTULO_ESTAGIO_FILA[kitAberto.situacao.estagio]}${kitAberto.remessas.length ? ` · remessa nº ${kitAberto.remessas.join(", ")}` : ""}` : undefined}
+          descricao={kitAberto ? `${rotuloSituacao(kitAberto.situacao)}${kitAberto.remessas.length ? ` · remessa nº ${kitAberto.remessas.join(", ")}` : ""}` : undefined}
           fecharHref={href({ nf: null })}>
           <ConteudoKit kitId={nf} sessao={sessao} papel={papel} podeOperar={podeOperar} />
         </PainelLateral>

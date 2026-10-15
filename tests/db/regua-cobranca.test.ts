@@ -122,6 +122,42 @@ describe("rec_registrar_cobranca: promessa", () => {
   });
 });
 
+describe("rec_registrar_cobranca: posição do cliente (0167)", () => {
+  it("cliente avisou que vai pagar: tira da cobrança até a data + 5 dias, grava a data e conclui a pendência", async () => {
+    const c = await preparar();
+    const data = await emDias(10);
+    const r = await registrar(finOperador, [c.a, c.b], 5, "posicao", "telefone", data, "Disse que paga dia 25 por PIX.");
+    expect(r.rows[0].r).toEqual({ parcelas: 2, pendencias_concluidas: 1, pausada_ate: await emDias(15) });
+    expect(await titulo(c.a)).toEqual({ estagio: "promessa", contestado: false, ate: await emDias(15) });
+    const p = await q(`select data_prometida::text as d from rec_promessas where titulo_id = $1`, [c.a]);
+    expect(p.rows).toEqual([{ d: data }]);
+    const i = await q(`select tipo, descricao from interacoes where referencia_id = $1`, [c.a]);
+    expect(i.rows[0].tipo).toBe("posicao");
+    expect(i.rows[0].descricao).toContain("Disse que paga dia 25 por PIX.");
+    expect(i.rows[0].descricao).toMatch(/^Cobrança D\+5: posição do cliente/);
+  });
+
+  it("cliente diz que já pagou (data passada): o prazo de 5 dias conta de hoje", async () => {
+    const c = await preparar();
+    await registrar(finOperador, [c.a], 1, "posicao", "whatsapp", await emDias(-3), "Informou que pagou por TED.");
+    expect((await titulo(c.a)).ate).toBe(await emDias(5));
+  });
+
+  it("exige data entre 30 dias atrás e 90 à frente e a descrição da posição", async () => {
+    const c = await preparar();
+    await expect(registrar(finOperador, [c.a], 1, "posicao", "whatsapp", null, "Vai pagar.")).rejects.toThrow(/Informe a data/);
+    await expect(registrar(finOperador, [c.a], 1, "posicao", "whatsapp", await emDias(-31), "Pagou faz tempo.")).rejects.toThrow(/30 dias/);
+    await expect(registrar(finOperador, [c.a], 1, "posicao", "whatsapp", await emDias(91), "Paga mais tarde.")).rejects.toThrow(/90 dias/);
+    await expect(registrar(finOperador, [c.a], 1, "posicao", "whatsapp", await emDias(2), "ok")).rejects.toThrow(/Descreva/);
+    expect((await titulo(c.a)).estagio).toBe("vencido");
+  });
+
+  it("quem só consulta não registra posição", async () => {
+    const c = await preparar();
+    await expect(registrar(finConsulta, [c.a], 1, "posicao", "whatsapp", await emDias(2), "Vai pagar sexta.")).rejects.toThrow();
+  });
+});
+
 describe("rec_registrar_cobranca: contestou", () => {
   it("marca como contestado, guarda o motivo e conclui a pendência", async () => {
     const c = await preparar();

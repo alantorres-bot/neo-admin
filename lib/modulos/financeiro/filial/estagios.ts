@@ -40,6 +40,20 @@ export const DONO_ESTAGIO: Record<EstagioFila, "filial" | "cuiaba" | null> = {
   cancelada: null,
 };
 
+/** Rótulo do estágio; o kit pronto fora da janela diz quando enviar ("Pronta para envio · enviar a partir de 15/11"). */
+export function rotuloSituacao(s: Pick<Situacao, "estagio" | "envioAPartirDe">): string {
+  if (!s.envioAPartirDe) return ROTULO_ESTAGIO_FILA[s.estagio];
+  const [, m, d] = s.envioAPartirDe.split("-");
+  return `${ROTULO_ESTAGIO_FILA[s.estagio]} · enviar a partir de ${d}/${m}`;
+}
+
+/** Data a partir da qual o envio entra na janela (vencimento − janela); vazio se já está na janela ou não há vencimento. */
+export function inicioDaJanelaDeEnvio(vencimento: string | null, hoje: string, janelaDias: number): string | null {
+  if (!vencimento) return null;
+  const inicio = new Date(Date.parse(`${vencimento}T00:00:00Z`) - janelaDias * 86_400_000).toISOString().slice(0, 10);
+  return inicio > hoje ? inicio : null;
+}
+
 export const ehEstagioFila = (v: string): v is EstagioFila => (ESTAGIOS_FILA as readonly string[]).includes(v);
 
 export type Papel = "filial" | "cuiaba";
@@ -55,12 +69,19 @@ export type KitParaSituacao = {
   parcelas: number;
   boletos: number;
   notaEnviada: boolean;
+  /**
+   * Kit pronto que ainda não está na janela de envio (vence daqui a mais de 30 dias, editável na Regra de cobrança): a data a
+   * partir da qual o envio vira tarefa (15/10/2026). Vazio = já pode enviar.
+   */
+  envioAPartirDe?: string | null;
 };
 
 export type Situacao = {
   estagio: EstagioFila;
   /** Tarefas abertas de cada lado (podem existir dos dois ao mesmo tempo). */
   tarefas: Record<Papel, string[]>;
+  /** Pronta, mas o envio só vira tarefa a partir desta data (ver `KitParaSituacao.envioAPartirDe`). */
+  envioAPartirDe?: string;
 };
 
 export function situacaoDaNota(k: KitParaSituacao): Situacao {
@@ -89,6 +110,9 @@ export function situacaoDaNota(k: KitParaSituacao): Situacao {
     estagio = "aguardando_boleto";
   } else {
     estagio = "pronta";
+  }
+  if ((estagio === "pronta" || estagio === "boleto_a_enviar") && k.envioAPartirDe) {
+    return { estagio, tarefas: { filial, cuiaba }, envioAPartirDe: k.envioAPartirDe };
   }
   if (estagio === "pronta") filial.push("Enviar ao cliente");
   if (estagio === "boleto_a_enviar") filial.push("Enviar boleto");

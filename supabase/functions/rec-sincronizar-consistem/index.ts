@@ -487,13 +487,22 @@ async function sincronizarEmpresa(
   // 5b) Pendência "Anexar boleto" para todo título aguardando boleto que ainda não tem uma aberta. Calculada do banco
   // (não só dos novos desta rodada): se uma rodada falhar no meio, a seguinte conserta.
   type LinhaAguardando = {
-    id: string; contraparte_id: string; documento: string; parcela: string; vencimento: string; valor: number | string;
+    id: string; contraparte_id: string; documento: string; parcela: string; vencimento: string; valor: number | string; unidade: string;
     nota_saida_id: string | null; contrapartes: { codigo_erp: string | null; nome: string } | { codigo_erp: string | null; nome: string }[] | null;
   };
-  const aguardando = await lerTudo<LinhaAguardando>((de, ate) =>
+  const aguardandoTodos = await lerTudo<LinhaAguardando>((de, ate) =>
     banco.from("rec_titulos")
-      .select("id, contraparte_id, documento, parcela, vencimento, valor, nota_saida_id, contrapartes(codigo_erp, nome)")
+      .select("id, contraparte_id, documento, parcela, vencimento, valor, unidade, nota_saida_id, contrapartes(codigo_erp, nome)")
       .eq("empresa_id", empresa.id).eq("estagio", "aguardando_boleto").eq("forma_pagamento", "boleto").order("id").range(de, ate));
+  // Filial Contagem: o trabalho de Cuiabá termina ao anexar o boleto (o envio é da filial, pelo kit). Parcela da filial já com
+  // boleto não pede "Anexar boleto"; a pendência aberta é concluída pelo kit quando todos os boletos chegam (0167).
+  const comBoletoFilial = new Set<string>();
+  for (const lote of lotes(aguardandoTodos.filter((l) => l.unidade === "contagem").map((l) => l.id))) {
+    const { data, error } = await banco.from("anexos").select("referencia_id").eq("referencia_tabela", "rec_titulos").eq("tipo", "boleto").in("referencia_id", lote);
+    if (error) throw new Error(`Falha ao ler os boletos da filial: ${error.message}`);
+    for (const a of data ?? []) comBoletoFilial.add(a.referencia_id as string);
+  }
+  const aguardando = aguardandoTodos.filter((l) => !comBoletoFilial.has(l.id));
   const titulosEsteira: TituloEsteira[] = aguardando.map((l) => {
     const c = Array.isArray(l.contrapartes) ? l.contrapartes[0] : l.contrapartes;
     return {
