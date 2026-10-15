@@ -109,3 +109,33 @@ export function PixFolha({ id, linhas, podeMarcar }: { id: string; linhas: Linha
     </div>
   );
 }
+
+export type LinhaDecimoTerceiro = { id: string; cod_fornecedor: string; nome: string; empregador: string; forma_pagamento: FormaPagamento; decimo_terceiro: number };
+
+/** 13º salário do mês (1ª parcela, paga na folha do mês do aniversário): quem recebe, à parte do salário. */
+export function DecimoTerceiroDoMes({ linhas }: { linhas: LinhaDecimoTerceiro[] }) {
+  if (!linhas.length) return null;
+  const total = linhas.reduce((s, l) => s + Math.round(l.decimo_terceiro * 100), 0) / 100;
+  return (
+    <section className="space-y-2">
+      <div>
+        <h3 className="text-base font-bold">13º salário do mês — 1ª parcela</h3>
+        <p className="text-sm text-muted-foreground">Pago na folha do mês do aniversário (aniversário em dezembro: na folha de novembro). Valor do escritório (cálculo 13º adiantamento); no arquivo do BB vai somado ao salário.</p>
+      </div>
+      <Table>
+        <TableHeader>
+          <TableRow><TableHead>Nº</TableHead><TableHead>Funcionário</TableHead><TableHead>Empresa</TableHead><TableHead>Pagamento</TableHead><TableHead className="text-right">Valor</TableHead></TableRow>
+        </TableHeader>
+        <TableBody>
+          {linhas.map((l) => (
+            <TableRow key={l.id}>
+              <TableCell className="tabular-nums">{l.cod_fornecedor}</TableCell><TableCell>{l.nome}</TableCell><TableCell className="text-xs">{l.empregador}</TableCell>
+              <TableCell>{ROTULO_FORMA[l.forma_pagamento]}</TableCell><TableCell className="text-right tabular-nums">{reais(l.decimo_terceiro)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+      <p className="text-sm">Total do 13º no mês: <strong>{reais(total)}</strong></p>
+    </section>
+  );
+}

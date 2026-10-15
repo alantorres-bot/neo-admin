@@ -44,7 +44,9 @@ export function GradeFolha({ mesId, editavel, itens }: { mesId: string; editavel
     for (const { i, e, centavos, v } of linhas) {
       total += centavos;
       for (const g of [`Empresa: ${i.empregador}`, `Pagamento: ${ROTULO_FORMA[e.forma_pagamento]}`]) grupos.set(g, (grupos.get(g) ?? 0) + centavos);
-      if (v.avulso > 0) grupos.set("Avulsos (fora da folha do escritório)", (grupos.get("Avulsos (fora da folha do escritório)") ?? 0) + Math.round(v.avulso * 100));
+      // 13º em separado do salário (pago no mês do aniversário), como a linha "13º SALÁRIO" da planilha do RH
+      const partes: [string, number][] = [["Salários (líquido + férias/acréscimos)", v.liquido + v.ferias_acrescimos], ["13º salário — 1ª parcela", v.decimo_terceiro], ["Avulsos (fora da folha do escritório)", v.avulso]];
+      for (const [g, x] of partes) if (x > 0) grupos.set(g, (grupos.get(g) ?? 0) + Math.round(x * 100));
     }
     return { total, grupos: [...grupos.entries()].sort() };
   }, [linhas]);
@@ -88,7 +90,7 @@ export function GradeFolha({ mesId, editavel, itens }: { mesId: string; editavel
         <TableHeader>
           <TableRow>
             <TableHead>Nº</TableHead><TableHead>Funcionário</TableHead><TableHead>Empresa</TableHead><TableHead>Pagamento</TableHead>
-            <TableHead className="text-right">Líquido</TableHead><TableHead className="text-right">Férias/acréscimos</TableHead><TableHead className="text-right">13º</TableHead>
+            <TableHead className="text-right">Líquido</TableHead><TableHead className="text-right">Férias/acréscimos</TableHead><TableHead className="text-right">13º (1ª parcela)</TableHead>
             <TableHead className="text-right">Avulso (recibos)</TableHead><TableHead>Recibos</TableHead><TableHead className="text-right">A pagar</TableHead>
           </TableRow>
         </TableHeader>

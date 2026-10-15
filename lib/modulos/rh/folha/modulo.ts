@@ -7,7 +7,7 @@ export const ROTA_FOLHA = "/rh/folha";
 export const NATUREZAS = ["liquido", "ferias_acrescimos", "decimo_terceiro", "avulso"] as const;
 export type Natureza = (typeof NATUREZAS)[number];
 export const ROTULO_NATUREZA: Record<Natureza, string> = {
-  liquido: "Líquido", ferias_acrescimos: "Férias/acréscimos", decimo_terceiro: "13º", avulso: "Avulso",
+  liquido: "Líquido", ferias_acrescimos: "Férias/acréscimos", decimo_terceiro: "13º (1ª parcela)", avulso: "Avulso",
 };
 
 /** Valor a pagar em centavos (a mesma soma da coluna gerada rh_fp_itens.valor). */

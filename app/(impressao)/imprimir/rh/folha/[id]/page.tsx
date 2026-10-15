@@ -15,7 +15,7 @@ export const metadata: Metadata = { title: "Relatório da folha de pagamento" };
 const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 const soma = (l: ItemFolha[], f: (i: ItemFolha) => number = (i) => i.valor) => l.reduce((s, i) => s + Math.round(f(i) * 100), 0) / 100;
 
-/** Relatório da folha do mês: por empresa, Nº, funcionário, valor a pagar e pagamento; avulsos à parte; totais por forma. */
+/** Relatório da folha do mês: por empresa, Nº, funcionário, valor a pagar e pagamento; 13º e avulsos à parte; totais por forma. */
 export default async function PaginaImprimirFolha({ params }: PageProps<"/imprimir/rh/folha/[id]">) {
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO_FOLHA);
@@ -26,7 +26,9 @@ export default async function PaginaImprimirFolha({ params }: PageProps<"/imprim
   const [mes, todos] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id)]);
   if (!mes) notFound();
   const itens = todos.filter((i) => i.valor > 0);
-  const folha = (i: ItemFolha) => i.liquido + i.ferias_acrescimos + i.decimo_terceiro;
+  // o 13º (1ª parcela, no mês do aniversário) sai em seção própria, como a linha "13º SALÁRIO" da planilha do RH
+  const folha = (i: ItemFolha) => i.liquido + i.ferias_acrescimos;
+  const decimos = itens.filter((i) => i.decimo_terceiro > 0);
   const empresas = [...new Set(itens.map((i) => i.empregador))].sort();
   const avulsos = itens.filter((i) => i.avulso > 0);
   const formas = FORMAS_PAGAMENTO.filter((f) => itens.some((i) => i.forma_pagamento === f));
@@ -66,6 +68,25 @@ export default async function PaginaImprimirFolha({ params }: PageProps<"/imprim
             </section>
           );
         })}
+        {decimos.length > 0 && (
+          <section className="mb-4 break-inside-avoid-page">
+            <h2 className="mb-1 text-[12px] font-bold uppercase">13º salário — 1ª parcela</h2>
+            <table className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="border-b border-black text-left"><th className="w-16 py-0.5">Nº</th><th>Funcionário</th><th className="text-right">Valor</th><th className="pl-4">Pagamento</th></tr>
+              </thead>
+              <tbody>
+                {decimos.map((i) => (
+                  <tr key={i.id} className="border-b border-neutral-300 align-top">
+                    <td className="py-0.5 tabular-nums">{i.cod_fornecedor}</td><td>{i.nome} <span className="text-neutral-500">({i.empregador})</span></td>
+                    <td className="text-right font-medium tabular-nums">{reais(i.decimo_terceiro)}</td><td className="pl-4">{ROTULO_FORMA[i.forma_pagamento]}</td>
+                  </tr>
+                ))}
+                <tr className="font-bold"><td colSpan={2} className="py-0.5 text-right">Subtotal 13º</td><td className="text-right tabular-nums">{reais(soma(decimos, (i) => i.decimo_terceiro))}</td><td /></tr>
+              </tbody>
+            </table>
+          </section>
+        )}
         {avulsos.length > 0 && (
           <section className="mb-4 break-inside-avoid-page">
             <h2 className="mb-1 text-[12px] font-bold uppercase">Avulsos (fora da folha do escritório)</h2>

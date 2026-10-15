@@ -55,6 +55,12 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
     R$ 12.292,78).
   - A diferença de R$ 1.722,76 do item anterior se explica: são R$ 1.672,76 do 13º adiantado de uma pessoa, que entrou na
     planilha como linha "13º SALÁRIO" e vem em outro cálculo do escritório, mais esses R$ 50,00.
+- **13º 1ª parcela nas planilhas de jan–set/2026:**
+  - Vem como linha própria, NATUREZA "13º SALÁRIO", com o valor na coluna SAL. LÍQUIDO e a forma de pagamento da pessoa.
+  - Quantos por mês: jan 5, fev 9, mar 18, set 1.
+  - Em 09/2026 foi só o Nº 687, aniversário em 22/09: R$ 1.672,76 = 13º adiantado 1.570,89 (metade do salário) + médias
+    68,01 e 33,86. Não teve INSS nem IRRF; FGTS de 133,82.
+  - O BB de setembro levou só o salário desse Nº; com a regra 4, o 13º passa a ir somado no mesmo crédito.
 - **SUBTOTAIS:** os da planilha usam faixas inconsistentes (ex.: `SUBTOTAL(9,F7:G83)`), o mesmo tipo de erro achado no VT.
 
 ## 3. Escopo
@@ -87,6 +93,15 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
 3. **Um mês por empresa:** o fechamento junta as três empresas, mas cada uma tem a sua lista, os seus totais e as suas guias.
 4. **Valor a pagar por pessoa** = líquido + férias/acréscimos + 13º do mês + avulsos.
    - Cada parte é uma **natureza**: salário, férias/acréscimos, 13º 1ª parcela, 13º 2ª parcela, avulso.
+   - **13º 1ª parcela (decisão de 15/10/2026):**
+     - É paga na folha do **mês do aniversário** da pessoa. Quem faz aniversário em **dezembro** recebe na folha de **novembro**.
+     - O valor é o do escritório (cálculo "13o Adiantamento"), na coluna 13º. Entra pelo "Importar do escritório" quando vier a
+       Relação dos Líquidos do cálculo; se não vier, é digitado do PDF.
+     - Sai **em separado** do salário: a coluna "13º (1ª parcela)" na grade, a seção "13º salário do mês" na tela do mês, a linha
+       própria nos totais e a seção "13º salário — 1ª parcela" no relatório. É a linha "13º SALÁRIO" da planilha do RH.
+     - No arquivo do BB vai **somado** ao salário: um crédito por pessoa.
+     - O aniversário **não** é controlado no Neo Admin por enquanto. Não há data de nascimento no cadastro; quem deveria receber,
+       os admitidos depois do aniversário e o adiantamento nas férias o RH acompanha por fora.
    - A forma de pagamento (FOPAG / PIX Neo Formas / PIX Neo Serviços) vem do cadastro e pode ser trocada só no mês.
    - Líquido zero (ex.: afastado) aparece, mas não gera pagamento nem título.
 5. **Fluxo:** aberto → conferido → aprovado (gestor) → pago, com o mesmo desenho do VT.
@@ -192,6 +207,8 @@ Nenhum dado pessoal vai para `docs/amostras/` (LGPD).
 6. **Fornecedores das guias no Consistem:** os códigos de Receita Federal e de Caixa/FGTS, e se o consignado vai contra a Caixa
    ou contra o banco do empréstimo.
 7. **Férias, rescisões e 13º:** se entram como natureza no mês (como hoje na planilha) ou como lançamentos com data própria.
+   - O 13º 1ª parcela está resolvido (regra 4, 15/10/2026).
+   - Continuam em aberto a 2ª parcela (dezembro), as férias e as rescisões.
 8. **Neo Formas para Concreto:** quem está nessa folha (pró-labore?) e quais guias ela gera.
 9. **Avulsos:** como aparecem no relatório e nos títulos, e se precisam de aprovação própria.
 10. **Os R$ 50,00 do Nº 1072 em setembro/2026:** a planilha pagaria R$ 2.004,26, e o escritório calculou R$ 1.954,26. Qual vale?

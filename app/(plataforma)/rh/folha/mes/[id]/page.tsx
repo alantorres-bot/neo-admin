@@ -15,7 +15,7 @@ import { RecibosDoMes } from "./recibos";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ImportarLiquidos } from "./importar";
 import { GradeFolha } from "./grade";
-import { FluxoFolha, PixFolha } from "./paineis";
+import { DecimoTerceiroDoMes, FluxoFolha, PixFolha } from "./paineis";
 
 export const metadata: Metadata = { title: "Folha do mês" };
 
@@ -62,6 +62,8 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
       )}
 
       <GradeFolha mesId={mes.id} editavel={podeOperar && mes.status === "aberta"} itens={itens} />
+
+      <DecimoTerceiroDoMes linhas={itens.filter((i) => i.decimo_terceiro > 0).map((i) => ({ id: i.id, cod_fornecedor: i.cod_fornecedor, nome: i.nome, empregador: i.empregador, forma_pagamento: i.forma_pagamento, decimo_terceiro: i.decimo_terceiro }))} />
 
       <RecibosDoMes mesId={mes.id} competencia={mes.competencia} aberta={mes.status === "aberta"} podeOperar={podeOperar} recibos={recibos}
         pessoas={pessoas.filter((p) => p.ativo || naFolha.has(p.id))} rubricas={rubricas} vigencias={vigencias} />

@@ -48,6 +48,12 @@ describe("Relação Geral dos Líquidos", () => {
     expect(r.ok && r.relacao.competencia).toBe("2026-10-01");
   });
 
+  it("13º adiantamento (1ª parcela no mês do aniversário): nome do cálculo como vem no extrato de 09/2026", () => {
+    expect(naturezaDoCalculo("13o Adiantamento")).toBe("decimo_terceiro");
+    const r = interpretarRelacao(relatorio({ calculo: "13o Adiantamento", total: 1672.76, pessoas: [[28, "GENIVAL PEDRO DA SILVA", 1672.76]] }));
+    expect(r.ok && { natureza: r.relacao.natureza, total: r.relacao.totalCentavos }).toEqual({ natureza: "decimo_terceiro", total: 167276 });
+  });
+
   it("casa pelo código do escritório dentro da empresa; ligação manual; quem ficou de fora", () => {
     const r = interpretarRelacao(relatorio());
     if (!r.ok) throw new Error(r.erro);
