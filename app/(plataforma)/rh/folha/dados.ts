@@ -43,17 +43,23 @@ export async function lerItens(supabase: Cliente, competenciaId: string): Promis
   return ((data ?? []) as Record<string, unknown>[]).map((i) => ({ ...i, ...Object.fromEntries(NUMERICOS.map((k) => [k, Number(i[k])])) }) as ItemFolha);
 }
 
-/** Totais de cada mês do ano, por empresa empregadora. */
-export async function totaisDoAno(supabase: Cliente, ids: string[]): Promise<Map<string, { pessoas: number; total: number; porEmpresa: Record<string, number> }>> {
-  const m = new Map<string, { pessoas: number; total: number; porEmpresa: Record<string, number> }>();
+export type TotaisMesFolha = { pessoas: number; total: number; porEmpresa: Record<string, number>; decimo: number; avulso: number };
+
+/** Totais de cada mês do ano (centavos): folha do escritório (líquido + férias) por empresa empregadora, 13º e avulso à parte;
+ *  empresas + 13º + avulso = total (como a planilha do RH). */
+export async function totaisDoAno(supabase: Cliente, ids: string[]): Promise<Map<string, TotaisMesFolha>> {
+  const m = new Map<string, TotaisMesFolha>();
   if (!ids.length) return m;
-  const { data } = await supabase.from("rh_fp_itens").select("competencia_id, empregador, valor").in("competencia_id", ids);
+  const { data } = await supabase.from("rh_fp_itens").select("competencia_id, empregador, liquido, ferias_acrescimos, decimo_terceiro, avulso, valor").in("competencia_id", ids);
+  const cent = (v: unknown) => Math.round(Number(v) * 100);
   for (const i of data ?? []) {
-    const t = m.get(i.competencia_id as string) ?? { pessoas: 0, total: 0, porEmpresa: {} };
-    const c = Math.round(Number(i.valor) * 100);
+    const t = m.get(i.competencia_id as string) ?? { pessoas: 0, total: 0, porEmpresa: {}, decimo: 0, avulso: 0 };
+    const c = cent(i.valor);
     if (c > 0) t.pessoas++;
     t.total += c;
-    t.porEmpresa[i.empregador as string] = (t.porEmpresa[i.empregador as string] ?? 0) + c;
+    t.decimo += cent(i.decimo_terceiro);
+    t.avulso += cent(i.avulso);
+    t.porEmpresa[i.empregador as string] = (t.porEmpresa[i.empregador as string] ?? 0) + cent(i.liquido) + cent(i.ferias_acrescimos);
     m.set(i.competencia_id as string, t);
   }
   return m;

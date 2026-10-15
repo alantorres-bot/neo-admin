@@ -10,7 +10,7 @@ import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { lerMeses, ROTULO_STATUS, totaisDoAno, type StatusFolha } from "../dados";
+import { lerMeses, ROTULO_STATUS, totaisDoAno, type StatusFolha, type TotaisMesFolha } from "../dados";
 import { AbrirMesFolha } from "./abrir-mes";
 
 export const metadata: Metadata = { title: "Folha de pagamento — meses" };
@@ -32,7 +32,9 @@ export default async function PaginaMesesFolha({ searchParams }: PageProps<"/rh/
   const empresas = [...new Set([...totais.values()].flatMap((t) => Object.keys(t.porEmpresa)))].sort();
   // Sugestão: a folha do mês corrente (paga no começo do mês seguinte).
   const sugestao = somarMeses(hoje, 0);
-  const totalAno = [...totais.values()].reduce((s, t) => s + t.total, 0);
+  const somaAno = (f: (t: TotaisMesFolha) => number) => [...totais.values()].reduce((s, t) => s + f(t), 0);
+  const totalAno = somaAno((t) => t.total);
+  const moeda = (centavos: number) => (centavos ? formatarMoeda(centavos) : "");
 
   return (
     <div className="space-y-4">
@@ -45,12 +47,13 @@ export default async function PaginaMesesFolha({ searchParams }: PageProps<"/rh/
         </div>
         {podeOperar && <AbrirMesFolha sugestao={porCompetencia.has(sugestao) ? null : sugestao.slice(0, 7)} />}
       </div>
-      <p className="text-sm text-muted-foreground">Cada linha é a folha de um mês, paga no 5º dia útil do mês seguinte.</p>
+      <p className="text-sm text-muted-foreground">Cada linha é a folha de um mês, paga no 5º dia útil do mês seguinte. Por empresa: líquido + férias/acréscimos (folha do escritório); 13º e avulsos à parte. A soma das colunas dá o total.</p>
       <Table>
         <TableHeader>
           <TableRow>
             <TableHead>Mês</TableHead><TableHead>Pagamento</TableHead><TableHead>Situação</TableHead><TableHead className="text-right">Pessoas</TableHead>
             {empresas.map((e) => <TableHead key={e} className="text-right">{e}</TableHead>)}
+            <TableHead className="text-right">13º</TableHead><TableHead className="text-right">Avulso</TableHead>
             <TableHead className="text-right">Total</TableHead>
           </TableRow>
         </TableHeader>
@@ -64,7 +67,9 @@ export default async function PaginaMesesFolha({ searchParams }: PageProps<"/rh/
                 <TableCell className="tabular-nums">{formatarData(m?.data_pagamento ?? pagamentoDaFolha(comp))}</TableCell>
                 <TableCell>{m ? <Badge variant="outline" className={COR_STATUS[m.status]}>{ROTULO_STATUS[m.status]}</Badge> : "Não aberta"}</TableCell>
                 <TableCell className="text-right tabular-nums">{t ? t.pessoas : ""}</TableCell>
-                {empresas.map((e) => <TableCell key={e} className="text-right tabular-nums">{t?.porEmpresa[e] ? formatarMoeda(t.porEmpresa[e]) : ""}</TableCell>)}
+                {empresas.map((e) => <TableCell key={e} className="text-right tabular-nums">{moeda(t?.porEmpresa[e] ?? 0)}</TableCell>)}
+                <TableCell className="text-right tabular-nums">{moeda(t?.decimo ?? 0)}</TableCell>
+                <TableCell className="text-right tabular-nums">{moeda(t?.avulso ?? 0)}</TableCell>
                 <TableCell className="text-right font-medium tabular-nums">{t ? formatarMoeda(t.total) : ""}</TableCell>
               </TableRow>
             );
