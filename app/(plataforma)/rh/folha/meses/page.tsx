@@ -74,6 +74,14 @@ export default async function PaginaMesesFolha({ searchParams }: PageProps<"/rh/
               </TableRow>
             );
           })}
+          {/* faixa de subtotal (colSpan: fica fixa no fim, fora da classificação e do filtro) */}
+          <TableRow className="border-t-2 border-texto bg-cabecalho font-bold">
+            <TableCell colSpan={4}>Subtotal {ano}</TableCell>
+            {empresas.map((e) => <TableCell key={e} className="text-right tabular-nums">{formatarMoeda(somaAno((t) => t.porEmpresa[e] ?? 0))}</TableCell>)}
+            <TableCell className="text-right tabular-nums">{formatarMoeda(somaAno((t) => t.decimo))}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatarMoeda(somaAno((t) => t.avulso))}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatarMoeda(totalAno)}</TableCell>
+          </TableRow>
         </TableBody>
       </Table>
     </div>
