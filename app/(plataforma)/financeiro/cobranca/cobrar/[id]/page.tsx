@@ -64,7 +64,7 @@ export default async function PaginaCobranca({ params }: PageProps<"/financeiro/
 
       {foraDaRegua.quantidade > 0 && (
         <p className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
-          Este cliente tem também {foraDaRegua.quantidade} {foraDaRegua.quantidade === 1 ? "título vencido" : "títulos vencidos"} ({formatarMoeda(foraDaRegua.totalCentavos)}) com vencimento antes de {formatarData(dados.corte)}: fora da régua automática. Decida o tratamento caso a caso (cedido, contestado, acordo).
+          Este cliente tem também {foraDaRegua.quantidade} {foraDaRegua.quantidade === 1 ? "título vencido" : "títulos vencidos"} ({formatarMoeda(foraDaRegua.totalCentavos)}) com vencimento antes de {formatarData(dados.corte)}: fora da régua automática. Decida o tratamento caso a caso (contestado, acordo).
         </p>
       )}
 

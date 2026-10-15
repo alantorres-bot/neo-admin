@@ -44,7 +44,7 @@ Títulos **cedidos** ficam marcados e fora da régua automática.
 10. `juridico` — fora da cobrança administrativa.
 11. `cancelado`.
 
-Marcadores paralelos: `cedido` (fora da régua), `contestado` (régua pausada), cliente `estrategico` (toda cobrança exige aprovação).
+Marcadores paralelos: `cedido` (na régua como os demais desde 15/10/2026), `contestado` (régua pausada), cliente `estrategico` (toda cobrança exige aprovação).
 
 ## 4. Régua padrão (editável, pode variar por cliente)
 
@@ -257,7 +257,7 @@ Primeira entrega da Fase 4 (seção 10). **O sistema nunca envia:** a cada sincr
 
 - **Marcos desta entrega:** D+1 lembrete cordial (e-mail e WhatsApp), D+5 segundo aviso pedindo previsão (WhatsApp), D+10 cobrança formal com **demonstrativo de multa e juros** (e-mail, prioridade alta). D+15 (carta PDF), D+30 (proposta de renegociação) e D+45 (jurídico) ficam para a etapa seguinte: dependem de textos do jurídico.
 - **Quem entra:** título vencido, **com vencimento a partir da data de corte** (`financeiro.recebiveis.regua_a_partir_de`, hoje 06/10/2026; vazio = régua desligada), nos estágios `importado`, `aguardando_boleto`, `boleto_enviado`, `confirmado_cliente`, `vencido`, e `promessa` depois de vencida a promessa. A **carteira antiga** (61 títulos, R$ 16,3 mi, 48 com mais de 60 dias, na data da entrega) fica **fora da régua automática**: a tela do cliente avisa quantos títulos antigos ele tem, para decidir caso a caso (cedido, contestado, acordo).
-- **Não cobra:** cedido, contestado, em renegociação, jurídico, pago/cancelado, régua pausada (promessa até a data, inclusive) e **título que saiu da lista de abertos do Consistem** ("Possível baixa" em aberto: provavelmente já pagou).
+- **Não cobra:** contestado, em renegociação, jurídico, pago/cancelado, régua pausada (promessa até a data, inclusive) e **título que saiu da lista de abertos do Consistem** ("Possível baixa" em aberto: provavelmente já pagou).
 - **Um título, o maior marco atingido** (7 dias de atraso = D+5). Vários títulos do mesmo cliente no mesmo marco viram **uma** pendência. Não se repete para o mesmo cliente, marco e vencimento mais antigo, nem depois de concluída. Se o cliente deixa de ter o que cobrar (pagou, contestou, prometeu), as pendências "Cobrar" abertas são canceladas.
 - **Trava:** mais de 40 pendências novas de uma vez = provável erro de configuração (data de corte antiga): nada é aberto e o aviso fica no registro da execução (`importacoes.mapeamento.regua`).
 - **Passa a `vencido`:** na sincronização, o título `importado`, `boleto_enviado` ou `confirmado_cliente` com vencimento passado vira `vencido` (`aguardando_boleto` fica como está: o boleto ainda é a pendência). Ao ligar, 61 títulos mudaram de estágio.
@@ -645,3 +645,8 @@ Aba **Painel** em Financeiro > Recebíveis (`/financeiro/recebiveis/painel`), en
 - **10 maiores devedores:** pelo valor vencido do cliente; títulos vencidos, maior atraso, parte do vencido e selo AKF quando algum título vencido está cedido. O nome abre a ficha do cliente.
 - **Regras puras:** `lib/modulos/financeiro/recebiveis/painel.ts` (`montarPainel`, `somarRecebido`, `segundaDaSemana`, `inadimplencia`), com testes em `painel.test.ts`.
 - **Conferido em 15/10/2026:** mesmos números do desenho (carteira R$ 12,7 mi, inadimplência 53%, previsão de R$ 4.578.058,28 em 61 títulos, 10 maiores devedores = 94% do vencido).
+
+## 40. Cobrança também dos títulos cedidos à AKF (15/10/2026)
+
+Decisão do usuário: o título vencido **cedido à AKF** entra na régua de cobrança como qualquer outro, com boleto da AKF ou boleto próprio (cliente que não paga à AKF). Antes, `cobravel` (`supabase/functions/_shared/cobranca.ts`) tirava todo cedido da fila "Cobrar" e das pendências de cobrança da sincronização; em Contagem, isso deixava de fora QRTZ 39 e Caparaó, que pagam à Neo. Os títulos antigos (antes do início da régua) também passam a listar o cedido na ficha de cobrança do cliente. O valor cobrado continua o mesmo de antes: o restante com a Neo quando há antecipação parcial (`akf_vw_valor_restante`); sem parte, o valor do título. Vale na tela na hora e, nas pendências, depois de publicar a Edge Function `rec-sincronizar-consistem`.
+

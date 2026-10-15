@@ -55,10 +55,12 @@ describe("cobravel", () => {
     expect(cobravel(t({ vencimento: "2026-10-05" }), HOJE, CORTE)).toBe(false);
     expect(cobravel(t({ vencimento: "2026-10-06" }), HOJE, CORTE)).toBe(true); // o corte vale
   });
-  it("não cobra: pago, renegociado, jurídico, cancelado, em renegociação, cedido, contestado", () => {
+  it("não cobra: pago, renegociado, jurídico, cancelado, em renegociação, contestado", () => {
     for (const estagio of ["pago", "renegociado", "juridico", "cancelado", "em_renegociacao"]) expect(cobravel(t({ estagio }), HOJE, CORTE)).toBe(false);
-    expect(cobravel(t({ cedido: true }), HOJE, CORTE)).toBe(false);
     expect(cobravel(t({ contestado: true }), HOJE, CORTE)).toBe(false);
+  });
+  it("cobra o título cedido à AKF, como qualquer outro (15/10/2026)", () => {
+    expect(cobravel(t({ cedido: true }), HOJE, CORTE)).toBe(true);
   });
   it("não cobra título com possível baixa (excluído)", () => {
     expect(cobravel(t(), HOJE, CORTE, new Set(["t1"]))).toBe(false);

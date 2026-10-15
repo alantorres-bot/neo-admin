@@ -292,7 +292,7 @@ export function FormRegra({ parametros, marcos, podeEditar, multaPct, jurosMesPc
               </ul>
             )}
             <p>Encargos do título vencido (padrão do módulo, até os contratos terem condições próprias): multa de <strong>{multaPct}%</strong> mais juros de <strong>{jurosMesPct}% ao mês</strong>, por dia de atraso. O valor definitivo é o do contrato de cada cliente.</p>
-            <p>Título com <strong>promessa de pagamento</strong> pausa a régua até a data prometida. Cedido, contestado, em renegociação ou no jurídico ficam fora da régua automática.</p>
+            <p>Título com <strong>promessa de pagamento</strong> pausa a régua até a data prometida. Contestado, em renegociação ou no jurídico ficam fora da régua automática. Título cedido à AKF é cobrado como os demais.</p>
             {podeEditar ? (
               <div className="flex flex-wrap gap-4">
                 <Campo rotulo="Régua vale para vencimentos desde" dica="Vazio desliga a régua. Data antiga demais abre muitas tarefas de uma vez (a trava barra).">

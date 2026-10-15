@@ -66,7 +66,7 @@ export async function carregarCobranca(supabase: Cliente, clienteId: string): Pr
     };
   });
   const grupos = corte ? planejarCobrancas(titulos, hoje, corte, excluidos, marcos) : [];
-  const antigos = corte ? titulos.filter((t) => t.vencimento < corte && !t.cedido && !t.contestado) : [];
+  const antigos = corte ? titulos.filter((t) => t.vencimento < corte && !t.contestado) : [];
 
   // Regra única de escolha (`_shared/contatos.ts`): só quem tem o canal; finalidade cobrança antes de boleto no e-mail.
   const contatoWhatsapp = escolherContato(contatos, "cobranca", "whatsapp");

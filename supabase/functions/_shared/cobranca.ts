@@ -172,10 +172,13 @@ export function calcularEncargos(valorCentavos: number, diasAtraso: number, mult
   return { multaCentavos, jurosCentavos: totalCentavos - valorCentavos - multaCentavos, totalCentavos };
 }
 
-/** A régua cobra este título hoje? Vencido, dentro do corte, sem pausa e fora dos casos que não se cobra por mensagem. */
+/**
+ * A régua cobra este título hoje? Vencido, dentro do corte, sem pausa e fora dos casos que não se cobra por mensagem.
+ * Título cedido à AKF também é cobrado pela Neo (decisão de 15/10/2026), com boleto da AKF ou próprio.
+ */
 export function cobravel(t: TituloCobranca, hoje: string, corte: string, excluidos: ReadonlySet<string> = new Set()): boolean {
   if (!(ESTAGIOS_COBRAVEIS as readonly string[]).includes(t.estagio)) return false;
-  if (t.cedido || t.contestado || excluidos.has(t.id)) return false;
+  if (t.contestado || excluidos.has(t.id)) return false;
   if (t.vencimento < corte || t.vencimento >= hoje) return false;
   if (t.estagio === "promessa" && !t.reguaPausadaAte) return false;
   if (t.reguaPausadaAte && t.reguaPausadaAte >= hoje) return false;
