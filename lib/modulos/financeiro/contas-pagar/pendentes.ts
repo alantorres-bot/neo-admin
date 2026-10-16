@@ -36,6 +36,8 @@ export type ItemPendente = {
   autorizacao: AutorizacaoAtiva | null;
   /** Antecipação marcada como paga fora do Neo Admin. */
   tratada: Tratada | null;
+  /** Última autorização em que ficou "não pago" na conferência com o banco (voltou à lista; migration 0168). */
+  naoPago?: { codigo: string; em: string } | null;
   /** Antecipação: true = tem borderô no Consistem (paga); false = sem borderô (a pagar); null = ainda não verificado. */
   temBordero: boolean | null;
   borderoVistoEm: string | null;

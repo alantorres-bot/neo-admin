@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  filtrarConferencia, filtrarPorSituacao, interpretarBusca, resumirConferencia, ROTULO_TIPO_CONFERENCIA,
+  filtrarConferencia, filtrarPorSituacao, interpretarBusca, podeMarcarNaoPago, resumirConferencia, ROTULO_TIPO_CONFERENCIA,
   type FiltroConferencia, type LinhaConferencia, type SituacaoConferencia,
 } from "@/lib/modulos/financeiro/contas-pagar/conferencia";
 import { alternarOrdem, ordenar, type Ordem } from "@/lib/modulos/financeiro/contas-pagar/ordenacao";
@@ -19,12 +19,18 @@ type Marca = Pick<LinhaConferencia, "situacao" | "valorBancoCentavos" | "observa
 
 const FILTROS: { valor: FiltroConferencia; rotulo: string }[] = [
   { valor: "todos", rotulo: "Todos" }, { valor: "faltam", rotulo: "Faltam" }, { valor: "conferidos", rotulo: "Conferidos" }, { valor: "divergentes", rotulo: "Divergentes" },
+  { valor: "nao_pagos", rotulo: "Não pagos" },
 ];
+
+const FUNDO: Record<SituacaoConferencia, string> = { conferido: "bg-emerald-50", divergente: "bg-amber-50", nao_pago: "bg-muted" };
+const COR_TEXTO: Record<SituacaoConferencia, string> = { conferido: "text-emerald-700", divergente: "text-amber-800", nao_pago: "text-muted-foreground" };
+const ROTULO_SITUACAO: Record<SituacaoConferencia, string> = { conferido: "conferido", divergente: "divergente", nao_pago: "não pago · voltou para a lista Autorizar pagamento" };
 
 /**
  * Lista da conferência com o banco. Cada caixa marcada grava na hora (otimista: desfaz e avisa se o banco recusar). Busca por valor
  * ("150", "1.234,56") ou por fornecedor/documento; com uma linha só na busca, Enter marca essa linha. "Divergente" abre na própria
- * linha o valor que está no banco e uma observação.
+ * linha o valor que está no banco e uma observação. "Não pago" (só título/antecipação) pede o motivo: o item fica na autorização e o
+ * lançamento volta à lista Autorizar pagamento enquanto estiver em aberto no Consistem.
  */
 export function TabelaConferencia({ autorizacaoId, linhas, podeMarcar, nomeUsuario }: { autorizacaoId: string; linhas: LinhaConferencia[]; podeMarcar: boolean; nomeUsuario: string }) {
   const [marcas, setMarcas] = useState<Map<string, Marca>>(new Map());
@@ -33,13 +39,13 @@ export function TabelaConferencia({ autorizacaoId, linhas, podeMarcar, nomeUsuar
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState<FiltroConferencia>("todos");
   const [ordem, setOrdem] = useState<Ordem<Coluna> | null>(null);
-  const [editando, setEditando] = useState<string | null>(null);
+  const [editando, setEditando] = useState<{ id: string; modo: "divergente" | "nao_pago" } | null>(null);
   const campoBusca = useRef<HTMLInputElement>(null);
 
   // Linhas com as marcas desta sessão por cima (o servidor também revalida a página).
   const atuais = useMemo(() => linhas.map((l) => ({ ...l, ...marcas.get(l.id) })), [linhas, marcas]);
   const resumo = resumirConferencia(atuais);
-  const contagem: Record<FiltroConferencia, number> = { todos: resumo.total.quantidade, faltam: resumo.faltam.quantidade, conferidos: resumo.conferidos.quantidade, divergentes: resumo.divergentes.quantidade };
+  const contagem: Record<FiltroConferencia, number> = { todos: resumo.total.quantidade, faltam: resumo.faltam.quantidade, conferidos: resumo.conferidos.quantidade, divergentes: resumo.divergentes.quantidade, nao_pagos: resumo.naoPagos.quantidade };
   const visiveis = ordenar(filtrarPorSituacao(filtrarConferencia(atuais, interpretarBusca(busca)), filtro), ordem, (l, c) => {
     switch (c) {
       case "tipo": return ROTULO_TIPO_CONFERENCIA[l.tipo];
@@ -73,9 +79,13 @@ export function TabelaConferencia({ autorizacaoId, linhas, podeMarcar, nomeUsuar
         return void toast.error(r.erro);
       }
       trocar({ ...otimista, situacao: r.situacao, valorBancoCentavos: r.valorBanco === null ? null : Math.round(r.valorBanco * 100), observacao: r.observacao, conferidoEm: r.conferidoEm });
-      if (situacao === "divergente") setEditando(null);
+      if (situacao === "divergente" || situacao === "nao_pago") setEditando(null);
+      if (situacao === "nao_pago") toast.success(`${l.nome} · ${formatarMoeda(l.valorCentavos)} voltou para a lista Autorizar pagamento.`);
     });
   }
+
+  const alternarEdicao = (id: string, modo: "divergente" | "nao_pago") =>
+    setEditando(editando?.id === id && editando.modo === modo ? null : { id, modo });
 
   function aoTeclar(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Escape") setBusca("");
@@ -92,10 +102,11 @@ export function TabelaConferencia({ autorizacaoId, linhas, podeMarcar, nomeUsuar
   return (
     <div className="space-y-3">
       <div className="sticky top-0 z-10 space-y-3 bg-background pb-2 pt-1">
-        <div className="grid gap-2 sm:grid-cols-3">
+        <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
           <Resumo titulo="Conferidos" valor={`${resumo.conferidos.quantidade} de ${resumo.total.quantidade}`} detalhe={`${formatarMoeda(resumo.conferidos.centavos)} de ${formatarMoeda(resumo.total.centavos)}`} cor={resumo.concluida && resumo.divergentes.quantidade === 0 ? "verde" : undefined} />
           <Resumo titulo="Divergentes" valor={String(resumo.divergentes.quantidade)} detalhe={resumo.divergentes.quantidade === 0 ? "nenhum" : `${formatarMoeda(resumo.divergentes.centavos)} autorizados${resumo.diferencaCentavos !== 0 ? ` · diferença no banco ${resumo.diferencaCentavos > 0 ? "+" : "−"}${formatarMoeda(Math.abs(resumo.diferencaCentavos))}` : ""}`} cor={resumo.divergentes.quantidade > 0 ? "ambar" : undefined} />
           <Resumo titulo="Faltam conferir" valor={String(resumo.faltam.quantidade)} detalhe={resumo.faltam.quantidade === 0 ? "tudo conferido" : formatarMoeda(resumo.faltam.centavos)} />
+          <Resumo titulo="Não pagos" valor={String(resumo.naoPagos.quantidade)} detalhe={resumo.naoPagos.quantidade === 0 ? "nenhum" : `${formatarMoeda(resumo.naoPagos.centavos)} · de volta à lista`} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <Input
@@ -137,13 +148,13 @@ export function TabelaConferencia({ autorizacaoId, linhas, podeMarcar, nomeUsuar
             <TableBody>
               {visiveis.map((l) => {
                 const pendente = pendentes.has(l.id);
-                const fundo = l.situacao === "conferido" ? "bg-emerald-50" : l.situacao === "divergente" ? "bg-amber-50" : "";
+                const fundo = l.situacao ? FUNDO[l.situacao] : "";
                 return [
                   <TableRow key={l.id} className={fundo}>
                     <TableCell>
                       <label className="flex cursor-pointer items-center gap-2">
                         <input
-                          type="checkbox" className="size-5 accent-emerald-700" checked={l.situacao === "conferido"} disabled={!podeMarcar || pendente}
+                          type="checkbox" className="size-5 accent-emerald-700" checked={l.situacao === "conferido"} disabled={!podeMarcar || pendente || l.situacao === "nao_pago"}
                           onChange={(e) => gravar(l, e.target.checked ? "conferido" : null)}
                           aria-label={`Conferido: ${l.nome} · ${formatarMoeda(l.valorCentavos)}`}
                         />
@@ -154,8 +165,8 @@ export function TabelaConferencia({ autorizacaoId, linhas, podeMarcar, nomeUsuar
                     <TableCell className="max-w-80">
                       <span className="block truncate" title={l.nome}>{l.nome}</span>
                       {l.situacao && (
-                        <span className={`block text-[11px] ${l.situacao === "conferido" ? "text-emerald-700" : "text-amber-800"}`}>
-                          {l.situacao === "conferido" ? "conferido" : "divergente"}
+                        <span className={`block text-[11px] ${COR_TEXTO[l.situacao]}`}>
+                          {ROTULO_SITUACAO[l.situacao]}
                           {l.situacao === "divergente" && l.valorBancoCentavos !== null && ` · no banco ${formatarMoeda(l.valorBancoCentavos)}`}
                           {l.observacao && ` · ${l.observacao}`}
                           {l.conferidoPorNome && ` · por ${l.conferidoPorNome}`}{l.conferidoEm && l.conferidoEm !== "agora" && ` em ${l.conferidoEm}`}
@@ -165,19 +176,28 @@ export function TabelaConferencia({ autorizacaoId, linhas, podeMarcar, nomeUsuar
                     <TableCell className="max-w-64 truncate tabular-nums" title={l.documento}>{l.documento || "—"}</TableCell>
                     <TableCell className="tabular-nums">{formatarData(l.data) || "—"}</TableCell>
                     <TableCell className="text-right text-base font-semibold tabular-nums">{formatarMoeda(l.valorCentavos)}</TableCell>
-                    <TableCell className="text-right">
-                      {podeMarcar && (l.situacao === "divergente"
+                    <TableCell className="whitespace-nowrap text-right">
+                      {podeMarcar && (l.situacao === "divergente" || l.situacao === "nao_pago"
                         ? <Button size="sm" variant="ghost" disabled={pendente} onClick={() => gravar(l, null)}>Desfazer</Button>
-                        : <Button size="sm" variant="outline" disabled={pendente} onClick={() => setEditando(editando === l.id ? null : l.id)}>Divergente</Button>)}
+                        : (
+                          <span className="inline-flex gap-1">
+                            <Button size="sm" variant="outline" disabled={pendente} onClick={() => alternarEdicao(l.id, "divergente")}>Divergente</Button>
+                            {podeMarcarNaoPago(l) && <Button size="sm" variant="outline" disabled={pendente} onClick={() => alternarEdicao(l.id, "nao_pago")}>Não pago</Button>}
+                          </span>
+                        ))}
                     </TableCell>
                   </TableRow>,
-                  editando === l.id && (
-                    <TableRow key={`${l.id}-div`} className="bg-amber-50">
+                  editando?.id === l.id && (
+                    <TableRow key={`${l.id}-${editando.modo}`} className={FUNDO[editando.modo]}>
                       <TableCell colSpan={7}>
-                        <FormDivergente
-                          valorAutorizado={l.valorCentavos} pendente={pendente}
-                          aoSalvar={(valor, obs) => gravar(l, "divergente", valor, obs)} aoCancelar={() => setEditando(null)}
-                        />
+                        {editando.modo === "divergente" ? (
+                          <FormDivergente
+                            valorAutorizado={l.valorCentavos} pendente={pendente}
+                            aoSalvar={(valor, obs) => gravar(l, "divergente", valor, obs)} aoCancelar={() => setEditando(null)}
+                          />
+                        ) : (
+                          <FormNaoPago pendente={pendente} aoSalvar={(motivo) => gravar(l, "nao_pago", null, motivo)} aoCancelar={() => setEditando(null)} />
+                        )}
                       </TableCell>
                     </TableRow>
                   ),
@@ -225,6 +245,23 @@ function FormDivergente({ valorAutorizado, pendente, aoSalvar, aoCancelar }: { v
       <Button type="button" size="sm" variant="ghost" onClick={aoCancelar}>Cancelar</Button>
       {valorInvalido && <span className="w-full text-xs text-destructive">Valor inválido. Use o formato 1.234,56.</span>}
       {lido !== null && !valorInvalido && <span className="w-full text-xs text-muted-foreground">Diferença: {lido - valorAutorizado >= 0 ? "+" : "−"}{formatarMoeda(Math.abs(lido - valorAutorizado))}</span>}
+    </form>
+  );
+}
+
+function FormNaoPago({ pendente, aoSalvar, aoCancelar }: { pendente: boolean; aoSalvar: (motivo: string) => void; aoCancelar: () => void }) {
+  const [motivo, setMotivo] = useState("");
+  return (
+    <form className="flex flex-wrap items-end gap-2" onSubmit={(e) => { e.preventDefault(); if (motivo.trim()) aoSalvar(motivo.trim()); }}>
+      <label className="min-w-64 flex-1 space-y-1 text-xs">
+        <span className="block text-muted-foreground">Motivo de não ter sido pago</span>
+        <Input autoFocus value={motivo} onChange={(e) => setMotivo(e.target.value)} maxLength={300} placeholder="ex.: sem saldo, fica para amanhã" autoComplete="off" />
+      </label>
+      <Button type="submit" size="sm" disabled={pendente || !motivo.trim()}>Marcar não pago</Button>
+      <Button type="button" size="sm" variant="ghost" onClick={aoCancelar}>Cancelar</Button>
+      <span className="w-full text-xs text-muted-foreground">
+        O item continua nesta autorização como não pago e o título volta para a lista Autorizar pagamento (vencidos), enquanto estiver em aberto no Consistem.
+      </span>
     </form>
   );
 }

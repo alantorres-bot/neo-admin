@@ -205,17 +205,18 @@ const esquemaConferencia = z.object({
   autorizacaoId: uuid,
   origem: z.enum(["item", "extra"]),
   id: uuid,
-  situacao: z.enum(["conferido", "divergente"]).nullable(),
+  situacao: z.enum(["conferido", "divergente", "nao_pago"]).nullable(),
   valorBanco: z.number().positive("O valor do banco deve ser maior que zero.").max(999_999_999_999.99).nullable(),
   observacao: z.string().trim().max(300, "A observação pode ter até 300 caracteres.").nullable(),
 });
 export type ResultadoConferencia =
-  | { ok: true; situacao: "conferido" | "divergente" | null; valorBanco: number | null; observacao: string | null; conferidoEm: string | null }
+  | { ok: true; situacao: "conferido" | "divergente" | "nao_pago" | null; valorBanco: number | null; observacao: string | null; conferidoEm: string | null }
   | { ok: false; erro: string };
 
 /**
  * Conferência com o banco (Fase 4e, função de banco `cap_conferir`): marca o item/extra como conferido ou divergente (valor do banco
- * e/ou observação), ou desmarca (`situacao` nula). Só autorização autorizada; operador ou gestor. Quem/quando: carimbo do banco.
+ * e/ou observação), o item como não pago (motivo; volta à lista Autorizar pagamento se seguir em aberto no Consistem, migration 0168),
+ * ou desmarca (`situacao` nula). Só autorização autorizada; operador ou gestor. Quem/quando: carimbo do banco.
  */
 export async function conferir(entrada: z.input<typeof esquemaConferencia>): Promise<ResultadoConferencia> {
   const sessao = await exigirSessao();
@@ -224,6 +225,8 @@ export async function conferir(entrada: z.input<typeof esquemaConferencia>): Pro
   if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
   const d = dados.data;
   if (d.situacao === "divergente" && d.valorBanco === null && !d.observacao) return { ok: false, erro: "Para marcar divergente, informe o valor que está no banco ou uma observação." };
+  if (d.situacao === "nao_pago" && d.origem !== "item") return { ok: false, erro: "Só títulos e antecipações do Consistem podem ser marcados como não pagos." };
+  if (d.situacao === "nao_pago" && !d.observacao) return { ok: false, erro: "Para marcar como não pago, informe o motivo (ex.: sem saldo, fica para amanhã)." };
   const supabase = await criarClienteServidor();
   const { data, error } = await supabase.rpc("cap_conferir", {
     p_origem: d.origem, p_id: d.id, p_situacao: d.situacao,
@@ -232,7 +235,7 @@ export async function conferir(entrada: z.input<typeof esquemaConferencia>): Pro
   });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   revalidar(d.autorizacaoId);
-  const r = (data ?? {}) as { conferencia_banco?: "conferido" | "divergente" | null; valor_banco?: number | string | null; observacao_conferencia?: string | null; conferido_banco_em?: string | null };
+  const r = (data ?? {}) as { conferencia_banco?: "conferido" | "divergente" | "nao_pago" | null; valor_banco?: number | string | null; observacao_conferencia?: string | null; conferido_banco_em?: string | null };
   return {
     ok: true,
     situacao: r.conferencia_banco ?? null,

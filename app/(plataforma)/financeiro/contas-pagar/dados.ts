@@ -15,6 +15,7 @@ type LinhaPendente = {
   fornecedor_nome: string | null; fornecedor_documento: string | null;
   autorizacao_id: string | null; autorizacao_numero: number | null; autorizacao_codigo: string | null; autorizacao_status: "rascunho" | "autorizada" | null;
   tratada_id: string | null; tratada_motivo: string | null; tratada_em: string | null;
+  nao_pago_autorizacao_codigo: string | null; nao_pago_em: string | null;
 };
 
 export type UltimaAtualizacao = { quando: string; novos: number; alterados: number; baixados: number } | null;
@@ -54,7 +55,7 @@ export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
   const [linhas, { data: configs }, { data: ultimas }, { data: empresas }, { data: rascunhosBrutos }] = await Promise.all([
     lerTudo<LinhaPendente>((de, ate) =>
       supabase.from("cap_vw_pendentes")
-        .select("id, empresa_id, cod_lancamento, tipo_lancamento, cod_fornecedor, num_documento, categoria_doc, cod_banco, complemento_historico, data_emissao, data_vencimento, data_pagamento, valor_documento, valor_atualizado, tem_bordero, bordero_visto_em, fornecedor_nome, fornecedor_documento, autorizacao_id, autorizacao_numero, autorizacao_codigo, autorizacao_status, tratada_id, tratada_motivo, tratada_em")
+        .select("id, empresa_id, cod_lancamento, tipo_lancamento, cod_fornecedor, num_documento, categoria_doc, cod_banco, complemento_historico, data_emissao, data_vencimento, data_pagamento, valor_documento, valor_atualizado, tem_bordero, bordero_visto_em, fornecedor_nome, fornecedor_documento, autorizacao_id, autorizacao_numero, autorizacao_codigo, autorizacao_status, tratada_id, tratada_motivo, tratada_em, nao_pago_autorizacao_codigo, nao_pago_em")
         .order("id").range(de, ate), "os lançamentos"),
     supabase.from("configuracoes").select("chave, valor").in("chave", [...CHAVES_CONTAS_PAGAR]),
     supabase.from("importacoes").select("criado_em, linhas_novas, linhas_alteradas, linhas_baixadas")
@@ -94,6 +95,7 @@ export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
     categoria: l.categoria_doc ?? "",
     autorizacao: l.autorizacao_id && l.autorizacao_numero !== null && l.autorizacao_status ? { id: l.autorizacao_id, numero: l.autorizacao_numero, codigo: l.autorizacao_codigo ?? String(l.autorizacao_numero), status: l.autorizacao_status } : null,
     tratada: l.tratada_id ? { id: l.tratada_id, motivo: l.tratada_motivo ?? "", em: l.tratada_em ?? "" } : null,
+    naoPago: l.nao_pago_autorizacao_codigo ? { codigo: l.nao_pago_autorizacao_codigo, em: l.nao_pago_em ? quandoEm(l.nao_pago_em) : "" } : null,
     temBordero: l.tem_bordero,
     borderoVistoEm: l.bordero_visto_em ? quandoEm(l.bordero_visto_em) : null,
   }));
@@ -125,6 +127,8 @@ export type LinhaAutorizacao = {
   extras: number; total_extras: number | string;
   /** Conferência com o banco (Fase 4e), itens + extras ativos: conferidos, divergentes e a soma dos conferidos. */
   conferidos: number; divergentes: number; total_conferido: number | string;
+  /** Itens marcados "não pago" na conferência (voltaram à lista; migration 0168). */
+  nao_pagos: number; total_nao_pago: number | string;
   excluida_em: string | null; excluida_por_nome: string | null; motivo_exclusao: string | null;
 };
 
@@ -133,7 +137,7 @@ export type LinhaExtraAutorizacao = {
   id: string; descricao: string; favorecido: string; valor: number | string; ordem: number;
   criado_por: string | null; criado_por_nome: string | null; criado_em: string; removido_em: string | null; motivo_remocao: string | null;
   /** Conferência com o banco (Fase 4e): conferido | divergente | nulo; quem marcou e quando. */
-  conferencia_banco: "conferido" | "divergente" | null; valor_banco: number | string | null; observacao_conferencia: string | null;
+  conferencia_banco: "conferido" | "divergente" | "nao_pago" | null; valor_banco: number | string | null; observacao_conferencia: string | null;
   conferido_banco_por: string | null; conferido_banco_por_nome: string | null; conferido_banco_em: string | null;
 };
 
@@ -143,13 +147,13 @@ export type LinhaItemAutorizacao = {
   valor: number | string; valor_original: number | string | null; complemento_historico: string | null; cod_banco: string | null; cod_portador: string | null;
   cod_barras: string | null; qrcode_pix: string | null; ordem: number; removido_em: string | null; motivo_remocao: string | null; baixado_consistem_em: string | null;
   /** Conferência com o banco (Fase 4e): conferido | divergente | nulo; quem marcou e quando. */
-  conferencia_banco: "conferido" | "divergente" | null; valor_banco: number | string | null; observacao_conferencia: string | null;
+  conferencia_banco: "conferido" | "divergente" | "nao_pago" | null; valor_banco: number | string | null; observacao_conferencia: string | null;
   conferido_banco_por: string | null; conferido_banco_por_nome: string | null; conferido_banco_em: string | null;
   /** Do lançamento de origem: antecipação com borderô no Consistem (paga) — preenchido na leitura. */
   tem_bordero: boolean | null;
 };
 
-const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados, extras, total_extras, conferidos, divergentes, total_conferido, excluida_em, excluida_por_nome, motivo_exclusao";
+const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados, extras, total_extras, conferidos, divergentes, total_conferido, nao_pagos, total_nao_pago, excluida_em, excluida_por_nome, motivo_exclusao";
 
 export async function listarAutorizacoes(supabase: Cliente, filtro: { status: string | null; pagina: number; porPagina: number }): Promise<{ linhas: LinhaAutorizacao[]; total: number }> {
   let consulta = supabase.from("cap_vw_autorizacoes").select(COLUNAS_AUTORIZACAO, { count: "exact" }).is("excluida_em", null).order("numero", { ascending: false })

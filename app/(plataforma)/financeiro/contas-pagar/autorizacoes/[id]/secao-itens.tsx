@@ -57,7 +57,8 @@ export function SecaoItens({ titulo, lista, total, autorizacaoId, podeRemover }:
             </TableHeader>
             <TableBody>
               {ordenados.map((i) => {
-                const jaPaga = i.tipo === "antecipacao" && i.tem_bordero === true && !i.baixado_consistem_em;
+                const naoPago = i.conferencia_banco === "nao_pago";
+                const jaPaga = !naoPago && i.tipo === "antecipacao" && i.tem_bordero === true && !i.baixado_consistem_em;
                 return (
                   <TableRow key={i.id}>
                     <TableCell className="max-w-80"><span className="block truncate" title={i.fornecedor_nome}>{i.fornecedor_nome}</span></TableCell>
@@ -67,7 +68,8 @@ export function SecaoItens({ titulo, lista, total, autorizacaoId, podeRemover }:
                     <TableCell className="text-right font-medium tabular-nums">
                       {formatarMoeda(centavos(i.valor))}
                       {jaPaga && <span className="block text-[11px] font-normal text-red-700">já paga (tem borderô)</span>}
-                      {!jaPaga && i.baixado_consistem_em && <span className="block text-[11px] font-normal text-emerald-700">{situacaoDoItem({ removido: false, baixadoConsistemEm: i.baixado_consistem_em, tipo: i.tipo })} em {formatarData(i.baixado_consistem_em)}</span>}
+                      {naoPago && <span className="block text-[11px] font-normal text-muted-foreground" title={i.observacao_conferencia ?? ""}>não pago no banco · voltou para a lista</span>}
+                      {!jaPaga && !naoPago && i.baixado_consistem_em && <span className="block text-[11px] font-normal text-emerald-700">{situacaoDoItem({ removido: false, baixadoConsistemEm: i.baixado_consistem_em, tipo: i.tipo })} em {formatarData(i.baixado_consistem_em)}</span>}
                     </TableCell>
                     {podeRemover && (
                       <TableCell className="text-right"><BotaoRemoverItem autorizacaoId={autorizacaoId} itemId={i.id} descricao={`${i.fornecedor_nome} · ${i.num_documento || i.cod_lancamento} · ${formatarMoeda(centavos(i.valor))}`} /></TableCell>

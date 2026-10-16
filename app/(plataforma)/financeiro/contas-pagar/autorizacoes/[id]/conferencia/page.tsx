@@ -64,7 +64,7 @@ export default async function PaginaConferencia({ params }: PageProps<"/financei
           <h2 className="text-xl font-bold">Conferência com o banco · {a.codigo}</h2>
           <p className="text-sm text-muted-foreground">
             {a.empresa_nome} · data {formatarData(a.data)} · autorizada por {a.autorizada_por_nome ?? "—"}{a.autorizada_em ? ` em ${quandoEm(a.autorizada_em)}` : ""}.
-            Para cada pagamento lançado no banco, busque pelo valor, confira e marque. Se não bater, marque divergente com o valor do banco.
+            Para cada pagamento lançado no banco, busque pelo valor, confira e marque. Se não bater, marque divergente com o valor do banco. Se não foi pago, marque não pago: o título volta para a lista Autorizar pagamento.
           </p>
         </div>
         <Button variant="ghost" render={<Link href={voltar} />}>Voltar à autorização</Button>

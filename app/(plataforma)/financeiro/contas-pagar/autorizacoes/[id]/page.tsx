@@ -43,7 +43,8 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
 
   const papel = { podeOperar: temAcesso(sessao.acesso, "financeiro", "operador"), ehGestor: temAcesso(sessao.acesso, "financeiro", "gestor"), userId: sessao.userId };
   const resumo = resumirItens(
-    itens.map((i) => ({ tipo: i.tipo, valorCentavos: centavos(i.valor), removido: i.removido_em !== null, baixadoConsistemEm: i.baixado_consistem_em })),
+    // item não pago no banco: uma baixa posterior é de outra autorização, não desta
+    itens.map((i) => ({ tipo: i.tipo, valorCentavos: centavos(i.valor), removido: i.removido_em !== null, baixadoConsistemEm: i.conferencia_banco === "nao_pago" ? null : i.baixado_consistem_em })),
     extras.map((x) => ({ valorCentavos: centavos(x.valor), removido: x.removido_em !== null })),
   );
   const ativos = itens.filter((i) => i.removido_em === null);
@@ -114,6 +115,7 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
             <CardHeader><CardDescription>Conferidos no banco</CardDescription><CardTitle className="text-xl tabular-nums">{a.conferidos} de {resumo.geral.quantidade}</CardTitle></CardHeader>
             <CardContent className={`text-xs ${a.divergentes > 0 ? "text-amber-700" : "text-muted-foreground"}`}>
               {a.divergentes > 0 ? `${a.divergentes} ${a.divergentes === 1 ? "divergente" : "divergentes"} · ` : ""}
+              {a.nao_pagos > 0 ? `${a.nao_pagos} não ${a.nao_pagos === 1 ? "pago" : "pagos"} (${formatarMoeda(centavos(a.total_nao_pago))}) · ` : ""}
               {papel.podeOperar ? <Link href={`${ROTA_CONTAS_PAGAR}/autorizacoes/${a.id}/conferencia`} className="text-elo hover:underline">abrir conferência</Link> : "conferência com o banco"}
             </CardContent>
           </Card>

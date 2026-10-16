@@ -67,6 +67,8 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
 6. **Status**: `rascunho` → `autorizada` (só gestor) → fim; `rascunho`/`autorizada` → `cancelada` (gestor ou quem montou,
    motivo obrigatório). Nada é apagado (gatilho de bloqueio de delete); toda mudança vai para `auditoria`.
 7. **Um lançamento não pode estar em duas autorizações ativas** ao mesmo tempo. Cancelada a primeira, pode entrar em outra.
+   Exceção (16/10/2026): item marcado **"não pago"** na conferência com o banco deixa de prender o lançamento, que volta à lista
+   se seguir em aberto no Consistem (seção 17).
 8. Ao autorizar, nasce a pendência **"Executar autorização de pagamento nº N — R$ X"** (módulo `financeiro.contas-pagar`,
    link para a autorização, prazo = menor vencimento dos itens ou hoje se já venceu, criticidade alta se vence em ≤ 3 dias).
    O financeiro conclui a pendência pela Fila do dia. Cancelar a autorização cancela a pendência.
@@ -104,7 +106,7 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
 | **Autorizar pagamento** (`/financeiro/contas-pagar`) | Três cartões (Títulos, Antecipações, Total: quantidade e R$); filtros (fornecedor/documento, tipo, vencimento de/até, mostrar já autorizados); tabela unificada com caixa de marcação e **títulos de coluna clicáveis para ordenar** (crescente ↔ decrescente): Tipo, Fornecedor, Documento, Vencimento (antecipação: pagamento programado), Valor, Saldo, Histórico — sem CNPJ, código do lançamento, emissão ou situação (linhas não pendentes ficam apagadas com uma linha pequena "na autorização X", "paga (borderô)" ou "paga fora"); barra fixa "N itens · R$ X" + caixa disponível + rascunho em montagem + botões **Salvar parcial · Extras · Gerar autorização** (diálogo: data (só ao criar), caixa, observação; gestor vê "Autorizar agora"); "Atualizado do Consistem em …" + Simular/Atualizar |
 | **Autorizações** (`/autorizacoes`) | Histórico: nº, data, status, itens, total títulos, total antecipações, montada por, autorizada por, baixados no Consistem X/N, conferidos no banco X/N (só autorizada; âmbar com divergentes); filtro por status |
 | **Autorização** (`/autorizacoes/[id]`) | Cabeçalho e status; seção Títulos e seção Antecipações com totais, colunas Fornecedor · Documento · Vencimento/Pagamento programado · Histórico · Valor, ordenáveis pelo título (sob o valor, só quando há algo a dizer: "baixado no Consistem em dd/mm" ou "já paga (tem borderô)"); seção Pagamentos extras; botões Autorizar (gestor), Cancelar (motivo), Remover item (só rascunho), Imprimir / salvar PDF |
-| **Conferência com o banco** (`/autorizacoes/[id]/conferencia`, Fase 4e) | Só autorização autorizada. Cartões Conferidos X de N (R$), Divergentes (com a diferença no banco), Faltam; busca por valor ("150" acha 150,00 e 150,90; "1.234,56" exato) ou fornecedor/documento, Enter marca a única linha encontrada; filtros Todos/Faltam/Conferidos/Divergentes; colunas ordenáveis. Por linha: caixa **Conferido** (grava na hora), botão **Divergente** (valor no banco e/ou observação), "por Fulano em dd/mm hh:mm" |
+| **Conferência com o banco** (`/autorizacoes/[id]/conferencia`, Fase 4e) | Só autorização autorizada. Cartões Conferidos X de N (R$), Divergentes (com a diferença no banco), Faltam; busca por valor ("150" acha 150,00 e 150,90; "1.234,56" exato) ou fornecedor/documento, Enter marca a única linha encontrada; filtros Todos/Faltam/Conferidos/Divergentes; colunas ordenáveis. Por linha: caixa **Conferido** (grava na hora), botão **Divergente** (valor no banco e/ou observação), botão **Não pago** (só título/antecipação; motivo obrigatório; o título volta para a lista Autorizar pagamento), "por Fulano em dd/mm hh:mm"; cartão e filtro **Não pagos** |
 | **Impressão** (`/imprimir/contas-pagar/autorizacao/[id]`) | O relatório da seção 6, sem a moldura do sistema |
 | **Antecipações** e **Parâmetros** (Fase 4) | Todas as antecipações com saldo e sua situação; data de corte com prévia |
 
@@ -395,3 +397,22 @@ Neo Admin: cada item marcado já fica gravado como conferido, com quem e quando.
 - Testes: `conferencia.test.ts` (8) e `tests/db/cap-conferencia.test.ts` (6: operador confere item e extra, carimbo, divergente
   exige valor ou observação, desmarcar e auditoria, só autorizada e item ativo, consulta não confere, colunas imutáveis, carimbo não
   forjável, sincronização preserva a conferência).
+
+### Não pago (16/10/2026, pedido do Alan)
+Na conferência nem tudo é pago (ex.: Barra Forte, R$ 39 mil, em 15/10/2026), e o título ficava preso na autorização autorizada.
+- Na tela "Conferir no banco", botão **Não pago** em títulos e antecipações (não em pagamentos extras): pede o **motivo** e grava
+  `conferencia_banco = 'nao_pago'` com quem/quando (mesmo carimbo e auditoria da conferência). O item **continua na autorização**
+  (prova; o total autorizado não muda) e aparece como "não pago no banco · voltou para a lista".
+- O lançamento deixa de contar como "em autorização ativa": volta à tela **Autorizar pagamento** (com "não pago na autorização
+  151026" sob o fornecedor) e pode entrar numa nova autorização.
+- **Sempre pelo Consistem:** só marca "não pago" se o lançamento ainda está em aberto no espelho (sincronização de 30 min:
+  `baixado_em` nulo e saldo > 0); a lista e a inclusão continuam exigindo o mesmo. Já baixado → recusa.
+- **Desfazer** o "não pago" é recusado se o lançamento já entrou em outra autorização ativa (tirar de lá primeiro).
+- Item não pago não conta em "baixados no Consistem" da autorização antiga (a baixa, se vier, é da nova).
+- Migration `0168_cap_nao_pago.sql`: check de `cap_autorizacao_itens.conferencia_banco` com `nao_pago`; `fn_cap_aplicar_conferencia`
+  (motivo obrigatório) e `fn_cap_item_regras` (em aberto no Consistem; desfazer sem outra ativa); `cap_conferir` (só item; resumo com
+  `nao_pagos`); `cap_vw_pendentes` (ignora item não pago; + `nao_pago_autorizacao_codigo`, `nao_pago_em`); `cap_adicionar_itens` e
+  `cap_marcar_antecipacao_tratada` ignoram item não pago; `cap_vw_autorizacoes` + `nao_pagos`, `total_nao_pago`.
+- Regras puras: `podeMarcarNaoPago`, filtro `nao_pagos` e `resumirConferencia().naoPagos` (`conferencia.ts`). Testes:
+  `conferencia.test.ts` e `tests/db/cap-nao-pago.test.ts` (motivo, volta à lista, nova autorização, desfazer recusado, só em aberto
+  no Consistem, extra recusado).

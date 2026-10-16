@@ -52,7 +52,7 @@ describe("conferência com o banco (0160)", () => {
     const m = await montar(true);
     const r = await conferir(finOperador, "item", m.itens[0], "conferido");
     expect(r.conferencia_banco).toBe("conferido");
-    expect(r.resumo).toEqual({ itens: 3, conferidos: 1, divergentes: 0 });
+    expect(r.resumo).toEqual({ itens: 3, conferidos: 1, divergentes: 0, nao_pagos: 0 });
     await conferir(finGestor, "extra", m.extra, "conferido");
     const i = (await q(`select conferido_banco_por, conferido_banco_em is not null as em from cap_autorizacao_itens where id = $1`, [m.itens[0]])).rows[0];
     expect([i.conferido_banco_por, i.em]).toEqual([finOperador, true]);

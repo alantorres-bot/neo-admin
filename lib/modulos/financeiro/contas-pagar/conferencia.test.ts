@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { filtrarConferencia, filtrarPorSituacao, interpretarBusca, podeConferir, resumirConferencia, type LinhaConferencia } from "./conferencia";
+import { ehSituacaoConferencia, filtrarConferencia, filtrarPorSituacao, interpretarBusca, podeConferir, podeMarcarNaoPago, resumirConferencia, type LinhaConferencia } from "./conferencia";
 
 const linha = (p: Partial<LinhaConferencia>): LinhaConferencia => ({
   origem: "item", id: "x", tipo: "titulo", nome: "Fornecedor", documento: "1", data: "2026-10-20", historico: "",
@@ -51,23 +51,32 @@ describe("resumirConferencia e filtros", () => {
     linha({ valorCentavos: 20000, situacao: "divergente", valorBancoCentavos: 21000 }),
     linha({ valorCentavos: 5000, situacao: "divergente" }),
     linha({ valorCentavos: 3000 }),
+    linha({ valorCentavos: 3900000, situacao: "nao_pago", observacao: "sem saldo" }),
   ];
   it("conta e soma por situação, com a diferença dos divergentes", () => {
     const r = resumirConferencia(lista);
-    expect(r.total).toEqual({ quantidade: 4, centavos: 38000 });
+    expect(r.total).toEqual({ quantidade: 5, centavos: 3938000 });
     expect(r.conferidos).toEqual({ quantidade: 1, centavos: 10000 });
     expect(r.divergentes).toEqual({ quantidade: 2, centavos: 25000 });
     expect(r.faltam).toEqual({ quantidade: 1, centavos: 3000 });
+    expect(r.naoPagos).toEqual({ quantidade: 1, centavos: 3900000 });
     expect(r.diferencaCentavos).toBe(1000);
     expect(r.concluida).toBe(false);
     expect(resumirConferencia(lista.slice(0, 3)).concluida).toBe(true);
+    expect(resumirConferencia([lista[0], lista[4]]).concluida).toBe(true); // não pago conta como resolvido
     expect(resumirConferencia([]).concluida).toBe(false);
   });
   it("filtra por situação", () => {
     expect(filtrarPorSituacao(lista, "faltam")).toHaveLength(1);
     expect(filtrarPorSituacao(lista, "conferidos")).toHaveLength(1);
     expect(filtrarPorSituacao(lista, "divergentes")).toHaveLength(2);
-    expect(filtrarPorSituacao(lista, "todos")).toHaveLength(4);
+    expect(filtrarPorSituacao(lista, "nao_pagos")).toHaveLength(1);
+    expect(filtrarPorSituacao(lista, "todos")).toHaveLength(5);
+  });
+  it("não pago só em item do Consistem", () => {
+    expect(ehSituacaoConferencia("nao_pago")).toBe(true);
+    expect(podeMarcarNaoPago(linha({ origem: "item" }))).toBe(true);
+    expect(podeMarcarNaoPago(linha({ origem: "extra", tipo: "extra" }))).toBe(false);
   });
   it("só autorizada e operador ou acima", () => {
     expect(podeConferir("autorizada", true)).toBe(true);

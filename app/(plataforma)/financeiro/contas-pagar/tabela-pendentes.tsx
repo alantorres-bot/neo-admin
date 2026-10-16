@@ -187,6 +187,9 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, r
                   <TableCell><Badge variant={i.tipo === "antecipacao" ? "default" : "outline"}>{ROTULO_TIPO[i.tipo]}</Badge></TableCell>
                   <TableCell className="max-w-80">
                     <span className="block truncate" title={i.fornecedor}>{i.fornecedor}</span>
+                    {pendente && i.naoPago && (
+                      <span className="block text-[11px] text-amber-800">não pago na autorização {i.naoPago.codigo}{i.naoPago.em ? ` (conferência de ${i.naoPago.em})` : ""}</span>
+                    )}
                     {!pendente && (
                       <span className="block text-[11px] text-muted-foreground">
                         {i.autorizacao ? (

@@ -1,9 +1,12 @@
 // Regras puras da conferência dos pagamentos com o banco (Fase 4e): depois de autorizada, quem libera no banco marca cada item
-// (título, antecipação ou extra) como conferido ou divergente. Aqui: a linha comum da tela, a busca por valor ou nome e o resumo.
+// (título, antecipação ou extra) como conferido ou divergente; título/antecipação que não foi pago vira "não pago" e volta à lista. Aqui: a linha comum da tela, a busca por valor ou nome e o resumo.
 // Sem imports; testado em conferencia.test.ts. As regras de gravação (só autorizada, quem/quando) ficam no banco (migration 0160).
 
-export type SituacaoConferencia = "conferido" | "divergente";
-export const ehSituacaoConferencia = (v: string | null | undefined): v is SituacaoConferencia => v === "conferido" || v === "divergente";
+export type SituacaoConferencia = "conferido" | "divergente" | "nao_pago";
+export const ehSituacaoConferencia = (v: string | null | undefined): v is SituacaoConferencia => v === "conferido" || v === "divergente" || v === "nao_pago";
+
+/** "Não pago" só vale para item do Consistem (título ou antecipação): é ele que volta à lista Autorizar pagamento (migration 0168). */
+export const podeMarcarNaoPago = (l: Pick<LinhaConferencia, "origem">): boolean => l.origem === "item";
 
 export type OrigemConferencia = "item" | "extra";
 
@@ -69,8 +72,8 @@ export function filtrarConferencia(linhas: readonly LinhaConferencia[], busca: B
   });
 }
 
-export type FiltroConferencia = "todos" | "faltam" | "conferidos" | "divergentes";
-export const ehFiltroConferencia = (v: string): v is FiltroConferencia => ["todos", "faltam", "conferidos", "divergentes"].includes(v);
+export type FiltroConferencia = "todos" | "faltam" | "conferidos" | "divergentes" | "nao_pagos";
+export const ehFiltroConferencia = (v: string): v is FiltroConferencia => ["todos", "faltam", "conferidos", "divergentes", "nao_pagos"].includes(v);
 
 export function filtrarPorSituacao(linhas: readonly LinhaConferencia[], filtro: FiltroConferencia): LinhaConferencia[] {
   switch (filtro) {
@@ -78,6 +81,7 @@ export function filtrarPorSituacao(linhas: readonly LinhaConferencia[], filtro: 
     case "faltam": return linhas.filter((l) => l.situacao === null);
     case "conferidos": return linhas.filter((l) => l.situacao === "conferido");
     case "divergentes": return linhas.filter((l) => l.situacao === "divergente");
+    case "nao_pagos": return linhas.filter((l) => l.situacao === "nao_pago");
   }
 }
 
@@ -87,15 +91,17 @@ export type ResumoConferencia = {
   conferidos: Contagem;
   divergentes: Contagem;
   faltam: Contagem;
+  /** Não pagos no banco: voltaram à lista (não contam em "faltam"). */
+  naoPagos: Contagem;
   /** Soma de (valor do banco − valor autorizado) dos divergentes que têm valor do banco. */
   diferencaCentavos: number;
-  /** Tudo marcado (conferido ou divergente). */
+  /** Tudo marcado (conferido, divergente ou não pago). */
   concluida: boolean;
 };
 
 export function resumirConferencia(linhas: readonly LinhaConferencia[]): ResumoConferencia {
   const zero = (): Contagem => ({ quantidade: 0, centavos: 0 });
-  const r = { total: zero(), conferidos: zero(), divergentes: zero(), faltam: zero(), diferencaCentavos: 0, concluida: false };
+  const r = { total: zero(), conferidos: zero(), divergentes: zero(), faltam: zero(), naoPagos: zero(), diferencaCentavos: 0, concluida: false };
   const somar = (c: Contagem, v: number) => { c.quantidade++; c.centavos += v; };
   for (const l of linhas) {
     somar(r.total, l.valorCentavos);
@@ -103,7 +109,8 @@ export function resumirConferencia(linhas: readonly LinhaConferencia[]): ResumoC
     else if (l.situacao === "divergente") {
       somar(r.divergentes, l.valorCentavos);
       if (l.valorBancoCentavos !== null) r.diferencaCentavos += l.valorBancoCentavos - l.valorCentavos;
-    } else somar(r.faltam, l.valorCentavos);
+    } else if (l.situacao === "nao_pago") somar(r.naoPagos, l.valorCentavos);
+    else somar(r.faltam, l.valorCentavos);
   }
   r.concluida = r.total.quantidade > 0 && r.faltam.quantidade === 0;
   return r;
