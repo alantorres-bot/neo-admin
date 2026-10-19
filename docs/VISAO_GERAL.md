@@ -25,6 +25,7 @@ uma rotina que hoje é feita em planilha, e-mail, ERP ou skill avulsa.
 | **RH/SST** | Folha de pagamento | Fechamento mensal: pagamento dos líquidos e avulsos, conferências (extrato × pagamento × DARF/FGTS/consignado), arquivo do BB, PIX, títulos no Consistem, documentos e checklist (ver `modulos/rh-folha.md`; especificação em rascunho desde 14/10/2026) | em especificação |
 | RH/SST | EPIs | Entregas por colaborador, vencimentos, análise mensal | 4 |
 | RH/SST | Vale-transporte | Apuração mensal do VT de Cuiabá (dias, faltas, extras, tarifa), aprovação, arquivo do BB, PIX e títulos no Consistem (ver `modulos/rh-vale-transporte.md`; Fases A, B e C entregues em 14/10/2026: cadastro, mês a mês com ocorrências, aprovação, relatório, arquivo do BB, PIX, resumo do ano, histórico 2026 e títulos no Consistem) | em construção |
+| **Comercial** | Pedidos | Carteira e previsão de faturamento, expedição (separação, NF, transporte, MDF-e), títulos e comissão do representante, pós-venda (cancelamentos e devoluções), tudo pela API Comercial do Consistem, só leitura na v1 (ver `modulos/comercial-pedidos.md`; Fase 0 e Fase 1 (carteira e faturamento) em 19/10/2026) | em construção |
 | **Administrativo geral** | POPs | Procedimentos padrão por área, versionados | 5 |
 
 Prioridade: 1 = primeiro a construir. Ajustável.
@@ -48,7 +49,7 @@ Prioridade: 1 = primeiro a construir. Ajustável.
 ## 3. Telas da plataforma
 - **Painel geral:** indicadores-chave de cada área que o usuário pode ver.
 - **Início (super painel):** cartões por área com os módulos do Neo Admin e os aplicativos externos a que o usuário tem acesso. A Fila do dia fica em Financeiro > Recebíveis > Fila do dia.
-- **Menu por área:** Financeiro, Fiscal, Contratos, Jurídico, RH/SST, Administrativo, Produção. Módulos nativos e aplicativos externos lado a lado.
+- **Menu por área:** Financeiro, Fiscal, Contratos, Jurídico, RH/SST, Administrativo, Produção, Estoques, Comercial. Módulos nativos e aplicativos externos lado a lado.
 - **Configurações:** empresas, contrapartes, usuários e permissões, integrações.
 
 ## 4. Ordem de construção

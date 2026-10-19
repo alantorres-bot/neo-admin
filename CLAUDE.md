@@ -27,6 +27,7 @@ app/
     inicio/                  -> Fila do dia geral (pendências de todos os módulos do usuário)
     financeiro/recebiveis/   -> um módulo = uma pasta de rotas
     fiscal/parcelamentos/
+    comercial/pedidos/
     ...
     configuracoes/
     apps/[codigo]/           -> aplicativo externo (sistema separado) embutido no painel; cadastro em Configurações > Aplicativos
@@ -40,7 +41,7 @@ supabase/
 docs/modulos/                -> uma especificação por módulo
 ```
 - Faixa de numeração das migrations por área: núcleo 0001–0099, financeiro 0100–0199, fiscal 0200–0299,
-  contratos 0300–0399, jurídico 0400–0499, RH/SST 0500–0599, compras/patrimônio 0600–0699.
+  contratos 0300–0399, jurídico 0400–0499, RH/SST 0500–0599, compras/patrimônio 0600–0699, comercial 0700–0799.
 - Um módulo **nunca** acessa tabelas internas de outro módulo diretamente: usa o núcleo (pendências,
   anexos, empresas, contrapartes) ou uma view/função pública documentada.
 - Todo módulo publica suas pendências na tabela `pendencias` do núcleo (alimenta a Fila do dia).

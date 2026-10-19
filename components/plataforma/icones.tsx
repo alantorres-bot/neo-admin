@@ -1,6 +1,6 @@
 // Ícones do menu e dos cartões (sem "use client": servem a componentes de servidor e de cliente).
 import {
-  Banknote, BellRing, Calculator, ChartColumn, ClipboardList, Factory, FileSignature, FileText, HardHat, LayoutDashboard, Package, Scale, ShieldCheck, Truck,
+  Banknote, BellRing, Calculator, ChartColumn, ClipboardList, Factory, FileSignature, FileText, HardHat, LayoutDashboard, Package, Scale, ShieldCheck, ShoppingCart, Truck,
   Users, Wallet, Wrench, type LucideIcon,
 } from "lucide-react";
 import type { IconeApp } from "@/lib/nucleo/aplicativos";
@@ -14,6 +14,7 @@ export const ICONE_DA_AREA: Record<string, LucideIcon> = {
   administrativo: ClipboardList,
   producao: Factory,
   estoques: Package,
+  comercial: ShoppingCart,
 };
 
 // Módulos que têm ícone próprio (os demais usam o da área); assim Cobrança e Recebíveis, ambos do Financeiro, não ficam iguais.

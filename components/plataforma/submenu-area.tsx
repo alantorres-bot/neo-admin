@@ -12,7 +12,7 @@ import { ICONE_DA_AREA, iconeDoItem } from "./icones";
 
 /** Rótulo curto da área no trilho (o nome completo vai no título e no painel). */
 const ROTULO_CURTO: Record<string, string> = {
-  financeiro: "Financeiro", fiscal: "Fiscal", contratos: "Contratos", juridico: "Jurídico", rh: "RH", administrativo: "Admin.", producao: "Produção", estoques: "Estoques",
+  financeiro: "Financeiro", fiscal: "Fiscal", contratos: "Contratos", juridico: "Jurídico", rh: "RH", administrativo: "Admin.", producao: "Produção", estoques: "Estoques", comercial: "Comercial",
 };
 
 const CLASSE_ITEM = "flex w-[72px] shrink-0 flex-col items-center justify-center gap-0.5 px-1 py-2 text-[10px] leading-tight transition-colors md:w-full md:justify-start";

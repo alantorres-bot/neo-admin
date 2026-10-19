@@ -43,13 +43,16 @@ export function limparToken(bruto: string): string | null {
   return /^[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}$/.test(t) ? t : null;
 }
 
-/** GET paginado: acumula `data` de todas as páginas até acabar o `continuationToken`. */
+/**
+ * GET paginado: acumula `data` de todas as páginas até acabar o `continuationToken`. Alguns serviços dão outro nome
+ * à lista (`notasDevolucao` na devolução, `listaMDFe` no MDF-e): passe-o em `campoLista`.
+ */
 export async function buscarTodasPaginas(
   buscar: Buscar,
   cfg: ConfigConsistem,
   rota: string,
   params: Record<string, string | number>,
-  opcoes: { esperar?: (ms: number) => Promise<void> } = {},
+  opcoes: { esperar?: (ms: number) => Promise<void>; campoLista?: string } = {},
 ): Promise<Record<string, unknown>[]> {
   const token = limparToken(cfg.token);
   if (!token) throw new ConsistemErro("O segredo CONSISTEM_API_KEY não parece um token válido (esperado: token JWT do CSMEN050, sem espaços nem quebras de linha).");
@@ -89,7 +92,7 @@ export async function buscarTodasPaginas(
       return registros;
     }
     const obj = corpo as Record<string, unknown>;
-    const dados = (obj.data ?? obj.Data ?? []) as Record<string, unknown>[];
+    const dados = ((opcoes.campoLista ? obj[opcoes.campoLista] : undefined) ?? obj.data ?? obj.Data ?? []) as Record<string, unknown>[];
     registros.push(...dados);
     const continuacao = (obj.continuationToken ?? obj.ContinuationToken) as string | null | undefined;
     if (!continuacao) return registros;
@@ -744,18 +747,25 @@ export function analisarVinculo(
   return rel;
 }
 
-/** GET de um único objeto (ex.: pedidoVenda/{cod}); mesma autenticação e retry de 429 da leitura paginada. */
-export async function buscarObjeto(
+/**
+ * GET simples que devolve o JSON como veio (objeto, array ou vazio), com a mesma autenticação e retry de 429 da
+ * leitura paginada. `params` vira query string; `cabecalhos` soma-se aos de autenticação (ex.: `page`/`size` dos
+ * serviços "Resumido").
+ */
+export async function buscarJson(
   buscar: Buscar,
   cfg: ConfigConsistem,
   rota: string,
-  opcoes: { esperar?: (ms: number) => Promise<void> } = {},
-): Promise<Record<string, unknown>> {
+  opcoes: { esperar?: (ms: number) => Promise<void>; params?: Record<string, string | number>; cabecalhos?: Record<string, string> } = {},
+): Promise<unknown> {
   const token = limparToken(cfg.token);
   if (!token) throw new ConsistemErro("O segredo CONSISTEM_API_KEY não parece um token válido (esperado: token JWT do CSMEN050, sem espaços nem quebras de linha).");
   const aguardar = opcoes.esperar ?? esperar;
-  const url = `${cfg.baseUrl.replace(/\/+$/, "")}/${rota.replace(/^\/+/, "")}`;
-  const headers = { Authorization: token, empresa: cfg.empresa, Accept: "application/json" };
+  const consulta = opcoes.params && Object.keys(opcoes.params).length > 0
+    ? `?${new URLSearchParams(Object.entries(opcoes.params).map(([k, v]) => [k, String(v)]))}`
+    : "";
+  const url = `${cfg.baseUrl.replace(/\/+$/, "")}/${rota.replace(/^\/+/, "")}${consulta}`;
+  const headers = { ...(opcoes.cabecalhos ?? {}), Authorization: token, empresa: cfg.empresa, Accept: "application/json" };
   const chamar = async () => {
     try {
       return await buscar(url, { headers });
@@ -771,6 +781,42 @@ export async function buscarObjeto(
   const corpo = await resp.text();
   if (resp.status === 401 || resp.status === 403) throw new ConsistemErro(`Acesso negado (HTTP ${resp.status}).`, resp.status);
   if (!resp.ok) throw new ConsistemErro(`Consistem HTTP ${resp.status}: ${corpo.slice(0, 200)}`, resp.status);
-  const json: unknown = corpo ? JSON.parse(corpo) : {};
+  return corpo ? JSON.parse(corpo) : {};
+}
+
+export const TAMANHO_PAGINA_RESUMIDO = 200;
+const MAX_PAGINAS_RESUMIDO = 100;
+
+/**
+ * Leitura completa de um serviço "Resumido/Resumida" da API Comercial (pedidoVendaResumido, notaFiscalSaidaResumida):
+ * paginam por CABEÇALHO (`page` a partir de 0, `size`) e devolvem array puro. Lê até vir uma página incompleta.
+ */
+export async function buscarResumido(
+  buscar: Buscar,
+  cfg: ConfigConsistem,
+  rota: string,
+  params: Record<string, string | number>,
+  opcoes: { esperar?: (ms: number) => Promise<void>; tamanho?: number } = {},
+): Promise<Record<string, unknown>[]> {
+  const tamanho = opcoes.tamanho ?? TAMANHO_PAGINA_RESUMIDO;
+  const registros: Record<string, unknown>[] = [];
+  for (let pagina = 0; pagina < MAX_PAGINAS_RESUMIDO; pagina++) {
+    const json = await buscarJson(buscar, cfg, rota, { esperar: opcoes.esperar, params, cabecalhos: { page: String(pagina), size: String(tamanho) } });
+    const obj = json as Record<string, unknown>;
+    const dados = (Array.isArray(json) ? json : Array.isArray(obj?.data) ? obj.data : []) as Record<string, unknown>[];
+    registros.push(...dados);
+    if (dados.length < tamanho) return registros;
+  }
+  throw new ConsistemErro("Paginação do Consistem não terminou (limite de páginas).");
+}
+
+/** GET de um único objeto (ex.: pedidoVenda/{cod}); se a API devolver um array, fica o primeiro item. */
+export async function buscarObjeto(
+  buscar: Buscar,
+  cfg: ConfigConsistem,
+  rota: string,
+  opcoes: { esperar?: (ms: number) => Promise<void> } = {},
+): Promise<Record<string, unknown>> {
+  const json = await buscarJson(buscar, cfg, rota, opcoes);
   return (Array.isArray(json) ? (json[0] ?? {}) : (json as Record<string, unknown>)) ?? {};
 }

@@ -432,6 +432,10 @@ verify_jwt = false
 [functions.cap-sincronizar-consistem]
 verify_jwt = false
 
+# A sondagem da API Comercial confere quem chama (gestor do Comercial ou service role do script).
+[functions.com-pedidos-sincronizar]
+verify_jwt = false
+
 [functions.cap-enviar-slack]
 verify_jwt = false
 
