@@ -37,6 +37,9 @@
 //   - Confirmação (CCFFB014): não é mais lida desde 13/10/2026 (o Consistem passou a "Sem Controle" na CCFFB000; migration 0161).
 //   - Se a API devolver nenhum lançamento em aberto mas há abertos no banco, nada é alterado (provável falha).
 //   - Nunca escreve no Consistem.
+//   - Contas bancárias (0169): a cada rodada o cadastro (GET dadosBancarios) vai para fin_contas_bancarias e a pendência
+//     diária "Registrar saldos bancários" é aberta/cancelada. A API não tem saldo: o saldo do dia é registrado na tela
+//     Saldos bancários. Falha neste passo não derruba a sincronização do contas a pagar (vai no resumo).
 //
 // Segredos (Supabase > Edge Functions > Secrets): CONSISTEM_API_KEY (obrigatório), SINCRONIZACAO_SEGREDO (agendamento),
 // CONSISTEM_BASE_URL (opcional). O código da empresa vem de empresas.codigo_erp.
@@ -54,16 +57,20 @@ import {
   type ConfigConsistem,
 } from "../_shared/consistem-receber.ts";
 import {
+  entraNoCaixaPorPadrao,
   FILTRO_BORDERO,
   janelasDeDatas,
   LIMITE_DETALHES_POR_RODADA,
+  normalizarContaBancaria,
   normalizarDetalheLancamento,
   normalizarFornecedorApi,
   normalizarLancamentoPagar,
   planejarSincronizacaoPagar,
   ROTA_CONTAS_PAGAR,
+  ROTA_DADOS_BANCARIOS,
   ROTA_DETALHE_LANCAMENTO,
   ROTA_FORNECEDORES,
+  type ContaBancariaApi,
   type FornecedorApi,
   type LancamentoBanco,
   type LancamentoPagarApi,
@@ -402,6 +409,24 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
 }
 
 /** Abre (uma só) pendência de falha. Mensagens vêm da própria função e nunca contêm segredos. */
+/** Espelha o cadastro das contas bancárias da empresa. Nunca lança: devolve o erro no resumo. */
+async function sincronizarContasBancarias(banco: Banco, empresa: Empresa, cfgBase: Omit<ConfigConsistem, "empresa">): Promise<Record<string, unknown>> {
+  try {
+    const cfg: ConfigConsistem = { ...cfgBase, empresa: empresa.codigo_erp };
+    const registros = await buscarTodasPaginas(buscar, cfg, ROTA_DADOS_BANCARIOS, { paginacao: PAGINACAO }, { chaveLista: "dadosBancarios" });
+    const contas = registros.map((r) => normalizarContaBancaria(r)).filter((c): c is ContaBancariaApi => c !== null).map((c) => ({
+      cod_conta_bancaria: c.codContaBancaria, cod_banco: c.codBanco, descricao: c.descricao, agencia: c.agencia, conta: c.conta,
+      conta_contabil: c.contaContabil, tipo_conta: c.tipoConta, considera_saldo: c.consideraSaldo, inativa: c.inativa,
+      entra_no_caixa: entraNoCaixaPorPadrao(c),
+    }));
+    const { data, error } = await banco.rpc("fin_sincronizar_contas", { p_empresa: empresa.id, p_contas: contas });
+    if (error) return { erro: `Contas bancárias: ${error.message}` };
+    return { naApi: contas.length, ...(data as Record<string, unknown>) };
+  } catch (e) {
+    return { erro: `Contas bancárias: ${e instanceof Error ? e.message : "falha inesperada"}` };
+  }
+}
+
 async function registrarFalha(banco: Banco, mensagem: string, agendado: boolean): Promise<void> {
   const { data: abertas } = await banco.from("pendencias").select("id").eq("modulo", MODULO).eq("titulo", TITULO_FALHA)
     .in("status", ["aberta", "em_andamento"]).limit(1);
@@ -667,8 +692,14 @@ Deno.serve(async (req) => {
         for (const e of empresas) {
           resultados.push(await sincronizarEmpresa(banco, e as Empresa, cfgBase, corpo.simular === true, usuarioId));
         }
-        if (corpo.simular !== true) await encerrarFalhas(banco);
-        return responder({ ok: true, agendado, resultados });
+        let contasBancarias: Record<string, unknown> = {};
+        if (corpo.simular !== true) {
+          await encerrarFalhas(banco);
+          for (const e of empresas) contasBancarias[(e as Empresa).nome_curto] = await sincronizarContasBancarias(banco, e as Empresa, cfgBase);
+          const { data: pendencias, error: erroPendencias } = await banco.rpc("fin_abrir_pendencias_saldos");
+          contasBancarias = { ...contasBancarias, pendenciasSaldos: erroPendencias ? `falha: ${erroPendencias.message}` : pendencias };
+        }
+        return responder({ ok: true, agendado, resultados, contasBancarias });
       }
       default:
         return responder({ erro: "Ação desconhecida." }, 400);

@@ -49,7 +49,7 @@ export async function buscarTodasPaginas(
   cfg: ConfigConsistem,
   rota: string,
   params: Record<string, string | number>,
-  opcoes: { esperar?: (ms: number) => Promise<void> } = {},
+  opcoes: { esperar?: (ms: number) => Promise<void>; chaveLista?: string } = {},
 ): Promise<Record<string, unknown>[]> {
   const token = limparToken(cfg.token);
   if (!token) throw new ConsistemErro("O segredo CONSISTEM_API_KEY não parece um token válido (esperado: token JWT do CSMEN050, sem espaços nem quebras de linha).");
@@ -89,7 +89,8 @@ export async function buscarTodasPaginas(
       return registros;
     }
     const obj = corpo as Record<string, unknown>;
-    const dados = (obj.data ?? obj.Data ?? []) as Record<string, unknown>[];
+    // A maioria dos serviços devolve a lista em `data`; alguns usam o nome do recurso (ex.: `dadosBancarios`).
+    const dados = (obj.data ?? obj.Data ?? (opcoes.chaveLista ? obj[opcoes.chaveLista] : undefined) ?? []) as Record<string, unknown>[];
     registros.push(...dados);
     const continuacao = (obj.continuationToken ?? obj.ContinuationToken) as string | null | undefined;
     if (!continuacao) return registros;

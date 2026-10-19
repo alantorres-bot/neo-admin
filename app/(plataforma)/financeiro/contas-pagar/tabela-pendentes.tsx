@@ -10,12 +10,15 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, useLinhasVisiveis } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
-import { compararComCaixa, descreverRascunho, parseReais, ROTULO_STATUS, totalParaCaixa, type RascunhoEmMontagem } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { compararComCaixa, descreverRascunho, ROTULO_STATUS, totalParaCaixa, type RascunhoEmMontagem } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { composicaoPadrao, comporCaixa, type Composicao, type ContaCaixa } from "@/lib/modulos/financeiro/contas-pagar/caixa";
 import { descreverSituacao, estaPaga, estaPendente, ROTA_CONTAS_PAGAR, ROTULO_TIPO, type ItemPendente } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { alternarOrdem, type ColunaPendentes, type Ordem } from "@/lib/modulos/financeiro/contas-pagar/ordenacao";
 import { CabecalhoOrdenavel } from "./cabecalho-ordenavel";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { desfazerAntecipacaoTratada, gerarAutorizacao, marcarAntecipacaoTratada, montarRascunho } from "./acoes";
+import type { ContaCaixaEmpresa } from "./dados";
+import { BotaoComposicaoCaixa } from "./dialogo-caixa";
 import { DialogoExtra } from "./dialogo-extra";
 
 type Props = {
@@ -27,6 +30,10 @@ type Props = {
   empresas: { id: string; nome: string }[];
   /** Rascunho em montagem por empresa (o mais recente em rascunho). */
   rascunhos: RascunhoEmMontagem[];
+  /** Composição do caixa gravada em cada rascunho (por id). */
+  composicoes: Record<string, Composicao | null>;
+  /** Contas bancárias com o último saldo (todas as empresas). */
+  contasCaixa: ContaCaixaEmpresa[];
   /** Ordenação atual (pela URL) e a consulta sem ordem/página, para montar os links dos títulos das colunas. */
   ordem: Ordem<ColunaPendentes> | null;
   consultaBase: string;
@@ -35,7 +42,7 @@ type Props = {
 /** Texto do resumo caixa × selecionado. */
 function ResumoCaixa({ totalCentavos, caixaCentavos }: { totalCentavos: number; caixaCentavos: number | null }) {
   const c = compararComCaixa(totalCentavos, caixaCentavos);
-  if (!c) return <span className="text-xs text-muted-foreground">Informe o caixa disponível para comparar.</span>;
+  if (!c) return <span className="text-xs text-muted-foreground">Sem caixa: registre os saldos bancários ou componha o caixa.</span>;
   return c.ultrapassa
     ? <span className="rounded-[3px] bg-red-700 px-2 py-0.5 text-xs font-bold text-white" role="alert">Ultrapassa o caixa em {formatarMoeda(c.excedenteCentavos)}</span>
     : <span className="rounded-[3px] bg-emerald-700 px-2 py-0.5 text-xs font-bold text-white">Sobra {formatarMoeda(c.sobraCentavos)}</span>;
@@ -43,11 +50,11 @@ function ResumoCaixa({ totalCentavos, caixaCentavos }: { totalCentavos: number; 
 
 /**
  * Tabela unificada (títulos + antecipações) com caixas de marcação e a barra FIXA no alto da lista: soma do que está marcado,
- * caixa disponível, o rascunho em montagem e os três botões em sequência — "Salvar parcial" (grava no rascunho e continua
+ * caixa disponível (saldos conciliados das contas da empresa + adicionais do dia; ver dialogo-caixa.tsx), o rascunho em montagem e os três botões em sequência — "Salvar parcial" (grava no rascunho e continua
  * aqui), "Extras" (pagamento fora do Consistem direto no rascunho) e "Gerar autorização" (fecha o rascunho). Linhas que já
  * estão numa autorização ativa, pagas (borderô) ou marcadas como pagas fora aparecem apagadas e sem caixa.
  */
-export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, rascunhos, ordem, consultaBase }: Props) {
+export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, rascunhos, composicoes, contasCaixa, ordem, consultaBase }: Props) {
   const router = useRouter();
   const direcaoDe = (coluna: ColunaPendentes) => (ordem?.coluna === coluna ? ordem.direcao : null);
   const hrefOrdem = (coluna: ColunaPendentes) => {
@@ -72,17 +79,23 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, r
   const empresaId = empresasMarcadas.size === 1 ? [...empresasMarcadas][0] : empresas.length === 1 ? empresas[0].id : (rascunhos[0]?.empresaId ?? null);
   const rascunho = empresaId ? rascunhos.find((r) => r.empresaId === empresaId) ?? null : null;
   const empresaNome = empresas.find((e) => e.id === empresaId)?.nome ?? "empresa";
-  const [caixaTexto, setCaixaTexto] = useState(rascunho?.caixaCentavos != null ? (rascunho.caixaCentavos / 100).toFixed(2).replace(".", ",") : "");
-  const caixaCentavos = parseReais(caixaTexto);
-  const caixaParaGravar = caixaTexto.trim() === "" ? null : caixaCentavos;
-  const caixaInvalido = caixaTexto.trim() !== "" && caixaCentavos === null;
+  // Caixa: a composição escolhida nesta tela, senão a gravada no rascunho, senão as contas que entram no caixa.
+  const [escolhidas, setEscolhidas] = useState<Record<string, Composicao>>({});
+  const contas: ContaCaixa[] = useMemo(() => contasCaixa.filter((c) => c.empresaId === empresaId), [contasCaixa, empresaId]);
+  const composicao: Composicao = (empresaId && escolhidas[empresaId]) || (rascunho && composicoes[rascunho.id]) || composicaoPadrao(contas);
+  const caixa = comporCaixa(contas, composicao, hoje);
+  const temComposicao = composicao.contas.length > 0 || composicao.adicionais.length > 0;
+  const caixaCentavos = temComposicao ? caixa.totalCentavos : (rascunho?.caixaCentavos ?? null);
+  // Grava a composição quando há algo nela ou quando a pessoa mexeu (inclusive para tirar tudo).
+  const composicaoParaGravar = temComposicao || (empresaId !== null && empresaId in escolhidas) ? composicao : null;
+  const escolher = (c: Composicao) => { if (empresaId) setEscolhidas((atual) => ({ ...atual, [empresaId]: c })); };
   const totalComRascunho = totalParaCaixa(rascunho, totalMarcado);
   const umaEmpresa = empresasMarcadas.size <= 1 && empresaId !== null;
 
   function salvarParcial() {
-    if (!empresaId || caixaInvalido) return;
+    if (!empresaId) return;
     iniciarSalvar(async () => {
-      const r = await montarRascunho({ empresaId, lancamentoIds: [...marcadas], caixaCentavos: caixaParaGravar });
+      const r = await montarRascunho({ empresaId, lancamentoIds: [...marcadas], composicao: composicaoParaGravar });
       if (r.ok) {
         toast.success(r.aviso);
         setMarcadas(new Set());
@@ -109,25 +122,27 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, r
       {podeOperar && (
         <div className="sticky top-0 z-10 -mx-1 mb-2 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[3px] border border-grade bg-marca-clara px-3 py-2 text-sm shadow-sm">
           <strong className="tabular-nums">{marcadas.size} {marcadas.size === 1 ? "item marcado" : "itens marcados"} · {formatarMoeda(totalMarcado)}</strong>
-          <label className="flex items-center gap-1 text-[13px]">
-            Caixa disponível
-            <Input value={caixaTexto} onChange={(e) => setCaixaTexto(e.target.value)} placeholder="R$ 0,00" inputMode="decimal" aria-label="Caixa disponível" className="h-7 w-36 bg-white text-right tabular-nums" />
-          </label>
+          <span className="flex items-center gap-2 text-[13px]">
+            Caixa disponível <strong className="tabular-nums">{caixaCentavos === null ? "—" : formatarMoeda(caixaCentavos)}</strong>
+            {empresaId && (
+              <BotaoComposicaoCaixa empresaId={empresaId} contas={contas} composicao={composicao} hoje={hoje} totalCentavos={totalComRascunho} desativado={!umaEmpresa || salvando} aoConfirmar={escolher} />
+            )}
+          </span>
           <ResumoCaixa totalCentavos={totalComRascunho} caixaCentavos={caixaCentavos} />
           <span className="ml-auto flex items-center gap-2">
-            <Button type="button" size="sm" variant="outline" onClick={salvarParcial} disabled={marcadas.size === 0 || !umaEmpresa || caixaInvalido || salvando} title="Grava os itens marcados no rascunho e continua nesta tela">
+            <Button type="button" size="sm" variant="outline" onClick={salvarParcial} disabled={marcadas.size === 0 || !umaEmpresa || salvando} title="Grava os itens marcados no rascunho e continua nesta tela">
               {salvando ? "Salvando…" : "Salvar parcial"}
             </Button>
             <DialogoExtra
               rotulo="Extras"
-              desativado={!umaEmpresa || caixaInvalido || salvando}
+              desativado={!umaEmpresa || salvando}
               totalAtualCentavos={totalComRascunho}
               caixaCentavos={caixaCentavos}
               contexto={marcadas.size === 1 ? `O item marcado (${formatarMoeda(totalMarcado)}) também é salvo no rascunho.` : marcadas.size > 1 ? `Os ${marcadas.size} itens marcados (${formatarMoeda(totalMarcado)}) também são salvos no rascunho.` : rascunho ? `Entra no rascunho ${rascunho.codigo}.` : "Cria o rascunho de hoje e inclui o pagamento."}
-              aoConfirmar={(extra) => montarRascunho({ empresaId: empresaId ?? "", lancamentoIds: [...marcadas], caixaCentavos: caixaParaGravar, extra })}
+              aoConfirmar={(extra) => montarRascunho({ empresaId: empresaId ?? "", lancamentoIds: [...marcadas], composicao: composicaoParaGravar, extra })}
               aoSucesso={() => setMarcadas(new Set())}
             />
-            <Button type="button" size="sm" onClick={() => setDialogo(true)} disabled={(marcadas.size === 0 && !rascunho) || !umaEmpresa || caixaInvalido || salvando}>
+            <Button type="button" size="sm" onClick={() => setDialogo(true)} disabled={(marcadas.size === 0 && !rascunho) || !umaEmpresa || salvando}>
               Gerar autorização{marcadas.size > 0 ? ` (${marcadas.size})` : ""}
             </Button>
             {marcadas.size > 0 && <Button type="button" variant="ghost" size="sm" onClick={() => setMarcadas(new Set())}>Limpar seleção</Button>}
@@ -139,7 +154,12 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, r
             </span>
           )}
           {empresasMarcadas.size > 1 && <span className="basis-full text-xs text-destructive">Marque itens de uma empresa só por autorização.</span>}
-          {caixaInvalido && <span className="basis-full text-xs text-destructive">Caixa inválido: use números, ex.: 150.000,00.</span>}
+          {temComposicao && caixa.avisos.length > 0 && (
+            <span className="basis-full text-xs text-amber-800">
+              Caixa: {caixa.avisos.join(" ")}{" "}
+              <Link href={`${ROTA_CONTAS_PAGAR}/saldos?empresa=${empresaId}`} className="text-elo hover:underline">Registrar saldos</Link>
+            </span>
+          )}
         </div>
       )}
       {dialogo && empresaId && (
@@ -150,7 +170,10 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, r
           empresaNome={empresaNome}
           ehGestor={ehGestor}
           hoje={hoje}
-          caixaInicial={caixaTexto}
+          contas={contas}
+          composicao={composicao}
+          aoMudarComposicao={escolher}
+          composicaoParaGravar={composicaoParaGravar}
           aoFechar={() => setDialogo(false)}
           aoGerar={(id) => { setMarcadas(new Set()); setDialogo(false); router.push(`/financeiro/contas-pagar/autorizacoes/${id}`); }}
         />
@@ -221,12 +244,13 @@ export function TabelaPendentes({ itens, podeOperar, ehGestor, hoje, empresas, r
   );
 }
 
-function DialogoGerarAutorizacao({ itens, rascunho, empresaId, empresaNome, ehGestor, hoje, caixaInicial, aoFechar, aoGerar }: {
-  itens: ItemPendente[]; rascunho: RascunhoEmMontagem | null; empresaId: string; empresaNome: string; ehGestor: boolean; hoje: string; caixaInicial: string; aoFechar: () => void; aoGerar: (id: string) => void;
+function DialogoGerarAutorizacao({ itens, rascunho, empresaId, empresaNome, ehGestor, hoje, contas, composicao, aoMudarComposicao, composicaoParaGravar, aoFechar, aoGerar }: {
+  itens: ItemPendente[]; rascunho: RascunhoEmMontagem | null; empresaId: string; empresaNome: string; ehGestor: boolean; hoje: string;
+  contas: ContaCaixa[]; composicao: Composicao; aoMudarComposicao: (c: Composicao) => void; composicaoParaGravar: Composicao | null;
+  aoFechar: () => void; aoGerar: (id: string) => void;
 }) {
   const [data, setData] = useState(hoje);
   const [observacao, setObservacao] = useState(rascunho?.observacao ?? "");
-  const [caixaTexto, setCaixaTexto] = useState(caixaInicial);
   const [autorizar, setAutorizar] = useState(false);
   const [erro, setErro] = useState<string>();
   const [pendente, iniciar] = useTransition();
@@ -235,16 +259,14 @@ function DialogoGerarAutorizacao({ itens, rascunho, empresaId, empresaNome, ehGe
   const soma = (lista: ItemPendente[]) => lista.reduce((s, i) => s + i.saldoCentavos, 0);
   const totalMarcado = soma(itens);
   const total = totalParaCaixa(rascunho, totalMarcado);
-  const caixaCentavos = parseReais(caixaTexto);
+  const caixa = comporCaixa(contas, composicao, hoje);
+  const temComposicao = composicao.contas.length > 0 || composicao.adicionais.length > 0;
+  const caixaCentavos = temComposicao ? caixa.totalCentavos : (rascunho?.caixaCentavos ?? null);
   const comparacao = compararComCaixa(total, caixaCentavos);
 
   function gerar() {
-    if (caixaTexto !== "" && caixaCentavos === null) {
-      setErro("Caixa disponível inválido: use números, ex.: 150.000,00 (ou deixe em branco).");
-      return;
-    }
     iniciar(async () => {
-      const r = await gerarAutorizacao({ empresaId, lancamentoIds: itens.map((i) => i.id), data: rascunho ? null : data, observacao, autorizar, caixaCentavos: caixaTexto.trim() === "" ? null : caixaCentavos });
+      const r = await gerarAutorizacao({ empresaId, lancamentoIds: itens.map((i) => i.id), data: rascunho ? null : data, observacao, autorizar, composicao: composicaoParaGravar });
       if (r.ok) {
         toast.success(r.aviso);
         aoGerar(r.id);
@@ -277,13 +299,21 @@ function DialogoGerarAutorizacao({ itens, rascunho, empresaId, empresaNome, ehGe
             </div>
           )}
           <div className="grid gap-1.5">
-            <label htmlFor="cap-caixa" className="text-sm font-medium">Caixa disponível (opcional)</label>
+            <span className="text-sm font-medium">Caixa disponível</span>
             <div className="flex flex-wrap items-center gap-2">
-              <Input id="cap-caixa" value={caixaTexto} onChange={(e) => setCaixaTexto(e.target.value)} placeholder="R$ 0,00" inputMode="decimal" className="w-44 text-right tabular-nums" />
+              <strong className="tabular-nums">{caixaCentavos === null ? "—" : formatarMoeda(caixaCentavos)}</strong>
+              <BotaoComposicaoCaixa empresaId={empresaId} contas={contas} composicao={composicao} hoje={hoje} totalCentavos={total} desativado={pendente} aoConfirmar={aoMudarComposicao} />
               {comparacao && (comparacao.ultrapassa
                 ? <span className="text-sm font-bold text-red-700">Ultrapassa o caixa em {formatarMoeda(comparacao.excedenteCentavos)}</span>
                 : <span className="text-sm font-bold text-emerald-700">Sobra {formatarMoeda(comparacao.sobraCentavos)}</span>)}
             </div>
+            {temComposicao && (
+              <p className="text-xs text-muted-foreground">
+                Saldos de {caixa.linhas.length} {caixa.linhas.length === 1 ? "conta" : "contas"} ({formatarMoeda(caixa.saldosCentavos)})
+                {caixa.adicionais.length > 0 ? ` + ${caixa.adicionais.length} ${caixa.adicionais.length === 1 ? "adicional" : "adicionais"} do dia (${formatarMoeda(caixa.adicionaisCentavos)})` : ""}.
+              </p>
+            )}
+            {caixa.avisos.length > 0 && temComposicao && <p className="text-xs text-amber-800">{caixa.avisos.join(" ")}</p>}
             {comparacao?.ultrapassa && <p className="text-xs text-muted-foreground">Pode autorizar mesmo assim: o relatório mostra o excedente para decidir o que deixar de pagar.</p>}
           </div>
           <div className="grid gap-1.5">

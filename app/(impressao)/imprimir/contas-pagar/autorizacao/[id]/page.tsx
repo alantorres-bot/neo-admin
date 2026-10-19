@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { lerAutorizacao, quandoEm, type LinhaExtraAutorizacao, type LinhaItemAutorizacao } from "@/app/(plataforma)/financeiro/contas-pagar/dados";
 import { compararComCaixa, resumirItens, ROTULO_STATUS } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { lerComposicaoGravada } from "@/lib/modulos/financeiro/contas-pagar/caixa";
 import { MODULO_CONTAS_PAGAR } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
@@ -37,6 +38,7 @@ export default async function PaginaImprimirAutorizacao({ params }: PageProps<"/
     extrasAtivos.map((x) => ({ valorCentavos: centavos(x.valor), removido: false })),
   );
   const caixa = compararComCaixa(resumo.geral.centavos, a.caixa_disponivel === null ? null : centavos(a.caixa_disponivel));
+  const composicao = lerComposicaoGravada(a.caixa_composicao);
   const selo = a.status === "rascunho" ? "RASCUNHO — SEM VALIDADE" : a.status === "cancelada" ? `CANCELADA EM ${formatarData(a.cancelada_em ?? "")}` : null;
 
   return (
@@ -77,6 +79,31 @@ export default async function PaginaImprimirAutorizacao({ params }: PageProps<"/
             )}
           </tbody>
         </table>
+        {caixa && composicao.length > 0 && (
+          <section className="mt-3">
+            <p className="mb-1 text-[12px] font-bold uppercase">Composição do caixa</p>
+            <table className="w-full border-collapse text-[11px]">
+              <thead>
+                <tr className="border-b border-black text-left">
+                  <th className="py-0.5 pr-2">Descrição</th>
+                  <th className="py-0.5 pr-2">Origem</th>
+                  <th className="py-0.5 pr-2">Data do saldo</th>
+                  <th className="py-0.5 text-right">Valor</th>
+                </tr>
+              </thead>
+              <tbody>
+                {composicao.map((l, n) => (
+                  <tr key={n} className="border-b border-neutral-400">
+                    <td className="py-0.5 pr-2">{l.descricao}</td>
+                    <td className="py-0.5 pr-2">{l.tipo === "saldo" ? "Saldo conciliado" : "Adicional do dia"}</td>
+                    <td className="py-0.5 pr-2 tabular-nums">{l.tipo === "saldo" ? (l.dataSaldo ? formatarData(l.dataSaldo) : "sem saldo") : "—"}</td>
+                    <td className="py-0.5 text-right tabular-nums">{formatarMoeda(l.valorCentavos)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
         {caixa?.ultrapassa && (
           <p className="mt-2 border-2 border-black p-2 text-[12px] font-bold">O total autorizado ultrapassa o caixa disponível em {formatarMoeda(caixa.excedenteCentavos)}. Decidir quais itens deixar de pagar.</p>
         )}

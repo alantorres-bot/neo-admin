@@ -55,7 +55,7 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
   const dirPedida = primeiro(parametros.dir);
   const ordem: Ordem<ColunaPendentes> | null = ehColunaPendentes(colunaPedida) ? { coluna: colunaPedida, direcao: ehDirecao(dirPedida) ? dirPedida : "asc" } : null;
 
-  const { itens: todos, parametros: param, ultima, empresas, rascunhos } = await pendentesDaRequisicao();
+  const { itens: todos, parametros: param, ultima, empresas, rascunhos, composicoes, contasCaixa } = await pendentesDaRequisicao();
   const avisoRascunhos = rascunhos.length > 0 && (
     <div className="space-y-1">
       {rascunhos.map((r) => (
@@ -213,7 +213,7 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
         <div>
           <h2 className="text-base font-bold">Em aberto no Consistem · {descricaoPeriodo}</h2>
           <p className="text-xs text-muted-foreground">
-            Marque os itens: a soma fica fixa no alto da lista. “Salvar parcial” grava no rascunho e você continua aqui; “Extras” inclui pagamentos fora do Consistem; “Gerar autorização” fecha o rascunho. Passar do caixa só avisa, não impede.
+            Marque os itens: a soma fica fixa no alto da lista. “Salvar parcial” grava no rascunho e você continua aqui; “Extras” inclui pagamentos fora do Consistem; “Gerar autorização” fecha o rascunho. O caixa disponível soma os saldos conciliados das contas (aba Saldos bancários) e os valores do dia em “Composição”. Passar do caixa só avisa, não impede.
           </p>
         </div>
 
@@ -222,7 +222,7 @@ export default async function PaginaAutorizarPagamento({ searchParams }: PagePro
             {todos.length === 0 ? "Nenhum lançamento em aberto. Use “Atualizar do Consistem” para trazer a lista." : "Nenhum item pendente nesse período e filtros."}
           </p>
         ) : (
-          <TabelaPendentes itens={itens} podeOperar={podeOperar} ehGestor={ehGestor} hoje={hoje} empresas={empresas} rascunhos={rascunhos} ordem={ordem} consultaBase={consultaBase} />
+          <TabelaPendentes itens={itens} podeOperar={podeOperar} ehGestor={ehGestor} hoje={hoje} empresas={empresas} rascunhos={rascunhos} composicoes={composicoes} contasCaixa={contasCaixa} ordem={ordem} consultaBase={consultaBase} />
         )}
 
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">

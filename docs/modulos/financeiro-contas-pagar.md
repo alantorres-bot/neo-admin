@@ -416,3 +416,43 @@ Na conferência nem tudo é pago (ex.: Barra Forte, R$ 39 mil, em 15/10/2026), e
 - Regras puras: `podeMarcarNaoPago`, filtro `nao_pagos` e `resumirConferencia().naoPagos` (`conferencia.ts`). Testes:
   `conferencia.test.ts` e `tests/db/cap-nao-pago.test.ts` (motivo, volta à lista, nova autorização, desfazer recusado, só em aberto
   no Consistem, extra recusado).
+
+## 18. Caixa disponível automático — saldos bancários (19/10/2026)
+Pedido do Alan: o "Caixa disponível" da autorização deixa de ser digitado e passa a sair dos **saldos conciliados das contas
+bancárias da empresa**, com a opção de somar **valores adicionais do dia** (depósitos esperados, ainda sem registro).
+- **Limite da API:** o catálogo do Consistem (v1.0.15, consultado em 19/10/2026) **não tem saldo nem conciliação bancária**. Só
+  `GET financeiro/v10/dadosBancarios` (cadastro: `codContaBancaria`, `codBanco`, `descContaBancaria`, `codAgencia`,
+  `ctaCorrenteEditada`, `contaContabil`, `tipoConta` 1 = corrente, `consideraSaldo` "considera saldo no fluxo", `situacaoConta`
+  inativa; lista em `dadosBancarios`, não em `data`). Decisão do Alan: contas pela API, saldo do dia registrado pelo financeiro.
+  Se a Consistem expuser o saldo, só muda a origem (`origem = 'api'`); a importação do relatório de saldos (`'importado'`) fica
+  para quando houver amostra.
+- **Contas:** a sincronização do contas a pagar (`cap-sincronizar-consistem`, a cada 30 min) espelha o cadastro em
+  `fin_contas_bancarias` (`fin_sincronizar_contas`, só service role). Conta nova entra no caixa por padrão se for corrente, ativa
+  e "considera saldo"; depois a decisão é do **gestor** ("Entra no caixa", `fin_definir_conta_caixa`) e a sincronização não muda.
+  Conta que some da API ganha `sumiu_em`; lista vazia não marca nada. Falha nesse passo não derruba a sincronização (vai no resumo).
+- **Saldos:** aba **Saldos bancários** (`/financeiro/contas-pagar/saldos`): por empresa e data (até 60 dias atrás), o operador
+  digita o saldo conciliado de cada conta (aceita negativo) e salva em lote (`fin_registrar_saldos`). Saldo igual é ignorado;
+  diferente **substitui** (o anterior fica com `substituido_em`, nada se apaga). Lista dos registros recentes.
+  `fin_vw_saldo_atual` = último saldo ativo até hoje de cada conta.
+- **Pendência diária** "Registrar saldos bancários de dd/mm — <empresa>" (`fin_abrir_pendencias_saldos`, chamada pela
+  sincronização em dias úteis a partir das 7h): abre se alguma conta que entra no caixa está sem saldo de hoje; é concluída quando
+  os saldos de hoje ficam completos; a do dia anterior é cancelada.
+- **Composição do caixa:** na barra da tela Autorizar pagamento, no diálogo Gerar autorização e na página do rascunho, o caixa é
+  mostrado calculado com o botão **Composição** (contas da empresa com saldo e data, marcar/desmarcar; avisos de saldo de outro dia
+  ou conta sem saldo; "Adicionar" valor do dia com descrição). Padrão: contas que entram no caixa. Salvar parcial, Extras e Gerar
+  gravam a composição junto (`p_composicao` em `cap_montar_rascunho` e `cap_criar_autorizacao`; na página do rascunho,
+  `cap_definir_composicao_caixa`). O banco **lê os saldos na hora de gravar** (`cap_aplicar_composicao_caixa`), grava as linhas em
+  `cap_autorizacao_caixa` (saldo de cada conta com a data, adicionais) e `caixa_disponivel` = soma. Recompor substitui a anterior
+  (fica como prova); só em rascunho. Composição vazia = sem caixa. O caixa digitado (`cap_definir_caixa`) segue aceito por
+  compatibilidade e invalida a composição; a tela não o usa mais.
+- O check `caixa_disponivel >= 0` saiu (a soma pode ser negativa); `cap_vw_autorizacoes` ganhou `caixa_composicao` (jsonb) e
+  `caixa_composto_em`. Página da autorização, relatório impresso e PDF do Slack mostram o quadro **Composição do caixa**.
+- Migration `0169_fin_saldos_bancarios.sql`. Código: `lib/modulos/financeiro/contas-pagar/caixa.ts` (`comporCaixa`,
+  `composicaoPadrao`, `validarAdicional`, `parseSaldo`, leitura da composição gravada), `normalizarContaBancaria` e
+  `entraNoCaixaPorPadrao` em `_shared/consistem-pagar.ts`, `dialogo-caixa.tsx`, `esquema-caixa.ts`, `saldos/`.
+- Testes: `caixa.test.ts`, `consistem-pagar.test.ts` (contas bancárias) e `tests/db/fin-saldos-caixa.test.ts` (sincronização sem
+  mexer na decisão local, permissões, substituição, view, composição lida do banco com saldo negativo e adicional, recompor,
+  autorizar na hora, travas depois de autorizada, pendência diária).
+- **Publicar (ordem):** aplicar 0169 e registrar em `schema_migrations` → publicar `cap-sincronizar-consistem` → publicar o
+  frontend (as telas leem `caixa_composicao`; sem a migration a página da autorização falha). Conferir na 1ª rodada se o token
+  CSMEN050 tem o serviço `dadosBancarios` liberado (403 aparece no resumo da sincronização, em `contasBancarias`).

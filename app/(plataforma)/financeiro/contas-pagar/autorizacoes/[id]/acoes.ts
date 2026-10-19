@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { LIMITES_EXTRA } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { composicaoParaBanco, lerComposicaoGravada } from "@/lib/modulos/financeiro/contas-pagar/caixa";
 import { gerarPdfAutorizacao, nomeArquivoAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/pdf-autorizacao";
 import { ROTA_CONTAS_PAGAR } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -11,6 +12,7 @@ import { lerAutorizacao, quandoEm } from "../../dados";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
+import { esquemaComposicao } from "../../esquema-caixa";
 
 export type Resultado = { ok: true; aviso: string } | { ok: false; erro: string };
 
@@ -136,19 +138,23 @@ export async function removerExtra(entrada: z.input<typeof esquemaRemoverExtra>)
   return { ok: true, aviso: `Pagamento extra removido. Total da autorização: ${formatarMoeda(centavos(r.total ?? 0))}.` };
 }
 
-const esquemaCaixa = z.object({ id: uuid, caixaCentavos: z.number().int().min(0).max(100_000_000_000).nullable() });
+const esquemaComposicaoAutorizacao = z.object({ id: uuid, composicao: esquemaComposicao });
 
-/** Ajusta o caixa disponível de um rascunho (função de banco `cap_definir_caixa`). Ultrapassar o caixa é só aviso. */
-export async function definirCaixa(entrada: z.input<typeof esquemaCaixa>): Promise<Resultado> {
+/**
+ * Recompõe o caixa disponível de um rascunho (função de banco `cap_definir_composicao_caixa`): saldos conciliados das contas
+ * marcadas, lidos no banco, + adicionais do dia. A composição anterior fica substituída (prova). Ultrapassar é só aviso.
+ */
+export async function definirComposicaoCaixa(entrada: z.input<typeof esquemaComposicaoAutorizacao>): Promise<Resultado> {
   const sessao = await exigirSessao();
   if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) pode alterar o caixa." };
-  const dados = esquemaCaixa.safeParse(entrada);
+  const dados = esquemaComposicaoAutorizacao.safeParse(entrada);
   if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
   const supabase = await criarClienteServidor();
-  const { error } = await supabase.rpc("cap_definir_caixa", { p_id: dados.data.id, p_caixa: dados.data.caixaCentavos === null ? null : dados.data.caixaCentavos / 100 });
+  const { data, error } = await supabase.rpc("cap_definir_composicao_caixa", { p_id: dados.data.id, p_composicao: composicaoParaBanco(dados.data.composicao) });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   revalidar(dados.data.id);
-  return { ok: true, aviso: dados.data.caixaCentavos === null ? "Caixa disponível removido." : "Caixa disponível atualizado." };
+  const caixa = (data ?? {}) as { caixa_disponivel?: number | string | null };
+  return { ok: true, aviso: caixa.caixa_disponivel == null ? "Caixa disponível removido." : `Caixa disponível: ${formatarMoeda(centavos(caixa.caixa_disponivel))}.` };
 }
 
 export type ResultadoSlack = { ok: true; permalink: string | null; aviso: string } | { ok: false; erro: string; naoConfigurado?: boolean };
@@ -174,6 +180,7 @@ export async function enviarNoSlack(entrada: { id: string }): Promise<ResultadoS
   const pdf = await gerarPdfAutorizacao({
     codigo: a.codigo, data: a.data, status: a.status, empresaRazaoSocial: a.empresa_razao_social, empresaCnpj: a.empresa_cnpj,
     observacao: a.observacao, motivoCancelamento: a.motivo_cancelamento, caixaCentavos: a.caixa_disponivel === null ? null : centavos(a.caixa_disponivel),
+    composicaoCaixa: lerComposicaoGravada(a.caixa_composicao),
     criadoPor: a.criado_por_nome, criadoEm: quandoEm(a.criado_em), autorizadaPor: a.autorizada_por_nome, autorizadaEm: a.autorizada_em ? quandoEm(a.autorizada_em) : null,
     canceladaEm: a.cancelada_em ? formatarData(a.cancelada_em) : null, emitidoEm: quandoEm(new Date().toISOString()),
     itens: ativos.map((i) => ({

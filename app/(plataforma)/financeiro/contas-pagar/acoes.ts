@@ -3,12 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { LIMITES_EXTRA } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { composicaoParaBanco } from "@/lib/modulos/financeiro/contas-pagar/caixa";
 import { ROTA_CONTAS_PAGAR } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { descreverMedicao, descreverSincronizacaoPagar, type ResultadoMedicao, type ResumoSincronizacaoPagar } from "@/lib/modulos/financeiro/contas-pagar/sincronizacao";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
+import { esquemaComposicao } from "./esquema-caixa";
 
 export type ModoAtualizacao = "medir" | "simular" | "gravar";
 export type ResultadoAtualizacao = { ok: true; modo: ModoAtualizacao; linhas: string[] } | { ok: false; erro: string };
@@ -77,6 +79,8 @@ const esquemaMontar = z.object({
   data: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Data inválida.").nullable().default(null),
   /** Caixa disponível em centavos; nulo = não mexer no que já está no rascunho. */
   caixaCentavos: z.number().int().min(0).max(100_000_000_000).nullable().default(null),
+  /** Composição do caixa (saldos das contas + adicionais); nula = não mexer. Substitui o caixa digitado. */
+  composicao: esquemaComposicao.nullable().default(null),
   /** Observação; nula = não mexer. */
   observacao: z.string().trim().max(500, "A observação pode ter até 500 caracteres.").nullable().default(null),
   /** Pagamento extra (fora do Consistem) a incluir na mesma gravação. */
@@ -104,13 +108,14 @@ export async function montarRascunho(entrada: z.input<typeof esquemaMontar>): Pr
   if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) pode montar uma autorização." };
   const dados = esquemaMontar.safeParse(entrada);
   if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
-  const { empresaId, lancamentoIds, data, caixaCentavos, observacao, extra } = dados.data;
-  if (lancamentoIds.length === 0 && !extra && caixaCentavos === null && observacao === null) return { ok: false, erro: "Marque itens ou inclua um pagamento extra." };
+  const { empresaId, lancamentoIds, data, caixaCentavos, composicao, observacao, extra } = dados.data;
+  if (lancamentoIds.length === 0 && !extra && caixaCentavos === null && composicao === null && observacao === null) return { ok: false, erro: "Marque itens ou inclua um pagamento extra." };
 
   const supabase = await criarClienteServidor();
   const { data: r, error } = await supabase.rpc("cap_montar_rascunho", {
     p_empresa: empresaId, p_lancamentos: lancamentoIds, p_caixa: caixaCentavos === null ? null : caixaCentavos / 100, p_observacao: observacao,
     p_extra: extra ? { descricao: extra.descricao, favorecido: extra.favorecido, valor: extra.valorCentavos / 100 } : null, p_data: data,
+    p_composicao: composicao ? composicaoParaBanco(composicao) : null,
   });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   const m = lerMontado(r as LinhaMontada);
@@ -133,12 +138,13 @@ export async function gerarAutorizacao(entrada: z.input<typeof esquemaGerar>): P
   if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) pode montar uma autorização." };
   const dados = esquemaGerar.safeParse(entrada);
   if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
-  const { empresaId, lancamentoIds, data, caixaCentavos, observacao, autorizar } = dados.data;
+  const { empresaId, lancamentoIds, data, caixaCentavos, composicao, observacao, autorizar } = dados.data;
   if (autorizar && !temAcesso(sessao.acesso, "financeiro", "gestor")) return { ok: false, erro: "Somente gestor do Financeiro (ou acima) pode autorizar o pagamento." };
 
   const supabase = await criarClienteServidor();
   const { data: r, error } = await supabase.rpc("cap_montar_rascunho", {
     p_empresa: empresaId, p_lancamentos: lancamentoIds, p_caixa: caixaCentavos === null ? null : caixaCentavos / 100, p_observacao: observacao, p_extra: null, p_data: data,
+    p_composicao: composicao ? composicaoParaBanco(composicao) : null,
   });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   const m = lerMontado(r as LinhaMontada);

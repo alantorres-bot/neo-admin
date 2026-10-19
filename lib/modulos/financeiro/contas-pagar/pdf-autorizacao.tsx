@@ -1,9 +1,11 @@
 // PDF do relatório de autorização de pagamento gerado no servidor (@react-pdf/renderer), para o envio no Slack.
-// Mesmo conteúdo da página de impressão: cabeçalho da empresa, títulos, antecipações, pagamentos extras, subtotais, total, caixa, rodapé.
+// Mesmo conteúdo da página de impressão: cabeçalho da empresa, títulos, antecipações, pagamentos extras, subtotais, total, caixa
+// (com a composição: saldos das contas + adicionais do dia), rodapé.
 // Só lógica de apresentação: recebe os dados já lidos (dados.ts) e devolve os bytes do PDF.
 import React from "react";
 import { Document, Page, StyleSheet, Text, View, renderToBuffer } from "@react-pdf/renderer";
 import { compararComCaixa, resumirItens, ROTULO_STATUS, type StatusAutorizacao } from "./autorizacao";
+import type { LinhaComposicao } from "./caixa";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 
 export type ItemPdf = {
@@ -31,6 +33,8 @@ export type DadosPdfAutorizacao = {
   observacao: string | null;
   motivoCancelamento: string | null;
   caixaCentavos: number | null;
+  /** Composição gravada do caixa (saldos das contas + adicionais); vazia = caixa digitado ou sem caixa. */
+  composicaoCaixa?: LinhaComposicao[];
   criadoPor: string | null;
   criadoEm: string; // já formatado
   autorizadaPor: string | null;
@@ -170,6 +174,23 @@ export function DocumentoAutorizacao({ d }: { d: DadosPdfAutorizacao }) {
             </View>
           )}
         </View>
+        {caixa && (d.composicaoCaixa ?? []).length > 0 && (
+          <View wrap={false}>
+            <Text style={estilos.secao}>Composição do caixa</Text>
+            <View style={estilos.linhaCab}>
+              <Text style={estilos.cDescricao}>Descrição</Text>
+              <Text style={estilos.cFavorecido}>Origem · data do saldo</Text>
+              <Text style={estilos.cValor}>Valor</Text>
+            </View>
+            {(d.composicaoCaixa ?? []).map((l, n) => (
+              <View key={n} style={estilos.linha}>
+                <Text style={estilos.cDescricao}>{l.descricao}</Text>
+                <Text style={estilos.cFavorecido}>{l.tipo === "saldo" ? `Saldo conciliado · ${l.dataSaldo ? formatarData(l.dataSaldo) : "sem saldo"}` : "Adicional do dia"}</Text>
+                <Text style={estilos.cValor}>{formatarMoeda(l.valorCentavos)}</Text>
+              </View>
+            ))}
+          </View>
+        )}
         {caixa?.ultrapassa && <Text style={estilos.aviso}>O total autorizado ultrapassa o caixa disponível em {formatarMoeda(caixa.excedenteCentavos)}. Decidir quais itens deixar de pagar.</Text>}
 
         <View style={estilos.rodape}>

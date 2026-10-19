@@ -8,6 +8,7 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 const ABAS = [
   { href: ROTA_CONTAS_PAGAR, rotulo: "Autorizar pagamento" },
   { href: `${ROTA_CONTAS_PAGAR}/autorizacoes`, rotulo: "Autorizações" },
+  { href: `${ROTA_CONTAS_PAGAR}/saldos`, rotulo: "Saldos bancários" },
 ];
 
 export default async function LayoutContasPagar({ children }: LayoutProps<"/financeiro/contas-pagar">) {

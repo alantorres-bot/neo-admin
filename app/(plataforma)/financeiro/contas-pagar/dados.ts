@@ -1,5 +1,6 @@
 import { cache } from "react";
 import type { RascunhoEmMontagem } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { composicaoDaGravada, type Composicao, type ContaCaixa } from "@/lib/modulos/financeiro/contas-pagar/caixa";
 import { lerParametrosContasPagar, CHAVES_CONTAS_PAGAR, type ParametrosContasPagar } from "@/lib/modulos/financeiro/contas-pagar/parametros";
 import { MODULO_CONTAS_PAGAR, type ItemPendente } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { urlAssinadaAnexo } from "@/lib/nucleo/anexos";
@@ -26,7 +27,31 @@ export type Pendentes = {
   empresas: { id: string; nome: string }[];
   /** Rascunho em montagem de cada empresa (o mais recente em rascunho), onde Salvar parcial e Extras gravam. */
   rascunhos: RascunhoEmMontagem[];
+  /** Composição do caixa gravada em cada rascunho em montagem (por id do rascunho). */
+  composicoes: Record<string, Composicao | null>;
+  /** Contas bancárias de todas as empresas, com o último saldo (para o caixa disponível). */
+  contasCaixa: ContaCaixaEmpresa[];
 };
+
+export type ContaCaixaEmpresa = ContaCaixa & { empresaId: string };
+
+/**
+ * Contas bancárias ativas (não sumiram do Consistem) com o último saldo conciliado até hoje (view fin_vw_saldo_atual).
+ * Sem a migration 0169 ou sem acesso, devolve lista vazia (a tela mostra o caixa sem contas).
+ */
+export async function carregarContasCaixa(supabase: Cliente, empresaId?: string): Promise<ContaCaixaEmpresa[]> {
+  let consulta = supabase.from("fin_vw_saldo_atual")
+    .select("id, empresa_id, descricao, cod_banco, agencia, conta, entra_no_caixa, saldo, data_saldo")
+    .is("sumiu_em", null).order("descricao").limit(500);
+  if (empresaId) consulta = consulta.eq("empresa_id", empresaId);
+  const { data, error } = await consulta;
+  if (error) return [];
+  return (data ?? []).map((c) => ({
+    id: c.id as string, empresaId: c.empresa_id as string, descricao: c.descricao as string, banco: (c.cod_banco as string | null) ?? "",
+    agencia: (c.agencia as string | null) ?? "", conta: (c.conta as string | null) ?? "", entraNoCaixa: c.entra_no_caixa as boolean,
+    saldoCentavos: c.saldo === null ? null : Math.round(Number(c.saldo) * 100), dataSaldo: (c.data_saldo as string | null) ?? null,
+  }));
+}
 
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
 export const quandoEm = (iso: string) =>
@@ -52,7 +77,7 @@ export const pendentesDaRequisicao = cache(async (): Promise<Pendentes> => carre
  * A RLS de quem chama vale. Nada é gravado.
  */
 export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
-  const [linhas, { data: configs }, { data: ultimas }, { data: empresas }, { data: rascunhosBrutos }] = await Promise.all([
+  const [linhas, { data: configs }, { data: ultimas }, { data: empresas }, { data: rascunhosBrutos }, contasCaixa] = await Promise.all([
     lerTudo<LinhaPendente>((de, ate) =>
       supabase.from("cap_vw_pendentes")
         .select("id, empresa_id, cod_lancamento, tipo_lancamento, cod_fornecedor, num_documento, categoria_doc, cod_banco, complemento_historico, data_emissao, data_vencimento, data_pagamento, valor_documento, valor_atualizado, tem_bordero, bordero_visto_em, fornecedor_nome, fornecedor_documento, autorizacao_id, autorizacao_numero, autorizacao_codigo, autorizacao_status, tratada_id, tratada_motivo, tratada_em, nao_pago_autorizacao_codigo, nao_pago_em")
@@ -61,14 +86,17 @@ export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
     supabase.from("importacoes").select("criado_em, linhas_novas, linhas_alteradas, linhas_baixadas")
       .eq("modulo", MODULO_CONTAS_PAGAR).eq("arquivo", "api:consistem").order("criado_em", { ascending: false }).limit(1),
     supabase.from("empresas").select("id, nome_curto").eq("ativa", true).not("codigo_erp", "is", null).order("nome_curto"),
-    supabase.from("cap_vw_autorizacoes").select("id, codigo, empresa_id, itens, extras, total, total_extras, caixa_disponivel, observacao")
+    supabase.from("cap_vw_autorizacoes").select("id, codigo, empresa_id, itens, extras, total, total_extras, caixa_disponivel, observacao, caixa_composicao")
       .eq("status", "rascunho").order("numero", { ascending: false }).limit(50),
+    carregarContasCaixa(supabase),
   ]);
 
   // Um rascunho em montagem por empresa: o mais recente.
   const rascunhos: RascunhoEmMontagem[] = [];
+  const composicoes: Record<string, Composicao | null> = {};
   for (const r of rascunhosBrutos ?? []) {
     if (rascunhos.some((x) => x.empresaId === r.empresa_id)) continue;
+    composicoes[r.id as string] = composicaoDaGravada(r.caixa_composicao);
     rascunhos.push({
       id: r.id as string, codigo: r.codigo as string, empresaId: r.empresa_id as string, itens: r.itens as number, extras: r.extras as number,
       totalCentavos: centavos(r.total as number | string), totalExtrasCentavos: centavos(r.total_extras as number | string),
@@ -111,6 +139,8 @@ export async function carregarPendentes(supabase: Cliente): Promise<Pendentes> {
     ultima,
     empresas: (empresas ?? []).map((e) => ({ id: e.id as string, nome: e.nome_curto as string })),
     rascunhos,
+    composicoes,
+    contasCaixa,
   };
 }
 
@@ -120,6 +150,8 @@ export type LinhaAutorizacao = {
   id: string; numero: number; codigo: string; empresa_id: string; data: string; status: "rascunho" | "autorizada" | "cancelada"; observacao: string | null;
   criado_por: string | null; criado_em: string; autorizada_por: string | null; autorizada_em: string | null; cancelada_por: string | null; cancelada_em: string | null;
   motivo_cancelamento: string | null; caixa_disponivel: number | string | null; excedente: number | string | null;
+  /** Composição do caixa gravada (saldos das contas + adicionais; migration 0169), jsonb com valores em reais; nulo = sem composição. */
+  caixa_composicao: unknown; caixa_composto_em: string | null;
   slack_enviada_em: string | null; slack_enviada_por: string | null; slack_enviada_por_nome: string | null; slack_permalink: string | null; slack_file_id: string | null; slack_message_ts: string | null; slack_retirada_em: string | null; empresa_nome: string; empresa_razao_social: string; empresa_cnpj: string | null;
   criado_por_nome: string | null; autorizada_por_nome: string | null; cancelada_por_nome: string | null;
   itens: number; titulos: number; antecipacoes: number; total_titulos: number | string; total_antecipacoes: number | string; total: number | string; baixados: number;
@@ -153,7 +185,7 @@ export type LinhaItemAutorizacao = {
   tem_bordero: boolean | null;
 };
 
-const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados, extras, total_extras, conferidos, divergentes, total_conferido, nao_pagos, total_nao_pago, excluida_em, excluida_por_nome, motivo_exclusao";
+const COLUNAS_AUTORIZACAO = "id, numero, codigo, empresa_id, data, status, observacao, criado_por, criado_em, autorizada_por, autorizada_em, cancelada_por, cancelada_em, motivo_cancelamento, caixa_disponivel, excedente, caixa_composicao, caixa_composto_em, slack_enviada_em, slack_enviada_por, slack_enviada_por_nome, slack_permalink, slack_file_id, slack_message_ts, slack_retirada_em, empresa_nome, empresa_razao_social, empresa_cnpj, criado_por_nome, autorizada_por_nome, cancelada_por_nome, itens, titulos, antecipacoes, total_titulos, total_antecipacoes, total, baixados, extras, total_extras, conferidos, divergentes, total_conferido, nao_pagos, total_nao_pago, excluida_em, excluida_por_nome, motivo_exclusao";
 
 export async function listarAutorizacoes(supabase: Cliente, filtro: { status: string | null; pagina: number; porPagina: number }): Promise<{ linhas: LinhaAutorizacao[]; total: number }> {
   let consulta = supabase.from("cap_vw_autorizacoes").select(COLUNAS_AUTORIZACAO, { count: "exact" }).is("excluida_em", null).order("numero", { ascending: false })

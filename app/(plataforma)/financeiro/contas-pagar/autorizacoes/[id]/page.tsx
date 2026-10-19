@@ -8,15 +8,17 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ListChecks, Printer } from "lucide-react";
 import { compararComCaixa, mensagemSlack, podeAutorizar, podeCancelar, podeEditarExtras, podeRemoverItem, resumirItens, ROTULO_STATUS, rotaImpressao, type StatusAutorizacao } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { composicaoDaGravada, composicaoPadrao, lerComposicaoGravada } from "@/lib/modulos/financeiro/contas-pagar/caixa";
 import { podeConferir } from "@/lib/modulos/financeiro/contas-pagar/conferencia";
 import { CHAVES_CONTAS_PAGAR, lerParametrosContasPagar } from "@/lib/modulos/financeiro/contas-pagar/parametros";
 import { ROTA_CONTAS_PAGAR, ROTULO_TIPO } from "@/lib/modulos/financeiro/contas-pagar/pendentes";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
+import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { lerAutorizacao, quandoEm, type LinhaExtraAutorizacao } from "../../dados";
-import { BotaoAutorizar, BotaoEnviarSlack, BotaoExcluirDaLista, BotaoRemoverExtra, DialogoCaixa, DialogoCancelar, DialogoExtraAutorizacao } from "./componentes";
+import { carregarContasCaixa, lerAutorizacao, quandoEm, type LinhaExtraAutorizacao } from "../../dados";
+import { BotaoAutorizar, BotaoCaixaAutorizacao, BotaoEnviarSlack, BotaoExcluirDaLista, BotaoRemoverExtra, DialogoCancelar, DialogoExtraAutorizacao } from "./componentes";
 import { SecaoItens } from "./secao-itens";
 
 export const metadata: Metadata = { title: "Autorização de pagamento" };
@@ -55,6 +57,10 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
   const removidos = itens.filter((i) => i.removido_em !== null);
   const caixaCentavos = a.caixa_disponivel === null ? null : centavos(a.caixa_disponivel);
   const caixa = compararComCaixa(resumo.geral.centavos, caixaCentavos);
+  const composicaoGravada = lerComposicaoGravada(a.caixa_composicao);
+  // Contas da empresa só para recompor o caixa do rascunho.
+  const contasCaixa = a.status === "rascunho" && papel.podeOperar ? await carregarContasCaixa(supabase, a.empresa_id) : [];
+  const hoje = hojeEmCuiaba();
   const textoSlack = mensagemSlack({
     codigo: a.codigo, data: formatarData(a.data), empresa: a.empresa_nome, status: a.status, titulos: resumo.titulos, antecipacoes: resumo.antecipacoes, extras: resumo.extras,
     totalCentavos: resumo.geral.centavos, caixa, autorizadaPor: a.autorizada_por_nome, observacao: a.observacao, link: `${protocolo}://${host}${ROTA_CONTAS_PAGAR}/autorizacoes/${a.id}`,
@@ -85,7 +91,9 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
           {papel.ehGestor && a.status === "cancelada" && !a.excluida_em && <BotaoExcluirDaLista id={a.id} codigo={a.codigo} />}
           {podeAutorizar(a.status, papel) && <BotaoAutorizar id={a.id} codigo={a.codigo} resumo={resumoTexto} />}
           {podeCancelar(a.status, a.criado_por, papel) && a.status !== "cancelada" && <DialogoCancelar id={a.id} codigo={a.codigo} status={a.status} enviadaSlack={Boolean(a.slack_enviada_em && !a.slack_retirada_em)} />}
-          {a.status === "rascunho" && papel.podeOperar && <DialogoCaixa id={a.id} caixaCentavos={caixaCentavos} />}
+          {a.status === "rascunho" && papel.podeOperar && (
+            <BotaoCaixaAutorizacao id={a.id} empresaId={a.empresa_id} contas={contasCaixa} composicao={composicaoDaGravada(a.caixa_composicao) ?? composicaoPadrao(contasCaixa)} hoje={hoje} totalCentavos={resumo.geral.centavos} temCaixa={caixaCentavos !== null} />
+          )}
         </div>
       </div>
 
@@ -126,13 +134,40 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Card size="sm">
             <CardHeader><CardDescription>Caixa disponível</CardDescription><CardTitle className="text-xl tabular-nums">{formatarMoeda(caixa.caixaCentavos)}</CardTitle></CardHeader>
-            <CardContent className="text-xs text-muted-foreground">informado ao montar a autorização</CardContent>
+            <CardContent className="text-xs text-muted-foreground">{composicaoGravada.length > 0 ? `saldos das contas${composicaoGravada.some((l) => l.tipo === "adicional") ? " + adicionais do dia" : ""}${a.caixa_composto_em ? ` · ${quandoEm(a.caixa_composto_em)}` : ""}` : "informado ao montar a autorização"}</CardContent>
           </Card>
           <Card size="sm">
             <CardHeader><CardDescription>{caixa.ultrapassa ? "Excedente" : "Sobra"}</CardDescription><CardTitle className={`text-xl tabular-nums ${caixa.ultrapassa ? "text-red-700" : "text-emerald-700"}`}>{formatarMoeda(caixa.ultrapassa ? caixa.excedenteCentavos : caixa.sobraCentavos)}</CardTitle></CardHeader>
             <CardContent className="text-xs text-muted-foreground">{caixa.ultrapassa ? "autorizado acima do caixa" : "autorizado dentro do caixa"}</CardContent>
           </Card>
         </div>
+      )}
+      {composicaoGravada.length > 0 && (
+        <section className="space-y-2">
+          <h3 className="text-sm font-bold">Composição do caixa</h3>
+          <div className="overflow-x-auto rounded-[3px] border border-grade">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Origem</TableHead>
+                  <TableHead>Descrição</TableHead>
+                  <TableHead>Data do saldo</TableHead>
+                  <TableHead className="text-right">Valor</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {composicaoGravada.map((l, i) => (
+                  <TableRow key={`${l.tipo}-${i}`}>
+                    <TableCell>{l.tipo === "saldo" ? "Saldo conciliado" : "Adicional do dia"}</TableCell>
+                    <TableCell>{l.descricao}</TableCell>
+                    <TableCell className={`tabular-nums ${l.tipo === "saldo" && (!l.dataSaldo || l.dataSaldo < a.data) ? "text-amber-800" : ""}`}>{l.tipo === "saldo" ? (l.dataSaldo ? formatarData(l.dataSaldo) : "sem saldo") : "—"}</TableCell>
+                    <TableCell className={`text-right tabular-nums ${l.valorCentavos < 0 ? "text-red-700" : ""}`}>{formatarMoeda(l.valorCentavos)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </section>
       )}
       {a.status !== "cancelada" && ativos.some((i) => i.tipo === "antecipacao" && i.tem_bordero === true && !i.baixado_consistem_em) && (
         <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
@@ -141,7 +176,7 @@ export default async function PaginaAutorizacao({ params }: PageProps<"/financei
       )}
       {caixa?.ultrapassa && a.status !== "cancelada" && (
         <p role="alert" className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800">
-          O total autorizado passa do caixa disponível em <strong>{formatarMoeda(caixa.excedenteCentavos)}</strong>.{a.status === "rascunho" ? " Decida quais itens não pagar agora (remova do rascunho) ou ajuste o caixa." : " Decida quais itens deixar de pagar."}
+          O total autorizado passa do caixa disponível em <strong>{formatarMoeda(caixa.excedenteCentavos)}</strong>.{a.status === "rascunho" ? " Decida quais itens não pagar agora (remova do rascunho) ou recomponha o caixa." : " Decida quais itens deixar de pagar."}
         </p>
       )}
 
