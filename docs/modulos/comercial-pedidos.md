@@ -1,6 +1,6 @@
 # Módulo: Comercial / Pedidos
 
-Status: em construção. Fase 0 (especificação e sondagem) concluída em 19/10/2026. Fase 1 (carteira e faturamento) publicada no banco e na Edge Function em 19/10/2026 (o app no Cloud Run fica para o Alan publicar).
+Status: em construção. Fase 0 (especificação e sondagem) concluída em 19/10/2026. Fase 1 (carteira e faturamento) publicada no banco e na Edge Function em 19/10/2026 e no app (Cloud Run, revisão neo-admin-00069-nfj, publicada pelo Alan).
 
 ## 1. Objetivo
 Acompanhar o pedido de venda do digitado até a entrega e a liquidação, num só lugar:
@@ -392,7 +392,7 @@ O que a documentação da API mostra (consultada em 19/10/2026):
 **Publicação (19/10/2026, à noite)**
 - Migrations 0091, 0700 e 0701 aplicadas em produção e registradas em `schema_migrations`.
 - Agendamento `com-pedidos-sincronizar-30min` criado; função publicada.
-- O deploy do app no Cloud Run foi bloqueado pelo classificador do Claude Code e fica com o Alan.
+- App publicado pelo Alan no Cloud Run (revisão neo-admin-00069-nfj).
 - **Carga inicial:** 5 rodadas disparadas à mão, sem nenhum erro.
 - **Resultado:** 210 pedidos (2 anos), 303 itens, 248 NFs e 211 parcelas (49 em aberto). A última rodada não teve nada a reler.
 - **Pendências "Pedido com previsão vencida": 35 abertas.**
