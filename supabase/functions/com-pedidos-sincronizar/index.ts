@@ -32,7 +32,7 @@ import {
   normalizarPedidoResumido, notasParaLerParcelas, pedidoFaturou, planejarPendenciasAtraso, SITUACOES_ABERTAS, TITULO_PENDENCIA_ATRASO,
   CHAVE_DIAS_ALERTA_MDFE, diasAlertaMdfe, normalizarMdfe, planejarPendenciasMdfe, TITULO_PENDENCIA_MDFE,
   type PedidoNormalizado,
-  candidatosIdNota, classificarSonda, contarPor, cruzarComTitulosAbertos, descreverCampos, notasDevolvidas,
+  candidatosIdNota, classificarSonda, formatoCodigo, contarPor, cruzarComTitulosAbertos, descreverCampos, notasDevolvidas,
   resumirAdiantamentos, resumirBloqueios, resumirCanceladas, resumirExtratoComissoes, resumirDevolucoes, resumirNotas, resumirPedidos, resumirTitulosDaNota, resumirTitulosPagos, tamanhoBase64Kb,
   type Sonda, type TentativaTitulo,
 } from "../_shared/consistem-comercial.ts";
@@ -577,6 +577,9 @@ async function sincronizarEmpresa(
         await gravar(banco.from("com_mdfes").upsert(lote.map((m) => ({ empresa_id: emp.id, ...m, visto_em: agora })), { onConflict: "empresa_id,numero" }));
       }
       mdfesLidos = mdfes.length;
+      // Formato cru da data de emissão (sem valor), para conferir quando algum MDF-e ficar sem data.
+      const semData = brutosMdfe.find((m, i) => mdfes[i] && !mdfes[i].data_emissao) ?? null;
+      if (semData) resumo.formatoDataMdfeSemData = `${typeof semData.dataEmissao}:${formatoCodigo(semData.dataEmissao)}`;
       const { data: cfgAlerta } = await banco.from("configuracoes").select("valor").eq("chave", CHAVE_DIAS_ALERTA_MDFE).maybeSingle();
       const gravados = await lerTudo<{ id: string; numero: string; situacao: string | null; data_emissao: string | null; uf_final: string | null; placas: string | null }>(
         (de, ate) => banco.from("com_mdfes").select("id, numero, situacao, data_emissao, uf_final, placas").eq("empresa_id", emp.id).order("numero").range(de, ate),

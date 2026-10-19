@@ -42,6 +42,8 @@ describe("normalização da carteira", () => {
     expect(dataIso("0/03/2026")).toBeNull();
     expect(dataIso("2026-13-45")).toBeNull();
     expect(dataIso("2026-03-30T10:00:00Z")).toBe("2026-03-30");
+    expect(dataIso("09/09/2026")).toBe("2026-09-09");
+    expect(dataIso("31/02/2026")).toBeNull();
   });
   it("detalhe: itens numerados, sem número ou repetido não se perde", () => {
     const d = normalizarDetalhePedido({

@@ -326,10 +326,13 @@ export const TITULO_PENDENCIA_ATRASO = "Pedido com previsão vencida";
 export const MODULO_PEDIDOS = "comercial.pedidos";
 export const ROTA_PEDIDOS = "/comercial/pedidos";
 
-/** Data 'aaaa-mm-dd' (aceita ISO com hora); vazio ou inválido vira null. */
+/** Data 'aaaa-mm-dd' (aceita ISO com hora e dd/mm/aaaa); vazio ou inválido vira null. */
 export const dataIso = (v: unknown): string | null => {
-  const d = texto(v).slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(d) && d !== "0000-00-00" && !Number.isNaN(Date.parse(`${d}T00:00:00Z`)) ? d : null;
+  const br = texto(v).match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+  const d = br ? `${br[3]}-${br[2]}-${br[1]}` : texto(v).slice(0, 10);
+  // Ida e volta: Date.parse aceita 31/02 e vira 03/03; aqui só passa data que existe.
+  const t = Date.parse(`${d}T00:00:00Z`);
+  return /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === d ? d : null;
 };
 /** Data e hora ISO (timestamptz); vazio ou inválido vira null. */
 const dataHoraIso = (v: unknown): string | null => {
