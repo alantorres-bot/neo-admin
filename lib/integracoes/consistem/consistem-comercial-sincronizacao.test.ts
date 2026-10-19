@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   assinaturaPedido,
   dataIso,
+  diasAlertaMdfe,
+  diasDesdeEmissao,
   ehNotaSemTitulos,
   normalizarDetalhePedido,
+  normalizarMdfe,
   normalizarNotaPedido,
   normalizarParcela,
   normalizarPedidoCompleto,
@@ -11,8 +14,10 @@ import {
   notasParaLerParcelas,
   pedidoAtrasado,
   pedidoFaturou,
+  planejarPendenciasMdfe,
   planejarPendenciasAtraso,
   TITULO_PENDENCIA_ATRASO,
+  TITULO_PENDENCIA_MDFE,
 } from "../../../supabase/functions/_shared/consistem-comercial";
 
 describe("normalização da carteira", () => {
@@ -122,5 +127,43 @@ describe("pendência de pedido atrasado", () => {
     }]);
     expect(r.atualizar).toEqual([{ id: "pend-mudou", descricao: "Pedido mudou · CLIENTE · previsão 10/10/2026 · saldo a faturar R$ 10,00" }]);
     expect(r.concluir.sort()).toEqual(["pend-faturou", "pend-sumiu"]);
+  });
+});
+
+describe("MDF-e (Fase 2)", () => {
+  const hoje = "2026-10-21";
+  it("normalizarMdfe: lê 'situcao' (grafia da API), chave só com 44 dígitos", () => {
+    const m = normalizarMdfe({ numeroMDFe: "000123", ufFinal: "MG", chaveMDFe: "5".repeat(44), numeroProtocolo: "999", situcao: 2, dataEmissao: "2026-10-01", horaEmissao: "10:00:00", valorTotalCarga: 1500.5, placaVeiculos: "ABC1D23" });
+    expect(m).toEqual({ numero: "123", chave: "5".repeat(44), protocolo: "999", uf_final: "MG", placas: "ABC1D23", situacao: "2", data_emissao: "2026-10-01", hora_emissao: "10:00:00", valor_carga: 1500.5 });
+    expect(normalizarMdfe({ numeroMDFe: "7", chaveMDFe: "12", situacao: 4 })).toMatchObject({ chave: null, situacao: "4" });
+    expect(normalizarMdfe({ numeroMDFe: "" })).toBeNull();
+  });
+  it("diasAlertaMdfe: inteiro de 1 a 365, senão desligado", () => {
+    expect(diasAlertaMdfe(null)).toBeNull();
+    expect(diasAlertaMdfe(5)).toBe(5);
+    expect(diasAlertaMdfe("10")).toBe(10);
+    expect(diasAlertaMdfe(0)).toBeNull();
+    expect(diasAlertaMdfe(2.5)).toBeNull();
+    expect(diasAlertaMdfe("")).toBeNull();
+  });
+  it("planejarPendenciasMdfe: só em aberto e com prazo vencido; desligado conclui tudo", () => {
+    const mdfes = [
+      { id: "a", numero: "1", situacao: "2", data_emissao: "2026-10-11", uf_final: "MG", placas: "ABC1D23" }, // 10 dias, autorizado
+      { id: "b", numero: "2", situacao: "4", data_emissao: "2026-10-01", uf_final: null, placas: null },     // encerrado
+      { id: "c", numero: "3", situacao: "1", data_emissao: "2026-10-20", uf_final: null, placas: null },     // 1 dia
+      { id: "d", numero: "4", situacao: "5", data_emissao: "2026-10-16", uf_final: null, placas: null },     // 5 dias, contingência
+    ];
+    const r = planejarPendenciasMdfe(mdfes, [{ id: "p-d", referencia_id: "d" }, { id: "p-b", referencia_id: "b" }], hoje, 5);
+    expect(r.abrir.map((x) => x.referencia_id)).toEqual(["a"]);
+    expect(r.abrir[0]).toMatchObject({
+      titulo: TITULO_PENDENCIA_MDFE, referencia_tabela: "com_mdfes", link: "/comercial/pedidos/mdfe",
+      descricao: "MDF-e 1 · Autorizado · emitido em 11/10/2026 (10 dias) · destino MG · placa ABC1D23",
+    });
+    expect(r.concluir).toEqual(["p-b"]);
+    expect(planejarPendenciasMdfe(mdfes, [{ id: "p-d", referencia_id: "d" }], hoje, null)).toEqual({ abrir: [], concluir: ["p-d"] });
+  });
+  it("diasDesdeEmissao", () => {
+    expect(diasDesdeEmissao("2026-10-11", hoje)).toBe(10);
+    expect(diasDesdeEmissao(null, hoje)).toBe(0);
   });
 });

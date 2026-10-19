@@ -400,7 +400,7 @@ O que a documentação da API mostra (consultada em 19/10/2026):
   - 15 têm até 90 dias de atraso.
   - **A decidir com o Alan:** ignorar atrasos acima de um limite (ex.: 180 dias), ou usar a lista para cancelar ou encerrar no Consistem os pedidos esquecidos.
 
-## 10-C. Proposta da Fase 2: expedição (aguarda aprovação)
+## 10-C. Fase 2: expedição (construída em 19/10/2026, com a autorização do Alan para continuar)
 
 O que a API permite, conforme as sondagens:
 - **NF:** tem `dataHoraSaida` (todas as 190 NFs da janela) e volumes (83). Não tem transportadora: o campo vem vazio.
@@ -419,6 +419,23 @@ Proposta:
   - o que marca a "entrega";
   - se a lista de transporte é usada e como se obtém o código dela;
   - o prazo N do MDF-e.
+
+**O que a Fase 2 entregou (19/10/2026)**
+- **Migration 0702:** tabela `com_mdfes` (espelho, leitura com `tem_acesso_modulo`) e o parâmetro `comercial.pedidos.mdfe_dias_alerta`.
+  - O parâmetro nasce **nulo, ou seja, alerta desligado**. Para ligar: `update configuracoes set valor = '<dias>' where chave = 'comercial.pedidos.mdfe_dias_alerta'`.
+- **Sincronização, etapa 6:**
+  - lê `GET mdfe` dos últimos 180 dias (`situacao=99`, lista em `listaMDFe`) e grava em `com_mdfes`;
+  - com o prazo configurado, abre a pendência **"MDF-e não encerrado"** (criticidade alta) para cada manifesto autorizado, com pendência ou em contingência há N dias ou mais, e a conclui quando ele é encerrado ou cancelado;
+  - uma falha no MDF-e não derruba a rodada (fica em `erroMdfe` no resumo).
+- **Telas:**
+  - **`/comercial/pedidos/mdfe`**: em aberto (com os dias desde a emissão) e todos;
+  - **no detalhe do pedido**, a coluna de volumes na NF, ao lado da data e hora de saída;
+  - **na carteira**, o link "MDF-e emitidos".
+- **Testes:** normalização (`situcao`), prazo, plano das pendências e RLS da `com_mdfes`.
+- **Fora da Fase 2:**
+  - ligar MDF-e ao pedido (a API não permite);
+  - lista de transporte (precisa do código da lista);
+  - encerrar o MDF-e pela API (escrita).
 
 ## 11. Pontos em aberto
 1. Seção 2 (como é feito hoje): o Alan completa.

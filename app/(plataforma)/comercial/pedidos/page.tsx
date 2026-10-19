@@ -57,7 +57,10 @@ export default async function PaginaPedidos({ searchParams }: PageProps<"/comerc
               : "Ainda não atualizado do Consistem."}
           </p>
         </div>
-        {ehGestor && <BotoesAtualizar />}
+        <div className="flex flex-col items-end gap-2">
+          <Link href={`${ROTA_PEDIDOS}/mdfe`} className="text-sm underline underline-offset-4">MDF-e emitidos</Link>
+          {ehGestor && <BotoesAtualizar />}
+        </div>
       </div>
 
       {error && <p role="alert" className="text-sm text-destructive">Não foi possível ler os pedidos.</p>}

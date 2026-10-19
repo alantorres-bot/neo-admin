@@ -29,6 +29,7 @@ type ResumoEmpresa = {
   empresa?: string; ok?: boolean; erro?: string; simulado?: boolean; pedidosNaApi?: number; novos?: number; paraDetalhar?: number;
   detalhados?: number; notasGravadas?: number; notasLidas?: number; notasSemTitulos?: number; errosDetalhe?: number; errosParcelas?: number;
   pendenciasAbertas?: number; pendenciasConcluidas?: number; restamParaDetalhar?: number;
+  mdfesLidos?: number; pendenciasMdfeAbertas?: number; erroMdfe?: string;
 };
 
 function descrever(r: ResumoEmpresa): string[] {
@@ -39,6 +40,7 @@ function descrever(r: ResumoEmpresa): string[] {
     `${nome}: ${r.pedidosNaApi ?? 0} pedidos lidos (${r.novos ?? 0} novos); ${r.detalhados ?? 0} pedidos relidos, ${r.notasGravadas ?? 0} NFs e parcelas de ${r.notasLidas ?? 0} NFs atualizadas.`,
     `Pendências de previsão vencida: ${r.pendenciasAbertas ?? 0} abertas, ${r.pendenciasConcluidas ?? 0} concluídas.`,
   ];
+  linhas.push(r.erroMdfe ? `MDF-e: não foi possível ler (${r.erroMdfe}).` : `MDF-e: ${r.mdfesLidos ?? 0} manifestos lidos; ${r.pendenciasMdfeAbertas ?? 0} pendências de não encerrado abertas.`);
   if ((r.restamParaDetalhar ?? 0) > 0) linhas.push(`Ainda ${r.restamParaDetalhar} pedidos a reler: seguem nas próximas rodadas automáticas (a cada 30 minutos).`);
   if ((r.errosDetalhe ?? 0) + (r.errosParcelas ?? 0) > 0) linhas.push(`Falhas pontuais: ${r.errosDetalhe ?? 0} pedidos e ${r.errosParcelas ?? 0} NFs; serão tentados de novo.`);
   return linhas;

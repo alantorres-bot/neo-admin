@@ -505,3 +505,57 @@ export function planejarPendenciasAtraso(
   const concluir = abertas.filter((a) => !a.referencia_id || !atrasados.has(a.referencia_id)).map((a) => a.id);
   return { abrir, atualizar, concluir };
 }
+
+// ---------------------------------------------------------------- MDF-e (Fase 2, expedição)
+
+export const SITUACAO_MDFE: Record<string, string> = {
+  "0": "Em digitação", "1": "Com pendência", "2": "Autorizado", "3": "Cancelado", "4": "Encerrado", "5": "Contingência",
+};
+/** Manifesto ainda em aberto (precisa ser encerrado): autorizado, com pendência ou em contingência. */
+export const MDFE_EM_ABERTO = ["1", "2", "5"];
+export const TITULO_PENDENCIA_MDFE = "MDF-e não encerrado";
+export const CHAVE_DIAS_ALERTA_MDFE = "comercial.pedidos.mdfe_dias_alerta";
+
+/** Linha de GET mdfe (`listaMDFe`) -> linha de com_mdfes. A API grafa o campo de situação como "situcao". */
+export function normalizarMdfe(r: Record<string, unknown>) {
+  const numero = texto(r.numeroMDFe).replace(/^0+(?=\d)/, "");
+  if (numero === "") return null;
+  return {
+    numero, chave: (soDigitos(r.chaveMDFe).length === 44 ? soDigitos(r.chaveMDFe) : null), protocolo: ouNulo(r.numeroProtocolo),
+    uf_final: ouNulo(r.ufFinal), placas: ouNulo(r.placaVeiculos), situacao: ouNulo(r.situcao ?? r.situacao),
+    data_emissao: dataIso(r.dataEmissao), hora_emissao: ouNulo(r.horaEmissao), valor_carga: reais(r.valorTotalCarga, null),
+  };
+}
+
+/** Prazo do alerta lido da configuração: inteiro de 1 a 365, senão null (alerta desligado). */
+export function diasAlertaMdfe(valor: unknown): number | null {
+  const n = typeof valor === "number" ? valor : typeof valor === "string" && valor.trim() !== "" ? Number(valor) : NaN;
+  return Number.isInteger(n) && n >= 1 && n <= 365 ? n : null;
+}
+
+/** Dias corridos desde a emissão (0 sem data). */
+export const diasDesdeEmissao = (dataEmissao: string | null, hoje: string) =>
+  dataEmissao ? Math.round((Date.parse(`${hoje}T00:00:00Z`) - Date.parse(`${dataEmissao}T00:00:00Z`)) / 86_400_000) : 0;
+
+type MdfeParaPendencia = { id: string; numero: string; situacao: string | null; data_emissao: string | null; uf_final: string | null; placas: string | null };
+
+/**
+ * Pendência "MDF-e não encerrado": manifesto em aberto há `dias` ou mais desde a emissão. Com `dias` nulo (alerta
+ * desligado) nada é aberto e as abertas são concluídas. Abre as que faltam, conclui as que deixaram de valer.
+ */
+export function planejarPendenciasMdfe(
+  mdfes: MdfeParaPendencia[], abertas: { id: string; referencia_id: string | null }[], hoje: string, dias: number | null,
+) {
+  const vencidos = new Map(
+    dias === null ? [] : mdfes
+      .filter((m) => m.situacao !== null && MDFE_EM_ABERTO.includes(m.situacao) && m.data_emissao !== null && diasDesdeEmissao(m.data_emissao, hoje) >= dias)
+      .map((m) => [m.id, m]),
+  );
+  const comAberta = new Set(abertas.map((a) => a.referencia_id).filter(Boolean));
+  const abrir = [...vencidos.values()].filter((m) => !comAberta.has(m.id)).map((m) => ({
+    titulo: TITULO_PENDENCIA_MDFE, prazo: hoje, referencia_tabela: "com_mdfes", referencia_id: m.id, link: `${ROTA_PEDIDOS}/mdfe`,
+    descricao: `MDF-e ${m.numero} · ${SITUACAO_MDFE[m.situacao!] ?? m.situacao} · emitido em ${dataBr(m.data_emissao!)} (${diasDesdeEmissao(m.data_emissao, hoje)} dias)${m.uf_final ? ` · destino ${m.uf_final}` : ""}${m.placas ? ` · placa ${m.placas}` : ""}`,
+  }));
+  const concluir = abertas.filter((a) => !a.referencia_id || !vencidos.has(a.referencia_id)).map((a) => a.id);
+  return { abrir, concluir };
+}

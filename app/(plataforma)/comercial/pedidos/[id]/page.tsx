@@ -22,7 +22,7 @@ const dataHora = (iso: string | null) =>
 
 type Nota = {
   id: string; nota: string; serie: string; chave_acesso: string | null; situacao: string | null; data_emissao: string | null;
-  data_hora_saida: string | null; valor_total: number | null; sem_titulos: boolean;
+  data_hora_saida: string | null; valor_total: number | null; qtd_volumes: number | null; sem_titulos: boolean;
   com_nota_parcelas: { id: string; cod_titulo: string; data_vencimento: string | null; data_pagamento: string | null; valor: number }[];
 };
 
@@ -35,7 +35,7 @@ export default async function PaginaPedido({ params }: PageProps<"/comercial/ped
     supabase.from("com_pedidos").select("*").eq("id", id).maybeSingle(),
     supabase.from("com_pedido_itens").select("item, cod_produto, qtd_pedida, qtd_faturada, qtd_cancelada, preco_unitario").eq("pedido_id", id).order("item"),
     supabase.from("com_notas")
-      .select("id, nota, serie, chave_acesso, situacao, data_emissao, data_hora_saida, valor_total, sem_titulos, com_nota_parcelas(id, cod_titulo, data_vencimento, data_pagamento, valor)")
+      .select("id, nota, serie, chave_acesso, situacao, data_emissao, data_hora_saida, valor_total, qtd_volumes, sem_titulos, com_nota_parcelas(id, cod_titulo, data_vencimento, data_pagamento, valor)")
       .eq("pedido_id", id).order("data_emissao"),
   ]);
   if (!pedido) notFound();
@@ -134,7 +134,7 @@ export default async function PaginaPedido({ params }: PageProps<"/comercial/ped
       <Card>
         <CardHeader>
           <CardTitle>Notas fiscais</CardTitle>
-          <CardDescription>NFs de saída do pedido no Consistem. DANFE e XML são baixados na hora, direto do ERP.</CardDescription>
+          <CardDescription>NFs de saída do pedido no Consistem, com a data e hora de saída e os volumes. DANFE e XML são baixados na hora, direto do ERP.</CardDescription>
         </CardHeader>
         <CardContent>
           {listaNotas.length === 0 ? (
@@ -148,6 +148,7 @@ export default async function PaginaPedido({ params }: PageProps<"/comercial/ped
                   <TableHead>Situação</TableHead>
                   <TableHead>Emissão</TableHead>
                   <TableHead>Saída</TableHead>
+                  <TableHead className="text-right">Volumes</TableHead>
                   <TableHead className="text-right">Valor</TableHead>
                   <TableHead>Documentos</TableHead>
                 </TableRow>
@@ -160,6 +161,7 @@ export default async function PaginaPedido({ params }: PageProps<"/comercial/ped
                     <TableCell>{SITUACAO_NF[n.situacao ?? ""] ?? n.situacao ?? "—"}</TableCell>
                     <TableCell className="tabular-nums">{formatarData(n.data_emissao)}</TableCell>
                     <TableCell className="tabular-nums">{dataHora(n.data_hora_saida)}</TableCell>
+                    <TableCell className="text-right tabular-nums">{n.qtd_volumes === null ? "—" : quantidade(n.qtd_volumes)}</TableCell>
                     <TableCell className="text-right tabular-nums">{n.valor_total === null ? "—" : formatarMoeda(emCentavos(n.valor_total))}</TableCell>
                     <TableCell>
                       {n.chave_acesso && n.situacao !== "3" ? (

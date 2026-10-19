@@ -30,6 +30,7 @@ import {
 import {
   assinaturaPedido, ehNotaSemTitulos, normalizarDetalhePedido, normalizarNotaPedido, normalizarParcela, normalizarPedidoCompleto,
   normalizarPedidoResumido, notasParaLerParcelas, pedidoFaturou, planejarPendenciasAtraso, SITUACOES_ABERTAS, TITULO_PENDENCIA_ATRASO,
+  CHAVE_DIAS_ALERTA_MDFE, diasAlertaMdfe, normalizarMdfe, planejarPendenciasMdfe, TITULO_PENDENCIA_MDFE,
   type PedidoNormalizado,
   candidatosIdNota, classificarSonda, contarPor, cruzarComTitulosAbertos, descreverCampos, notasDevolvidas,
   resumirAdiantamentos, resumirBloqueios, resumirCanceladas, resumirExtratoComissoes, resumirDevolucoes, resumirNotas, resumirPedidos, resumirTitulosDaNota, resumirTitulosPagos, tamanhoBase64Kb,
@@ -379,6 +380,8 @@ const JANELA_DIGITACAO_DIAS = 730;
 const MAX_RELER_FORA_JANELA = 40;
 const MAX_DETALHES = 60;
 const MAX_NOTAS_PARCELAS = 60;
+/** MDF-e emitidos nesta janela são relidos a cada rodada (situação muda até o encerramento). */
+const JANELA_MDFE_DIAS = 180;
 const LOTE = 200;
 const TITULO_FALHA = "Falha na sincronização dos pedidos";
 
@@ -564,7 +567,39 @@ async function sincronizarEmpresa(
       await gravar(banco.from("pendencias").update({ status: "concluida", concluido_em: agora }).in("id", lote));
     }
 
+    // 6. MDF-e (Fase 2): espelho dos manifestos e pendência "MDF-e não encerrado" (só com o prazo configurado).
+    let mdfesLidos = 0, pendenciasMdfeAbertas = 0, pendenciasMdfeConcluidas = 0;
+    try {
+      const brutosMdfe = await buscarTodasPaginas(buscar, cfg, "comercial/v10/mdfe",
+        { dataEmissaoInicio: addDias(hoje, -JANELA_MDFE_DIAS), dataEmissaoFim: hoje, situacao: 99 }, { campoLista: "listaMDFe" });
+      const mdfes = brutosMdfe.map(normalizarMdfe).filter((m): m is NonNullable<typeof m> => m !== null);
+      for (const lote of lotes(mdfes)) {
+        await gravar(banco.from("com_mdfes").upsert(lote.map((m) => ({ empresa_id: emp.id, ...m, visto_em: agora })), { onConflict: "empresa_id,numero" }));
+      }
+      mdfesLidos = mdfes.length;
+      const { data: cfgAlerta } = await banco.from("configuracoes").select("valor").eq("chave", CHAVE_DIAS_ALERTA_MDFE).maybeSingle();
+      const gravados = await lerTudo<{ id: string; numero: string; situacao: string | null; data_emissao: string | null; uf_final: string | null; placas: string | null }>(
+        (de, ate) => banco.from("com_mdfes").select("id, numero, situacao, data_emissao, uf_final, placas").eq("empresa_id", emp.id).order("numero").range(de, ate),
+      );
+      const abertasMdfe = await lerTudo<{ id: string; referencia_id: string | null }>((de, ate) => banco.from("pendencias")
+        .select("id, referencia_id").eq("modulo", MODULO).eq("empresa_id", emp.id).eq("referencia_tabela", "com_mdfes")
+        .eq("titulo", TITULO_PENDENCIA_MDFE).in("status", ["aberta", "em_andamento"]).order("id").range(de, ate));
+      const planoMdfe = planejarPendenciasMdfe(gravados, abertasMdfe, hoje, diasAlertaMdfe(cfgAlerta?.valor));
+      for (const lote of lotes(planoMdfe.abrir)) {
+        await gravar(banco.from("pendencias").insert(lote.map((x) => ({ ...x, modulo: MODULO, empresa_id: emp.id, criticidade: "alta" }))));
+      }
+      for (const lote of lotes(planoMdfe.concluir)) {
+        await gravar(banco.from("pendencias").update({ status: "concluida", concluido_em: agora }).in("id", lote));
+      }
+      pendenciasMdfeAbertas = planoMdfe.abrir.length;
+      pendenciasMdfeConcluidas = planoMdfe.concluir.length;
+    } catch (erro) {
+      // MDF-e é complementar: a falha não derruba a carteira (fica registrada no resumo).
+      resumo.erroMdfe = erro instanceof Error ? erro.message.slice(0, 200) : "falha";
+    }
+
     Object.assign(resumo, {
+      mdfesLidos, pendenciasMdfeAbertas, pendenciasMdfeConcluidas,
       detalhados, notasGravadas, errosDetalhe, notasLidas, notasSemTitulos, errosParcelas,
       pendenciasAbertas: plano.abrir.length, pendenciasConcluidas: plano.concluir.length,
       restamParaDetalhar: Math.max(0, paraDetalhar.length - fila.length),

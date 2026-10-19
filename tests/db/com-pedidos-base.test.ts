@@ -73,3 +73,15 @@ describe("espelho dos pedidos (0701)", () => {
     await expect(como(db, comGestor, () => q(`select com_chamar_sincronizacao()`))).rejects.toThrow();
   });
 });
+
+describe("MDF-e (0702)", () => {
+  it("o prazo do alerta nasce desligado (o Alan define)", async () => {
+    expect((await q(`select valor from configuracoes where chave = 'comercial.pedidos.mdfe_dias_alerta'`)).rows[0].valor).toBeNull();
+  });
+  it("quem tem a área Comercial lê os manifestos; os demais não; ninguém grava pela API do usuário", async () => {
+    await q(`insert into com_mdfes (empresa_id, numero, situacao) select empresa_id, '123', '2' from com_pedidos limit 1`);
+    expect((await como(db, comConsulta, () => q(`select count(*)::int as n from com_mdfes`))).rows[0].n).toBe(1);
+    expect((await como(db, finGestor, () => q(`select count(*)::int as n from com_mdfes`))).rows[0].n).toBe(0);
+    await expect(como(db, comGestor, () => q(`insert into com_mdfes (empresa_id, numero) select empresa_id, '9' from com_pedidos limit 1`))).rejects.toThrow();
+  });
+});
