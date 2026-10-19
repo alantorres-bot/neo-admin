@@ -16,8 +16,6 @@
 export const ROTA_CONTAS_PAGAR = "financeiro/v10/contasPagar";
 export const ROTA_DETALHE_LANCAMENTO = "financeiro/v10/lancamentoContasPagar";
 export const ROTA_FORNECEDORES = "cadastrosgerais/v10/fornecedor";
-/** Cadastro das contas bancárias da empresa (sem saldo: a API v1.0.15 não tem saldo nem conciliação). Lista em `dadosBancarios`. */
-export const ROTA_DADOS_BANCARIOS = "financeiro/v10/dadosBancarios";
 
 /** Quantos detalhes (um GET por lançamento) uma rodada lê, no máximo: só antecipações novas precisam dele. */
 export const LIMITE_DETALHES_POR_RODADA = 150;
@@ -193,52 +191,6 @@ export function normalizarFornecedorApi(r: Record<string, unknown>): FornecedorA
     codCategoria: /^\d{1,3}$/.test(texto(r.codCategoria)) ? Number(texto(r.codCategoria)) : null,
   };
 }
-
-// ---------------------------------------------------------------- contas bancárias
-
-export type ContaBancariaApi = {
-  codContaBancaria: string;
-  codBanco: string;
-  descricao: string;
-  agencia: string;
-  conta: string;
-  contaContabil: string;
-  /** 1 = conta corrente, 2 = outras (aplicação, vinculada...). */
-  tipoConta: number | null;
-  /** "Considera saldo no fluxo" no Consistem. */
-  consideraSaldo: boolean;
-  inativa: boolean;
-};
-
-/** Booleano da API: true/false, 1/0 ou "1"/"0"/"S"/"N". Vazio = null. */
-function paraBooleano(v: unknown): boolean | null {
-  if (typeof v === "boolean") return v;
-  const t = texto(v).toUpperCase();
-  if (t === "") return null;
-  return t === "1" || t === "TRUE" || t === "S" || t === "SIM";
-}
-
-/** Uma linha de GET /dadosBancarios; null sem código da conta. `situacaoConta` = "Conta Inativa" (true = inativa). */
-export function normalizarContaBancaria(r: Record<string, unknown>): ContaBancariaApi | null {
-  const codContaBancaria = texto(r.codContaBancaria);
-  if (codContaBancaria === "") return null;
-  const tipo = texto(r.tipoConta);
-  return {
-    codContaBancaria,
-    codBanco: texto(r.codBanco),
-    descricao: texto(r.descContaBancaria) || `Conta ${codContaBancaria}`,
-    agencia: texto(r.codAgencia),
-    conta: texto(r.ctaCorrenteEditada) || texto(r.identficadorConta),
-    contaContabil: texto(r.contaContabil),
-    tipoConta: /^\d{1,2}$/.test(tipo) ? Number(tipo) : null,
-    consideraSaldo: paraBooleano(r.consideraSaldo) ?? false,
-    inativa: paraBooleano(r.situacaoConta) ?? false,
-  };
-}
-
-/** Padrão local de "entra no caixa" para conta nova: conta corrente, ativa e que considera saldo no fluxo. */
-export const entraNoCaixaPorPadrao = (c: Pick<ContaBancariaApi, "tipoConta" | "consideraSaldo" | "inativa">): boolean =>
-  c.tipoConta === 1 && c.consideraSaldo && !c.inativa;
 
 // ---------------------------------------------------------------- planejamento
 

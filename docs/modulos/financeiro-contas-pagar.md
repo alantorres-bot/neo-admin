@@ -417,7 +417,12 @@ Na conferência nem tudo é pago (ex.: Barra Forte, R$ 39 mil, em 15/10/2026), e
   `conferencia.test.ts` e `tests/db/cap-nao-pago.test.ts` (motivo, volta à lista, nova autorização, desfazer recusado, só em aberto
   no Consistem, extra recusado).
 
-## 18. Caixa disponível automático — saldos bancários (19/10/2026)
+## 18. Caixa disponível automático — saldos bancários (19/10/2026) — **desligado no mesmo dia**
+> **Desligado em 19/10/2026 (migration 0170, decisão do Alan):** a API do Consistem não tem saldo, e manter a função exigiria o
+> financeiro digitar o saldo de cada conta todo dia. O "Caixa disponível" voltou a ser **digitado** na tela (como na seção 15);
+> saíram a aba Saldos bancários, o botão Composição, a leitura das contas na sincronização e a pendência diária. As tabelas e
+> funções da 0169 ficam no banco sem uso (nada se apaga); para religar, basta voltar o código do commit 903090b e trocar a origem
+> do saldo quando houver serviço na API. O texto abaixo descreve o que existiu.
 Pedido do Alan: o "Caixa disponível" da autorização deixa de ser digitado e passa a sair dos **saldos conciliados das contas
 bancárias da empresa**, com a opção de somar **valores adicionais do dia** (depósitos esperados, ainda sem registro).
 - **Limite da API:** o catálogo do Consistem (v1.0.15, consultado em 19/10/2026) **não tem saldo nem conciliação bancária**. Só

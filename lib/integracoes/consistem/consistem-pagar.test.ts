@@ -3,11 +3,9 @@ import { paraCentavos as paraCentavosReceber, paraDataIso as paraDataIsoReceber 
 import {
   classificarLancamento,
   diaSeguinte,
-  entraNoCaixaPorPadrao,
   estaEmAberto,
   FILTRO_BORDERO,
   janelasDeDatas,
-  normalizarContaBancaria,
   normalizarDetalheLancamento,
   normalizarFornecedorApi,
   normalizarLancamentoPagar,
@@ -177,28 +175,5 @@ describe("planejarSincronizacaoPagar", () => {
     const plano = planejarSincronizacaoPagar([lanc({ codLancamento: "1" }), lanc({ codLancamento: "1", saldoCentavos: 1 })], []);
     expect(plano.novos).toHaveLength(1);
     expect(plano.duplicadosApi).toEqual(["1"]);
-  });
-});
-
-describe("contas bancárias (GET dadosBancarios)", () => {
-  const CONTA = {
-    codBanco: 748, codContaBancaria: "12", descContaBancaria: "SICREDI C/C", contaContabil: 1120, atualizaMovimentoBancario: true,
-    tipoConta: 1, ctaCorrenteEditada: "12345-6", identficadorConta: "X", codAgencia: "0802", consideraSaldo: true, adminMatriz: false, situacaoConta: false,
-  };
-  it("normaliza a conta e os booleanos em qualquer formato", () => {
-    expect(normalizarContaBancaria(CONTA)).toEqual({
-      codContaBancaria: "12", codBanco: "748", descricao: "SICREDI C/C", agencia: "0802", conta: "12345-6", contaContabil: "1120",
-      tipoConta: 1, consideraSaldo: true, inativa: false,
-    });
-    expect(normalizarContaBancaria({ ...CONTA, consideraSaldo: 0, situacaoConta: "1" })).toMatchObject({ consideraSaldo: false, inativa: true });
-    expect(normalizarContaBancaria({ codContaBancaria: 7 })).toMatchObject({ descricao: "Conta 7", tipoConta: null, consideraSaldo: false, inativa: false });
-    expect(normalizarContaBancaria({ descContaBancaria: "sem código" })).toBeNull();
-  });
-  it("entra no caixa por padrão só a conta corrente ativa que considera saldo", () => {
-    const c = normalizarContaBancaria(CONTA)!;
-    expect(entraNoCaixaPorPadrao(c)).toBe(true);
-    expect(entraNoCaixaPorPadrao({ ...c, tipoConta: 2 })).toBe(false);
-    expect(entraNoCaixaPorPadrao({ ...c, consideraSaldo: false })).toBe(false);
-    expect(entraNoCaixaPorPadrao({ ...c, inativa: true })).toBe(false);
   });
 });

@@ -7,10 +7,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import type { Composicao, ContaCaixa } from "@/lib/modulos/financeiro/contas-pagar/caixa";
-import { BotaoComposicaoCaixa } from "../../dialogo-caixa";
+import { parseReais } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
+import { formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { DialogoExtra } from "../../dialogo-extra";
-import { autorizar, cancelar, definirComposicaoCaixa, enviarNoSlack, excluirDaLista, incluirExtra, removerExtra, removerItem } from "./acoes";
+import { autorizar, cancelar, definirCaixa, enviarNoSlack, excluirDaLista, incluirExtra, removerExtra, removerItem } from "./acoes";
 
 /** "Incluir pagamento extra" na página da autorização (rascunho): o diálogo compartilhado gravando via `incluirExtra`. */
 export function DialogoExtraAutorizacao({ autorizacaoId, totalAtualCentavos, caixaCentavos }: { autorizacaoId: string; totalAtualCentavos: number; caixaCentavos: number | null }) {
@@ -66,16 +66,57 @@ export function BotaoRemoverExtra({ autorizacaoId, extraId, descricao }: { autor
   );
 }
 
-/** "Composição do caixa" na página do rascunho: o diálogo compartilhado gravando via `definirComposicaoCaixa`. */
-export function BotaoCaixaAutorizacao({ id, empresaId, contas, composicao, hoje, totalCentavos, temCaixa }: {
-  id: string; empresaId: string; contas: ContaCaixa[]; composicao: Composicao; hoje: string; totalCentavos: number; temCaixa: boolean;
-}) {
+/** Altera o caixa disponível de um rascunho (ou remove). Ultrapassar o caixa é só aviso. */
+export function DialogoCaixa({ id, caixaCentavos }: { id: string; caixaCentavos: number | null }) {
+  const router = useRouter();
+  const [aberto, setAberto] = useState(false);
+  const [texto, setTexto] = useState(caixaCentavos === null ? "" : (caixaCentavos / 100).toFixed(2).replace(".", ","));
+  const [erro, setErro] = useState<string>();
+  const [pendente, iniciar] = useTransition();
+
+  function salvar() {
+    const centavos = texto.trim() === "" ? null : parseReais(texto);
+    if (texto.trim() !== "" && centavos === null) {
+      setErro("Caixa inválido: use números, ex.: 150.000,00.");
+      return;
+    }
+    iniciar(async () => {
+      const r = await definirCaixa({ id, caixaCentavos: centavos });
+      if (r.ok) {
+        toast.success(r.aviso);
+        setAberto(false);
+        router.refresh();
+      } else {
+        setErro(r.erro);
+      }
+    });
+  }
+
   return (
-    <BotaoComposicaoCaixa
-      empresaId={empresaId} contas={contas} composicao={composicao} hoje={hoje} totalCentavos={totalCentavos}
-      rotulo={temCaixa ? "Recompor caixa" : "Compor caixa"}
-      aoConfirmar={(c) => definirComposicaoCaixa({ id, composicao: c })}
-    />
+    <>
+      <Button type="button" variant="outline" onClick={() => { setErro(undefined); setAberto(true); }}>{caixaCentavos === null ? "Informar caixa" : "Alterar caixa"}</Button>
+      {aberto && (
+        <Dialog open onOpenChange={(v) => { if (!v) setAberto(false); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Caixa disponível</DialogTitle>
+              <DialogDescription>Quanto há em caixa para esta autorização{caixaCentavos !== null ? ` (hoje: ${formatarMoeda(caixaCentavos)})` : ""}. Em branco remove. Passar do caixa não impede autorizar: o relatório mostra o excedente.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3">
+              <div className="grid gap-1.5">
+                <label htmlFor="cap-caixa-editar" className="text-sm font-medium">Caixa disponível (R$)</label>
+                <Input id="cap-caixa-editar" value={texto} onChange={(e) => setTexto(e.target.value)} inputMode="decimal" placeholder="R$ 0,00" className="w-48 text-right tabular-nums" />
+              </div>
+              {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" onClick={() => setAberto(false)} disabled={pendente}>Voltar</Button>
+                <Button type="button" onClick={salvar} disabled={pendente}>{pendente ? "Salvando…" : "Salvar"}</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </>
   );
 }
 
