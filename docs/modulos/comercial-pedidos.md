@@ -1,6 +1,6 @@
 # Módulo: Comercial / Pedidos
 
-Status: em construção. Fase 0 (especificação e sondagem) concluída em 19/10/2026. Fase 1 (carteira e faturamento) construída em 19/10/2026, aguardando publicação.
+Status: em construção. Fase 0 (especificação e sondagem) concluída em 19/10/2026. Fase 1 (carteira e faturamento) publicada no banco e na Edge Function em 19/10/2026 (o app no Cloud Run fica para o Alan publicar).
 
 ## 1. Objetivo
 Acompanhar o pedido de venda do digitado até a entrega e a liquidação, num só lugar:
@@ -388,6 +388,37 @@ O que a documentação da API mostra (consultada em 19/10/2026):
 - `lib/integracoes/consistem/consistem-comercial-sincronizacao.test.ts` (normalização, o que reler, pendência).
 - `lib/modulos/comercial/pedidos/carteira.test.ts` (atraso, previsão, parcelas).
 - `tests/db/com-pedidos-base.test.ts` (RLS, cascata, unicidade).
+
+**Publicação (19/10/2026, à noite)**
+- Migrations 0091, 0700 e 0701 aplicadas em produção e registradas em `schema_migrations`.
+- Agendamento `com-pedidos-sincronizar-30min` criado; função publicada.
+- O deploy do app no Cloud Run foi bloqueado pelo classificador do Claude Code e fica com o Alan.
+- **Carga inicial:** 5 rodadas disparadas à mão, sem nenhum erro.
+- **Resultado:** 210 pedidos (2 anos), 303 itens, 248 NFs e 211 parcelas (49 em aberto). A última rodada não teve nada a reler.
+- **Pendências "Pedido com previsão vencida": 35 abertas.**
+  - 20 são pedidos com mais de 180 dias de atraso: 13 nunca faturados (digitado ou listado), 7 faturados parcialmente com saldo residual.
+  - 15 têm até 90 dias de atraso.
+  - **A decidir com o Alan:** ignorar atrasos acima de um limite (ex.: 180 dias), ou usar a lista para cancelar ou encerrar no Consistem os pedidos esquecidos.
+
+## 10-C. Proposta da Fase 2: expedição (aguarda aprovação)
+
+O que a API permite, conforme as sondagens:
+- **NF:** tem `dataHoraSaida` (todas as 190 NFs da janela) e volumes (83). Não tem transportadora: o campo vem vazio.
+- **MDF-e (`GET mdfe`):** traz número, chave, protocolo, UF final, placa, situação e data, mas **não lista as NFs do manifesto**.
+  - Não há serviço de detalhe; só a lista de cidades e o encerramento.
+  - Por isso a API não permite ligar MDF-e → NF → pedido.
+- **Lista de transporte:** traz as NFs com volumes conferidos e pendentes, mas só é consultada pelo código da lista. Não há listagem.
+
+Proposta:
+1. **Expedição por pedido:** no detalhe do pedido, a data e hora de saída e os volumes de cada NF. Na carteira, o selo "Faturado e saiu" ou "Faturado, sem saída".
+2. **Painel de MDF-e** (`/comercial/pedidos/mdfe` ou um quadro na carteira):
+   - os manifestos por situação;
+   - a pendência **"MDF-e autorizado não encerrado"** para manifesto autorizado (2) ou com pendência (1) há mais de N dias. O MDF-e precisa ser encerrado ao fim da viagem; o prazo N fica a definir com o Alan, sem inventar o prazo legal.
+3. **Encerrar o MDF-e pela API** (`POST mdfe/encerrar`) fica para uma fase de escrita, com aprovação.
+- **A confirmar com o Alan:**
+  - o que marca a "entrega";
+  - se a lista de transporte é usada e como se obtém o código dela;
+  - o prazo N do MDF-e.
 
 ## 11. Pontos em aberto
 1. Seção 2 (como é feito hoje): o Alan completa.
