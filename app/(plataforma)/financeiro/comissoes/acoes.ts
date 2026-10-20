@@ -70,7 +70,7 @@ export async function importarCreditos(fechamentoId: string, dados: FormData): P
 
 type RespostaFuncao = {
   titulos?: TituloPago[]; porCliente?: Record<string, { cod_representante: string | null; data_emissao: string | null }[]>;
-  unidades?: Record<string, UnidadeTeto>; falhas?: string[]; avisos?: string[]; erro?: string;
+  unidades?: Record<string, UnidadeTeto>; nomes?: Record<string, string>; falhas?: string[]; avisos?: string[]; erro?: string;
 };
 
 /** Passo 2: títulos pagos do mês (Consistem) + créditos → proposta por representante. Refazer mantém as decisões. */
@@ -119,7 +119,8 @@ export async function buscarTitulosPagos(fechamentoId: string): Promise<Resultad
     p_id: fechamentoId,
     p_linhas: proposta.linhas.map((l) => ({
       cod_representante: l.cod_representante, cod_representante_venda: l.cod_representante_venda, chave: l.chave, origem: l.origem,
-      cod_titulo: l.cod_titulo, cod_cliente: l.cod_cliente, nome_cliente: l.nome_cliente, nota_fiscal: l.nota_fiscal, data_pagamento: l.data_pagamento,
+      cod_titulo: l.cod_titulo, cod_cliente: l.cod_cliente, nome_cliente: l.nome_cliente ?? (l.cod_cliente ? resposta.nomes?.[l.cod_cliente] ?? null : null),
+      nota_fiscal: l.nota_fiscal, data_pagamento: l.data_pagamento,
       tipo_baixa: l.tipo_baixa, tipo: l.tipo, valor_base: l.valor_base_centavos / 100, percentual: l.percentual,
       valor_comissao: l.valor_comissao_centavos / 100, valor_consistem: l.comissao_consistem_centavos === null ? null : l.comissao_consistem_centavos / 100,
       observacao: l.observacao, cod_pedido: l.cod_pedido, teto_chave: l.teto_chave,

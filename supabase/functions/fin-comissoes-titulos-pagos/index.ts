@@ -14,7 +14,7 @@
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import {
   addDias, BASE_URL_PADRAO, buscarJson, buscarObjeto, buscarTodasPaginas, chaveNfe, ConsistemErro, indexarNotas, ligarTituloNota, normalizarNotaSaida,
-  numeroNota, PAGINACAO, type ConfigConsistem, type NotaSaida,
+  normalizarClienteApi, numeroNota, PAGINACAO, type ConfigConsistem, type NotaSaida,
 } from "../_shared/consistem-receber.ts";
 import { ehNotaSemTitulos, normalizarNotaPedido, normalizarParcela, normalizarPedidoCompleto } from "../_shared/consistem-comercial.ts";
 
@@ -212,7 +212,26 @@ Deno.serve(async (req) => {
         porCliente[c] = [];
       }
     }
-    return responder({ ok: true, periodo: { inicio, fim }, titulos, porCliente, unidades, falhas, avisos });
+    // Nome do sacado (vai no relatório do representante): o cadastro do núcleo (contrapartes pelo código do Consistem) e,
+    // para quem não está lá, o cadastro de clientes do Consistem.
+    const codigosClientes = [...new Set([...titulos.map((t) => texto(t.cod_cliente)), ...clientes].filter(Boolean))];
+    const nomes: Record<string, string> = {};
+    if (codigosClientes.length > 0) {
+      const { data: cps } = await banco.from("contrapartes").select("codigo_erp, nome").in("codigo_erp", codigosClientes);
+      for (const c of cps ?? []) if (c.codigo_erp && c.nome) nomes[String(c.codigo_erp)] = String(c.nome);
+      if (codigosClientes.some((c) => !nomes[c])) {
+        try {
+          const regs = await buscarTodasPaginas(buscar, cfg, "cadastrosgerais/v10/cliente", { situacao: 1, paginacao: PAGINACAO });
+          for (const r of regs) {
+            const c = normalizarClienteApi(r);
+            if (c && c.nome && !nomes[c.codCliente] && codigosClientes.includes(c.codCliente)) nomes[c.codCliente] = c.nome;
+          }
+        } catch {
+          avisos.push("Nomes dos clientes não lidos no Consistem (o relatório sai com o código).");
+        }
+      }
+    }
+    return responder({ ok: true, periodo: { inicio, fim }, titulos, porCliente, unidades, nomes, falhas, avisos });
   } catch (erro) {
     return responder({ erro: erro instanceof ConsistemErro || erro instanceof Error ? erro.message : "Falha ao consultar o Consistem." }, 502);
   }

@@ -42,6 +42,13 @@ export async function lerFechamento(supabase: Cliente, id: string) {
   ]);
   if (!f) return null;
   const todas = (linhas ?? []) as LinhaFechamento[];
+  // Linha sem o nome do sacado (gravada antes de a busca trazer o nome): completa pelo cadastro do núcleo.
+  const semNome = [...new Set(todas.filter((l) => !l.nome_cliente && l.cod_cliente).map((l) => l.cod_cliente as string))];
+  if (semNome.length > 0) {
+    const { data: cps } = await supabase.from("contrapartes").select("codigo_erp, nome").in("codigo_erp", semNome);
+    const nome = new Map((cps ?? []).map((c) => [c.codigo_erp as string, c.nome as string]));
+    for (const l of todas) if (!l.nome_cliente && l.cod_cliente) l.nome_cliente = nome.get(l.cod_cliente) ?? null;
+  }
   const representantes = ((reps ?? []) as RepresentanteFechamento[]).map((r) => ({ ...r, perc_venda: Number(r.perc_venda), perc_locacao: Number(r.perc_locacao) }));
   const porRepresentante = representantes
     .map((r) => {
