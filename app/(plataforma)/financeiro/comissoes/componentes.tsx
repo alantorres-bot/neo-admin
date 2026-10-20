@@ -166,7 +166,9 @@ export function AjusteLinha({ linhaId, fechamentoId, incluida, tipo, motivo, edi
 }
 
 /** Lançamento manual ou antecipação de comissão já paga ao representante. */
-export function FormLancamento({ fechamentoId, representantes, dataPadrao }: { fechamentoId: string; representantes: { cod: string; nome: string }[]; dataPadrao: string }) {
+export function FormLancamento({ fechamentoId, representantes, dataPadrao, representantePadrao }: {
+  fechamentoId: string; representantes: { cod: string; nome: string }[]; dataPadrao: string; representantePadrao?: string;
+}) {
   const [pendente, iniciar] = useTransition();
   const [origem, setOrigem] = useState<"manual" | "antecipacao">("antecipacao");
   const [chave, setChave] = useState(0);
@@ -180,16 +182,22 @@ export function FormLancamento({ fechamentoId, representantes, dataPadrao }: { f
         if (r.ok) setChave((x) => x + 1);
       })}
     >
-      <div className="space-y-1">
-        <Label htmlFor="lanc-origem">Tipo de lançamento</Label>
-        <select id="lanc-origem" name="origem" className={`${SELECT} w-full`} value={origem} onChange={(e) => setOrigem(e.target.value as "manual" | "antecipacao")}>
-          <option value="antecipacao">Antecipação de comissão já paga</option>
-          <option value="manual">Comissão manual (sobre um valor)</option>
-        </select>
-      </div>
+      {/* Os dois tipos lado a lado, com o efeito no total: antecipação ABATE, manual SOMA (evita lançar antecipação como manual). */}
+      <fieldset className="grid gap-2 sm:col-span-2 sm:grid-cols-2 lg:col-span-4">
+        <legend className="sr-only">Tipo de lançamento</legend>
+        {([
+          ["antecipacao", "Antecipação já paga", "Abate do total do mês: o que já foi adiantado ao representante."],
+          ["manual", "Comissão manual", "Soma ao total: comissão sobre um valor-base informado."],
+        ] as const).map(([valor, titulo, texto]) => (
+          <label key={valor} className={`flex cursor-pointer items-start gap-3 rounded-lg p-3 ${origem === valor ? "border-2 border-primary bg-primary/5" : "border"}`}>
+            <input type="radio" name="origem" value={valor} checked={origem === valor} onChange={() => setOrigem(valor)} className="mt-1" />
+            <span className="flex flex-col gap-0.5"><strong className="text-sm">{titulo}</strong><span className="text-xs text-muted-foreground">{texto}</span></span>
+          </label>
+        ))}
+      </fieldset>
       <div className="space-y-1">
         <Label htmlFor="lanc-rep">Representante</Label>
-        <select id="lanc-rep" name="representante" className={`${SELECT} w-full`} defaultValue={representantes[0]?.cod}>
+        <select id="lanc-rep" name="representante" className={`${SELECT} w-full`} defaultValue={representantePadrao ?? representantes[0]?.cod}>
           {representantes.map((r) => <option key={r.cod} value={r.cod}>{r.nome}</option>)}
         </select>
       </div>

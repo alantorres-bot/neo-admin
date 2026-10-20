@@ -10,7 +10,9 @@ export type AbaPlanilha = {
 };
 
 const dataBr = (iso: string | null) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "");
-export const nomePlanilhaComissoes = (competencia: string) => `Comissões ${competencia.slice(5, 7)}-${competencia.slice(0, 4)}.xlsx`;
+/** "Comissões Fernando Grassmann - 09-2026.xlsx" (um representante) ou "Comissões 09-2026.xlsx" (todos). */
+export const nomePlanilhaComissoes = (competencia: string, representante?: string) =>
+  `Comissões ${representante ? `${representante} - ` : ""}${competencia.slice(5, 7)}-${competencia.slice(0, 4)}.xlsx`;
 
 export async function gerarPlanilhaComissoes(rotuloMes: string, abas: AbaPlanilha[]): Promise<Uint8Array> {
   const { Workbook } = await import("exceljs");

@@ -13,8 +13,11 @@ export const metadata: Metadata = { title: "Comissões do mês" };
 const reais = (v: number | string) => formatarMoeda(Math.round(Number(v) * 100));
 const perc = (v: number | string) => `${Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}%`;
 
-/** "COMISSÕES - <REPRESENTANTE>": uma folha por representante, só as linhas incluídas, total, antecipações e saldo a pagar. */
-export default async function PaginaImprimirComissoes({ params }: PageProps<"/imprimir/comissoes/[id]">) {
+/**
+ * "COMISSÕES - <REPRESENTANTE>": só as linhas incluídas, total, antecipações e saldo a pagar. Com ?rep=<código>, só a
+ * folha do representante (o relatório que vai para ele); sem, uma folha por representante.
+ */
+export default async function PaginaImprimirComissoes({ params, searchParams }: PageProps<"/imprimir/comissoes/[id]">) {
   const sessao = await exigirSessao();
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO_COMISSOES);
   if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_COMISSOES)) notFound();
@@ -22,11 +25,18 @@ export default async function PaginaImprimirComissoes({ params }: PageProps<"/im
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
   const dados = await lerFechamento(await criarClienteServidor(), id);
   if (!dados) notFound();
-  const { fechamento: f, porRepresentante } = dados;
+  const rep = (await searchParams).rep;
+  const { fechamento: f } = dados;
+  const porRepresentante = typeof rep === "string" ? dados.porRepresentante.filter((x) => x.representante.cod_representante === rep) : dados.porRepresentante;
+  if (porRepresentante.length === 0) notFound();
   const selo = f.status === "fechado" ? null : "PRÉVIA — FECHAMENTO EM CONFERÊNCIA";
+
+  // O título vira o nome do PDF ao imprimir: "Comissões Fernando Grassmann - 09-2026".
+  const tituloPdf = `Comissões ${porRepresentante.length === 1 ? `${porRepresentante[0].representante.nome} - ` : ""}${f.competencia.slice(5, 7)}-${f.competencia.slice(0, 4)}`;
 
   return (
     <>
+      <title>{tituloPdf}</title>
       <BotaoImprimir />
       {porRepresentante.map(({ representante: r, linhas, total, antecipado, saldo }, i) => {
         const incluidas = linhas.filter((l) => l.incluida && l.origem !== "antecipacao");
