@@ -38,7 +38,7 @@ describe("título de encargos", () => {
     if (!t.ok) return;
     expect(t.valorCentavos).toBe(9_234);
     expect(t.payload).toEqual({
-      codFornecedor: 80, categoriaDoc: 17, codDocumento: "2609", codPortador: 91, dataEmissao: "2026-09-26", dataEntrada: "2026-09-26", dataVencimento: "2026-10-13",
+      codFornecedor: 80, categoriaDoc: 17, codDocumento: "260926", codPortador: 91, dataEmissao: "2026-09-26", dataEntrada: "2026-09-26", dataVencimento: "2026-10-13",
       valorDocumento: 92.34, codHistorico: 2, complementoHistorico: "CARTÃO SICREDI PF — ENCARGOS: IOF, JUROS, ANUIDADE", grupoContaFluxoCaixa: 22, contaFluxoCaixa: 28,
       dadosContabilidade: { contaContabilDebito: 3473, contaContabilCredito: 2004, listaCentroCustoContab: [] },
     });
@@ -60,7 +60,8 @@ describe("título de encargos", () => {
     expect(id.situacao === "cartao" && id.cartao?.codigo).toBe("SICREDI PF");
   });
   it("documento = DDMM do fechamento; configuração exige todos os códigos inteiros positivos", () => {
-    expect(documentoDoFechamento("2026-09-26")).toBe("2609");
+    expect(documentoDoFechamento("2026-09-26")).toBe("260926");
+    expect(documentoDoFechamento("2026-10-19")).toBe("191026");   // com o ano: DDMM repete todo ano no mesmo fornecedor
     expect(lerConfigEncargos(CONFIG)).toEqual(CONFIG);
     expect(lerConfigEncargos({ ...CONFIG, codHistorico: "2" })).toEqual(CONFIG);
     expect(lerConfigEncargos({ ...CONFIG, contaFluxoCaixa: 0 })).toBeNull();

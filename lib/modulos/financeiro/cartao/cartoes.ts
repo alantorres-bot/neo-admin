@@ -31,17 +31,26 @@ export function normalizarTexto(t: string): string {
 /** "Itaú pj" → "ITAU PJ" (o `codigo` do cartão). */
 export const normalizarNomeCartao = normalizarTexto;
 
+/** Distância de edição contando a troca de duas letras vizinhas como 1 erro ("CRATAO", "NUBNAK"). */
 function distancia(a: string, b: string): number {
   const m = a.length, n = b.length;
   const d: number[][] = Array.from({ length: m + 1 }, (_, i) => [i, ...new Array<number>(n).fill(0)]);
   for (let j = 0; j <= n; j++) d[0][j] = j;
   for (let i = 1; i <= m; i++)
-    for (let j = 1; j <= n; j++)
+    for (let j = 1; j <= n; j++) {
       d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+    }
   return d[m][n];
 }
 
-/** O token escrito no título é o banco do cartão? Tolera abreviação ("SICRED") e 1 erro de grafia ("NUBANCK"). */
+/** O token é a palavra CARTÃO? Aceita "CART", "CARTOES" e 1 erro de digitação com as 6 letras ("CRATAO", "CARTOA"; "CARTA" não). */
+function ehMarcaCartao(token: string): boolean {
+  if (token === "CART" || token === "CARTOES") return true;
+  return token.length >= 6 && distancia(token, "CARTAO") <= 1;
+}
+
+/** O token escrito no título é o banco do cartão? Tolera abreviação ("SICRED") e 1 erro de grafia ("NUBANCK", "NUBNAK"). */
 function mesmoBanco(token: string, banco: string): boolean {
   if (token === banco) return true;
   if (banco.length < 5 || token.length < 4) return false;
@@ -67,7 +76,7 @@ export interface LeituraComplemento {
 export function lerComplemento(complemento: string, cartoes: readonly CartaoInfo[]): LeituraComplemento {
   const texto = normalizarTexto(complemento);
   const tokens = texto.split(" ").filter(Boolean);
-  const marca = tokens.some((t) => t === "CART" || t === "CARTAO" || t === "CARTOA");
+  const marca = tokens.some(ehMarcaCartao);
   const parcelasM = /(?:^|\s)(\d{1,2})\s?X(?:\s|$)/.exec(texto);
   const parcelas = parcelasM ? Number(parcelasM[1]) : undefined;
   const pessoa = tokens.includes("PF") ? "PF" : tokens.includes("PJ") ? "PJ" : undefined;

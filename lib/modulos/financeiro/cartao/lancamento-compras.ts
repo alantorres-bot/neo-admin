@@ -101,7 +101,7 @@ export function montarTitulosCompra(e: {
   const primeira = linha.parcelaNum ?? 1;
   const total = linha.parcelaTotal ?? 1;
   if (primeira < 1 || primeira > total) return { ok: false, erro: "Parcela inválida na linha da fatura." };
-  const ddmm = `${linha.dataCompra.slice(8, 10)}${linha.dataCompra.slice(5, 7)}`;
+  const ddmmaa = `${linha.dataCompra.slice(8, 10)}${linha.dataCompra.slice(5, 7)}${linha.dataCompra.slice(2, 4)}`;   // com o ano: DDMM repete todo ano
   const c = campos as Record<CampoCompra, number>;
   const titulos: TituloCompra[] = [];
   for (let k = primeira, i = 0; k <= total; k++, i++) {
@@ -110,7 +110,7 @@ export function montarTitulosCompra(e: {
     titulos.push({
       parcela: k, parcelas: total, vencimento,
       payload: {
-        codFornecedor: c.codFornecedor, categoriaDoc: c.categoriaDoc, codDocumento: total > 1 ? `${ddmm}-${linha.ordem}/${k}` : `${ddmm}-${linha.ordem}`, codPortador: c.codPortador,
+        codFornecedor: c.codFornecedor, categoriaDoc: c.categoriaDoc, codDocumento: total > 1 ? `${ddmmaa}-${linha.ordem}/${k}` : `${ddmmaa}-${linha.ordem}`, codPortador: c.codPortador,
         dataEmissao: linha.dataCompra, dataEntrada: linha.dataCompra, dataVencimento: vencimento, valorDocumento: linha.valorCentavos / 100,
         codHistorico: c.codHistorico, complementoHistorico: complemento, grupoContaFluxoCaixa: c.grupoContaFluxoCaixa, contaFluxoCaixa: c.contaFluxoCaixa,
         dadosContabilidade: { contaContabilDebito: c.contaContabilDebito, contaContabilCredito: c.contaContabilCredito, listaCentroCustoContab: [] },

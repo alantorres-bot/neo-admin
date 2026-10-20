@@ -43,7 +43,7 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
    (função `crt_importar_fatura` recusa). Linhas descartadas: pagamento da fatura anterior, saldo, totais, limite.
 3. **Seleção dos títulos** (`selecao-titulos.ts`): tipo C com `data_vencimento` na janela de **±5 dias** do vencimento efetivo
    (o emissor desloca o vencimento nominal para o dia útil) e complemento que identifica o cartão: palavra CARTÃO + banco
-   (tolera "SICRED", "NUBANCK"); sem PF/PJ no texto, desempata pelo **dia do vencimento** (Inter PF 28 × PJ 10; Sicredi PF 10 × PJ 23);
+   (tolera "SICRED", "NUBANCK" e, desde 20/10/2026, 1 erro de digitação na palavra CARTÃO com 6+ letras: "CRATAO", "CARTAIO"; "CARTA" não); sem PF/PJ no texto, desempata pelo **dia do vencimento** (Inter PF 28 × PJ 10; Sicredi PF 10 × PJ 23);
    ainda ambíguo com o cartão entre os candidatos → entra. Títulos de cartão na janela que citam **outro** cartão, ficam ambíguos
    sem o cartão ou só dizem "CARTÃO" vão para **Outros títulos de cartão na janela** (base do alerta de cartão trocado).
    Valor do título: `valor_atualizado` (saldo) enquanto aberto; `valor_documento` quando já baixado no Consistem.
@@ -130,8 +130,8 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
 31. **Encargos lançados pelo painel** (13/10/2026, decisões do Alan): as linhas "Encargo financeiro" que ficaram a lançar (sem
     justificativa e sem lançamento anterior) viram **um título com a soma** no Consistem, contra o banco emissor, pela operação
     "Gerar um Lançamento de Contas a Pagar" (`PUT financeiro/v10/lancamentoContasPagar`). É a **única escrita** do Neo Admin no ERP.
-32. Campos do título: emissão e entrada = **fechamento** da fatura (mês do cartão); vencimento = o da fatura; documento = **DDMM do
-    fechamento**; complemento `CARTÃO <NOME> — ENCARGOS: IOF, JUROS…` (tipos presentes, até 70 caracteres; a conciliação reconhece
+32. Campos do título: emissão e entrada = **fechamento** da fatura (mês do cartão); vencimento = o da fatura; documento = **DDMMAA do
+    fechamento** (com o ano desde 20/10/2026: só DDMM repetia todo ano no mesmo fornecedor e o Consistem recusava); complemento `CARTÃO <NOME> — ENCARGOS: IOF, JUROS…` (tipos presentes, até 70 caracteres; a conciliação reconhece
     o cartão); fornecedor, histórico, portador, categoria, grupo/conta de fluxo e contas contábeis vêm de
     `crt_cartoes.lancamento_encargos` (gestor edita na aba Cartões). Valores iniciais = os dos lançamentos manuais desde jun/2026
     (levantados pela API em 12/10/2026, confirmados pelo Alan): histórico 2, portador 91, categoria 17, fluxo 22/28, contábil
@@ -157,7 +157,7 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     sugestão do estabelecimento (cria o estabelecimento no dicionário, se não existir).
 40. **Parcelada sem título** (ex.: 2/5): lança **todas as parcelas restantes** de uma vez, uma por mês: a da fatura no vencimento
     da fatura; as seguintes no vencimento nominal das competências seguintes (Planilha Cartões). Emissão e entrada = data da
-    compra; documento = DDMM da compra (com "/k" quando parcelada); complemento `CARTÃO <NOME> <N>x — <DESCRIÇÃO> PARC k/N`
+    compra; documento = DDMMAA da compra (com "/k" quando parcelada); complemento `CARTÃO <NOME> <N>x — <DESCRIÇÃO> PARC k/N`
     (até 70); valor = o da linha em todas as parcelas. Aviso no diálogo: conferir se a compra não foi lançada pelo total.
 41. Um clique = um **lote**. O envio é em ordem, um título de cada vez, sem repetir; para no primeiro que não voltar lançado.
     Os seguintes ficam "Não lançado: envio interrompido" e o botão **Reenviar o que faltou** cria só as parcelas sem lançamento
@@ -194,7 +194,7 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     fornecedores a cada rodada (fornecedor novo aparece no painel mesmo sem título).
 52. **Lançamento agrupado** (pedido do Alan, 13/10/2026, Sicredi PJ 10/2026 com 14 linhas de transporte por aplicativo;
     migration 0150): várias linhas à vista, positivas e pendentes viram **um título** com a soma — vencimento da fatura, emissão
-    e entrada no fechamento, documento DDMM do fechamento + "-" + o menor número de linha, complemento
+    e entrada no fechamento, documento DDMMAA do fechamento + "-" + o menor número de linha, complemento
     `CARTÃO <NOME> 1x — <GRUPO> (<n> LANÇ.)`. Códigos: os comuns às sugestões das linhas (diferentes → aviso). Na aba A lançar:
     caixa de seleção por linha, atalhos "Agrupar: <fornecedor> — n linhas, R$ X" e "Lançar agrupado". Lançado: "casar" liga
     todas as linhas. Estabelecimento "99" (a fatura traz só "99"). **Seleção livre** (pedido do Alan): qualquer linha elegível,
@@ -202,7 +202,7 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     linha que não pode entrar mostra o motivo (parcelada, estorno, encargo, marketplace, já lançada); com fornecedores
     diferentes o fornecedor vem vazio para o operador escolher.
 53. **Documento único por fornecedor** (recusa real de 13/10/2026: duas compras da 99 no mesmo dia, documento 0810 no 1376):
-    o documento da compra leva o número da linha na fatura (DDMM-ordem, e /k nas parcelas). **Contas contábeis:** o painel recusa
+    o documento da compra leva o número da linha na fatura (DDMMAA-ordem, e /k nas parcelas). **Contas contábeis:** o painel recusa
     débito igual ao crédito e débito igual à conta de crédito padrão do cartão (2004, fornecedores) — o título 33626 saiu com
     débito 2004 e crédito 3241 (invertidas) e foi corrigido no Consistem pelo financeiro; a sugestão da "99" foi corrigida
     (migration 0151). "Reenviar o que faltou" só aparece para envio interrompido (recusa pede correção e novo lançamento).
@@ -447,7 +447,7 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
 ## 16. Encargos lançados no Consistem — o que foi feito (13/10/2026)
 - Pedido do Alan: "Quando vêm encargos na fatura, nós temos que lançar manualmente. Seria possível fazer esse lançamento através
   de API apenas com comando?" Decisões: um título com a soma; botão com conferência; gestor e operador; códigos dos lançamentos
-  manuais; emissão no fechamento; documento DDMM do fechamento.
+  manuais; emissão no fechamento; documento DDMMAA do fechamento (DDMM até 20/10/2026).
 - Descoberta (só leitura): o Swagger do Financeiro tem `PUT /lancamentoContasPagar` (`GerarLancamentoContaPagar`, corpo
   `novoLancamentoContaPagar`; obrigatórios `codDocumento`, `codFornecedor`, `dadosContabilidade.contaContabilDebito`, `dataEmissao`,
   `dataEntrada`, `valorDocumento`). A ação `exemplos_encargos` de `cap-sincronizar-consistem` lê os encargos de cartão já lançados

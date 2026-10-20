@@ -3,7 +3,7 @@
 //
 // Um título por mês com a SOMA das linhas "Encargo financeiro" que ficaram a lançar (sem justificativa e ainda não lançadas),
 // contra o banco emissor (fornecedor da configuração do cartão). Emissão e entrada = fechamento da fatura; vencimento = o da
-// fatura; documento = DDMM do fechamento; complemento = "CARTÃO <NOME> — ENCARGOS: IOF, JUROS..." (até 70 caracteres).
+// fatura; documento = DDMMAA do fechamento; complemento = "CARTÃO <NOME> — ENCARGOS: IOF, JUROS..." (até 70 caracteres).
 // Os códigos (histórico, portador, categoria, contas) vêm de crt_cartoes.lancamento_encargos: nada é inventado aqui.
 import type { ItemALancar, ResultadoConciliacao } from "./conciliacao";
 import { normalizar } from "./texto";
@@ -53,8 +53,11 @@ export function complementoEncargos(nomeCartao: string, descricoes: readonly str
   return completo.length <= MAX_COMPLEMENTO_ERP ? completo : completo.slice(0, MAX_COMPLEMENTO_ERP).trimEnd();
 }
 
-/** Documento = dia e mês do fechamento (DDMM), como nos lançamentos manuais. */
-export const documentoDoFechamento = (fechamento: string) => `${fechamento.slice(8, 10)}${fechamento.slice(5, 7)}`;
+/**
+ * Documento = dia, mês e ano do fechamento (DDMMAA). Só DDMM repete todo ano contra o mesmo fornecedor e o Consistem recusa:
+ * "Documento (1910) do fornecedor (360) já possui o lançamento 10029" (encargos do Nubank PF, 20/10/2026).
+ */
+export const documentoDoFechamento = (fechamento: string) => `${fechamento.slice(8, 10)}${fechamento.slice(5, 7)}${fechamento.slice(2, 4)}`;
 
 export type NovoLancamentoContaPagar = {
   codFornecedor: number;

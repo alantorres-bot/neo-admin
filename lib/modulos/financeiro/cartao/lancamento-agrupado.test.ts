@@ -36,7 +36,7 @@ describe("título agrupado", () => {
     const ls = [linha("Dl Uberrides", 29.67), linha("99", 160.2), linha("Uber Pending", 26)];
     const t = montarTituloAgrupado({ linhas: ls, nomeCartao: "SICREDI PJ", campos: { ...UBER, ...CARTAO }, fechamento: "2026-10-10", vencimento: "2026-10-23", rotulo: "Transporte por aplicativo" });
     if (!t.ok) throw new Error(t.erro);
-    expect(t.payload.codDocumento).toBe(`1010-${Math.min(...ls.map((l) => l.ordem))}`);   // número da linha: o mesmo fornecedor pode ter vários títulos no dia
+    expect(t.payload.codDocumento).toBe(`101026-${Math.min(...ls.map((l) => l.ordem))}`);   // número da linha: o mesmo fornecedor pode ter vários títulos no dia
     expect(t.payload).toMatchObject({ codFornecedor: 1376, dataEmissao: "2026-10-10", dataVencimento: "2026-10-23", valorDocumento: 215.87,
       complementoHistorico: "CARTÃO SICREDI PJ 1x — TRANSPORTE POR APLICATIVO (3 LANÇ.)" });
     const base = { nomeCartao: "X", campos: { ...UBER, ...CARTAO }, fechamento: "2026-10-10", vencimento: "2026-10-23", rotulo: "X" };

@@ -1,6 +1,6 @@
 // Várias linhas da fatura num único título do Consistem (agrupado). Regra 52 de docs/modulos/financeiro-cartao.md.
-// Linhas à vista e positivas; título com a soma, vencimento da fatura, emissão no fechamento, documento DDMM do fechamento e
-// complemento "CARTÃO <NOME> 1x — <RÓTULO> (<n> LANÇ.)"; documento DDMM do fechamento + "-" + o menor número de linha do grupo. Os códigos vêm das sugestões das linhas (iguais = preenchidos).
+// Linhas à vista e positivas; título com a soma, vencimento da fatura, emissão no fechamento, documento DDMMAA do fechamento e
+// complemento "CARTÃO <NOME> 1x — <RÓTULO> (<n> LANÇ.)"; documento DDMMAA do fechamento + "-" + o menor número de linha do grupo. Os códigos vêm das sugestões das linhas (iguais = preenchidos).
 import type { LinhaFatura } from "./conciliacao";
 import { CAMPOS_COMPRA, ROTULO_CAMPO_COMPRA, type CampoCompra, type CamposCompra, type Sugestao } from "./lancamento-compras";
 import { documentoDoFechamento, type NovoLancamentoContaPagar } from "./lancamento-encargos";

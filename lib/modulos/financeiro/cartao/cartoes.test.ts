@@ -67,7 +67,13 @@ describe("lerComplemento (textos reais do Contas a Pagar)", () => {
     expect(l.candidatos.map((x) => x.codigo)).toEqual(["ITAU PJ"]);
     expect(l.tipoPessoa).toBe("PJ");
   });
-  it('não confunde com "INTERNET", "CARTORIO"; só a palavra CARTÃO é "só marca"', () => {
+  it('a palavra CARTÃO com erro de digitação ("CRATAO", "CARTOA", "CARTOES") ainda marca o cartão', () => {
+    for (const t of ["CRATAO NUBANK - PASSAGENS 3X", "CARTOA NUBANK - PASSAGENS", "CARTOES NUBANK - HOTEL"])
+      expect(lerComplemento(t, CARTOES_TESTE).candidatos.map((x) => x.codigo), t).toEqual(["NUBANK PF"]);
+    expect(lerComplemento("CARTAO NUBNAK - VIAGENS", CARTOES_TESTE).candidatos.map((x) => x.codigo)).toEqual(["NUBANK PF"]);
+  });
+  it('não confunde com "INTERNET", "CARTORIO", "CARTA"; só a palavra CARTÃO é "só marca"', () => {
+    expect(lerComplemento("CARTA INTER - AVISO", CARTOES_TESTE).citaCartao).toBe(false);
     expect(lerComplemento("INTERNET - SETEMBRO/2026;", CARTOES_TESTE).citaCartao).toBe(false);
     expect(lerComplemento("CARTORIO INTER REGISTRO", CARTOES_TESTE).citaCartao).toBe(false);
     const l = lerComplemento("PAGO NO CARTAO DO DIRETOR", CARTOES_TESTE);
