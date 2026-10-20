@@ -1,6 +1,6 @@
 # Módulo: Financeiro / Comissões
 
-Status: rascunho (19/10/2026). Aguarda as respostas do §10 e a aprovação do Alan.
+Status: em construção. Fase 1 construída e publicada em 19/10/2026 (migration 0171, função fin-comissoes-titulos-pagos, telas em /financeiro/comissoes).
 
 ## 1. Objetivo
 Fechar todo mês a comissão dos representantes no Neo Admin, no lugar das planilhas "Comissões <Nome> - 2026.xlsx".
@@ -30,6 +30,38 @@ O sistema propõe as linhas a partir dos títulos pagos no Consistem, o Alan con
 6. **Um recebimento, uma comissão.** Exemplo: um título Z cedido à AKF, depois estornado e compensado na NF definitiva gera uma comissão só, na data do pagamento.
 7. **Antecipações de comissão já pagas ao representante** são descontadas no fechamento: total do mês − antecipado = saldo a pagar.
 
+8. **Hierarquia (19/10/2026):** o Fernando é superior do Heitor e **recebe também pelas vendas do Heitor** (representante 7), com o percentual dele, Fernando. Cadastro: Fernando `recebe_de` = {3, 7}; Heitor `recebe_de` = {7}.
+9. **A Filial Contagem fica fora por enquanto (19/10/2026):** títulos com documento iniciado em `400` não entram na proposta. Mesma regra de unidade do Recebíveis (§19 de financeiro-recebiveis.md). Fica como parâmetro, para entrar no futuro.
+
+10. **Venda ou Locação (19/10/2026): pelo tipo da NF emitida. Tipo 12 = Locação.**
+    - Na prática, os títulos de venda costumam começar com `A100`/`100`, e os de locação **sempre começam com `4`**.
+    - **Implementação:** o tipo da NF (`codTipoDeNota` da NF do título) decide. Sem NF identificável, vale o prefixo do documento (`4…` = Locação, senão Venda). Sempre com troca manual na conferência.
+
+    - **Matriz × Filial (Alan, 19/10/2026):**
+      - existem locações também na Matriz, e **todas as que geram comissão na Matriz são do representante Fernando (3)**;
+      - **as da Filial Contagem são do representante Lucas (5)**, que não entra no cálculo.
+    - **Implementação, com duas travas:**
+      1. só entram os representantes cadastrados (3 e 7);
+      2. documento iniciado em `400` (Filial, regra 9) fica fora, mesmo que esteja com o representante 3.
+    - A segunda trava é necessária porque, em agosto, **4000040U e 4002252U (Filial) estavam com o representante 3** no Consistem. A confirmar com o Alan se o cadastro desses dois está certo.
+    - **Locação da Matriz:** NF tipo 12, ou documento iniciado em `4` mas não em `400`. Percentual de locação do Fernando: 3%.
+
+11. **O fechamento começa pela planilha de créditos da CCCCI010 (Alan, 19/10/2026).**
+    - **Todo título Z pago tem, obrigatoriamente, um crédito de cliente.** A baixa do Z não gera movimento bancário.
+    - **Nem todo crédito tem um título Z:** há adiantamentos de cliente lançados direto no crédito.
+    - **Fluxo do fechamento:**
+      1. **Subir o relatório da CCCCI010 do mês** (Importador do núcleo).
+      2. **Cruzar os títulos Z pagos com os créditos** (cliente + valor + data de pagamento):
+         - Z com crédito: um recebimento, uma comissão (regra 6);
+         - **Z sem crédito: alerta "Título Z sem crédito de cliente"**, porque o financeiro esqueceu de lançar. É o controle pedido em 19/10, que nasce aqui, no fechamento;
+         - **crédito sem Z: adiantamento**, que gera comissão no mês em que entrou (regra 5).
+      3. **Títulos com NF pagos no mês:** geram comissão, menos as baixas 7, 8 e 11. A duplicata compensada com o crédito (baixa 7) não gera de novo.
+      4. Conferência, antecipações de comissão e fechamento.
+    - **A definir com o exemplo do relatório:**
+      - as colunas;
+      - se o relatório traz o título de origem e o representante;
+      - de onde sai o representante de um crédito sem Z (cliente → pedido?).
+
 ## 4. O que os dados mostram (comparação de agosto e setembro/2026 com as planilhas)
 
 A fonte é `GET financeiro/v10/titulosPagos` (títulos pagos no período). Para cada título, `GET financeiro/v10/contasReceber/{codTitulo}`, que traz **`codRepresentante`**, `tipoBaixa`, `percComissao`, `valorComissaoFaturamento` e `valorComissaoLiquidacao`. Isso vale também para os títulos Z.
@@ -51,7 +83,7 @@ Hipótese testada: o **Heitor** recebe pelos títulos do representante 7, e o **
 | --- | --- |
 | Cadastro dos representantes comissionados, com percentuais e "recebe também pelas vendas de" | Pagamento da comissão (segue fora; o módulo registra o fechamento) |
 | Fechamento mensal: proposta automática, conferência, ajustes com motivo, antecipações a descontar, saldo | Alterar a comissão no Consistem |
-| Lançamentos manuais (adiantamento da CCCCI010 enquanto não há importação, contrato, locação) | Importação do relatório da CCCCI010 (Fase 2 deste módulo; depende de um exemplo do relatório) |
+| Importação do relatório da CCCCI010 como 1º passo do fechamento, cruzamento Z × crédito e alerta "Z sem crédito" | Lançamentos que não vêm do Consistem continuam manuais (contrato, ajustes) |
 | Relatório do fechamento (imprimir e Excel) e histórico | Controle "título Z sem crédito na CCCCI010" (fica em Recebíveis) |
 
 ## 6. Telas (`/financeiro/comissoes`)
@@ -86,9 +118,53 @@ Hipótese testada: o **Heitor** recebe pelos títulos do representante 7, e o **
 - Pendência na Fila do dia "Fechar comissão de <mês>", no 1º dia útil do mês seguinte.
 
 ## 10. Perguntas para o Alan (antes de construir)
-1. **O Fernando recebe também pelas vendas do Heitor** (representante 7)? Os dados indicam que sim: todo título do Heitor está também na planilha do Fernando.
-2. **Os títulos da Filial Contagem (prefixo 400…) não geram comissão?** Em agosto, 4000040U (R$ 2.660,00) e 4002252U (R$ 12.010,76), do representante 3, não estão na planilha.
+1. ~~O Fernando recebe pelas vendas do Heitor?~~ Sim: é superior do Heitor (regra 8).
+2. ~~Filial Contagem (400…)?~~ Fora por enquanto (regra 9).
 3. **1001341U** (NF 1341, R$ 1.500.000,00, pago em 24/08, representante 3) e **Z00009A** (R$ 12.467,33, pago em 25/08) não estão na planilha de agosto. O primeiro é a compensação de um adiantamento já comissionado (o "112" de julho)? E o segundo?
 4. **1001323C** (vencimento 05/09, pago em 08/09) entrou na planilha de **agosto**. Foi exceção (comissão adiantada) ou a regra é outra para esse caso?
-5. **Como saber se o título é Venda ou Locação?** Hoje a planilha marca à mão; a única "Locação" foi um contrato. Por tipo de nota? Por padrão "Venda", com troca manual?
+5. ~~Venda ou Locação?~~ Pelo tipo da NF: 12 = Locação; locação começa com 4 (regra 10).
 6. **A comissão incide sobre o valor do título ou sobre o valor pago?** Em 151 de 153 títulos os dois são iguais.
+
+## 11. Fase 1 entregue (19/10/2026)
+
+**Banco (0171)**
+- **Tabelas:** `fin_com_representantes` (Fernando 3: 1,5%/3%, recebe de {3,7}; Heitor 7: 1%/1%, recebe de {7}), `fin_com_fechamentos` (um por mês), `fin_com_creditos` (planilha da CCCCI010) e `fin_com_linhas`.
+- **Gravação:** só pelas funções, com nível e situação conferidos: `fin_com_abrir`, `fin_com_importar_creditos`, `fin_com_gravar_proposta`, `fin_com_ajustar_linha`, `fin_com_lancar`, `fin_com_fechar` e `fin_com_salvar_representante`.
+- **Fechado é congelado** (gatilho). O índice único `uq_fin_com_linhas_paga` impede pagar de novo o mesmo recebimento ao mesmo representante.
+- **Auditoria** em todas as tabelas.
+
+**Edge Function `fin-comissoes-titulos-pagos`** (só leitura)
+- `titulosPagos` do mês e `contasReceber/{codTitulo}` de cada título: representante, cliente, tipo de baixa e comissão do Consistem na liquidação.
+- Títulos dos clientes de adiantamento (`contasReceber?listaCliente=&tipoTitulo=3`), para sugerir o representante.
+
+**Proposta** (`lib/modulos/financeiro/comissoes/regras.ts`, `montarProposta`)
+- cruzamento Z × crédito (cliente + data + valor);
+- adiantamento = crédito sem Z, com o representante do título mais recente do cliente;
+- hierarquia, Filial fora, baixas 7/8/11 fora, venda/locação;
+- o que já foi pago não entra de novo.
+- **Refazer a busca mantém as decisões da conferência.**
+
+**Telas**
+- `/financeiro/comissoes`: fechamentos e "abrir mês".
+- `/financeiro/comissoes/<id>`:
+  - 1. créditos;
+  - 2. títulos pagos e o alerta "Z sem crédito";
+  - 3. uma grade por representante, com incluir/excluir (com motivo), venda/locação e totais (total − antecipado = saldo);
+  - lançamentos;
+  - 4. fechar (gestor).
+- `/financeiro/comissoes/representantes`.
+- **Saídas:** impressão `/imprimir/comissoes/<id>` e Excel `/financeiro/comissoes/<id>/planilha`, uma aba por representante no formato da planilha.
+
+**Simulação com os dados reais (sem a planilha da CCCCI010): bate com as planilhas centavo a centavo, explicadas as diferenças**
+
+| | Sistema | Planilha | Diferença |
+| --- | --- | --- | --- |
+| Heitor ago | 1.540,00 | 1.540,00 | — |
+| Heitor set | 2.900,00 | 4.240,00 | Z00027A (1.340,00), que entra pelo crédito da CCCCI010 |
+| Fernando ago | 73.508,96 | 52.291,95 | 1001341U (22.500,00) e Z00009A (187,01) não estão na planilha (§10, item 3); 1001323C (1.470,00) entrou em agosto (item 4) |
+| Fernando set | 15.520,20 | 43.510,20 | Z00027A (2.010,00) e adiantamento de 1.830.000,00 (27.450,00), ambos pela CCCCI010; 1001323C já pago em agosto |
+
+**Fica para depois**
+- pendência "Fechar comissão de <mês>" na Fila do dia;
+- pendência por título Z sem crédito (hoje é alerta no fechamento);
+- tipo da NF (12) lido da API: hoje vale o prefixo do documento e a troca manual.
