@@ -128,6 +128,19 @@ describe("planilha da CCCCI010", () => {
     ]);
     expect(r.erros).toEqual(["Linha 6: data inválida."]);
   });
+  it("formato da Consulta de Créditos Cadastrados (CCCCI010): valor do crédito, não o saldo; rodapé de totais ignorado", () => {
+    const r = lerPlanilhaCreditos([
+      ["Data", "Cliente", "Descrição", "Crédito", "Baixado", "Saldo", "Portador", "Descrição Portador", "Observação", "Pedido de Venda"],
+      ["08/09/2026", "901", "CONSTRUTORA ALFA LTDA", "134000", "134000", "0", "237", "BRADESCO", "ANTECIPAÇÃO DE CLIENTE - ALFA"],
+      ["28/09/2026", "902", "EMPREENDIMENTOS BETA LTDA", "54000", "0", "54000", "237", "BRADESCO", ""],
+      ["", "", "", "188.000,00", "134.000,00", "54.000,00"],
+    ]);
+    expect(r.erros).toEqual([]);
+    expect(r.creditos).toEqual([
+      { linha: 2, data: "2026-09-08", cod_cliente: "901", nome_cliente: "CONSTRUTORA ALFA LTDA", valor_centavos: 13_400_000 },
+      { linha: 3, data: "2026-09-28", cod_cliente: "902", nome_cliente: "EMPREENDIMENTOS BETA LTDA", valor_centavos: 5_400_000 },
+    ]);
+  });
   it("sem cabeçalho reconhecível", () => {
     expect(lerPlanilhaCreditos([["a", "b"]]).erros[0]).toMatch(/cabeçalho/);
   });

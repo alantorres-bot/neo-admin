@@ -177,19 +177,21 @@ export function valorDaPlanilha(v: unknown): number | null {
 export type LinhaCreditoLida = { linha: number; data: string; cod_cliente: string; nome_cliente: string | null; valor_centavos: number };
 
 /**
- * Lê as linhas da planilha da CCCCI010 (data, código do cliente, nome do cliente, valor). Acha o cabeçalho pelos nomes
- * (data / cliente / nome / valor), ignora linhas vazias e de total, e devolve os erros por linha.
+ * Lê a "Consulta de Créditos Cadastrados" da CCCCI010 (Data, Cliente, Descrição, Crédito, Baixado, Saldo, Portador…) ou
+ * uma planilha simples (Data, Código do cliente, Nome, Valor). Acha o cabeçalho pelos nomes; o valor é o do crédito
+ * (coluna "Crédito" ou "Valor"), não o saldo. Ignora linhas vazias e a de total, e devolve os erros por linha.
  */
 export function lerPlanilhaCreditos(linhas: unknown[][]): { creditos: LinhaCreditoLida[]; erros: string[] } {
   const norm = (v: unknown) => texto(v).toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-  const iCab = linhas.findIndex((l) => l.some((c) => norm(c).startsWith("data")) && l.some((c) => norm(c).includes("valor")));
-  if (iCab < 0) return { creditos: [], erros: ["Não achei o cabeçalho (colunas Data, Código do cliente, Nome e Valor)."] };
+  const ehValor = (c: string) => c.includes("valor") || c === "credito";
+  const iCab = linhas.findIndex((l) => l.some((c) => norm(c).startsWith("data")) && l.some((c) => ehValor(norm(c))));
+  if (iCab < 0) return { creditos: [], erros: ["Não achei o cabeçalho (colunas Data, Cliente, Descrição e Crédito)."] };
   const cab = linhas[iCab].map(norm);
   const col = {
     data: cab.findIndex((c) => c.startsWith("data")),
     codigo: cab.findIndex((c) => (c.includes("cod") || c === "cliente") && !c.includes("nome")),
-    nome: cab.findIndex((c) => c.includes("nome") || c.includes("razao")),
-    valor: cab.findIndex((c) => c.includes("valor")),
+    nome: cab.findIndex((c) => c.includes("nome") || c.includes("razao") || c === "descricao"),
+    valor: cab.findIndex((c) => c.includes("valor")) >= 0 ? cab.findIndex((c) => c.includes("valor")) : cab.findIndex((c) => c === "credito"),
   };
   if (col.codigo < 0) return { creditos: [], erros: ["Não achei a coluna do código do cliente."] };
   const creditos: LinhaCreditoLida[] = [];
@@ -198,6 +200,7 @@ export function lerPlanilhaCreditos(linhas: unknown[][]): { creditos: LinhaCredi
     const n = iCab + i + 2; // número da linha no Excel
     if (l.every((c) => texto(c) === "")) return;
     if (norm(l[col.data]).startsWith("total") || norm(l[col.codigo]).startsWith("total")) return;
+    if (texto(l[col.data]) === "" && texto(l[col.codigo]) === "") return; // rodapé com os totais da consulta
     const data = dataDaPlanilha(l[col.data]);
     const cod = texto(l[col.codigo]).replace(/\.0$/, "");
     const valor = valorDaPlanilha(l[col.valor]);
