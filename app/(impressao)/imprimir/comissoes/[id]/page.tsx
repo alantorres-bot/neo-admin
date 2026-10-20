@@ -63,7 +63,9 @@ export default async function PaginaImprimirComissoes({ params, searchParams }: 
           <article key={r.cod_representante} className="relatorio flex flex-col gap-4 text-[12px] leading-snug text-zinc-900" style={i > 0 ? { breakBefore: "page" } : undefined}>
             <header className="flex items-start justify-between gap-6 border-b-2 border-zinc-900 pb-3">
               <div className="flex flex-col gap-1.5">
-                <Image src="/neo-formas-logo-horizontal.png" alt="Neo Formas para concreto" width={236} height={38} className="mb-2 h-[38px] w-auto" priority unoptimized />
+                {/* Proporção do arquivo (1792×291): largura fixa e altura automática; self-start para a coluna não esticar a imagem. */}
+                <Image src="/neo-formas-logo-horizontal.png" alt="Neo Formas para concreto" width={1792} height={291}
+                  className="mb-2 self-start" style={{ width: 240, height: "auto" }} priority unoptimized />
                 <h1 className="text-[22px] font-bold tracking-tight">Relatório de comissão</h1>
                 <p className="text-[13px] text-zinc-700">
                   Mês de referência: <strong className="text-zinc-900">{mes}</strong> · parcelas pagas de {formatarData(f.competencia)} a {formatarData(fimDoMes(f.competencia))}
