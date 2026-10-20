@@ -30,12 +30,15 @@ export function totaisDoRepresentante(linhas: Pick<LinhaFechamento, "incluida" |
   return { total, antecipado, saldo: total - antecipado };
 }
 
+export type Reabertura = { id: string; motivo: string; fechado_em: string | null; reaberto_em: string; reaberto_por: { nome: string } | null };
+
 export async function lerFechamento(supabase: Cliente, id: string) {
-  const [{ data: f }, { data: reps }, { data: linhas }, { data: creditos }] = await Promise.all([
+  const [{ data: f }, { data: reps }, { data: linhas }, { data: creditos }, { data: reaberturas }] = await Promise.all([
     supabase.from("fin_com_fechamentos").select("id, competencia, status, creditos_arquivo, creditos_importados_em, titulos_buscados_em, z_sem_credito, fechado_em, historico, historico_arquivos").eq("id", id).maybeSingle(),
     supabase.from("fin_com_representantes").select("cod_representante, nome, perc_venda, perc_locacao, recebe_de, ativo").order("cod_representante"),
     supabase.from("fin_com_linhas").select("*").eq("fechamento_id", id).order("data_pagamento", { nullsFirst: false }).order("cod_titulo"),
     supabase.from("fin_com_creditos").select("id, linha, data, cod_cliente, nome_cliente, valor, cod_titulo_z, cod_representante_sugerido, cod_pedido").eq("fechamento_id", id).order("data"),
+    supabase.from("fin_com_reaberturas").select("id, motivo, fechado_em, reaberto_em, reaberto_por:perfis!fin_com_reaberturas_reaberto_por_fkey(nome)").eq("fechamento_id", id).order("reaberto_em"),
   ]);
   if (!f) return null;
   const todas = (linhas ?? []) as LinhaFechamento[];
@@ -46,7 +49,10 @@ export async function lerFechamento(supabase: Cliente, id: string) {
       return { representante: r, linhas: ls, ...totaisDoRepresentante(ls) };
     })
     .filter((x) => x.representante.ativo || x.linhas.length > 0);
-  return { fechamento: f as Fechamento, representantes, porRepresentante, creditos: (creditos ?? []) as CreditoFechamento[] };
+  return {
+    fechamento: f as Fechamento, representantes, porRepresentante, creditos: (creditos ?? []) as CreditoFechamento[],
+    reaberturas: (reaberturas ?? []) as unknown as Reabertura[],
+  };
 }
 
 export const ROTULO_ORIGEM = { titulo: "Título", credito: "Adiantamento (CCCCI010)", manual: "Manual", antecipacao: "Antecipação de comissão" } as const;

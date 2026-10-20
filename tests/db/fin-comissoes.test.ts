@@ -189,3 +189,34 @@ describe("histórico das planilhas e teto (0172)", () => {
     expect((await q(`select cod_pedido from fin_com_creditos where fechamento_id = $1`, [jun])).rows[0].cod_pedido).toBe("150");
   });
 });
+
+describe("reabrir fechamento (0173)", () => {
+  it("só o gestor, com motivo, e só o último mês fechado; histórico não reabre", async () => {
+    const outubro = (await q(`select id from fin_com_fechamentos where competencia = '2026-10-01'`)).rows[0].id;
+    await expect(como(db, finOperador, () => q(`select fin_com_reabrir($1, 'Antecipação lançada errada')`, [setembro]))).rejects.toThrow(/gestor/);
+    await expect(como(db, finGestor, () => q(`select fin_com_reabrir($1, 'x')`, [outubro]))).rejects.toThrow(/motivo/);
+    await expect(como(db, finGestor, () => q(`select fin_com_reabrir($1, 'Antecipação lançada errada')`, [setembro]))).rejects.toThrow(/último mês fechado/);
+    const agosto = (await q(`select id from fin_com_fechamentos where competencia = '2026-08-01'`)).rows[0].id;
+    await expect(como(db, finGestor, () => q(`select fin_com_reabrir($1, 'Antecipação lançada errada')`, [agosto]))).rejects.toThrow(/histórico/);
+  });
+
+  it("reabre: volta para conferência, registra motivo e saldos, e fecha de novo", async () => {
+    const outubro = (await q(`select id from fin_com_fechamentos where competencia = '2026-10-01'`)).rows[0].id;
+    await como(db, finGestor, () => q(`select fin_com_reabrir($1, 'Linha excluída por engano')`, [outubro]));
+    expect((await q(`select status, fechado_em from fin_com_fechamentos where id = $1`, [outubro])).rows[0]).toEqual({ status: "em_conferencia", fechado_em: null });
+    expect((await q(`select bool_or(fechada) as alguma from fin_com_linhas where fechamento_id = $1`, [outubro])).rows[0].alguma).toBe(false);
+    const r = (await q(`select motivo, fechado_em is not null as tinha, saldos from fin_com_reaberturas where fechamento_id = $1`, [outubro])).rows[0];
+    expect(r).toMatchObject({ motivo: "Linha excluída por engano", tinha: true });
+    expect((r.saldos as { cod_representante: string }[]).map((x) => x.cod_representante)).toEqual(["3"]);
+    // a reabertura não se apaga e o mês corrige e fecha de novo
+    await expect(q(`delete from fin_com_reaberturas where fechamento_id = $1`, [outubro])).rejects.toThrow();
+    await como(db, finOperador, () => q(`select fin_com_lancar($1, '3', 'antecipacao', '2026-10-05', 'Correção', 100)`, [outubro]));
+    await como(db, finGestor, () => q(`select fin_com_fechar($1)`, [outubro]));
+    expect((await q(`select status from fin_com_fechamentos where id = $1`, [outubro])).rows[0].status).toBe("fechado");
+  });
+
+  it("fora da função, fechado continua travado", async () => {
+    const outubro = (await q(`select id from fin_com_fechamentos where competencia = '2026-10-01'`)).rows[0].id;
+    await expect(q(`update fin_com_linhas set fechada = false where fechamento_id = $1`, [outubro])).rejects.toThrow(/já foi fechado/);
+  });
+});

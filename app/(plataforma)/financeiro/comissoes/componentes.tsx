@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ROTA_COMISSOES } from "@/lib/modulos/financeiro/comissoes/regras";
-import { abrirFechamento, ajustarLinha, importarCreditos, importarHistorico, lancar, salvarRepresentante, type Resultado } from "./acoes";
+import { abrirFechamento, ajustarLinha, importarCreditos, importarHistorico, lancar, reabrirFechamento, salvarRepresentante, type Resultado } from "./acoes";
 
 const SELECT = "h-9 rounded-md border bg-background px-2 text-sm";
 
@@ -88,6 +88,31 @@ export function ImportarHistorico({ representantes }: { representantes: { cod: s
       >
         {pendente ? "Importando…" : "Importar histórico"}
       </Button>
+    </div>
+  );
+}
+
+/** Reabrir o último mês fechado (gestor): motivo obrigatório e confirmação na própria tela. */
+export function ReabrirFechamento({ fechamentoId, rotuloMes }: { fechamentoId: string; rotuloMes: string }) {
+  const [motivo, setMotivo] = useState("");
+  const [confirmando, setConfirmando] = useState(false);
+  const [pendente, iniciar] = useTransition();
+  const valido = motivo.trim().length >= 5;
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="motivo-reabrir">Motivo da reabertura</Label>
+      <Input id="motivo-reabrir" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: antecipação do Heitor lançada como comissão manual" maxLength={500} />
+      {confirmando ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-2 text-sm dark:border-amber-700 dark:bg-amber-950/30">
+          <span>Reabrir {rotuloMes}? O mês volta para conferência e precisa ser fechado de novo.</span>
+          <Button size="sm" disabled={pendente} onClick={() => iniciar(async () => { avisar(await reabrirFechamento(fechamentoId, motivo)); setConfirmando(false); })}>
+            {pendente ? "Reabrindo…" : "Confirmar"}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => setConfirmando(false)}>Cancelar</Button>
+        </div>
+      ) : (
+        <Button variant="outline" disabled={!valido} onClick={() => setConfirmando(true)}>Reabrir fechamento</Button>
+      )}
     </div>
   );
 }

@@ -13,7 +13,7 @@ import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { buscarTitulosPagos, fecharMes } from "../acoes";
-import { AjusteLinha, BotaoAcao, FormLancamento, ImportarCreditos } from "../componentes";
+import { AjusteLinha, BotaoAcao, FormLancamento, ImportarCreditos, ReabrirFechamento } from "../componentes";
 import { lerFechamento, ROTULO_BAIXA, ROTULO_ORIGEM, rotuloCompetencia, type LinhaFechamento } from "../dados";
 
 export const metadata: Metadata = { title: "Fechamento de comissões" };
@@ -63,7 +63,7 @@ export default async function PaginaFechamento({ params, searchParams }: PagePro
   const supabase = await criarClienteServidor();
   const dados = await lerFechamento(supabase, id);
   if (!dados) notFound();
-  const { fechamento: f, porRepresentante, representantes, creditos } = dados;
+  const { fechamento: f, porRepresentante, representantes, creditos, reaberturas } = dados;
   const aberto = f.status === "em_conferencia";
   const editavel = aberto && ehOperador;
   const nomeRep = new Map(representantes.map((r) => [r.cod_representante, r.nome]));
@@ -74,6 +74,13 @@ export default async function PaginaFechamento({ params, searchParams }: PagePro
   const repParam = (await searchParams).rep;
   const atual = porRepresentante.find((x) => x.representante.cod_representante === repParam) ?? porRepresentante[0];
   const totalAPagar = porRepresentante.reduce((s, x) => s + x.saldo, 0);
+  // Reabrir: só o gestor, só o último mês fechado (nunca um histórico das planilhas).
+  let podeReabrir = false;
+  if (!aberto && !f.historico && ehGestor) {
+    const { count } = await supabase.from("fin_com_fechamentos").select("id", { count: "exact", head: true })
+      .eq("status", "fechado").eq("historico", false).gt("competencia", f.competencia);
+    podeReabrir = (count ?? 0) === 0;
+  }
   const lastreiamZ = creditos.filter((c) => c.cod_titulo_z).length;
   // Relatório de comissão de UM representante (o que vai para ele): impressão/PDF e Excel.
   const relatorio = (cod: string) => ({
@@ -93,6 +100,11 @@ export default async function PaginaFechamento({ params, searchParams }: PagePro
           Parcelas pagas de {formatarData(f.competencia)} a {formatarData(fimDoMes(f.competencia))}
           {f.titulos_buscados_em && ` · Última busca no Consistem: ${dataHora(f.titulos_buscados_em)}`}
         </p>
+        {reaberturas.map((r) => (
+          <p key={r.id} className="text-sm text-amber-800 dark:text-amber-300">
+            Reaberto em {dataHora(r.reaberto_em)}{r.reaberto_por ? ` por ${r.reaberto_por.nome}` : ""} (estava fechado desde {dataHora(r.fechado_em)}): {r.motivo}
+          </p>
+        ))}
       </div>
 
       {f.historico ? (
@@ -347,6 +359,19 @@ export default async function PaginaFechamento({ params, searchParams }: PagePro
             </Card>
           )}
         </div>
+      )}
+
+      {podeReabrir && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Reabrir o fechamento</CardTitle>
+            <CardDescription>
+              Só quando a comissão do mês ainda não foi paga nem enviada. O mês volta para conferência para corrigir e ser fechado de novo; a reabertura
+              fica registrada com o motivo e os saldos que estavam fechados. Depois de pago, corrija com um lançamento no mês seguinte.
+            </CardDescription>
+          </CardHeader>
+          <CardContent><ReabrirFechamento fechamentoId={id} rotuloMes={rotuloCompetencia(f.competencia)} /></CardContent>
+        </Card>
       )}
     </>
   );

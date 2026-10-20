@@ -193,6 +193,19 @@ export async function fecharMes(fechamentoId: string): Promise<Resultado> {
   return { ok: true, mensagem: "Fechamento concluído." };
 }
 
+/** Reabre o último mês fechado (gestor), com motivo: volta para conferência; a reabertura fica registrada. */
+export async function reabrirFechamento(fechamentoId: string, motivo: string): Promise<Resultado> {
+  const p = await exigir("gestor");
+  if (!p.ok) return p;
+  if (!uuid.safeParse(fechamentoId).success) return { ok: false, erro: "Fechamento inválido." };
+  if (motivo.trim().length < 5) return { ok: false, erro: "Informe o motivo da reabertura." };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("fin_com_reabrir", { p_id: fechamentoId, p_motivo: motivo.trim().slice(0, 500) });
+  if (error) return erro(error);
+  revalidatePath(ROTA_COMISSOES, "layout");
+  return { ok: true, mensagem: "Fechamento reaberto: corrija, confira e feche de novo." };
+}
+
 const esquemaRep = z.object({
   cod: z.string().trim().min(1, "Informe o código do representante no Consistem.").max(10),
   nome: z.string().trim().min(2, "Informe o nome.").max(120),

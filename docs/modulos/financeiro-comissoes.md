@@ -83,6 +83,13 @@ O sistema propõe as linhas a partir dos títulos pagos no Consistem, o Alan con
     - **Título que a planilha pagou em dois meses:** entra no segundo como manual "Repetido: já pago em MM/AAAA", para o total do mês continuar igual ao que foi pago. Casos achados em 20/10: **Z00022B** (junho e julho) e **1001278C** (julho e agosto), ambos do Fernando.
     - **Mês que já tem fechamento de trabalho no sistema** não recebe histórico.
 
+14. **Reabrir fechamento (Alan, 20/10/2026).**
+    - **Quem e o quê:** o gestor reabre **o último mês fechado**, com motivo. Mês de histórico das planilhas não se reabre.
+    - **Para quando:** o mês ainda não foi pago nem enviado ao representante. Depois de pago, a correção é um lançamento no mês seguinte.
+    - **O que fica registrado:** a reabertura vai para `fin_com_reaberturas` (quem tinha fechado e quando, quem reabriu, o motivo e os saldos por representante que estavam fechados). Esse registro não se apaga.
+    - **Depois:** as linhas voltam para conferência e o mês é fechado de novo pelo fluxo normal.
+    - Origem: setembro/2026 foi fechado com a antecipação do Heitor lançada como comissão manual.
+
 ## 4. O que os dados mostram (comparação de agosto e setembro/2026 com as planilhas)
 
 A fonte é `GET financeiro/v10/titulosPagos` (títulos pagos no período). Para cada título, `GET financeiro/v10/contasReceber/{codTitulo}`, que traz **`codRepresentante`**, `tipoBaixa`, `percComissao`, `valorComissaoFaturamento` e `valorComissaoLiquidacao`. Isso vale também para os títulos Z.
@@ -215,3 +222,11 @@ Hipótese testada: o **Heitor** recebe pelos títulos do representante 7, e o **
   - meses de histórico marcados "Histórico (planilha)";
   - importação do histórico em Representantes.
 - **Teste com as planilhas reais:** todas as abas batem com o TOTAL DO MÊS. Fernando: janeiro a setembro. Heitor: março, julho, agosto e setembro.
+
+## 13. Reabrir fechamento (20/10/2026)
+- **Migration 0173:**
+  - tabela `fin_com_reaberturas`, com auditoria e sem delete;
+  - `fin_com_reabrir(p_id, p_motivo)`, para gestor, só o último mês fechado e não histórico;
+  - o gatilho `fn_fin_com_trava` aceita, só dentro dessa função, devolver as linhas para conferência (`fechada` true → false, sem mudar mais nada).
+- **Tela:** o quadro "Reabrir o fechamento" aparece no mês fechado para o gestor. Pede o motivo e confirma na própria tela, e a reabertura fica escrita no cabeçalho do mês.
+- **Relatório por representante (20/10/2026):** impressão e Excel com `?rep=<código>`. O nome do arquivo leva o representante ("Comissões Heitor Selerges - 09-2026").
