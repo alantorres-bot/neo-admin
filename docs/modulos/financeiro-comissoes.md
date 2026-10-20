@@ -230,3 +230,15 @@ Hipótese testada: o **Heitor** recebe pelos títulos do representante 7, e o **
   - o gatilho `fn_fin_com_trava` aceita, só dentro dessa função, devolver as linhas para conferência (`fechada` true → false, sem mudar mais nada).
 - **Tela:** o quadro "Reabrir o fechamento" aparece no mês fechado para o gestor. Pede o motivo e confirma na própria tela, e a reabertura fica escrita no cabeçalho do mês.
 - **Relatório por representante (20/10/2026):** impressão e Excel com `?rep=<código>`. O nome do arquivo leva o representante ("Comissões Heitor Selerges - 09-2026").
+
+## 14. Painel e extrato do ano (20/10/2026)
+- **`/financeiro/comissoes`, o painel, de cima para baixo:**
+  - aviso do mês em conferência, com o motivo da reabertura;
+  - resumo do ano: comissão, antecipações, saldo e "a pagar" do último mês;
+  - gráfico da comissão por mês, por representante (antes das antecipações);
+  - pontos de atenção: títulos "Repetido" das planilhas, linhas excluídas e Z sem crédito no mês em conferência, linhas barradas pelo teto;
+  - cartões por representante com Relatório do mês, Extrato do ano e Excel;
+  - fechamentos do ano com o saldo de cada um e o relatório na linha.
+- **Seletor de ano:** `?ano=`.
+- **Cálculo:** `lib/modulos/financeiro/comissoes/resumo.ts` (`resumirAno`, testado).
+- **Extrato do ano:** `/imprimir/comissoes/extrato?rep=<código>&ano=<aaaa>`, com mês a mês comissão, antecipado, saldo e situação, os totais do ano e a mesma folha do relatório mensal (logo, assinaturas).

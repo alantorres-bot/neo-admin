@@ -38,7 +38,7 @@ export default async function PaginaRepresentantes() {
         </Card>
       ))}
       {ehGestor && (
-        <Card>
+        <Card id="historico" className="scroll-mt-6">
           <CardHeader>
             <CardTitle>Histórico do que já foi pago (planilhas)</CardTitle>
             <CardDescription>
