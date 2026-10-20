@@ -8,15 +8,17 @@ export type LinhaFechamento = {
   cod_titulo: string | null; cod_cliente: string | null; nome_cliente: string | null; nota_fiscal: string | null; data_pagamento: string | null;
   tipo_baixa: string | null; tipo: "venda" | "locacao"; valor_base: number; percentual: number; valor_comissao: number; valor_consistem: number | null;
   incluida: boolean; motivo: string | null; observacao: string | null;
+  cod_pedido: string | null; teto_chave: string | null; teto_valor: number | null;
 };
 export type RepresentanteFechamento = { cod_representante: string; nome: string; perc_venda: number; perc_locacao: number; recebe_de: string[]; ativo: boolean };
 export type CreditoFechamento = {
   id: string; linha: number | null; data: string; cod_cliente: string; nome_cliente: string | null; valor: number; cod_titulo_z: string | null; cod_representante_sugerido: string | null;
+  cod_pedido: string | null;
 };
 export type Fechamento = {
   id: string; competencia: string; status: "em_conferencia" | "fechado"; creditos_arquivo: string | null; creditos_importados_em: string | null;
   titulos_buscados_em: string | null; z_sem_credito: { cod_titulo: string; cod_cliente: string | null; cod_representante: string | null; data_pagamento: string | null; valor: number }[];
-  fechado_em: string | null;
+  fechado_em: string | null; historico: boolean; historico_arquivos: string[];
 };
 
 const centavos = (v: number | string | null) => Math.round(Number(v ?? 0) * 100);
@@ -30,10 +32,10 @@ export function totaisDoRepresentante(linhas: Pick<LinhaFechamento, "incluida" |
 
 export async function lerFechamento(supabase: Cliente, id: string) {
   const [{ data: f }, { data: reps }, { data: linhas }, { data: creditos }] = await Promise.all([
-    supabase.from("fin_com_fechamentos").select("id, competencia, status, creditos_arquivo, creditos_importados_em, titulos_buscados_em, z_sem_credito, fechado_em").eq("id", id).maybeSingle(),
+    supabase.from("fin_com_fechamentos").select("id, competencia, status, creditos_arquivo, creditos_importados_em, titulos_buscados_em, z_sem_credito, fechado_em, historico, historico_arquivos").eq("id", id).maybeSingle(),
     supabase.from("fin_com_representantes").select("cod_representante, nome, perc_venda, perc_locacao, recebe_de, ativo").order("cod_representante"),
     supabase.from("fin_com_linhas").select("*").eq("fechamento_id", id).order("data_pagamento", { nullsFirst: false }).order("cod_titulo"),
-    supabase.from("fin_com_creditos").select("id, linha, data, cod_cliente, nome_cliente, valor, cod_titulo_z, cod_representante_sugerido").eq("fechamento_id", id).order("data"),
+    supabase.from("fin_com_creditos").select("id, linha, data, cod_cliente, nome_cliente, valor, cod_titulo_z, cod_representante_sugerido, cod_pedido").eq("fechamento_id", id).order("data"),
   ]);
   if (!f) return null;
   const todas = (linhas ?? []) as LinhaFechamento[];

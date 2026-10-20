@@ -62,6 +62,27 @@ O sistema propõe as linhas a partir dos títulos pagos no Consistem, o Alan con
       - se o relatório traz o título de origem e o representante;
       - de onde sai o representante de um crédito sem Z (cliente → pedido?).
 
+12. **Um pedido nunca rende comissão sobre mais que o seu valor (Alan, 20/10/2026).**
+    - A comparação é por representante, porque cada um recebe cheio (regra 3).
+    - **Conta:** base já comissionada do pedido (meses fechados, inclusive o histórico) + base do mês ≤ valor do pedido (`vlrTotalPedido − vlrTotalCancelado`).
+    - **Unidade de controle:**
+      - o pedido da NF do título;
+      - NF sem pedido (ou de mais de um pedido): a própria NF, pelo valor dela;
+      - adiantamento: o "Pedido de Venda" da CCCCI010;
+      - Z e adiantamento sem pedido ficam sem teto, só com a trava por título.
+    - **"Já comissionado"** soma as linhas fechadas com a mesma unidade e as dos títulos que o pedido gerou (NFs do pedido → `/titulo`). Por isso o histórico das planilhas, que só tem o nº do título, também conta.
+    - **Na proposta:** a linha que passaria do teto vem **excluída**, com o motivo "Excede o pedido N: já comissionado R$ X de R$ Y", pela ordem de pagamento. O gestor pode incluir de novo, com motivo.
+13. **Histórico do que já foi pago (20/10/2026).**
+    - **Importação:** as planilhas anuais "Comissões <Nome> - <ano>.xlsx" entram como meses já fechados (`historico = true`), em Representantes > Histórico. Isso fecha o furo do 1001323C: pago em 08/09, lançado em agosto e proposto de novo em setembro.
+    - **Leitura da planilha:**
+      - o mês vem do nome da aba (o "Mês de Referência" de dentro às vezes fica copiado);
+      - a data é a de vencimento, porque a planilha não tem a data do pagamento;
+      - documento que não é título (contrato, "112", sem documento) entra como lançamento manual;
+      - "ANTECIPAÇÃO…"/"ANTECIPADO" depois do TOTAL DO MÊS entra como antecipação;
+      - a soma tem de bater com o TOTAL DO MÊS, senão nada é importado.
+    - **Título que a planilha pagou em dois meses:** entra no segundo como manual "Repetido: já pago em MM/AAAA", para o total do mês continuar igual ao que foi pago. Casos achados em 20/10: **Z00022B** (junho e julho) e **1001278C** (julho e agosto), ambos do Fernando.
+    - **Mês que já tem fechamento de trabalho no sistema** não recebe histórico.
+
 ## 4. O que os dados mostram (comparação de agosto e setembro/2026 com as planilhas)
 
 A fonte é `GET financeiro/v10/titulosPagos` (títulos pagos no período). Para cada título, `GET financeiro/v10/contasReceber/{codTitulo}`, que traz **`codRepresentante`**, `tipoBaixa`, `percComissao`, `valorComissaoFaturamento` e `valorComissaoLiquidacao`. Isso vale também para os títulos Z.
@@ -168,3 +189,29 @@ Hipótese testada: o **Heitor** recebe pelos títulos do representante 7, e o **
 - pendência "Fechar comissão de <mês>" na Fila do dia;
 - pendência por título Z sem crédito (hoje é alerta no fechamento);
 - tipo da NF (12) lido da API: hoje vale o prefixo do documento e a troca manual.
+
+## 12. Fase 1.1 entregue (20/10/2026): trava contra pagamento em duplicidade
+
+- **Migration 0172:**
+  - `fin_com_fechamentos.historico` e `historico_arquivos`;
+  - `fin_com_linhas.cod_pedido`, `teto_chave` (`P:<pedido>` ou `N:<nota>`) e `teto_valor`;
+  - `fin_com_creditos.cod_pedido`;
+  - **`fin_com_importar_historico`** (gestor): substitui o histórico do representante no mês e marca os "Repetido";
+  - o gatilho `fn_fin_com_trava` aceita gravar no histórico **só** dentro dessa função;
+  - `fin_com_gravar_proposta` passa a gravar pedido, teto e a decisão proposta (incluída ou excluída, com motivo). A decisão tomada na conferência fica.
+- **Edge Function `fin-comissoes-titulos-pagos`:**
+  - título → NF: nota + cliente, ou a chave, nas NFs emitidas desde a emissão mais antiga, até 36 meses;
+  - NF → pedido;
+  - para cada pedido, `pedidoVenda/{cod}` (valor) e `notaFiscalSaidaPedido/{cod}` → `/titulo` (os títulos que ele gerou);
+  - **tipo da NF** (`codTipoDeNota`) passa a vir da API, e assim a regra 10 (12 = Locação) vale pelo tipo e não só pelo prefixo;
+  - até 80 pedidos ou NFs por busca. O que não for lido fica sem teto, com aviso.
+- **Regras:**
+  - `aplicarTeto` (`regras.ts`);
+  - `lerPlanilhaHistorico` (`historico.ts`);
+  - a coluna "Pedido de Venda" na leitura da CCCCI010.
+- **Telas:**
+  - coluna Pedido nas grades e nos créditos;
+  - aviso "linhas barradas pelo teto";
+  - meses de histórico marcados "Histórico (planilha)";
+  - importação do histórico em Representantes.
+- **Teste com as planilhas reais:** todas as abas batem com o TOTAL DO MÊS. Fernando: janeiro a setembro. Heitor: março, julho, agosto e setembro.

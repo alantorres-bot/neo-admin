@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ROTA_COMISSOES } from "@/lib/modulos/financeiro/comissoes/regras";
-import { abrirFechamento, ajustarLinha, importarCreditos, lancar, salvarRepresentante, type Resultado } from "./acoes";
+import { abrirFechamento, ajustarLinha, importarCreditos, importarHistorico, lancar, salvarRepresentante, type Resultado } from "./acoes";
 
 const SELECT = "h-9 rounded-md border bg-background px-2 text-sm";
 
@@ -58,6 +58,35 @@ export function ImportarCreditos({ fechamentoId, jaImportado }: { fechamentoId: 
         })}
       >
         {pendente ? "Importando…" : jaImportado ? "Substituir planilha" : "Importar planilha"}
+      </Button>
+    </div>
+  );
+}
+
+/** Histórico (gestor): planilha anual de comissões de um representante; cada aba de mês vira um mês já pago. */
+export function ImportarHistorico({ representantes }: { representantes: { cod: string; nome: string }[] }) {
+  const [arquivo, setArquivo] = useState<File | null>(null);
+  const [rep, setRep] = useState(representantes[0]?.cod ?? "");
+  const [pendente, iniciar] = useTransition();
+  return (
+    <div className="flex flex-wrap items-end gap-2">
+      <div className="space-y-1">
+        <Label htmlFor="hist-rep">Representante</Label>
+        <select id="hist-rep" className={SELECT} value={rep} onChange={(e) => setRep(e.target.value)}>
+          {representantes.map((r) => <option key={r.cod} value={r.cod}>{r.nome}</option>)}
+        </select>
+      </div>
+      <Input type="file" accept=".xlsx" className="max-w-xs" onChange={(e) => setArquivo(e.target.files?.[0] ?? null)} />
+      <Button
+        disabled={pendente || !arquivo || !rep}
+        onClick={() => iniciar(async () => {
+          const fd = new FormData();
+          fd.set("arquivo", arquivo!);
+          fd.set("representante", rep);
+          avisar(await importarHistorico(fd));
+        })}
+      >
+        {pendente ? "Importando…" : "Importar histórico"}
       </Button>
     </div>
   );
@@ -128,7 +157,7 @@ export function AjusteLinha({ linhaId, fechamentoId, incluida, tipo, motivo, edi
         <Button size="sm" variant="outline" disabled={pendente} onClick={() => setExcluindo(true)}>Excluir</Button>
       ) : (
         <>
-          <span className="text-xs text-muted-foreground" title={motivo ?? ""}>Excluída</span>
+          <span className="max-w-[220px] text-xs text-muted-foreground" title={motivo ?? ""}>Excluída{motivo ? `: ${motivo}` : ""}</span>
           <Button size="sm" variant="outline" disabled={pendente} onClick={() => enviar(true, "", tipo)}>Incluir</Button>
         </>
       )}

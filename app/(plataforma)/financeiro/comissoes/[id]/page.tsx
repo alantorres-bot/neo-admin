@@ -36,6 +36,9 @@ export default async function PaginaFechamento({ params }: PageProps<"/financeir
   const aberto = f.status === "em_conferencia";
   const editavel = aberto && ehOperador;
   const nomeRep = new Map(representantes.map((r) => [r.cod_representante, r.nome]));
+  const todas = porRepresentante.flatMap((x) => x.linhas);
+  const barradasTeto = todas.filter((l) => !l.incluida && (l.motivo ?? "").startsWith("Excede o")).length;
+  const linhasRepetidas = todas.filter((l) => (l.observacao ?? "").startsWith("Repetido")).length;
 
   return (
     <>
@@ -44,7 +47,7 @@ export default async function PaginaFechamento({ params }: PageProps<"/financeir
           <Link href={ROTA_COMISSOES} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"><ChevronLeft className="size-4" /> Comissões</Link>
           <div className="mt-1 flex flex-wrap items-center gap-3">
             <h1 className="text-2xl font-semibold tracking-tight first-letter:uppercase">Comissões de {rotuloCompetencia(f.competencia)}</h1>
-            <Badge variant={aberto ? "outline" : "secondary"}>{aberto ? "Em conferência" : `Fechado em ${formatarData(f.fechado_em)}`}</Badge>
+            <Badge variant={aberto ? "outline" : "secondary"}>{f.historico ? "Histórico (planilha)" : aberto ? "Em conferência" : `Fechado em ${formatarData(f.fechado_em)}`}</Badge>
           </div>
         </div>
         <div className="flex gap-3 text-sm">
@@ -53,6 +56,20 @@ export default async function PaginaFechamento({ params }: PageProps<"/financeir
         </div>
       </div>
 
+      {f.historico && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Mês pago pelas planilhas</CardTitle>
+            <CardDescription>
+              Histórico importado de {f.historico_arquivos.join(", ") || "planilha"}. Serve para o sistema não pagar de novo o que já foi pago
+              (mesmo título ou acima do valor do pedido). A data é a de vencimento da planilha.
+              {linhasRepetidas > 0 && ` ${linhasRepetidas} título(s) deste mês já tinham sido pagos em outro mês da planilha (marcados "Repetido").`}
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      )}
+
+      {!f.historico && (<>
       <Card>
         <CardHeader>
           <CardTitle>1. Créditos de cliente (CCCCI010)</CardTitle>
@@ -71,6 +88,7 @@ export default async function PaginaFechamento({ params }: PageProps<"/financeir
                   <TableHead>Cliente</TableHead>
                   <TableHead>Nome</TableHead>
                   <TableHead className="text-right">Valor</TableHead>
+                  <TableHead>Pedido</TableHead>
                   <TableHead>Situação</TableHead>
                 </TableRow>
               </TableHeader>
@@ -81,6 +99,7 @@ export default async function PaginaFechamento({ params }: PageProps<"/financeir
                     <TableCell className="tabular-nums">{c.cod_cliente}</TableCell>
                     <TableCell>{c.nome_cliente ?? "—"}</TableCell>
                     <TableCell className="text-right tabular-nums">{reais(c.valor)}</TableCell>
+                    <TableCell className="tabular-nums">{c.cod_pedido ?? ""}</TableCell>
                     <TableCell>
                       {!f.titulos_buscados_em ? <span className="text-xs text-muted-foreground">Aguarda a busca dos títulos</span>
                         : c.cod_titulo_z ? `Lastreia o ${c.cod_titulo_z}`
@@ -118,8 +137,18 @@ export default async function PaginaFechamento({ params }: PageProps<"/financeir
               </ul>
             </div>
           )}
+          {barradasTeto > 0 && (
+            <div role="alert" className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950/30">
+              <p className="font-medium">{barradasTeto} linha(s) barrada(s) pelo teto do pedido</p>
+              <p className="text-muted-foreground">
+                A base comissionada de um pedido não passa do valor dele (o que já foi pago em outros meses conta). A linha vem excluída com o motivo;
+                se estiver certa, inclua de novo na conferência.
+              </p>
+            </div>
+          )}
         </CardContent>
       </Card>
+      </>)}
 
       {porRepresentante.map(({ representante: r, linhas, total, antecipado, saldo }) => (
         <Card key={r.cod_representante}>
@@ -141,6 +170,7 @@ export default async function PaginaFechamento({ params }: PageProps<"/financeir
                     <TableHead>Documento</TableHead>
                     <TableHead>Cliente</TableHead>
                     <TableHead>NF</TableHead>
+                    <TableHead>Pedido</TableHead>
                     <TableHead>Pagamento</TableHead>
                     <TableHead>Baixa</TableHead>
                     <TableHead>Venda de</TableHead>
@@ -158,6 +188,9 @@ export default async function PaginaFechamento({ params }: PageProps<"/financeir
                       <TableCell className="tabular-nums">{l.cod_titulo ?? l.observacao ?? "—"}</TableCell>
                       <TableCell className="max-w-[200px] truncate" title={l.nome_cliente ?? ""}>{l.nome_cliente ?? l.cod_cliente ?? "—"}</TableCell>
                       <TableCell className="tabular-nums">{l.nota_fiscal ?? ""}</TableCell>
+                      <TableCell className="tabular-nums" title={l.teto_valor === null ? "" : `Teto: ${reais(l.teto_valor)}`}>
+                        {l.cod_pedido ?? (l.teto_chave?.startsWith("N:") ? "NF sem pedido" : "")}
+                      </TableCell>
                       <TableCell className="tabular-nums">{formatarData(l.data_pagamento)}</TableCell>
                       <TableCell>{l.tipo_baixa ? ROTULO_BAIXA[l.tipo_baixa] ?? l.tipo_baixa : ""}</TableCell>
                       <TableCell>{l.cod_representante_venda && l.cod_representante_venda !== r.cod_representante ? nomeRep.get(l.cod_representante_venda) ?? l.cod_representante_venda : ""}</TableCell>

@@ -19,7 +19,7 @@ export default async function PaginaComissoes() {
   const ehOperador = temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_COMISSOES, "operador");
   const supabase = await criarClienteServidor();
   const [{ data: fechamentos }, { data: linhas }, { data: reps }] = await Promise.all([
-    supabase.from("fin_com_fechamentos").select("id, competencia, status, fechado_em").order("competencia", { ascending: false }),
+    supabase.from("fin_com_fechamentos").select("id, competencia, status, fechado_em, historico").order("competencia", { ascending: false }),
     supabase.from("fin_com_linhas").select("fechamento_id, cod_representante, origem, incluida, valor_comissao"),
     supabase.from("fin_com_representantes").select("cod_representante, nome").order("cod_representante"),
   ]);
@@ -69,12 +69,12 @@ export default async function PaginaComissoes() {
                 {(fechamentos ?? []).map((f) => (
                   <TableRow key={f.id}>
                     <TableCell><Link href={`${ROTA_COMISSOES}/${f.id}`} className="font-medium underline-offset-4 hover:underline">{rotuloCompetencia(f.competencia)}</Link></TableCell>
-                    <TableCell><Badge variant={f.status === "fechado" ? "secondary" : "outline"}>{f.status === "fechado" ? "Fechado" : "Em conferência"}</Badge></TableCell>
+                    <TableCell><Badge variant={f.status === "fechado" ? "secondary" : "outline"}>{f.historico ? "Histórico (planilha)" : f.status === "fechado" ? "Fechado" : "Em conferência"}</Badge></TableCell>
                     {[...nomes.keys()].map((cod) => {
                       const ls = (linhas ?? []).filter((l) => l.fechamento_id === f.id && l.cod_representante === cod) as Pick<LinhaFechamento, "incluida" | "origem" | "valor_comissao">[];
                       return <TableCell key={cod} className="text-right tabular-nums">{ls.length ? formatarMoeda(totaisDoRepresentante(ls).saldo) : "—"}</TableCell>;
                     })}
-                    <TableCell className="tabular-nums">{formatarData(f.fechado_em)}</TableCell>
+                    <TableCell className="tabular-nums">{f.historico ? "" : formatarData(f.fechado_em)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

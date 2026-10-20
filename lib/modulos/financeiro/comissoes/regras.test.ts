@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  calcularComissao, chaveCredito, chaveTitulo, cruzarZComCreditos, dataDaPlanilha, ehFilial, ehTituloZ, lerPlanilhaCreditos, montarProposta, proporLinhas,
+  aplicarTeto, calcularComissao, chaveCredito, chaveTitulo, cruzarZComCreditos, dataDaPlanilha, ehFilial, ehTituloZ, lerPlanilhaCreditos, montarProposta, proporLinhas,
   representanteDoCliente, tipoDoTitulo, totalizar, valorDaPlanilha, type Representante, type TituloPago,
 } from "./regras";
 
@@ -123,8 +123,8 @@ describe("planilha da CCCCI010", () => {
       ["Total", "", "", "1.964.000,00"],
     ]);
     expect(r.creditos).toEqual([
-      { linha: 3, data: "2026-09-09", cod_cliente: "300", nome_cliente: "MIRANTE DO VALE", valor_centavos: 183_000_000 },
-      { linha: 5, data: "2026-09-08", cod_cliente: "200", nome_cliente: "J SETE", valor_centavos: 13_400_000 },
+      { linha: 3, data: "2026-09-09", cod_cliente: "300", nome_cliente: "MIRANTE DO VALE", valor_centavos: 183_000_000, cod_pedido: null },
+      { linha: 5, data: "2026-09-08", cod_cliente: "200", nome_cliente: "J SETE", valor_centavos: 13_400_000, cod_pedido: null },
     ]);
     expect(r.erros).toEqual(["Linha 6: data inválida."]);
   });
@@ -132,13 +132,13 @@ describe("planilha da CCCCI010", () => {
     const r = lerPlanilhaCreditos([
       ["Data", "Cliente", "Descrição", "Crédito", "Baixado", "Saldo", "Portador", "Descrição Portador", "Observação", "Pedido de Venda"],
       ["08/09/2026", "901", "CONSTRUTORA ALFA LTDA", "134000", "134000", "0", "237", "BRADESCO", "ANTECIPAÇÃO DE CLIENTE - ALFA"],
-      ["28/09/2026", "902", "EMPREENDIMENTOS BETA LTDA", "54000", "0", "54000", "237", "BRADESCO", ""],
+      ["28/09/2026", "902", "EMPREENDIMENTOS BETA LTDA", "54000", "0", "54000", "237", "BRADESCO", "", "000150"],
       ["", "", "", "188.000,00", "134.000,00", "54.000,00"],
     ]);
     expect(r.erros).toEqual([]);
     expect(r.creditos).toEqual([
-      { linha: 2, data: "2026-09-08", cod_cliente: "901", nome_cliente: "CONSTRUTORA ALFA LTDA", valor_centavos: 13_400_000 },
-      { linha: 3, data: "2026-09-28", cod_cliente: "902", nome_cliente: "EMPREENDIMENTOS BETA LTDA", valor_centavos: 5_400_000 },
+      { linha: 2, data: "2026-09-08", cod_cliente: "901", nome_cliente: "CONSTRUTORA ALFA LTDA", valor_centavos: 13_400_000, cod_pedido: null },
+      { linha: 3, data: "2026-09-28", cod_cliente: "902", nome_cliente: "EMPREENDIMENTOS BETA LTDA", valor_centavos: 5_400_000, cod_pedido: "150" },
     ]);
   });
   it("sem cabeçalho reconhecível", () => {
@@ -166,5 +166,39 @@ describe("montarProposta (caso Z00027A e Mirante, setembro/2026)", () => {
       { id: "c-mirante", cod_titulo_z: null, cod_representante_sugerido: "3" },
     ]);
     expect(r.zSemCredito.map((z) => z.cod_titulo)).toEqual(["Z00031A"]);
+  });
+});
+
+describe("teto por pedido (regra 12)", () => {
+  const PEDIDO = { "P:150": { rotulo: "pedido 150", valor_centavos: 10_000_000, titulos: ["1001500A", "1001500B", "1001500C"] } };
+  const tp = (cod: string, data: string, valor: number) => t(cod, { cod_representante: "7", data_pagamento: data, valor_centavos: valor, cod_pedido: "150", teto_chave: "P:150" });
+
+  it("pedido de R$ 100.000,00 com R$ 70.000,00 já comissionados: o título de R$ 40.000,00 vem excluído com o motivo", () => {
+    const anteriores = [{ cod_representante: "3", cod_titulo: "1001500A", teto_chave: null, valor_base_centavos: 7_000_000 }]; // histórico: só o título
+    const r = montarProposta([FERNANDO], [tp("1001500B", "2026-09-10", 4_000_000)], [], {}, new Set(), PEDIDO, anteriores);
+    expect(r.linhas).toHaveLength(1);
+    expect(r.linhas[0]).toMatchObject({ incluida: false, teto_chave: "P:150", teto_valor_centavos: 10_000_000, cod_pedido: "150" });
+    expect(r.linhas[0].motivo).toBe("Excede o pedido 150: já comissionado R$ 70.000,00 de R$ 100.000,00");
+  });
+  it("cabe no saldo do pedido: entra; o que passa no mesmo mês (pela ordem de pagamento) é barrado", () => {
+    const r = montarProposta([FERNANDO], [tp("1001500C", "2026-09-20", 6_000_000), tp("1001500B", "2026-09-05", 6_000_000)], [], {}, new Set(), PEDIDO, []);
+    expect(r.linhas.map((l) => [l.cod_titulo, l.incluida])).toEqual([["1001500C", false], ["1001500B", true]]);
+  });
+  it("cada representante tem o seu teto (Fernando e Heitor recebem cheio)", () => {
+    const anteriores = [{ cod_representante: "3", cod_titulo: "1001500A", teto_chave: "P:150", valor_base_centavos: 10_000_000 }];
+    const r = montarProposta([FERNANDO, HEITOR], [tp("1001500B", "2026-09-10", 1_000_000)], [], {}, new Set(), PEDIDO, anteriores);
+    expect(r.linhas.map((l) => [l.cod_representante, l.incluida])).toEqual([["3", false], ["7", true]]);
+  });
+  it("adiantamento (crédito com pedido) e depois o título do mesmo pedido: o segundo é barrado", () => {
+    const credito = { id: "c1", data: "2026-09-02", cod_cliente: "100", nome_cliente: "ALFA", valor_centavos: 10_000_000, cod_pedido: "150" };
+    const r = montarProposta([FERNANDO], [tp("1001500A", "2026-09-25", 4_000_000)], [credito], { "100": [{ cod_representante: "3", data_emissao: "2026-08-01" }] }, new Set(), PEDIDO, []);
+    expect(r.linhas.map((l) => [l.origem, l.incluida])).toEqual([["titulo", false], ["credito", true]]);
+  });
+  it("NF sem pedido usa o valor da NF; sem unidade lida, não há teto", () => {
+    const nf = { "N:1323": { rotulo: "NF 1323", valor_centavos: 9_800_000, titulos: ["1001323B", "1001323C"] } };
+    const anteriores = [{ cod_representante: "3", cod_titulo: "1001323B", teto_chave: null, valor_base_centavos: 9_800_000 }];
+    const linhas = [t("1001323C", { teto_chave: "N:1323", valor_centavos: 9_800_000 }), t("1001999A", { teto_chave: "P:999", valor_centavos: 1 })];
+    const r = aplicarTeto(montarProposta([FERNANDO], linhas, [], {}, new Set()).linhas, nf, anteriores);
+    expect(r.map((l) => [l.cod_titulo, l.incluida])).toEqual([["1001323C", false], ["1001999A", true]]);
   });
 });

@@ -6,7 +6,7 @@ import { MODULO_COMISSOES, ROTA_COMISSOES } from "@/lib/modulos/financeiro/comis
 import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { FormRepresentante } from "../componentes";
+import { FormRepresentante, ImportarHistorico } from "../componentes";
 
 export const metadata: Metadata = { title: "Representantes comissionados" };
 
@@ -37,6 +37,19 @@ export default async function PaginaRepresentantes() {
           </CardContent>
         </Card>
       ))}
+      {ehGestor && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Histórico do que já foi pago (planilhas)</CardTitle>
+            <CardDescription>
+              Suba a planilha anual &quot;Comissões &lt;Nome&gt; - &lt;ano&gt;.xlsx&quot; de cada representante. Cada aba de mês vira um mês já pago,
+              e o sistema não propõe de novo um título que já está ali (nem passa do valor do pedido). Mês que já tem fechamento no sistema
+              fica de fora. Reimportar a mesma planilha substitui o histórico dela.
+            </CardDescription>
+          </CardHeader>
+          <CardContent><ImportarHistorico representantes={reps.map((r) => ({ cod: r.cod, nome: r.nome }))} /></CardContent>
+        </Card>
+      )}
       {ehGestor && (
         <Card>
           <CardHeader><CardTitle>Novo representante</CardTitle></CardHeader>

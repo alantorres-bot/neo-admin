@@ -124,3 +124,68 @@ describe("fechamento do mês", () => {
     expect(r).toBeGreaterThan(10);
   });
 });
+
+describe("histórico das planilhas e teto (0172)", () => {
+  const hist = (o: Record<string, unknown>) => ({
+    origem: "titulo", cod_titulo: "1001323C", nome_cliente: "CLIENTE", data_pagamento: "2026-08-06", tipo: "venda",
+    valor_base: 98000, percentual: 1.5, valor_comissao: 1470, observacao: null, ...o,
+  });
+  let agosto: string;
+
+  it("só o gestor importa; o mês vira fechamento de histórico já fechado", async () => {
+    const linhas = JSON.stringify([hist({}), hist({ origem: "antecipacao", cod_titulo: null, valor_base: 1540, percentual: 0, valor_comissao: 1540, observacao: "ANTECIPADO" })]);
+    await expect(como(db, finOperador, () => q(`select fin_com_importar_historico('2026-08-01', '3', 'f.xlsx', $1::jsonb)`, [linhas]))).rejects.toThrow(/gestor/);
+    const n = (await como(db, finGestor, () => q(`select fin_com_importar_historico('2026-08-01', '3', 'f.xlsx', $1::jsonb) as n`, [linhas]))).rows[0].n;
+    expect(n).toBe(0);
+    const f = (await q(`select id, status, historico, historico_arquivos from fin_com_fechamentos where competencia = '2026-08-01'`)).rows[0];
+    agosto = f.id as string;
+    expect(f).toMatchObject({ status: "fechado", historico: true, historico_arquivos: ["f.xlsx"] });
+    expect((await q(`select chave, origem, fechada from fin_com_linhas where fechamento_id = $1 order by origem desc`, [agosto])).rows.map((r) => [r.origem, r.fechada]))
+      .toEqual([["titulo", true], ["antecipacao", true]]);
+    // reimportar substitui (não duplica)
+    await como(db, finGestor, () => q(`select fin_com_importar_historico('2026-08-01', '3', 'f.xlsx', $1::jsonb)`, [linhas]));
+    expect((await q(`select count(*)::int as n from fin_com_linhas where fechamento_id = $1`, [agosto])).rows[0].n).toBe(2);
+    // abrir o mês leva ao histórico, não cria outro
+    expect((await como(db, finOperador, () => q(`select fin_com_abrir('2026-08-01') as id`))).rows[0].id).toBe(agosto);
+  });
+
+  it("título já pago em outro mês da planilha entra como manual \"Repetido\" (o total do mês bate)", async () => {
+    const n = (await como(db, finGestor, () => q(`select fin_com_importar_historico('2026-07-01', '3', 'f.xlsx', $1::jsonb) as n`,
+      [JSON.stringify([hist({ data_pagamento: "2026-07-06" })])]))).rows[0].n;
+    expect(n).toBe(1);
+    const julho = (await q(`select origem, observacao, valor_comissao from fin_com_linhas l join fin_com_fechamentos f on f.id = l.fechamento_id where f.competencia = '2026-07-01'`)).rows;
+    expect(julho).toEqual([{ origem: "manual", observacao: "Repetido: já pago em 08/2026", valor_comissao: "1470.00" }]);
+  });
+
+  it("mês com fechamento de trabalho no sistema não recebe histórico", async () => {
+    await expect(como(db, finGestor, () => q(`select fin_com_importar_historico('2026-09-01', '3', 'f.xlsx', $1::jsonb)`, [JSON.stringify([hist({})])])))
+      .rejects.toThrow(/já tem fechamento no sistema/);
+  });
+
+  it("histórico fica congelado fora da importação", async () => {
+    await expect(q(`update fin_com_linhas set valor_comissao = 0 where fechamento_id = $1`, [agosto])).rejects.toThrow(/já foi fechado/);
+    await expect(q(`delete from fin_com_linhas where fechamento_id = $1`, [agosto])).rejects.toThrow(/já foi fechado/);
+  });
+
+  it("título do histórico não é pago de novo; a proposta grava o teto e a linha barrada vem excluída com o motivo", async () => {
+    const junho = (await como(db, finOperador, () => q(`select fin_com_abrir('2026-06-01') as id`))).rows[0].id;
+    await como(db, finOperador, () => q(`select fin_com_gravar_proposta($1, $2::jsonb, '[]', '[]')`, [junho, JSON.stringify([
+      linha({ chave: "T:1001323C", cod_titulo: "1001323C", cod_pedido: "150", teto_chave: "P:150", teto_valor: 100000 }),
+      linha({ chave: "T:1001500B", cod_titulo: "1001500B", cod_pedido: "150", teto_chave: "P:150", teto_valor: 100000, incluida: false,
+        motivo: "Excede o pedido 150: já comissionado R$ 70.000,00 de R$ 100.000,00" }),
+    ])]));
+    const r = (await q(`select chave, incluida, motivo, cod_pedido, teto_valor from fin_com_linhas where fechamento_id = $1 order by chave`, [junho])).rows;
+    expect(r).toEqual([
+      { chave: "T:1001323C", incluida: true, motivo: null, cod_pedido: "150", teto_valor: "100000.00" },
+      { chave: "T:1001500B", incluida: false, motivo: "Excede o pedido 150: já comissionado R$ 70.000,00 de R$ 100.000,00", cod_pedido: "150", teto_valor: "100000.00" },
+    ]);
+    await expect(como(db, finGestor, () => q(`select fin_com_fechar($1)`, [junho]))).rejects.toThrow(/já pago em outro fechamento/);
+  });
+
+  it("créditos guardam o pedido da CCCCI010", async () => {
+    const jun = (await q(`select id from fin_com_fechamentos where competencia = '2026-06-01'`)).rows[0].id;
+    await como(db, finOperador, () => q(`select fin_com_importar_creditos($1, 'c.xlsx', $2::jsonb)`, [jun,
+      JSON.stringify([{ linha: 2, data: "2026-06-02", cod_cliente: "100", nome_cliente: "ALFA", valor: 1000, cod_pedido: "150" }])]));
+    expect((await q(`select cod_pedido from fin_com_creditos where fechamento_id = $1`, [jun])).rows[0].cod_pedido).toBe("150");
+  });
+});

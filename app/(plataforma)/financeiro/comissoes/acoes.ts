@@ -3,8 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { lerBuffer } from "@/lib/integracoes/importador/ler-arquivo";
+import { anoDoArquivo, lerPlanilhaHistorico } from "@/lib/modulos/financeiro/comissoes/historico";
 import {
-  lerPlanilhaCreditos, montarProposta, MODULO_COMISSOES, ROTA_COMISSOES, type Credito, type Representante, type TituloPago,
+  lerPlanilhaCreditos, montarProposta, MODULO_COMISSOES, ROTA_COMISSOES, type Credito, type LinhaAnterior, type Representante, type TituloPago,
+  type UnidadeTeto,
 } from "@/lib/modulos/financeiro/comissoes/regras";
 import { mensagemDeErroBanco } from "@/lib/nucleo/erros";
 import { temAcessoModulo } from "@/lib/nucleo/permissoes";
@@ -57,7 +59,9 @@ export async function importarCreditos(fechamentoId: string, dados: FormData): P
   const supabase = await criarClienteServidor();
   const { data, error } = await supabase.rpc("fin_com_importar_creditos", {
     p_id: fechamentoId, p_arquivo: arquivo.name,
-    p_creditos: melhor.creditos.map((c) => ({ linha: c.linha, data: c.data, cod_cliente: c.cod_cliente, nome_cliente: c.nome_cliente, valor: c.valor_centavos / 100 })),
+    p_creditos: melhor.creditos.map((c) => ({
+      linha: c.linha, data: c.data, cod_cliente: c.cod_cliente, nome_cliente: c.nome_cliente, valor: c.valor_centavos / 100, cod_pedido: c.cod_pedido,
+    })),
   });
   if (error) return erro(error);
   revalidatePath(`${ROTA_COMISSOES}/${fechamentoId}`);
@@ -65,7 +69,8 @@ export async function importarCreditos(fechamentoId: string, dados: FormData): P
 }
 
 type RespostaFuncao = {
-  titulos?: TituloPago[]; porCliente?: Record<string, { cod_representante: string | null; data_emissao: string | null }[]>; falhas?: string[]; erro?: string;
+  titulos?: TituloPago[]; porCliente?: Record<string, { cod_representante: string | null; data_emissao: string | null }[]>;
+  unidades?: Record<string, UnidadeTeto>; falhas?: string[]; avisos?: string[]; erro?: string;
 };
 
 /** Passo 2: títulos pagos do mês (Consistem) + créditos → proposta por representante. Refazer mantém as decisões. */
@@ -77,17 +82,24 @@ export async function buscarTitulosPagos(fechamentoId: string): Promise<Resultad
   const [{ data: f }, { data: reps }, { data: creds }, { data: pagas }] = await Promise.all([
     supabase.from("fin_com_fechamentos").select("id, competencia, status").eq("id", fechamentoId).maybeSingle(),
     supabase.from("fin_com_representantes").select("cod_representante, nome, perc_venda, perc_locacao, recebe_de, ativo"),
-    supabase.from("fin_com_creditos").select("id, data, cod_cliente, nome_cliente, valor").eq("fechamento_id", fechamentoId),
-    supabase.from("fin_com_linhas").select("cod_representante, chave").eq("fechada", true).eq("incluida", true).in("origem", ["titulo", "credito"]),
+    supabase.from("fin_com_creditos").select("id, data, cod_cliente, nome_cliente, valor, cod_pedido").eq("fechamento_id", fechamentoId),
+    // Tudo o que já foi pago (fechados, inclusive o histórico das planilhas): trava por título e base do teto por pedido.
+    supabase.from("fin_com_linhas").select("cod_representante, chave, origem, cod_titulo, teto_chave, valor_base")
+      .eq("fechada", true).eq("incluida", true).in("origem", ["titulo", "credito", "manual"]).range(0, 19_999),
   ]);
   if (!f) return { ok: false, erro: "Fechamento não encontrado." };
   if (f.status !== "em_conferencia") return { ok: false, erro: "Este fechamento já foi fechado." };
-  const creditos: Credito[] = (creds ?? []).map((c) => ({ id: c.id, data: c.data, cod_cliente: c.cod_cliente, nome_cliente: c.nome_cliente, valor_centavos: Math.round(Number(c.valor) * 100) }));
+  const creditos: Credito[] = (creds ?? []).map((c) => ({
+    id: c.id, data: c.data, cod_cliente: c.cod_cliente, nome_cliente: c.nome_cliente, valor_centavos: Math.round(Number(c.valor) * 100), cod_pedido: c.cod_pedido,
+  }));
   if (creditos.length === 0) return { ok: false, erro: "Importe antes a planilha de créditos da CCCCI010 do mês (passo 1)." };
   const representantes: Representante[] = (reps ?? []).map((r) => ({ ...r, perc_venda: Number(r.perc_venda), perc_locacao: Number(r.perc_locacao) }));
 
   const { data, error } = await supabase.functions.invoke("fin-comissoes-titulos-pagos", {
-    body: { mes: String(f.competencia).slice(0, 7), clientes: [...new Set(creditos.map((c) => c.cod_cliente))] },
+    body: {
+      mes: String(f.competencia).slice(0, 7), clientes: [...new Set(creditos.map((c) => c.cod_cliente))],
+      pedidos: [...new Set(creditos.map((c) => c.cod_pedido).filter((x): x is string => !!x))],
+    },
   });
   const resposta = (data ?? {}) as RespostaFuncao;
   if (error || !resposta.titulos) {
@@ -98,8 +110,11 @@ export async function buscarTitulosPagos(fechamentoId: string): Promise<Resultad
     }
     return { ok: false, erro: mensagem };
   }
-  const jaPagas = new Set((pagas ?? []).map((x) => `${x.cod_representante}|${x.chave}`));
-  const proposta = montarProposta(representantes, resposta.titulos, creditos, resposta.porCliente ?? {}, jaPagas);
+  const jaPagas = new Set((pagas ?? []).filter((x) => x.origem !== "manual").map((x) => `${x.cod_representante}|${x.chave}`));
+  const anteriores: LinhaAnterior[] = (pagas ?? []).map((x) => ({
+    cod_representante: x.cod_representante, cod_titulo: x.cod_titulo, teto_chave: x.teto_chave, valor_base_centavos: Math.round(Number(x.valor_base) * 100),
+  }));
+  const proposta = montarProposta(representantes, resposta.titulos, creditos, resposta.porCliente ?? {}, jaPagas, resposta.unidades ?? {}, anteriores);
   const { error: erroGravar } = await supabase.rpc("fin_com_gravar_proposta", {
     p_id: fechamentoId,
     p_linhas: proposta.linhas.map((l) => ({
@@ -107,7 +122,8 @@ export async function buscarTitulosPagos(fechamentoId: string): Promise<Resultad
       cod_titulo: l.cod_titulo, cod_cliente: l.cod_cliente, nome_cliente: l.nome_cliente, nota_fiscal: l.nota_fiscal, data_pagamento: l.data_pagamento,
       tipo_baixa: l.tipo_baixa, tipo: l.tipo, valor_base: l.valor_base_centavos / 100, percentual: l.percentual,
       valor_comissao: l.valor_comissao_centavos / 100, valor_consistem: l.comissao_consistem_centavos === null ? null : l.comissao_consistem_centavos / 100,
-      observacao: l.observacao,
+      observacao: l.observacao, cod_pedido: l.cod_pedido, teto_chave: l.teto_chave,
+      teto_valor: l.teto_valor_centavos === null ? null : l.teto_valor_centavos / 100, incluida: l.incluida, motivo: l.motivo,
     })),
     p_creditos: proposta.creditosMarcados,
     p_z_sem_credito: proposta.zSemCredito.map((z) => ({ ...z, valor: z.valor_centavos / 100 })),
@@ -117,7 +133,9 @@ export async function buscarTitulosPagos(fechamentoId: string): Promise<Resultad
   const avisos = [
     `${resposta.titulos.length} títulos pagos lidos; ${proposta.linhas.length} linhas propostas.`,
     proposta.zSemCredito.length > 0 ? `${proposta.zSemCredito.length} título(s) Z sem crédito na CCCCI010.` : "",
+    proposta.linhas.some((l) => !l.incluida) ? `${proposta.linhas.filter((l) => !l.incluida).length} linha(s) barrada(s) pelo teto do pedido: confira.` : "",
     (resposta.falhas ?? []).length > 0 ? `Sem detalhe no Consistem: ${(resposta.falhas ?? []).join(", ")}.` : "",
+    ...(resposta.avisos ?? []),
   ].filter(Boolean);
   return { ok: true, mensagem: avisos.join(" ") };
 }
@@ -201,4 +219,52 @@ export async function salvarRepresentante(dados: FormData): Promise<Resultado> {
   if (error) return erro(error);
   revalidatePath(ROTA_COMISSOES, "layout");
   return { ok: true, mensagem: "Representante salvo." };
+}
+
+/**
+ * Histórico (gestor, regra 13): a planilha anual "Comissões <Nome> - <ano>.xlsx" de um representante. Cada aba de mês vira
+ * um mês já pago (fechamento de histórico). Mês que já tem fechamento no sistema fica de fora. Reimportar substitui.
+ */
+export async function importarHistorico(dados: FormData): Promise<Resultado> {
+  const p = await exigir("gestor");
+  if (!p.ok) return p;
+  const arquivo = dados.get("arquivo");
+  const cod = String(dados.get("representante") ?? "").trim();
+  if (!(arquivo instanceof File) || arquivo.size === 0) return { ok: false, erro: "Escolha a planilha anual de comissões." };
+  const ano = anoDoArquivo(arquivo.name);
+  if (ano === null) return { ok: false, erro: "Não achei o ano no nome do arquivo (ex.: \"Comissões Fernando - 2026.xlsx\")." };
+  const supabase = await criarClienteServidor();
+  const { data: rep } = await supabase.from("fin_com_representantes").select("cod_representante, nome").eq("cod_representante", cod).maybeSingle();
+  if (!rep) return { ok: false, erro: "Escolha o representante." };
+  const lido = await lerBuffer(await arquivo.arrayBuffer(), arquivo.name);
+  if (!lido.ok) return { ok: false, erro: lido.erro };
+  const { meses, erros } = lerPlanilhaHistorico(lido.planilhas, ano, rep.nome);
+  if (erros.length > 0) return { ok: false, erro: `Nada foi importado. ${erros.slice(0, 4).join(" ")}` };
+  if (meses.length === 0) return { ok: false, erro: "A planilha não tem abas de mês com linhas." };
+  const importados: string[] = [], pulados: string[] = [];
+  let repetidos = 0;
+  for (const m of meses) {
+    const { data, error } = await supabase.rpc("fin_com_importar_historico", {
+      p_competencia: m.competencia, p_representante: rep.cod_representante, p_arquivo: arquivo.name,
+      p_linhas: m.linhas.map((l) => ({
+        origem: l.origem, cod_titulo: l.cod_titulo, nome_cliente: l.nome_cliente, data_pagamento: l.data_pagamento, tipo: l.tipo,
+        valor_base: l.valor_base_centavos / 100, percentual: l.percentual, valor_comissao: l.valor_comissao_centavos / 100, observacao: l.observacao,
+      })),
+    });
+    if (error) {
+      if (/já tem fechamento no sistema/.test(error.message)) { pulados.push(m.aba); continue; }
+      return { ok: false, erro: `${m.aba}: ${mensagemDeErroBanco(error)}${importados.length ? ` (já importados: ${importados.join(", ")})` : ""}` };
+    }
+    importados.push(m.aba);
+    repetidos += Number(data ?? 0);
+  }
+  revalidatePath(ROTA_COMISSOES, "layout");
+  return {
+    ok: true,
+    mensagem: [
+      `Histórico de ${rep.nome}: ${importados.length ? importados.join(", ") : "nenhum mês"} importado(s).`,
+      pulados.length ? `Já têm fechamento no sistema (ficaram de fora): ${pulados.join(", ")}.` : "",
+      repetidos ? `${repetidos} título(s) aparecem pagos em mais de um mês na planilha: veja os marcados "Repetido".` : "",
+    ].filter(Boolean).join(" "),
+  };
 }

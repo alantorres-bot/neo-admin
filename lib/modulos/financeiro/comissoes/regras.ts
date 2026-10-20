@@ -21,9 +21,13 @@ export type TituloPago = {
   cod_titulo: string; cod_cliente: string | null; cod_representante: string | null; nota_fiscal: string | null;
   valor_centavos: number; valor_pago_centavos: number | null; data_pagamento: string | null; data_vencimento: string | null;
   tipo_baixa: string | null; tipo_nota: string | null; comissao_consistem_centavos: number | null;
+  /** Pedido de venda da NF do título (quando há). */
+  cod_pedido?: string | null;
+  /** Unidade do teto (regra 12): "P:<pedido>", ou "N:<nota>" quando a NF não tem pedido; sem NF, null. */
+  teto_chave?: string | null;
 };
 
-export type Credito = { id: string; data: string; cod_cliente: string; nome_cliente: string | null; valor_centavos: number };
+export type Credito = { id: string; data: string; cod_cliente: string; nome_cliente: string | null; valor_centavos: number; cod_pedido?: string | null };
 
 const doc = (c: string) => c.trim().toUpperCase();
 /** Título Z: lançamento sem NF ("Z…"; na planilha às vezes "AZ…"). */
@@ -77,10 +81,16 @@ export type LinhaProposta = {
   valor_comissao_centavos: number;
   comissao_consistem_centavos: number | null;
   observacao: string | null;
+  cod_pedido: string | null;
+  teto_chave: string | null;
+  teto_valor_centavos: number | null;
+  incluida: boolean;
+  motivo: string | null;
 };
 
 export const chaveCredito = (c: Pick<Credito, "data" | "cod_cliente" | "valor_centavos">) => `C:${c.data}:${c.cod_cliente.trim()}:${c.valor_centavos}`;
 export const chaveTitulo = (codTitulo: string) => `T:${doc(codTitulo)}`;
+export const chavePedido = (codPedido: string) => `P:${codPedido.trim().replace(/^0+(?=\d)/, "")}`;
 
 /**
  * Proposta do mês para cada representante ativo:
@@ -111,6 +121,7 @@ export function proporLinhas(
         valor_comissao_centavos: calcularComissao(t.valor_centavos, percentual(tipo)),
         comissao_consistem_centavos: r.cod_representante === t.cod_representante ? t.comissao_consistem_centavos : null,
         observacao: ehTituloZ(t.cod_titulo) ? "Título Z (sem NF)" : null,
+        cod_pedido: t.cod_pedido ?? null, teto_chave: t.teto_chave ?? null, teto_valor_centavos: null, incluida: true, motivo: null,
       });
     }
     for (const c of adiantamentos) {
@@ -123,6 +134,7 @@ export function proporLinhas(
         tipo_baixa: null, tipo: "venda", valor_base_centavos: c.valor_centavos, percentual: r.perc_venda,
         valor_comissao_centavos: calcularComissao(c.valor_centavos, r.perc_venda), comissao_consistem_centavos: null,
         observacao: "Adiantamento do cliente (CCCCI010)",
+        cod_pedido: c.cod_pedido ?? null, teto_chave: c.cod_pedido ? chavePedido(c.cod_pedido) : null, teto_valor_centavos: null, incluida: true, motivo: null,
       });
     }
   }
@@ -135,6 +147,50 @@ export function totalizar(linhas: { incluida: boolean; valor_comissao_centavos: 
   const antecipado = antecipacoesCentavos.reduce((s, v) => s + v, 0);
   return { total, antecipado, saldo: total - antecipado };
 }
+
+/** Unidade do teto (regra 12): o pedido (ou a NF sem pedido), com o valor e os títulos que ele gerou. */
+export type UnidadeTeto = { rotulo: string; valor_centavos: number; titulos: string[] };
+
+/** O que já foi comissionado em fechamentos fechados (inclusive o histórico das planilhas). */
+export type LinhaAnterior = { cod_representante: string; cod_titulo: string | null; teto_chave: string | null; valor_base_centavos: number };
+
+/**
+ * Regra 12: um pedido nunca rende comissão, ao mesmo representante, sobre mais que o seu valor. A base já comissionada
+ * do pedido (linhas fechadas com a mesma unidade, ou de títulos que o pedido gerou) mais a deste mês, pela ordem de
+ * pagamento, não passa do valor do pedido; a linha que passaria vem excluída com o motivo (o gestor pode incluir de
+ * novo na conferência). Linha sem unidade (Z, adiantamento sem pedido) ou com unidade não lida fica de fora do teto.
+ */
+export function aplicarTeto(linhas: LinhaProposta[], unidades: Record<string, UnidadeTeto>, anteriores: LinhaAnterior[]): LinhaProposta[] {
+  const usado = new Map<string, number>();
+  const chaveUso = (rep: string, unidade: string) => `${rep}|${unidade}`;
+  for (const [chave, u] of Object.entries(unidades)) {
+    const titulos = new Set(u.titulos.map(doc));
+    for (const a of anteriores) {
+      if (a.teto_chave === chave || (a.cod_titulo && titulos.has(doc(a.cod_titulo)))) {
+        usado.set(chaveUso(a.cod_representante, chave), (usado.get(chaveUso(a.cod_representante, chave)) ?? 0) + a.valor_base_centavos);
+      }
+    }
+  }
+  const ordem = linhas.map((l, i) => ({ l, i })).sort((a, b) => (a.l.data_pagamento ?? "").localeCompare(b.l.data_pagamento ?? "") || a.i - b.i);
+  const saida = [...linhas];
+  for (const { l, i } of ordem) {
+    const u = l.teto_chave ? unidades[l.teto_chave] : undefined;
+    if (!u || !l.teto_chave) continue;
+    const k = chaveUso(l.cod_representante, l.teto_chave);
+    const ja = usado.get(k) ?? 0;
+    const linha = { ...l, teto_valor_centavos: u.valor_centavos };
+    if (ja + l.valor_base_centavos > u.valor_centavos) {
+      linha.incluida = false;
+      linha.motivo = `Excede o ${u.rotulo}: já comissionado ${reais(ja)} de ${reais(u.valor_centavos)}`;
+    } else {
+      usado.set(k, ja + l.valor_base_centavos);
+    }
+    saida[i] = linha;
+  }
+  return saida;
+}
+
+const reais = (centavos: number) => `R$ ${(centavos / 100).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /**
  * Representante sugerido para o cliente de um adiantamento: o do título mais recente (por emissão) desse cliente que é
@@ -174,7 +230,7 @@ export function valorDaPlanilha(v: unknown): number | null {
   return Number.isFinite(n) ? Math.round(n * 100) : null;
 }
 
-export type LinhaCreditoLida = { linha: number; data: string; cod_cliente: string; nome_cliente: string | null; valor_centavos: number };
+export type LinhaCreditoLida = { linha: number; data: string; cod_cliente: string; nome_cliente: string | null; valor_centavos: number; cod_pedido: string | null };
 
 /**
  * Lê a "Consulta de Créditos Cadastrados" da CCCCI010 (Data, Cliente, Descrição, Crédito, Baixado, Saldo, Portador…) ou
@@ -192,6 +248,7 @@ export function lerPlanilhaCreditos(linhas: unknown[][]): { creditos: LinhaCredi
     codigo: cab.findIndex((c) => (c.includes("cod") || c === "cliente") && !c.includes("nome")),
     nome: cab.findIndex((c) => c.includes("nome") || c.includes("razao") || c === "descricao"),
     valor: cab.findIndex((c) => c.includes("valor")) >= 0 ? cab.findIndex((c) => c.includes("valor")) : cab.findIndex((c) => c === "credito"),
+    pedido: cab.findIndex((c) => c.includes("pedido")),
   };
   if (col.codigo < 0) return { creditos: [], erros: ["Não achei a coluna do código do cliente."] };
   const creditos: LinhaCreditoLida[] = [];
@@ -208,7 +265,11 @@ export function lerPlanilhaCreditos(linhas: unknown[][]): { creditos: LinhaCredi
       erros.push(`Linha ${n}: ${!data ? "data inválida" : cod === "" ? "sem código do cliente" : "valor inválido"}.`);
       return;
     }
-    creditos.push({ linha: n, data, cod_cliente: cod, nome_cliente: col.nome >= 0 ? texto(l[col.nome]) || null : null, valor_centavos: valor });
+    const pedido = col.pedido >= 0 ? texto(l[col.pedido]).replace(/\.0$/, "") : "";
+    creditos.push({
+      linha: n, data, cod_cliente: cod, nome_cliente: col.nome >= 0 ? texto(l[col.nome]) || null : null, valor_centavos: valor,
+      cod_pedido: /^\d+$/.test(pedido) && Number(pedido) > 0 ? pedido.replace(/^0+/, "") : null,
+    });
   });
   return { creditos, erros };
 }
@@ -223,12 +284,14 @@ export function montarProposta(
   creditos: Credito[],
   titulosPorCliente: Record<string, { cod_representante: string | null; data_emissao: string | null }[]>,
   jaPagas: Set<string>,
+  unidades: Record<string, UnidadeTeto> = {},
+  anteriores: LinhaAnterior[] = [],
 ) {
   const { zComCredito, zSemCredito, creditosSemZ } = cruzarZComCreditos(titulos, creditos);
   const comissionados = [...new Set(representantes.filter((r) => r.ativo).flatMap((r) => r.recebe_de))];
   const adiantamentos = creditosSemZ.map((c) => ({ ...c, cod_representante_sugerido: representanteDoCliente(titulosPorCliente[c.cod_cliente] ?? [], comissionados) }));
   return {
-    linhas: proporLinhas(representantes, titulos, adiantamentos, jaPagas),
+    linhas: aplicarTeto(proporLinhas(representantes, titulos, adiantamentos, jaPagas), unidades, anteriores),
     creditosMarcados: [
       ...zComCredito.map((x) => ({ id: x.credito.id, cod_titulo_z: x.titulo.cod_titulo, cod_representante_sugerido: x.titulo.cod_representante })),
       ...adiantamentos.map((c) => ({ id: c.id, cod_titulo_z: null, cod_representante_sugerido: c.cod_representante_sugerido })),
