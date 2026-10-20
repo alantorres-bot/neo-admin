@@ -4,8 +4,8 @@ import { AlertTriangle, CalendarRange, Check, FileDown, Printer } from "lucide-r
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { MODULO_COMISSOES, ROTA_COMISSOES } from "@/lib/modulos/financeiro/comissoes/regras";
-import { resumirAno, type FechamentoResumo } from "@/lib/modulos/financeiro/comissoes/resumo";
+import { MODULO_COMISSOES, ROTA_COMISSOES } from "@/lib/modulos/comercial/comissoes/regras";
+import { resumirAno, type FechamentoResumo } from "@/lib/modulos/comercial/comissoes/resumo";
 import { formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { temAcessoModulo } from "@/lib/nucleo/permissoes";
@@ -23,7 +23,7 @@ const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "o
 const linkBotao = "inline-flex h-10 items-center gap-1.5 rounded-md border bg-background px-3 text-sm font-medium hover:bg-muted";
 const situacao = (f: FechamentoResumo) => (f.historico ? "Histórico (planilha)" : f.status === "fechado" ? "Fechado" : "Em conferência");
 
-export default async function PaginaComissoes({ searchParams }: PageProps<"/financeiro/comissoes">) {
+export default async function PaginaComissoes({ searchParams }: PageProps<"/comercial/comissoes">) {
   const sessao = await exigirSessao();
   const ehOperador = temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_COMISSOES, "operador");
   const ehGestor = temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_COMISSOES, "gestor");

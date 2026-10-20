@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ROTA_COMISSOES } from "@/lib/modulos/financeiro/comissoes/regras";
+import { ROTA_COMISSOES } from "@/lib/modulos/comercial/comissoes/regras";
 import { abrirFechamento, ajustarLinha, importarCreditos, importarHistorico, lancar, reabrirFechamento, salvarRepresentante, type Resultado } from "./acoes";
 
 const SELECT = "h-9 rounded-md border bg-background px-2 text-sm";

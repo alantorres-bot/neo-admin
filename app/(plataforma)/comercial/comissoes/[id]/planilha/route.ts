@@ -1,8 +1,8 @@
 // Download da planilha do fechamento de comissões (XLSX). Com ?rep=<código>, só a do representante (o relatório que vai
 // para ele); sem, uma aba por representante. Exige o módulo de comissões.
 import { NextResponse, type NextRequest } from "next/server";
-import { gerarPlanilhaComissoes, nomePlanilhaComissoes } from "@/lib/modulos/financeiro/comissoes/planilha";
-import { MODULO_COMISSOES } from "@/lib/modulos/financeiro/comissoes/regras";
+import { gerarPlanilhaComissoes, nomePlanilhaComissoes } from "@/lib/modulos/comercial/comissoes/planilha";
+import { MODULO_COMISSOES } from "@/lib/modulos/comercial/comissoes/regras";
 import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";

@@ -11,7 +11,6 @@ uma rotina que hoje é feita em planilha, e-mail, ERP ou skill avulsa.
 | Financeiro | Contas a pagar | Lista unificada de títulos e antecipações a fornecedor em aberto (API do Consistem), autorização de pagamento pela diretoria, histórico e relatório (ver `modulos/financeiro-contas-pagar.md`) | em construção |
 | Financeiro | Cartão de crédito | Conciliação da fatura do cartão (PDF) x títulos do espelho do Contas a pagar, sugestão de lançamentos, planilha (ver `modulos/financeiro-cartao.md`; Fase 1 entregue) | em construção |
 | Financeiro | Conciliação bancária | Extrato x lançamentos do ERP, pendências de baixa | 4 |
-| Financeiro | Comissões | Cálculo de comissão sobre parcelas pagas (relatório de títulos pagos) | 3 |
 | Financeiro | Fluxo de caixa | Previsão a partir de recebíveis, pagáveis e parcelamentos | 5 |
 | **Fiscal/Tributário** | Parcelamentos | Acordos (Receita, PGFN, SEFAZ/MT, PGE/MT), parcelas, risco de rescisão | 2 |
 | Fiscal/Tributário | Análise de entradas | Conferência semanal de CFOP/CST/bases (CCESE735) | 4 |
@@ -26,6 +25,7 @@ uma rotina que hoje é feita em planilha, e-mail, ERP ou skill avulsa.
 | RH/SST | EPIs | Entregas por colaborador, vencimentos, análise mensal | 4 |
 | RH/SST | Vale-transporte | Apuração mensal do VT de Cuiabá (dias, faltas, extras, tarifa), aprovação, arquivo do BB, PIX e títulos no Consistem (ver `modulos/rh-vale-transporte.md`; Fases A, B e C entregues em 14/10/2026: cadastro, mês a mês com ocorrências, aprovação, relatório, arquivo do BB, PIX, resumo do ano, histórico 2026 e títulos no Consistem) | em construção |
 | **Comercial** | Pedidos | Carteira e previsão de faturamento, expedição (separação, NF, transporte, MDF-e), títulos e comissão do representante, pós-venda (cancelamentos e devoluções), tudo pela API Comercial do Consistem, só leitura na v1 (ver `modulos/comercial-pedidos.md`; Fase 0 e Fase 1 (carteira e faturamento) em 19/10/2026) | em construção |
+| Comercial | Comissões | Fechamento mensal da comissão dos representantes (títulos pagos + CCCCI010), histórico das planilhas, teto por pedido, relatório e extrato por representante (ver `modulos/comercial-comissoes.md`; movido do Financeiro em 20/10/2026) | em construção |
 | **Administrativo geral** | POPs | Procedimentos padrão por área, versionados | 5 |
 
 Prioridade: 1 = primeiro a construir. Ajustável.

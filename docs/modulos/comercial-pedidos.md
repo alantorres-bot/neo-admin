@@ -21,7 +21,7 @@ Os dados vêm da **API Comercial v1.0 do Consistem**. A v1 **só lê** o ERP.
   - o que mais incomoda na rotina hoje.
 - **Comissão dos representantes:** calculada pelo Alan em **Excel**, fora do Consistem. Nas NFs e nos títulos a comissão vem zerada, mas o extrato de comissões do Consistem tem lançamentos (3ª sondagem, §10).
   - Para o Fernando há a planilha anual "Comissões Fernando - 2026.xlsx", alimentada pelo relatório de títulos pagos.
-  - A Fase 3 deve entregar ao Financeiro > Comissões os dados que hoje vão para o Excel: representante de cada pedido e NF, parcelas e baixas. Assim o Excel pode ser substituído.
+  - A Fase 3 deve entregar ao Comercial > Comissões os dados que hoje vão para o Excel: representante de cada pedido e NF, parcelas e baixas. Assim o Excel pode ser substituído.
 
 ## 3. Escopo
 | Entra | Fica fora |
@@ -82,7 +82,7 @@ O token, o cabeçalho `empresa` e o retry de 429 são os mesmos das outras integ
 - **Fase 1:** `com_pedidos`, `com_pedido_itens`, `com_notas` (NF por pedido) e `com_sincronizacoes`.
 - **Fases seguintes:** `com_nota_titulos` (Fase 3), `com_devolucoes` (Fase 4).
 - **Integração com outros módulos:** sem acesso a tabelas internas.
-  - Financeiro > Comissões e Recebíveis leem views públicas documentadas (ex.: `com_vw_titulos_nota`).
+  - Comercial > Comissões e Recebíveis leem views públicas documentadas (ex.: `com_vw_titulos_nota`).
   - O Comercial lê os títulos em aberto direto da API, não de `rec_titulos`.
 
 ## 9. Permissões

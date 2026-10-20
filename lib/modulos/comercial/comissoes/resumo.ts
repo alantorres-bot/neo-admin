@@ -1,4 +1,4 @@
-// Financeiro / Comissões: totais por mês e por representante (painel e extrato do ano). Puro; valores em centavos.
+// Comercial / Comissões: totais por mês e por representante (painel e extrato do ano). Puro; valores em centavos.
 
 export type Totais = { total: number; antecipado: number; saldo: number };
 export type FechamentoResumo = { id: string; competencia: string; status: "em_conferencia" | "fechado"; historico: boolean; fechado_em: string | null };

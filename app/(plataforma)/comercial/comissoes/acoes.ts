@@ -3,11 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { lerBuffer } from "@/lib/integracoes/importador/ler-arquivo";
-import { anoDoArquivo, lerPlanilhaHistorico } from "@/lib/modulos/financeiro/comissoes/historico";
+import { anoDoArquivo, lerPlanilhaHistorico } from "@/lib/modulos/comercial/comissoes/historico";
 import {
   lerPlanilhaCreditos, montarProposta, MODULO_COMISSOES, ROTA_COMISSOES, type Credito, type LinhaAnterior, type Representante, type TituloPago,
   type UnidadeTeto,
-} from "@/lib/modulos/financeiro/comissoes/regras";
+} from "@/lib/modulos/comercial/comissoes/regras";
 import { mensagemDeErroBanco } from "@/lib/nucleo/erros";
 import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
@@ -21,7 +21,7 @@ const erro = (e: { code?: string; message: string }): Resultado => ({ ok: false,
 async function exigir(nivel: "operador" | "gestor") {
   const sessao = await exigirSessao();
   if (!temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_COMISSOES, nivel)) {
-    return { ok: false as const, erro: `Somente ${nivel} do Financeiro (ou acima) pode fazer isso nas comissões.` };
+    return { ok: false as const, erro: `Somente ${nivel} do Comercial (ou acima) pode fazer isso nas comissões.` };
   }
   return { ok: true as const };
 }

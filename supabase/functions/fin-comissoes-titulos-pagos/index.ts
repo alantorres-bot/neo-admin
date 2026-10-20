@@ -1,4 +1,4 @@
-// Edge Function do módulo Financeiro / Comissões (docs/modulos/financeiro-comissoes.md). SÓ LÊ o Consistem.
+// Edge Function do módulo Comercial / Comissões (docs/modulos/comercial-comissoes.md). SÓ LÊ o Consistem.
 // Devolve os títulos pagos de um mês com o representante, o cliente e o tipo de baixa de cada um (a lista de pagos não
 // traz esses campos: vêm de contasReceber/{codTitulo}) e, para os clientes pedidos (adiantamentos sem título Z), os
 // títulos deles com representante e emissão, para sugerir de quem é o adiantamento. A proposta é calculada no app.
@@ -7,7 +7,7 @@
 // adiantamentos), devolve o valor (total − cancelado) e todos os títulos que ele gerou (NFs do pedido → /titulo), para o
 // app somar o que já foi comissionado. NF sem pedido (ou de mais de um pedido): a unidade é a própria NF.
 //
-// Quem pode chamar: usuário com nível de operador (ou acima) no módulo financeiro.comissoes; ou a service role.
+// Quem pode chamar: usuário com nível de operador (ou acima) no módulo comercial.comissoes; ou a service role.
 // Corpo: { "mes": "aaaa-mm", "clientes"?: string[] (até 50), "pedidos"?: string[] (até 50) }
 //
 // Deploy: npx supabase functions deploy fin-comissoes-titulos-pagos --project-ref chdszjpbtfpstjrqnmmm
@@ -18,7 +18,7 @@ import {
 } from "../_shared/consistem-receber.ts";
 import { ehNotaSemTitulos, normalizarNotaPedido, normalizarParcela, normalizarPedidoCompleto } from "../_shared/consistem-comercial.ts";
 
-const MODULO = "financeiro.comissoes";
+const MODULO = "comercial.comissoes";
 const MAX_TITULOS = 400;
 const MAX_CLIENTES = 50;
 const MAX_UNIDADES = 80;
@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     const { data: quem, error: erroUsuario } = await comoUsuario.auth.getUser();
     if (erroUsuario || !quem.user) return responder({ erro: "Sessão inválida." }, 401);
     const { data: permitido, error: erroPermissao } = await comoUsuario.rpc("tem_acesso_modulo", { p_modulo: MODULO, p_minimo: "operador" });
-    if (erroPermissao || permitido !== true) return responder({ erro: "Somente operador do Financeiro (ou acima) monta o fechamento de comissões." }, 403);
+    if (erroPermissao || permitido !== true) return responder({ erro: "Somente operador do Comercial (ou acima) monta o fechamento de comissões." }, 403);
   }
   if (token.trim().length < 50) return responder({ erro: "O segredo CONSISTEM_API_KEY não está configurado neste projeto." }, 500);
 

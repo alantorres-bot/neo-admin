@@ -1,4 +1,4 @@
-// Financeiro / Comissões: leitura da planilha anual "Comissões <Nome> - <ano>.xlsx" (uma aba por mês) para o histórico
+// Comercial / Comissões: leitura da planilha anual "Comissões <Nome> - <ano>.xlsx" (uma aba por mês) para o histórico
 // do que já foi pago antes do sistema (regra 13). Puro e testado; valores em centavos.
 import { dataDaPlanilha, valorDaPlanilha, type Tipo } from "./regras";
 

@@ -20,6 +20,10 @@ const nextConfig: NextConfig = {
   distDir: process.env.NEO_DIST_DIR ?? ".next",
   // Imagem de contêiner (Dockerfile): servidor autônomo em `.next/standalone`. Fora do contêiner o `next start` segue normal.
   output: process.env.NEO_STANDALONE === "1" ? "standalone" : undefined,
+  // Comissões saiu do Financeiro e foi para o Comercial (20/10/2026): links e favoritos antigos continuam funcionando.
+  async redirects() {
+    return [{ source: "/financeiro/comissoes/:caminho*", destination: "/comercial/comissoes/:caminho*", permanent: true }];
+  },
   async headers() {
     return [{ source: "/:path*", headers: CABECALHOS_DE_SEGURANCA }];
   },

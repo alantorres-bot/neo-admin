@@ -1,8 +1,8 @@
-// Financeiro / Comissões: regras do fechamento mensal (puras e testadas). Especificação: docs/modulos/financeiro-comissoes.md.
+// Comercial / Comissões: regras do fechamento mensal (puras e testadas). Especificação: docs/modulos/comercial-comissoes.md.
 // Valores em centavos inteiros; datas 'aaaa-mm-dd'. Nada aqui inventa percentual: vêm do cadastro de representantes.
 
-export const MODULO_COMISSOES = "financeiro.comissoes";
-export const ROTA_COMISSOES = "/financeiro/comissoes";
+export const MODULO_COMISSOES = "comercial.comissoes";
+export const ROTA_COMISSOES = "/comercial/comissoes";
 
 /** Baixas que NÃO geram comissão (regra 4): 7 Antecipação, 8 Devolução de cliente, 11 Perdas. */
 export const BAIXAS_SEM_COMISSAO = ["7", "8", "11"];

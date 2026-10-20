@@ -1,6 +1,6 @@
-# Módulo: Financeiro / Comissões
+# Módulo: Comercial / Comissões
 
-Status: em construção. Fase 1 construída e publicada em 19/10/2026 (migration 0171, função fin-comissoes-titulos-pagos, telas em /financeiro/comissoes).
+Status: em construção. Fase 1 construída e publicada em 19/10/2026 (migration 0171, função fin-comissoes-titulos-pagos, telas em /comercial/comissoes).
 
 ## 1. Objetivo
 Fechar todo mês a comissão dos representantes no Neo Admin, no lugar das planilhas "Comissões <Nome> - 2026.xlsx".
@@ -114,7 +114,7 @@ Hipótese testada: o **Heitor** recebe pelos títulos do representante 7, e o **
 | Importação do relatório da CCCCI010 como 1º passo do fechamento, cruzamento Z × crédito e alerta "Z sem crédito" | Lançamentos que não vêm do Consistem continuam manuais (contrato, ajustes) |
 | Relatório do fechamento (imprimir e Excel) e histórico | Controle "título Z sem crédito na CCCCI010" (fica em Recebíveis) |
 
-## 6. Telas (`/financeiro/comissoes`)
+## 6. Telas (`/comercial/comissoes`)
 - **Fechamentos:** lista por mês e representante, com a situação (em conferência / fechado), o total, o antecipado e o saldo.
 - **Fechamento do mês:**
   - botão "Buscar títulos pagos do mês" (Edge Function);
@@ -165,7 +165,7 @@ Hipótese testada: o **Heitor** recebe pelos títulos do representante 7, e o **
 - `titulosPagos` do mês e `contasReceber/{codTitulo}` de cada título: representante, cliente, tipo de baixa e comissão do Consistem na liquidação.
 - Títulos dos clientes de adiantamento (`contasReceber?listaCliente=&tipoTitulo=3`), para sugerir o representante.
 
-**Proposta** (`lib/modulos/financeiro/comissoes/regras.ts`, `montarProposta`)
+**Proposta** (`lib/modulos/comercial/comissoes/regras.ts`, `montarProposta`)
 - cruzamento Z × crédito (cliente + data + valor);
 - adiantamento = crédito sem Z, com o representante do título mais recente do cliente;
 - hierarquia, Filial fora, baixas 7/8/11 fora, venda/locação;
@@ -173,15 +173,15 @@ Hipótese testada: o **Heitor** recebe pelos títulos do representante 7, e o **
 - **Refazer a busca mantém as decisões da conferência.**
 
 **Telas**
-- `/financeiro/comissoes`: fechamentos e "abrir mês".
-- `/financeiro/comissoes/<id>`:
+- `/comercial/comissoes`: fechamentos e "abrir mês".
+- `/comercial/comissoes/<id>`:
   - 1. créditos;
   - 2. títulos pagos e o alerta "Z sem crédito";
   - 3. uma grade por representante, com incluir/excluir (com motivo), venda/locação e totais (total − antecipado = saldo);
   - lançamentos;
   - 4. fechar (gestor).
-- `/financeiro/comissoes/representantes`.
-- **Saídas:** impressão `/imprimir/comissoes/<id>` e Excel `/financeiro/comissoes/<id>/planilha`, uma aba por representante no formato da planilha.
+- `/comercial/comissoes/representantes`.
+- **Saídas:** impressão `/imprimir/comissoes/<id>` e Excel `/comercial/comissoes/<id>/planilha`, uma aba por representante no formato da planilha.
 
 **Simulação com os dados reais (sem a planilha da CCCCI010): bate com as planilhas centavo a centavo, explicadas as diferenças**
 
@@ -232,7 +232,7 @@ Hipótese testada: o **Heitor** recebe pelos títulos do representante 7, e o **
 - **Relatório por representante (20/10/2026):** impressão e Excel com `?rep=<código>`. O nome do arquivo leva o representante ("Comissões Heitor Selerges - 09-2026").
 
 ## 14. Painel e extrato do ano (20/10/2026)
-- **`/financeiro/comissoes`, o painel, de cima para baixo:**
+- **`/comercial/comissoes`, o painel, de cima para baixo:**
   - aviso do mês em conferência, com o motivo da reabertura;
   - resumo do ano: comissão, antecipações, saldo e "a pagar" do último mês;
   - gráfico da comissão por mês, por representante (antes das antecipações);
@@ -240,5 +240,10 @@ Hipótese testada: o **Heitor** recebe pelos títulos do representante 7, e o **
   - cartões por representante com Relatório do mês, Extrato do ano e Excel;
   - fechamentos do ano com o saldo de cada um e o relatório na linha.
 - **Seletor de ano:** `?ano=`.
-- **Cálculo:** `lib/modulos/financeiro/comissoes/resumo.ts` (`resumirAno`, testado).
+- **Cálculo:** `lib/modulos/comercial/comissoes/resumo.ts` (`resumirAno`, testado).
 - **Extrato do ano:** `/imprimir/comissoes/extrato?rep=<código>&ano=<aaaa>`, com mês a mês comissão, antecipado, saldo e situação, os totais do ano e a mesma folha do relatório mensal (logo, assinaturas).
+
+## 15. Mudança para o Comercial (20/10/2026)
+- **O que mudou:** a pedido do Alan, o módulo saiu do Financeiro e foi para o Comercial: código `comercial.comissoes`, rota `/comercial/comissoes` (a antiga redireciona), migration 0703.
+- **Acesso:** passa a ser pela permissão da área **Comercial**. Quem só tem o Financeiro deixa de ver Comissões.
+- **O que não mudou:** as tabelas `fin_com_*` e a Edge Function `fin-comissoes-titulos-pagos` mantêm o nome. Renomear tabelas com registros de prova e auditoria não traz ganho.

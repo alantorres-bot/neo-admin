@@ -3,6 +3,7 @@ import type { PGlite } from "@electric-sql/pglite";
 import { como, criarBanco, novoUsuario, type Linha } from "./harness";
 
 let db: PGlite;
+// Comissões está na área Comercial (0703): os "fin*" têm o Comercial; comGestor é gestor do Financeiro (sem acesso).
 let finConsulta: string, finOperador: string, finGestor: string, comGestor: string;
 let setembro: string;
 
@@ -16,15 +17,15 @@ const linha = (o: Record<string, unknown>) => ({
 beforeAll(async () => {
   db = await criarBanco();
   await novoUsuario(db, "admin@neo.com"); // o primeiro usuário vira admin_geral (migration 0003)
-  finConsulta = await novoUsuario(db, "fin.consulta@neo.com", { financeiro: "consulta" });
-  finOperador = await novoUsuario(db, "fin.operador@neo.com", { financeiro: "operador" });
-  finGestor = await novoUsuario(db, "fin.gestor@neo.com", { financeiro: "gestor" });
-  comGestor = await novoUsuario(db, "com.gestor@neo.com", { comercial: "gestor" });
+  finConsulta = await novoUsuario(db, "fin.consulta@neo.com", { comercial: "consulta" });
+  finOperador = await novoUsuario(db, "fin.operador@neo.com", { comercial: "operador" });
+  finGestor = await novoUsuario(db, "fin.gestor@neo.com", { comercial: "gestor" });
+  comGestor = await novoUsuario(db, "fin.outro@neo.com", { financeiro: "gestor" });
 });
 
 describe("cadastro (0171)", () => {
   it("módulo ativo e Fernando/Heitor com os percentuais das planilhas", async () => {
-    expect((await q(`select ativo from modulos where codigo = 'financeiro.comissoes'`)).rows[0].ativo).toBe(true);
+    expect((await q(`select ativo from modulos where codigo = 'comercial.comissoes'`)).rows[0].ativo).toBe(true);
     const r = (await q(`select cod_representante, perc_venda, perc_locacao, recebe_de from fin_com_representantes order by cod_representante`)).rows;
     expect(r).toEqual([
       { cod_representante: "3", perc_venda: "1.500", perc_locacao: "3.000", recebe_de: ["3", "7"] },

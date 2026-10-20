@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { MODULO_COMISSOES, ROTA_COMISSOES } from "@/lib/modulos/financeiro/comissoes/regras";
+import { MODULO_COMISSOES, ROTA_COMISSOES } from "@/lib/modulos/comercial/comissoes/regras";
 import { formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { formatarData, FUSO } from "@/lib/nucleo/fila";
 import { temAcessoModulo } from "@/lib/nucleo/permissoes";
@@ -54,7 +54,7 @@ function Etapa({ n, titulo, situacao, estado, children }: { n: number; titulo: s
   );
 }
 
-export default async function PaginaFechamento({ params, searchParams }: PageProps<"/financeiro/comissoes/[id]">) {
+export default async function PaginaFechamento({ params, searchParams }: PageProps<"/comercial/comissoes/[id]">) {
   const { id } = await params;
   if (!UUID.test(id)) notFound();
   const sessao = await exigirSessao();
