@@ -330,8 +330,8 @@ Código puro: `lib/modulos/financeiro/cartao/` (`texto`, `cartoes` — porta do 
    espelho usamos `valor_atualizado` (saldo) em aberto e `valor_documento` após a baixa. Confirmar na primeira fatura real.
 2. **Tipo de título** (7, 8, 9, 10, 73, 75): se algum campo do espelho (`categoria_doc`? `cod_historico`?) trouxer esse código, a
    seleção dos títulos passa a ser exata e o complemento vira só conferência.
-3. **Leitores Inter e Unicred calibrados em 12/10/2026** (senhas informadas pelo Alan; nunca gravadas). Ainda sem leitor próprio:
-   **Itaú PJ e Nubank PF** (nenhuma fatura deles na pasta do Drive). Os PDFs "Inter_Agosto_Contagem.pdf" e "1026 -INTER CONTAGEM.pdf"
+3. **Leitores Inter e Unicred calibrados em 12/10/2026** (senhas informadas pelo Alan; nunca gravadas). Leitor Nubank calibrado em 20/10/2026
+   (PDF sem senha). Ainda sem leitor próprio: **Itaú PJ** (nenhuma fatura dele na pasta do Drive). Os PDFs "Inter_Agosto_Contagem.pdf" e "1026 -INTER CONTAGEM.pdf"
    (INTER PJ) **não abriram com nenhuma das duas senhas** — provavelmente usam a senha do titular do cartão PJ.
    Arquivamento: `ITAÚ PJ/08.AGOSTO/FATURA INFINITE_Agosto.pdf` é na verdade a **Unicred Visa Infinite** (vence 19/08, débito em
    conta); `INTER PJ/08.AGOSTO/Fatura (20) 012165 - senha.pdf` é a fatura **Inter PF** (vence 28/08).
@@ -376,6 +376,14 @@ Código puro: `lib/modulos/financeiro/cartao/` (`texto`, `cartoes` — porta do 
   "TOTAL: R$", "VENCIMENTO: 19 AGO 2026"). Migration `0132_crt_leitores_inter_unicred.sql` (aplicada e registrada em produção):
   INTER PF/PJ → `inter`, UNICRED PF → `unicred`. Calibração: Inter 08/2026 (14 linhas, R$ 4.731,40) e Unicred 08/2026 (21 linhas,
   R$ 9.878,23) fecham com o total impresso. Testes sintéticos em `leitores/inter-unicred.test.ts`.
+- **Leitor Nubank (20/10/2026):** `leitores/nubank.ts` — seção "TRANSAÇÕES", data "20 SET" sem ano, "•••• 4589" (final do cartão)
+  fora da descrição, " - Parcela 5/8" no fim, "−R$" (U+2212) = crédito, linhas de conversão de moeda e subtotais sem data ignorados.
+  Fatura paga em atraso: os pares "Saldo em atraso" × "Crédito de atraso" e "Juros de dívida encerrada" × "Encerramento de dívida"
+  são descartados (se anulam; o segundo é a soma de multa + IOF + juros de atraso, que ficam como encargos); par sem contrapartida
+  fica na conta com aviso. "IOF de" × "IOF de volta de" seguem para a compensação do motor. Total = "Total a pagar" da página
+  "RESUMO DA FATURA ATUAL" (a página 2 tem outro, da simulação de parcelamento). Migration `0174_crt_leitor_nubank.sql`:
+  NUBANK PF → `nubank`. Calibração: Nubank PF 10/2026 (51 linhas, 5 descartadas, R$ 13.145,19) fecha com o total impresso.
+  Testes sintéticos em `leitores/nubank.test.ts`.
 - Observação de arquivamento: na pasta `SICREDI PJ/08.AGOSTO` há duas faturas — `SICREDI.pdf` é o Visa Empresas (vence 23/08, o
   SICREDI PJ) e `sicredi_AGOSTO - PJ.pdf` é a Mastercard Black que vence dia 10 (ou seja, o SICREDI PF, guardado na pasta errada).
 - **Títulos do borderô pela API (12/10/2026):** Edge Function `cap-sincronizar-consistem` ganhou a ação só de leitura
@@ -421,7 +429,7 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
 - **Relatório de impressão: feito.** Página `app/(impressao)/imprimir/cartao/ciclo/[id]/page.tsx` (reusa o botão de impressão do
   Contas a pagar), botão "Imprimir / salvar PDF" na página do mês. Conferido com a Sicredi PF 10/2026.
 - **Aviso de fechamento do cartão:** já entregue na Fase 2 (pendência "Importar fatura").
-- **Leitores Itaú PJ e Nubank PF:** aguardando uma fatura de cada na pasta do Drive (o PDF da pasta ITAÚ PJ é da Unicred).
+- **Leitor Itaú PJ:** aguardando uma fatura na pasta do Drive (o PDF da pasta ITAÚ PJ é da Unicred). Nubank PF: feito em 20/10/2026.
 - **Regra fornecedor → cartão do Neo Fiscal: feita no Neo Admin** (decisão do Alan: função pública de leitura no Neo Fiscal).
   Migration `0136_crt_regras_fornecedor.sql` (aplicada e registrada em produção; job `crt-sincronizar-regras-diario` ativo),
   Edge Function `crt-sincronizar-regras` (publicada; lógica pura em `_shared/regras-cartao.ts`), segredos `NEO_FISCAL_SEGREDO`

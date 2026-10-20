@@ -3,11 +3,12 @@ import type { CodigoLeitor } from "../modulo";
 import { lerGenerico } from "./generico";
 import { lerInter } from "./inter";
 import { lerUnicred } from "./unicred";
+import { lerNubank } from "./nubank";
 import { lerPicpay } from "./picpay";
 import { lerSicredi } from "./sicredi";
 import type { ContextoLeitura, Leitor, PaginaTexto, ResultadoLeitura } from "./tipos";
 
-export const LEITOR: Record<CodigoLeitor, Leitor> = { sicredi: lerSicredi, picpay: lerPicpay, inter: lerInter, unicred: lerUnicred, generico: lerGenerico };
+export const LEITOR: Record<CodigoLeitor, Leitor> = { sicredi: lerSicredi, picpay: lerPicpay, inter: lerInter, unicred: lerUnicred, nubank: lerNubank, generico: lerGenerico };
 
 export function lerFatura(leitor: CodigoLeitor, paginas: readonly PaginaTexto[], contexto: ContextoLeitura): ResultadoLeitura {
   return LEITOR[leitor](paginas, contexto);

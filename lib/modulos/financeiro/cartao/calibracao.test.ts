@@ -14,8 +14,8 @@ import type { CodigoLeitor } from "./modulo";
 const PASTA = process.env.NEO_AMOSTRAS_CARTAO;
 
 // Leitor esperado pela pasta; como há faturas guardadas na pasta errada (caso real), o teste aceita qualquer leitor que feche.
-const leitorDaPasta = (pasta: string): CodigoLeitor => (/SICREDI/i.test(pasta) ? "sicredi" : /PICPAY/i.test(pasta) ? "picpay" : /INTER/i.test(pasta) ? "inter" : /UNICRED/i.test(pasta) ? "unicred" : "generico");
-const TODOS: CodigoLeitor[] = ["sicredi", "picpay", "inter", "unicred", "generico"];
+const leitorDaPasta = (pasta: string): CodigoLeitor => (/SICREDI/i.test(pasta) ? "sicredi" : /PICPAY/i.test(pasta) ? "picpay" : /INTER/i.test(pasta) ? "inter" : /UNICRED/i.test(pasta) ? "unicred" : /NUBANK/i.test(pasta) ? "nubank" : "generico");
+const TODOS: CodigoLeitor[] = ["sicredi", "picpay", "inter", "unicred", "nubank", "generico"];
 
 function listarPdfs(raiz: string): { cartao: string; caminho: string }[] {
   const saida: { cartao: string; caminho: string }[] = [];

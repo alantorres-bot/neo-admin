@@ -4,13 +4,14 @@ export const MODULO_CARTAO = "financeiro.cartao";
 export const ROTA_CARTAO = "/financeiro/cartao";
 
 /** Leitores de fatura disponíveis (coluna `crt_cartoes.leitor`). `generico` é o plano B para emissor ainda não calibrado. */
-export const LEITORES = ["sicredi", "picpay", "inter", "unicred", "generico"] as const;
+export const LEITORES = ["sicredi", "picpay", "inter", "unicred", "nubank", "generico"] as const;
 export type CodigoLeitor = (typeof LEITORES)[number];
 export const ROTULO_LEITOR: Record<CodigoLeitor, string> = {
   sicredi: "Sicredi (PDF em colunas)",
   picpay: "PicPay (PDF em duas colunas)",
   inter: "Inter (PDF com senha; data por extenso)",
   unicred: "Unicred Visa (PDF com senha; letras espaçadas)",
+  nubank: "Nubank (PDF sem senha; seção Transações)",
   generico: "Genérico (data, descrição e valor por linha)",
 };
 export const ehLeitor = (v: string): v is CodigoLeitor => (LEITORES as readonly string[]).includes(v);
