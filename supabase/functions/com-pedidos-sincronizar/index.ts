@@ -333,15 +333,18 @@ async function extratoComissoes(mes: string, cfg: ConfigConsistem, empresa: stri
     const pagos = await buscarTodasPaginas(buscar, cfg, "financeiro/v10/titulosPagos", { dataInicio: inicio, dataFim: fim }, { campoLista: "titulosPagos" });
 
     // Tipo de baixa de cada título pago (titulosPagos não traz): contasReceber/{codTitulo}.
-    const tipoBaixa = new Map<string, unknown>();
+    const tipoBaixa = new Map<string, Record<string, unknown>>();
     for (const t of pagos.slice(0, MAX_TITULOS_TIPO_BAIXA)) {
       const cod = String(t.codTitulo ?? "").trim();
       if (!cod || tipoBaixa.has(cod)) continue;
       try {
         const r = await buscarObjeto(buscar, cfg, `financeiro/v10/contasReceber/${encodeURIComponent(cod)}`);
-        tipoBaixa.set(cod, r.tipoBaixa ?? null);
+        tipoBaixa.set(cod, {
+          tipoBaixa: r.tipoBaixa ?? null, codRepresentante: r.codRepresentante ?? null, percComissao: r.percComissao ?? null,
+          valorComissaoFaturamento: r.valorComissaoFaturamento ?? null, valorComissaoLiquidacao: r.valorComissaoLiquidacao ?? null,
+        });
       } catch (erro) {
-        tipoBaixa.set(cod, `erro: ${erroDe(erro).mensagem.slice(0, 80)}`);
+        tipoBaixa.set(cod, { erro: erroDe(erro).mensagem.slice(0, 80) });
       }
     }
 
@@ -359,7 +362,7 @@ async function extratoComissoes(mes: string, cfg: ConfigConsistem, empresa: stri
       })),
       titulosPagos: pagos.map((t) => ({
         codTitulo: t.codTitulo, vlrTitulo: t.vlrTitulo, vlrPago: t.vlrPago, dataVencimento: t.dataVencimento,
-        dataPagamento: t.dataPagamento, notaFiscal: t.notaFiscal, tipoBaixa: tipoBaixa.get(String(t.codTitulo ?? "").trim()) ?? "não consultado",
+        dataPagamento: t.dataPagamento, notaFiscal: t.notaFiscal, ...(tipoBaixa.get(String(t.codTitulo ?? "").trim()) ?? { tipoBaixa: "não consultado" }),
       })),
     });
   } catch (erro) {
