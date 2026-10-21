@@ -5,7 +5,7 @@
 // ambíguos) vão para "outros", base do alerta de cartão trocado. Valor: saldo (`valor_atualizado`) enquanto aberto; valor
 // do documento quando já baixado no Consistem.
 import { identificarCartaoDoTitulo, regraVigente, type CartaoInfo, type RegraCartao } from "./cartoes";
-import { JANELA_VENCIMENTO, type TituloPagar } from "./conciliacao";
+import { JANELA_VENCIMENTO, toleranciaCompraInteira, type TituloPagar } from "./conciliacao";
 import { diasEntre, normalizar } from "./texto";
 
 export type LancamentoEspelho = {
@@ -140,7 +140,7 @@ export function titulosCheiosForaDaJanela(
 ): TituloPagar[] {
   const janela = opcoes.janela ?? JANELA_VENCIMENTO;
   const alvos = linhas.filter((l) => (l.parcelaNum ?? 1) > 1 && (l.parcelaTotal ?? 1) >= (l.parcelaNum ?? 1) && l.valorCentavos > 0)
-    .map((l) => ({ cheio: (l.parcelaTotal ?? 1) * l.valorCentavos, folga: (l.parcelaTotal ?? 1) + 5 }));
+    .map((l) => ({ cheio: (l.parcelaTotal ?? 1) * l.valorCentavos, folga: toleranciaCompraInteira(l.parcelaTotal ?? 1) }));
   if (alvos.length === 0) return [];
   const saida: TituloPagar[] = [];
   for (const l of lancamentos) {

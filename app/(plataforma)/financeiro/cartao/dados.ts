@@ -11,7 +11,7 @@ import type { CategoriaFornecedor, ContaFluxo, ListasConsistem } from "@/lib/mod
 import { montarProvisorio, type Provisorio } from "@/lib/modulos/financeiro/cartao/provisorio";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { lerCampos, padraoSugerido, sugestaoDaLinha, type EstabelecimentoCodigos, type Sugestao } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
-import { JANELA_VENCIMENTO } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { JANELA_VENCIMENTO, toleranciaCompraInteira } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { FUSO } from "@/lib/nucleo/fila";
 import { urlAssinadaAnexo } from "@/lib/nucleo/anexos";
 import type { SituacaoCiclo } from "@/lib/modulos/financeiro/cartao/ciclos";
@@ -185,7 +185,7 @@ async function lerCheiosForaDaJanela(supabase: Cliente, empresaId: string, linha
   const faixas = linhas.filter((l) => (l.parcelaNum ?? 1) > 1 && (l.parcelaTotal ?? 1) >= (l.parcelaNum ?? 1) && l.valorCentavos > 0)
     .map((l) => (l.parcelaTotal ?? 1) * l.valorCentavos);
   if (faixas.length === 0) return [];
-  const folga = 60;   // centavos: N + 5 com N ≤ 48, arredondado para cima
+  const folga = toleranciaCompraInteira(48);   // a maior folga possível (N ≤ 48); o filtro exato é feito depois
   const { data, error } = await supabase.from("cap_lancamentos")
     .select("id, cod_lancamento, num_documento, cod_fornecedor, complemento_historico, categoria_doc, data_vencimento, data_emissao, valor_documento, valor_atualizado, baixado_em, tipo_lancamento, cod_banco, cod_historico")
     .eq("empresa_id", empresaId).eq("tipo_lancamento", "C").is("baixado_em", null).gt("valor_atualizado", 0)

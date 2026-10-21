@@ -185,10 +185,11 @@ describe("conciliar com decisões por item (Fase 2b)", () => {
   });
   const base = { cartao: SICREDI, cartoes: CARTOES_TESTE, vencimento: "2026-10-10", totalInformadoCentavos: Math.round(total * 100), linhas, estabelecimentos: DICIONARIO };
 
-  it("sem decisões: 4 pendentes (anuidade, crédito, Ckt, Belenus) e o título do Belenus como divergência", () => {
+  it("sem decisões: 4 pendentes (anuidade, crédito, Ckt, Belenus a desdobrar: NF de 10 × parcela com R$ 0,36 de diferença)", () => {
     const r = conciliar({ ...base, titulos: [tShock, tBelenus], titulosExtras: [tTrocado] });
     expect(r.pendentes).toBe(4);
-    expect(r.divergencias.map((d) => d.titulo.codLancamento)).toEqual(["658604"]);
+    expect(r.divergencias).toEqual([]);
+    expect(r.aDesdobrar?.map((p) => p.titulo.codLancamento)).toEqual(["658604"]);
     expect(r.contagens.titulos).toBe(2);   // o título de outro cartão não entra sozinho
   });
 
@@ -279,12 +280,12 @@ describe("compra parcelada lançada pelo total (regra 61)", () => {
     expect(r.residuoCentavos).toBe(0);
   });
 
-  it("tolerância: arredondamento do emissor de até N centavos (+ 5); acima disso não casa", () => {
+  it("tolerância: arredondamento do emissor de até 10 centavos por parcela (+ 5); acima disso não casa", () => {
     const perto = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [compra()], titulos: [titulo("NF", 2994.8)] });
     expect(perto.aDesdobrar?.[0].diferencaCentavos).toBe(2);
-    const limite = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [compra()], titulos: [titulo("NF", 2994.89)] });
+    const limite = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [compra()], titulos: [titulo("NF", 2995.43)] });
     expect(limite.aDesdobrar).toHaveLength(1);
-    const longe = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [compra()], titulos: [titulo("NF", 2994.9)] });
+    const longe = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [compra()], titulos: [titulo("NF", 2995.44)] });
     expect(longe.aDesdobrar).toEqual([]);
     expect(longe.aLancar).toHaveLength(1);
     expect(longe.divergencias).toHaveLength(1);

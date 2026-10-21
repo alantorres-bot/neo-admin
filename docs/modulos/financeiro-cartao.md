@@ -256,7 +256,7 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     `financeiro.cartao.trocar_portador_no_erp` (começa desligada: o primeiro envio real é acompanhado pelo Alan).
 61. **Compra parcelada com a NF lançada pelo total** (caso real Unicred PF 10/2026, 14/10/2026; migration 0165): linha "1/N"
     (N ≥ 2, valor positivo, sem justificativa) sem título × título do cartão sem linha (não antecipação) de valor ≈ N × parcela,
-    com tolerância de **N centavos + 5** (arredondamento do emissor). Um título por linha; vence a menor diferença, a descrição
+    com tolerância de **10 centavos por parcela + 5** (arredondamento do emissor; era N centavos + 5 até 21/10/2026, quando o EC*PICHAU 12 × R$ 571,98 × NF R$ 6.862,88 ficou de fora; migration 0178). Um título por linha; vence a menor diferença, a descrição
     desempata. O par vai para **"a desdobrar"** (`aDesdobrar`): sai de "A lançar" (lançar de novo duplicaria a compra) e das
     divergências; conta como **pendente** e **bloqueia o fechamento**; no quadro, "compra parcelada lançada pelo total (desdobrar
     no Consistem)" = linha − título (o resíduo continua zero). Parcela k/N com k > 1 continua "parcela não desdobrada". **Limite:**
@@ -645,7 +645,7 @@ Decisões do Alan (sessão de perguntas de 21/10/2026, depois do PicPay PF 10/20
 - **"É este"** no aviso de possível título já lançado: casa em um clique com o motivo automático ("Mesma compra: título X (R$ …)").
   Se o título cita outro cartão, logo depois abre a prévia do **Trocar cartão** (Corrigir agora / Depois).
 - **61b. NF lançada pelo total em outro mês:** linha k/N (k > 1) sem título × título **em aberto** deste cartão (complemento ou regra)
-  **fora** da janela, de ≈ N × parcela (N + 5 centavos), lido do espelho (`cap_lancamentos`, sem baixa, com saldo, tipo C). Um só
+  **fora** da janela, de ≈ N × parcela (10 centavos por parcela + 5), lido do espelho (`cap_lancamentos`, sem baixa, com saldo, tipo C). Um só
   candidato → "a desdobrar" (bloqueia o fechamento como o 1/N). No quadro só a linha pesa (o título não está no total da fatura).
 - **62b. Desdobrar a partir da parcela k:** o original fica com as parcelas **já pagas** 1..k−1 — valor (k−1) × parcela, documento
   "<NF>/1-(k−1)" (ou "/1" se k = 2), complemento "… PARC 1-(k−1)/N", no vencimento que já tem (baixar à mão) — e o painel cria as

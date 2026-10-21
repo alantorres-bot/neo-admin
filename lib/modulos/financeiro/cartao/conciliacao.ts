@@ -10,6 +10,14 @@ import { identificarCartaoDoTitulo, montarComplemento, type CartaoInfo } from ".
 import { normalizar, semelhanca } from "./texto";
 
 export const TOLERANCIA_PADRAO = 5;      // centavos — desdobramento arredondado
+/**
+ * Compra parcelada × NF lançada pelo total: o emissor arredonda (e às vezes ajusta) a parcela; aceita até 10 centavos por parcela,
+ * mais a tolerância do casamento (era 1 centavo por parcela até 21/10/2026: EC*PICHAU 12 × R$ 571,98 = R$ 6.863,76 × NF de
+ * R$ 6.862,88 ficava de fora). Só vale com UM candidato.
+ */
+export const TOLERANCIA_POR_PARCELA = 10;
+/** Tolerância (centavos) entre a NF cheia e N × parcela. */
+export const toleranciaCompraInteira = (n: number, tolerancia = TOLERANCIA_PADRAO) => n * TOLERANCIA_POR_PARCELA + tolerancia;
 export const JANELA_VENCIMENTO = 5;      // dias — vencimento nominal × dia útil efetivo
 export const LIMIAR_SEMELHANCA = 0.45;   // abaixo disso o casamento por valor é "fraco" (conferir descrição)
 export const LIMIAR_COMPENSACAO = 0.6;   // mínimo para considerar que o estorno se refere à compra
@@ -284,7 +292,7 @@ export function casar(linhas: readonly LinhaFatura[], titulos: readonly TituloPa
 
 /**
  * Linha "1/N" (N ≥ 2) sem título × título sem linha de ≈ N × parcela: a NF foi lançada pelo total e não foi desdobrada.
- * Tolerância: N centavos (arredondamento do emissor ao dividir a compra) + a tolerância do casamento. Um título por linha; o
+ * Tolerância: até 10 centavos por parcela (arredondamento do emissor ao dividir a compra) + a tolerância do casamento. Um título por linha; o
  * de menor diferença vence, e a descrição desempata. Antecipação (já paga) fica de fora.
  */
 export function compraPeloTotal(linhas: readonly LinhaFatura[], titulos: readonly TituloPagar[], tolerancia: number): { pares: ADesdobrar[]; linhasSemTitulo: LinhaFatura[]; titulosSemLinha: TituloPagar[] } {
@@ -295,7 +303,7 @@ export function compraPeloTotal(linhas: readonly LinhaFatura[], titulos: readonl
     const n = linha.parcelaTotal ?? 1;
     if (linha.parcelaNum !== 1 || n < 2 || linha.valorCentavos <= 0) { restantes.push(linha); continue; }
     const cheio = n * linha.valorCentavos;
-    const cand = titulos.filter((t) => !usados.has(t.id) && !t.antecipacao && Math.abs(t.valorCentavos - cheio) <= n + tolerancia);
+    const cand = titulos.filter((t) => !usados.has(t.id) && !t.antecipacao && Math.abs(t.valorCentavos - cheio) <= toleranciaCompraInteira(n, tolerancia));
     if (cand.length === 0) { restantes.push(linha); continue; }
     const nota = (t: TituloPagar) => [Math.abs(t.valorCentavos - cheio), -semelhanca(linha.descricao, `${t.complemento} ${t.fornecedor}`)] as const;
     const t = cand.reduce((m, c) => {
@@ -368,8 +376,8 @@ export function somaDeTitulos(linhas: readonly LinhaFatura[], titulos: readonly 
 }
 
 /**
- * Linha k/N (k > 1) sem título × título em aberto deste cartão FORA da janela de ≈ N × parcela (N centavos + tolerância): a NF foi
- * lançada pelo total em outro mês e não foi desdobrada. Só com UM candidato (dois = não arrisca).
+ * Linha k/N (k > 1) sem título × título em aberto deste cartão FORA da janela de ≈ N × parcela: a NF foi
+ * lançada pelo total em outro mês e não foi desdobrada (tolerância: `toleranciaCompraInteira`). Só com UM candidato (dois = não arrisca).
  */
 export function compraPeloTotalForaDaJanela(linhas: readonly LinhaFatura[], titulos: readonly TituloPagar[], tolerancia: number): { pares: ADesdobrar[]; linhasSemTitulo: LinhaFatura[] } {
   const usados = new Set<string>();
@@ -380,7 +388,7 @@ export function compraPeloTotalForaDaJanela(linhas: readonly LinhaFatura[], titu
     const k = linha.parcelaNum ?? 1;
     if (k < 2 || n < k || linha.valorCentavos <= 0) { restantes.push(linha); continue; }
     const cheio = n * linha.valorCentavos;
-    const cand = titulos.filter((t) => !usados.has(t.id) && !t.antecipacao && Math.abs(t.valorCentavos - cheio) <= n + tolerancia);
+    const cand = titulos.filter((t) => !usados.has(t.id) && !t.antecipacao && Math.abs(t.valorCentavos - cheio) <= toleranciaCompraInteira(n, tolerancia));
     if (cand.length !== 1) { restantes.push(linha); continue; }
     usados.add(cand[0].id);
     pares.push({ linha, titulo: cand[0], parcelas: n, parcelaCentavos: linha.valorCentavos, diferencaCentavos: cand[0].valorCentavos - cheio, parcelaInicial: k, foraDaJanela: true });

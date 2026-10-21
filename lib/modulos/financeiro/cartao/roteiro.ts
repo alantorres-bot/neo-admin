@@ -3,9 +3,9 @@
 //
 // Trava no risco (decisão do Alan, 21/10/2026): "Lançar compra" e "Lançar selecionadas" ficam travados (a) enquanto houver compra
 // parcelada lançada pelo total a desdobrar ou divergência sem decisão e (b) na linha que tem um POSSÍVEL TÍTULO JÁ LANÇADO — um
-// título dos "Outros títulos de cartão" ou das divergências com o valor da linha (até 5 centavos) ou ≈ N × parcela (N + 5
+// título dos "Outros títulos de cartão" ou das divergências com o valor da linha (até 5 centavos) ou ≈ N × parcela (10 por parcela + 5
 // centavos, regra 61). Caso real: NuViagens R$ 822,89 × título 30693 de R$ 822,90 com "CRATAO" no complemento (Nubank PF 10/2026).
-import { chaveTitulo, TOLERANCIA_PADRAO, type ItemALancar, type ResultadoConciliacao, type SugestaoSoma, type TituloPagar } from "./conciliacao";
+import { chaveTitulo, TOLERANCIA_PADRAO, toleranciaCompraInteira, type ItemALancar, type ResultadoConciliacao, type SugestaoSoma, type TituloPagar } from "./conciliacao";
 import type { OutroTitulo } from "./selecao-titulos";
 
 const reais = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -58,11 +58,11 @@ export function somasEmAberto(r: Pick<ResultadoConciliacao, "aLancar" | "sugesto
 /** A linha entra na verificação: compra positiva, sem justificativa, que não é encargo (encargo tem o quadro próprio). */
 const linhaDeCompra = (a: ItemALancar) => a.linha.valorCentavos > 0 && !a.justificativa && a.natureza !== "Encargo financeiro";
 
-/** O título pode ser a compra da linha? Mesmo valor (até 5 centavos) ou a compra inteira (N × parcela, N + 5 centavos). */
+/** O título pode ser a compra da linha? Mesmo valor (até 5 centavos) ou a compra inteira (N × parcela, `toleranciaCompraInteira`). */
 export function valorCompativel(linha: ItemALancar["linha"], t: TituloPagar, tolerancia = TOLERANCIA_PADRAO): boolean {
   if (Math.abs(t.valorCentavos - linha.valorCentavos) <= tolerancia) return true;
   const n = linha.parcelaTotal ?? 1;
-  return n >= 2 && Math.abs(t.valorCentavos - n * linha.valorCentavos) <= n + tolerancia;
+  return n >= 2 && Math.abs(t.valorCentavos - n * linha.valorCentavos) <= toleranciaCompraInteira(n, tolerancia);
 }
 
 /**
