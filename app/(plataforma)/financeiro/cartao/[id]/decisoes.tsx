@@ -11,13 +11,26 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { chaveTitulo, ROTULO_DECISAO, type DecisaoItem, type ItemALancar, type TipoDecisao, type TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { valorCompativel } from "@/lib/modulos/financeiro/cartao/roteiro";
 import { normalizar } from "@/lib/modulos/financeiro/cartao/texto";
-import { formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
+import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { desfazerDecisao, registrarDecisao } from "../acoes";
 import type { DecisaoLinha } from "../dados";
 
 export type Alvo = { tipo: "linha"; item: ItemALancar } | { tipo: "titulo"; titulo: TituloPagar };
-export type Candidatos = { linhas: ItemALancar[]; titulos: TituloPagar[] };
+export type Candidatos = {
+  linhas: ItemALancar[];
+  titulos: TituloPagar[];
+  /** Chaves dos títulos que citam OUTRO cartão (aba "Outros títulos de cartão"); os demais são deste cartão (sem linha). */
+  deOutroCartao?: string[];
+};
+
+type FiltroTitulos = "todos" | "parecido" | "deste" | "outros";
+const ROTULO_FILTRO: Record<FiltroTitulos, string> = { todos: "Todos", parecido: "Valor parecido com a linha", deste: "Deste cartão", outros: "Outros cartões" };
+
+/** Valor parecido: o da linha (até 5 centavos), a compra inteira (N × parcela) ou até 10% de diferença. */
+const parecido = (linha: ItemALancar["linha"], t: TituloPagar) =>
+  valorCompativel(linha, t) || Math.abs(t.valorCentavos - linha.valorCentavos) <= Math.abs(linha.valorCentavos) * 0.1;
 
 const OPCOES: Record<Alvo["tipo"], { tipo: TipoDecisao; rotulo: string; ajuda: string }[]> = {
   linha: [
@@ -45,12 +58,21 @@ export function DialogoDecidir({ faturaId, alvo, candidatos }: { faturaId: strin
   const [padrao, setPadrao] = useState("");
   const [linhasMarcadas, setLinhasMarcadas] = useState<Set<string>>(new Set());
   const [titulosMarcados, setTitulosMarcados] = useState<Set<string>>(new Set());
+  const [filtro, setFiltro] = useState<FiltroTitulos>("todos");
   const [erro, setErro] = useState<string>();
   const [pendente, iniciar] = useTransition();
 
   const descricao = alvo.tipo === "linha" ? `${alvo.item.linha.descricao} · ${formatarMoeda(alvo.item.linha.valorCentavos)}` : `Título ${alvo.titulo.numeroTitulo} · ${alvo.titulo.fornecedor} · ${formatarMoeda(alvo.titulo.valorCentavos)}`;
   const opcao = OPCOES[alvo.tipo].find((o) => o.tipo === tipo)!;
-  const outrasLinhas = candidatos.linhas.filter((l) => alvo.tipo !== "linha" || l.linha.id !== alvo.item.linha.id);
+  const outrasLinhas = candidatos.linhas.filter((l) => alvo.tipo !== "linha" || l.linha.id !== alvo.item.linha.id)
+    .sort((a, b) => a.linha.valorCentavos - b.linha.valorCentavos);
+  const deOutro = useMemo(() => new Set(candidatos.deOutroCartao ?? []), [candidatos.deOutroCartao]);
+  // Títulos para casar: ordenados por valor; o filtro rápido restringe (o funil e a busca da grade continuam valendo).
+  const titulosVisiveis = useMemo(() => {
+    const todos = [...candidatos.titulos].sort((a, b) => a.valorCentavos - b.valorCentavos);
+    if (filtro === "todos" || alvo.tipo !== "linha") return todos;
+    return todos.filter((t) => filtro === "parecido" ? parecido(alvo.item.linha, t) : filtro === "outros" ? deOutro.has(chaveTitulo(t)) : !deOutro.has(chaveTitulo(t)));
+  }, [candidatos.titulos, filtro, alvo, deOutro]);
 
   const linhasEscolhidas = useMemo(() => {
     const ids = new Set(linhasMarcadas);
@@ -70,6 +92,8 @@ export function DialogoDecidir({ faturaId, alvo, candidatos }: { faturaId: strin
     setConta(alvo.tipo === "linha" ? alvo.item.contaFluxo.replace("[CONFERIR]", "") : ""); setLembrar(false);
     setPadrao(alvo.tipo === "linha" ? normalizar(alvo.item.linha.descricao).split(" ").slice(0, 2).join(" ") : "");
     setLinhasMarcadas(new Set()); setTitulosMarcados(new Set()); setErro(undefined); setAberto(true);
+    // Abre já no "valor parecido" quando há algum título assim.
+    setFiltro(alvo.tipo === "linha" && candidatos.titulos.some((t) => parecido(alvo.item.linha, t)) ? "parecido" : "todos");
   }
   const alternar = (conj: Set<string>, id: string, definir: (s: Set<string>) => void) => {
     const novo = new Set(conj);
@@ -97,7 +121,7 @@ export function DialogoDecidir({ faturaId, alvo, candidatos }: { faturaId: strin
       <Button size="xs" variant="outline" onClick={abrir}>Decidir</Button>
       {aberto && (
         <Dialog open onOpenChange={(v) => { if (!v) setAberto(false); }}>
-          <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
+          <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-4xl">
             <DialogHeader>
               <DialogTitle>Decidir sobre o item</DialogTitle>
               <DialogDescription>{descricao}</DialogDescription>
@@ -123,24 +147,55 @@ export function DialogoDecidir({ faturaId, alvo, candidatos }: { faturaId: strin
                 <div className="space-y-2">
                   {(tipo === "compensar" || alvo.tipo === "titulo" || outrasLinhas.length > 0) && (
                     <Escolha titulo={tipo === "compensar" || alvo.tipo === "linha" ? "Outras linhas da fatura (marque as que entram juntas)" : "Linhas da fatura"}>
-                      {outrasLinhas.map((l) => (
-                        <label key={l.linha.id} className="flex items-center gap-2">
-                          <input type="checkbox" className="size-4" checked={linhasMarcadas.has(l.linha.id)} onChange={() => alternar(linhasMarcadas, l.linha.id, setLinhasMarcadas)} />
-                          <span className="flex-1">{l.linha.descricao}{l.justificativa ? " (justificada)" : ""}</span><span className="tabular-nums">{formatarMoeda(l.linha.valorCentavos)}</span>
-                        </label>
-                      ))}
-                      {outrasLinhas.length === 0 && <p className="text-muted-foreground">Nenhuma outra linha a lançar.</p>}
+                      {outrasLinhas.length === 0 ? <p className="text-muted-foreground">Nenhuma outra linha a lançar.</p> : (
+                        <Table>
+                          <TableHeader><TableRow><TableHead className="w-8"> </TableHead><TableHead>Data</TableHead><TableHead>Descrição na fatura</TableHead><TableHead>Natureza</TableHead><TableHead className="text-right">Valor</TableHead></TableRow></TableHeader>
+                          <TableBody>
+                            {outrasLinhas.map((l) => (
+                              <TableRow key={l.linha.id} className={linhasMarcadas.has(l.linha.id) ? "bg-sky-50" : ""}>
+                                <TableCell><input type="checkbox" className="size-4" aria-label={`Marcar ${l.linha.descricao}`} checked={linhasMarcadas.has(l.linha.id)} onChange={() => alternar(linhasMarcadas, l.linha.id, setLinhasMarcadas)} /></TableCell>
+                                <TableCell className="tabular-nums">{formatarData(l.linha.dataCompra)}</TableCell>
+                                <TableCell>{l.linha.descricao}{l.justificativa ? " (justificada)" : ""}</TableCell>
+                                <TableCell className="text-xs">{l.natureza}</TableCell>
+                                <TableCell className="text-right tabular-nums">{formatarMoeda(l.linha.valorCentavos)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      )}
                     </Escolha>
                   )}
                   {tipo === "casar" && alvo.tipo === "linha" && (
-                    <Escolha titulo="Títulos do Consistem na janela do vencimento (sem linha, ou de outro cartão)">
-                      {candidatos.titulos.map((t) => (
-                        <label key={chaveTitulo(t)} className="flex items-center gap-2">
-                          <input type="checkbox" className="size-4" checked={titulosMarcados.has(chaveTitulo(t))} onChange={() => alternar(titulosMarcados, chaveTitulo(t), setTitulosMarcados)} />
-                          <span className="flex-1">{t.numeroTitulo} · {t.fornecedor} · <span className="text-xs text-muted-foreground">{t.complemento}</span></span><span className="tabular-nums">{formatarMoeda(t.valorCentavos)}</span>
-                        </label>
-                      ))}
-                      {candidatos.titulos.length === 0 && <p className="text-muted-foreground">Nenhum título sem linha na janela. Lance o título no Consistem e atualize a tela.</p>}
+                    <Escolha titulo="Títulos do Consistem na janela do vencimento (sem linha, ou de outro cartão)" alto>
+                      <div className="flex flex-wrap items-center gap-1 pb-1">
+                        {(Object.keys(ROTULO_FILTRO) as FiltroTitulos[]).map((f) => (
+                          <Button key={f} type="button" size="xs" variant={filtro === f ? "default" : "outline"} onClick={() => setFiltro(f)}>{ROTULO_FILTRO[f]}</Button>
+                        ))}
+                        <span className="ml-auto text-xs text-muted-foreground">{titulosVisiveis.length} de {candidatos.titulos.length} · ordenados por valor (clique no título da coluna para mudar)</span>
+                      </div>
+                      {titulosVisiveis.length === 0 ? (
+                        <p className="text-muted-foreground">{candidatos.titulos.length === 0 ? "Nenhum título sem linha na janela. Lance o título no Consistem e atualize a tela." : "Nenhum título com este filtro."}</p>
+                      ) : (
+                        <Table>
+                          <TableHeader><TableRow><TableHead className="w-8"> </TableHead><TableHead>Nº do título</TableHead><TableHead>Fornecedor</TableHead><TableHead>Vencimento</TableHead><TableHead>Complemento</TableHead><TableHead>Cartão</TableHead><TableHead className="text-right">Valor</TableHead></TableRow></TableHeader>
+                          <TableBody>
+                            {titulosVisiveis.map((t) => {
+                              const k = chaveTitulo(t);
+                              return (
+                                <TableRow key={k} className={titulosMarcados.has(k) ? "bg-sky-50" : ""}>
+                                  <TableCell><input type="checkbox" className="size-4" aria-label={`Marcar o título ${t.numeroTitulo}`} checked={titulosMarcados.has(k)} onChange={() => alternar(titulosMarcados, k, setTitulosMarcados)} /></TableCell>
+                                  <TableCell className="tabular-nums">{t.numeroTitulo}</TableCell>
+                                  <TableCell className="text-xs">{t.fornecedor}</TableCell>
+                                  <TableCell className="tabular-nums">{formatarData(t.vencimento)}</TableCell>
+                                  <TableCell className="text-xs">{t.complemento}</TableCell>
+                                  <TableCell className="text-xs">{deOutro.has(k) ? "Outro cartão" : "Deste cartão"}</TableCell>
+                                  <TableCell className="text-right tabular-nums">{formatarMoeda(t.valorCentavos)}</TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      )}
                     </Escolha>
                   )}
                   <p className="text-xs">
@@ -168,9 +223,9 @@ export function DialogoDecidir({ faturaId, alvo, candidatos }: { faturaId: strin
   );
 }
 
-function Escolha({ titulo, children }: { titulo: string; children: React.ReactNode }) {
+function Escolha({ titulo, children, alto = false }: { titulo: string; children: React.ReactNode; alto?: boolean }) {
   return (
-    <fieldset className="max-h-56 space-y-1 overflow-y-auto rounded-[3px] border border-grade p-2">
+    <fieldset className={`${alto ? "max-h-[50svh]" : "max-h-56"} space-y-1 overflow-y-auto rounded-[3px] border border-grade p-2`}>
       <legend className="px-1 text-xs font-medium">{titulo}</legend>
       {children}
     </fieldset>

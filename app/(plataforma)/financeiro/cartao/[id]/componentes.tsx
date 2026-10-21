@@ -62,6 +62,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
   const candidatos: Candidatos = {
     linhas: r.aLancar,
     titulos: [...r.divergencias.filter((d) => !d.justificativa).map((d) => d.titulo), ...outros.map((o) => o.titulo)],
+    deOutroCartao: outros.map((o) => chaveTitulo(o.titulo)),
   };
   const rotuloLinha = Object.fromEntries(linhas.map((l) => [l.id, `${l.descricao} · ${formatarMoeda(centavos(l.valor))}`]));
   const todosTitulos = [...r.conciliados.flatMap((c) => [c.titulo, ...(c.titulosExtras ?? [])]), ...r.divergencias.map((d) => d.titulo), ...outros.map((o) => o.titulo)];
