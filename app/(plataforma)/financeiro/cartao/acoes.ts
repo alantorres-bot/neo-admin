@@ -517,7 +517,7 @@ export async function lancarCompra(entrada: z.input<typeof esquemaCompra>): Prom
   const contas = conferirContas(lerCampos(d.campos), q.creditoPadrao);
   if (contas) return { ok: false, erro: contas };
   const camposCompra = comMarcasDaFatura(await comCategoriaDoFornecedor(supabase, c.fatura.empresa_id, lerCampos(d.campos)), { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura });
-  const t = montarTitulosCompra({ linha: item.linha, cartao: paraCartaoInfo(c.cartao), campos: camposCompra, vencimentoFatura: c.fatura.vencimento, competencia: q.competencia });
+  const t = montarTitulosCompra({ linha: item.linha, cartao: paraCartaoInfo(c.cartao), campos: camposCompra, vencimentoFatura: c.fatura.vencimento, competencia: q.competencia, fechamento: q.fechamento });
   if (!t.ok) return { ok: false, erro: t.erro };
 
   const { data: lote, error } = await supabase.rpc("crt_reservar_lancamento_compra", {
@@ -657,7 +657,7 @@ export async function lancarSelecionadas(entrada: z.input<typeof esquemaSelecion
     const contas = conferirContas(campos, q.creditoPadrao);
     if (contas) return { ok: false, erro: `${item.linha.descricao}: ${contas}` };
     const comMarcas = comMarcasDaFatura(await comCategoriaDoFornecedor(supabase, c.fatura.empresa_id, campos), { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura });
-    const t = montarTitulosCompra({ linha: item.linha, cartao: paraCartaoInfo(c.cartao), campos: comMarcas, vencimentoFatura: c.fatura.vencimento, competencia: q.competencia });
+    const t = montarTitulosCompra({ linha: item.linha, cartao: paraCartaoInfo(c.cartao), campos: comMarcas, vencimentoFatura: c.fatura.vencimento, competencia: q.competencia, fechamento: q.fechamento });
     if (!t.ok) return { ok: false, erro: `${item.linha.descricao}: ${t.erro}` };
     preparados.push({ linhaId: id, descricao: item.linha.descricao, titulos: t.titulos.map((x) => ({ parcela: x.parcela, vencimento: x.vencimento, payload: x.payload })) });
   }

@@ -36,22 +36,22 @@ describe("sugestão pelo estabelecimento", () => {
 });
 
 describe("títulos da compra", () => {
-  it("à vista: um título no vencimento da fatura, documento DDMMAA, códigos escolhidos", () => {
-    const r = montarTitulosCompra({ linha: linha("NUVIAGENS*AEREO", 461.92), cartao: SICREDI_PF, campos: CAMPOS, vencimentoFatura: "2026-10-13", competencia: "2026-10-01" });
+  it("à vista: um título no vencimento da fatura, emissão na compra e entrada no fechamento, documento DDMMAA, códigos escolhidos", () => {
+    const r = montarTitulosCompra({ linha: linha("NUVIAGENS*AEREO", 461.92), cartao: SICREDI_PF, campos: CAMPOS, vencimentoFatura: "2026-10-13", competencia: "2026-10-01", fechamento: "2026-09-26" });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.titulos).toHaveLength(1);
     expect(r.titulos[0]).toEqual({
       parcela: 1, parcelas: 1, vencimento: "2026-10-13",
       payload: {
-        codFornecedor: 1500, categoriaDoc: 17, codDocumento: "150826-1", codPortador: 91, dataEmissao: "2026-08-15", dataEntrada: "2026-08-15",
+        codFornecedor: 1500, categoriaDoc: 17, codDocumento: "150826-1", codPortador: 91, dataEmissao: "2026-08-15", dataEntrada: "2026-09-26",
         dataVencimento: "2026-10-13", valorDocumento: 461.92, codHistorico: 2, complementoHistorico: "CARTÃO SICREDI PF 1x — NUVIAGENS*AEREO",
         grupoContaFluxoCaixa: 13, contaFluxoCaixa: 6, dadosContabilidade: { contaContabilDebito: 3338, contaContabilCredito: 2004, listaCentroCustoContab: [] },
       },
     });
   });
   it("parcela 2/5 sem título: quatro títulos, nos vencimentos das competências seguintes", () => {
-    const r = montarTitulosCompra({ linha: linha("LATAM AIR", 300, 2, 5), cartao: SICREDI_PF, campos: CAMPOS, vencimentoFatura: "2026-10-13", competencia: "2026-10-01" });
+    const r = montarTitulosCompra({ linha: linha("LATAM AIR", 300, 2, 5), cartao: SICREDI_PF, campos: CAMPOS, vencimentoFatura: "2026-10-13", competencia: "2026-10-01", fechamento: "2026-09-26" });
     if (!r.ok) throw new Error(r.erro);
     expect(r.titulos.map((t) => [t.parcela, t.vencimento, t.payload.codDocumento, t.payload.valorDocumento])).toEqual([
       [2, "2026-10-13", "150826-1/2", 300], [3, "2026-11-10", "150826-1/3", 300], [4, "2026-12-10", "150826-1/4", 300], [5, "2027-01-10", "150826-1/5", 300],
@@ -59,10 +59,11 @@ describe("títulos da compra", () => {
     expect(r.titulos[3].payload.complementoHistorico).toBe("CARTÃO SICREDI PF 5x — LATAM AIR PARC 5/5");
   });
   it("recusa estorno, campo vazio e linha sem data", () => {
-    const base = { cartao: SICREDI_PF, vencimentoFatura: "2026-10-13", competencia: "2026-10-01" };
+    const base = { cartao: SICREDI_PF, vencimentoFatura: "2026-10-13", competencia: "2026-10-01", fechamento: "2026-09-26" };
     expect(montarTitulosCompra({ ...base, linha: linha("X", -10), campos: CAMPOS })).toMatchObject({ ok: false, erro: /Estorno/ });
     expect(montarTitulosCompra({ ...base, linha: linha("X", 10), campos: { ...CAMPOS, contaFluxoCaixa: undefined } })).toMatchObject({ ok: false, erro: /conta de fluxo/ });
     expect(montarTitulosCompra({ ...base, linha: { ...linha("X", 10), dataCompra: null }, campos: CAMPOS })).toMatchObject({ ok: false, erro: /data da compra/ });
+    expect(montarTitulosCompra({ ...base, fechamento: null, linha: linha("X", 10), campos: CAMPOS })).toMatchObject({ ok: false, erro: /fechamento/ });
   });
   it("complemento até 70 caracteres, mantendo a parcela, e reconhecido como do cartão", () => {
     const c = complementoCompra("SICREDI PF", 10, 12, "LOJA COM UM NOME MUITO GRANDE QUE NAO CABE NO CAMPO DO CONSISTEM");

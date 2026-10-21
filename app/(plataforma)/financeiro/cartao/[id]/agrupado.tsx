@@ -76,7 +76,7 @@ function DialogoLancarSelecionadas({ faturaId, itens, compras, aoConcluir }: { f
     const c = camposDaSelecao(i.sugestao.campos, campos);
     const contas = compras.competencia ? conferirContas(c, compras.creditoPadrao) : null;
     const t = compras.competencia
-      ? montarTitulosCompra({ linha: i.linha, cartao: compras.cartao, campos: c, vencimentoFatura: compras.vencimentoFatura, competencia: compras.competencia })
+      ? montarTitulosCompra({ linha: i.linha, cartao: compras.cartao, campos: c, vencimentoFatura: compras.vencimentoFatura, competencia: compras.competencia, fechamento: compras.fechamento })
       : { ok: false as const, erro: "Mês do cartão sem competência." };
     const fornecedor = i.sugestao.campos.codFornecedor !== undefined ? `${i.sugestao.campos.codFornecedor}${i.fornecedorNome ? ` · ${i.fornecedorNome}` : ""}`
       : c.codFornecedor !== undefined ? `${c.codFornecedor}${fornecedorNome ? ` · ${fornecedorNome}` : ""} (do diálogo)` : "—";

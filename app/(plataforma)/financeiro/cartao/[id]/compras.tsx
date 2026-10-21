@@ -65,7 +65,7 @@ export function DialogoLancarCompra({ faturaId, item, proposta, compras }: { fat
   const [erro, setErro] = useState<string>();
   const [pendente, iniciar] = useTransition();
   const titulos = useMemo(() => (compras.competencia
-    ? montarTitulosCompra({ linha: item.linha, cartao: compras.cartao, campos, vencimentoFatura: compras.vencimentoFatura, competencia: compras.competencia })
+    ? montarTitulosCompra({ linha: item.linha, cartao: compras.cartao, campos, vencimentoFatura: compras.vencimentoFatura, competencia: compras.competencia, fechamento: compras.fechamento })
     : { ok: false as const, erro: "Fatura sem mês do cartão." }), [campos, compras, item.linha]);
   const mudar = (k: CampoCompra, bruto: string) => {
     const v = bruto.replace(/\D/g, "").slice(0, 9);

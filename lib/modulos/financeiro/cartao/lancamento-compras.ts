@@ -84,7 +84,11 @@ export function somarMeses(competencia: string, n: number): string {
 export type TituloCompra = { parcela: number; parcelas: number; vencimento: string; payload: NovoLancamentoContaPagar };
 export type ResultadoCompra = { ok: true; titulos: TituloCompra[] } | { ok: false; erro: string };
 
-/** Monta os títulos da compra: um por parcela restante, da parcela da linha até a última. */
+/**
+ * Monta os títulos da compra: um por parcela restante, da parcela da linha até a última. Emissão = data da compra; ENTRADA =
+ * fechamento da fatura (mês do cartão): com a data da compra o Consistem recusava compra de mês com a contabilidade fechada
+ * ("Contabilidade já fechada para a data de entrada (20/09/2026)", Nubank PF 10/2026, 21/10/2026; decisão do Alan).
+ */
 export function montarTitulosCompra(e: {
   linha: Pick<LinhaFatura, "ordem" | "dataCompra" | "descricao" | "valorCentavos" | "parcelaNum" | "parcelaTotal">;
   cartao: Pick<CartaoInfo, "nome" | "diaFechamento" | "diaVencimento">;
@@ -92,12 +96,16 @@ export function montarTitulosCompra(e: {
   vencimentoFatura: string;
   /** Competência do mês da fatura (AAAA-MM-01). */
   competencia: string;
+  /** Fechamento da fatura ('AAAA-MM-DD'): data de entrada dos títulos. */
+  fechamento: string | null;
 }): ResultadoCompra {
   const { linha, campos } = e;
   if (linha.valorCentavos <= 0) return { ok: false, erro: "Estorno ou crédito não vira título: abata do título da compra." };
   const faltando = CAMPOS_COMPRA.filter((k) => campos[k] === undefined);
   if (faltando.length) return { ok: false, erro: `Preencha: ${faltando.map((k) => ROTULO_CAMPO_COMPRA[k].toLowerCase()).join(", ")}.` };
   if (!linha.dataCompra || !/^\d{4}-\d{2}-\d{2}$/.test(linha.dataCompra)) return { ok: false, erro: "A linha não tem a data da compra." };
+  if (!e.fechamento || !/^\d{4}-\d{2}-\d{2}$/.test(e.fechamento)) return { ok: false, erro: "Fatura sem mês do cartão (fechamento)." };
+  const entrada = e.fechamento;
   const primeira = linha.parcelaNum ?? 1;
   const total = linha.parcelaTotal ?? 1;
   if (primeira < 1 || primeira > total) return { ok: false, erro: "Parcela inválida na linha da fatura." };
@@ -111,7 +119,7 @@ export function montarTitulosCompra(e: {
       parcela: k, parcelas: total, vencimento,
       payload: {
         codFornecedor: c.codFornecedor, categoriaDoc: c.categoriaDoc, codDocumento: total > 1 ? `${ddmmaa}-${linha.ordem}/${k}` : `${ddmmaa}-${linha.ordem}`, codPortador: c.codPortador,
-        dataEmissao: linha.dataCompra, dataEntrada: linha.dataCompra, dataVencimento: vencimento, valorDocumento: linha.valorCentavos / 100,
+        dataEmissao: linha.dataCompra, dataEntrada: entrada, dataVencimento: vencimento, valorDocumento: linha.valorCentavos / 100,
         codHistorico: c.codHistorico, complementoHistorico: complemento, grupoContaFluxoCaixa: c.grupoContaFluxoCaixa, contaFluxoCaixa: c.contaFluxoCaixa,
         dadosContabilidade: { contaContabilDebito: c.contaContabilDebito, contaContabilCredito: c.contaContabilCredito, listaCentroCustoContab: [] },
       },
