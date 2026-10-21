@@ -82,7 +82,9 @@ export function lerComplemento(complemento: string, cartoes: readonly CartaoInfo
   const pessoa = tokens.includes("PF") ? "PF" : tokens.includes("PJ") ? "PJ" : undefined;
 
   const bancos = [...new Set(cartoes.map((c) => normalizarTexto(c.banco)))];
-  const citados = bancos.filter((b) => tokens.some((t) => mesmoBanco(t, b)));
+  // O banco também vale escrito em duas palavras ("PIC PAY", "NU BANK"): junta cada par de vizinhas.
+  const juntos = tokens.slice(1).map((t, i) => tokens[i] + t);
+  const citados = bancos.filter((b) => tokens.some((t) => mesmoBanco(t, b)) || (b.length >= 5 && juntos.some((t) => t === b)));
   const daqueles = cartoes.filter((c) => citados.includes(normalizarTexto(c.banco)));
   const candidatos = pessoa ? daqueles.filter((c) => c.tipoPessoa === pessoa) : daqueles;
 

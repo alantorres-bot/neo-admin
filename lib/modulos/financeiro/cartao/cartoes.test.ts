@@ -72,6 +72,11 @@ describe("lerComplemento (textos reais do Contas a Pagar)", () => {
       expect(lerComplemento(t, CARTOES_TESTE).candidatos.map((x) => x.codigo), t).toEqual(["NUBANK PF"]);
     expect(lerComplemento("CARTAO NUBNAK - VIAGENS", CARTOES_TESTE).candidatos.map((x) => x.codigo)).toEqual(["NUBANK PF"]);
   });
+  it('o banco escrito em duas palavras ("PIC PAY", "PÍC PAY", "NU BANK") também é o cartão', () => {
+    for (const t of ["CARTAO PIC PAY - COMPRA TABLET", "CARTAO PÍC PAY - HOSPEDAGEM 3X", "CARTÃO PIC PAY 6 X"])
+      expect(lerComplemento(t, CARTOES_TESTE).candidatos.map((x) => x.codigo), t).toEqual(["PICPAY PF"]);
+    expect(lerComplemento("CARTAO NU BANK - HOTEL", CARTOES_TESTE).candidatos.map((x) => x.codigo)).toEqual(["NUBANK PF"]);
+  });
   it('não confunde com "INTERNET", "CARTORIO", "CARTA"; só a palavra CARTÃO é "só marca"', () => {
     expect(lerComplemento("CARTA INTER - AVISO", CARTOES_TESTE).citaCartao).toBe(false);
     expect(lerComplemento("INTERNET - SETEMBRO/2026;", CARTOES_TESTE).citaCartao).toBe(false);
