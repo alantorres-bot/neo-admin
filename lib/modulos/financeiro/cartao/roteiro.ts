@@ -1,7 +1,7 @@
 // Fechamento da fatura passo a passo (regras 65 a 67 de docs/modulos/financeiro-cartao.md). Regra da sequência: primeiro resolver o
 // que já existe no Consistem, depois criar o que falta. Os encargos vão primeiro porque nunca têm título anterior.
 //
-// Trava no risco (decisão do Alan, 21/10/2026): "Lançar compra" e "Lançar agrupado" ficam travados (a) enquanto houver compra
+// Trava no risco (decisão do Alan, 21/10/2026): "Lançar compra" e "Lançar selecionadas" ficam travados (a) enquanto houver compra
 // parcelada lançada pelo total a desdobrar ou divergência sem decisão e (b) na linha que tem um POSSÍVEL TÍTULO JÁ LANÇADO — um
 // título dos "Outros títulos de cartão" ou das divergências com o valor da linha (até 5 centavos) ou ≈ N × parcela (N + 5
 // centavos, regra 61). Caso real: NuViagens R$ 822,89 × título 30693 de R$ 822,90 com "CRATAO" no complemento (Nubank PF 10/2026).
@@ -74,7 +74,7 @@ export const descreverTitulo = (t: TituloPagar) => `nº ${t.numeroTitulo}, ${rea
 /** Divergência sem decisão: nem justificativa nem observação (ninguém olhou). */
 export const divergenciasSemDecisao = (r: Pick<ResultadoConciliacao, "divergencias">) => r.divergencias.filter((d) => !d.justificativa && !(d.observacoes ?? []).length);
 
-/** O que trava "Lançar compra" e "Lançar agrupado" agora. */
+/** O que trava "Lançar compra" e "Lançar selecionadas" agora. */
 export function travaDeLancamento(r: Pick<ResultadoConciliacao, "aLancar" | "divergencias" | "conciliados" | "aDesdobrar">, outros: readonly OutroTitulo[]): TravaLancamento {
   const geral: string[] = [];
   const nDesdobrar = (r.aDesdobrar ?? []).length;
@@ -110,7 +110,7 @@ function passoDaLinha(a: ItemALancar): 1 | 4 | 5 | 6 {
 export function montarRoteiro(e: {
   resultado: ResultadoConciliacao;
   outros: readonly OutroTitulo[];
-  /** Código do título de encargos já lançado no mês, se houver. */
+  /** Códigos dos títulos de encargos já lançados no mês ("34010, 34011"), se houver. */
   encargosLancados?: string | null;
   origemTitulos?: "consistem" | "espelho";
 }): Passo[] {
@@ -135,7 +135,7 @@ export function montarRoteiro(e: {
         : "Fatura importada (soma = total) e títulos lidos do Consistem.");
   add("Encargos", encargos.length ? false : e.encargosLancados ? true : null,
     encargos.length ? `${plural(encargos.length, "linha", "linhas")} de encargo (${soma(encargos)}): lance no quadro Encargos do mês.`
-      : e.encargosLancados ? `Encargos lançados: título ${e.encargosLancados}.` : "Sem encargos nesta fatura.");
+      : e.encargosLancados ? `Encargos lançados: ${e.encargosLancados}.` : "Sem encargos nesta fatura.");
   add("Desdobrar", nDesdobrar ? false : null,
     nDesdobrar ? `${plural(nDesdobrar, "compra parcelada lançada", "compras parceladas lançadas")} pelo total: use “Desdobrar no Consistem”.` : "Nenhuma NF lançada pelo total.");
   add("Conferir o que já existe", semDecisao || possiveis ? false : r.divergencias.length || e.outros.length ? true : null,
@@ -146,7 +146,7 @@ export function montarRoteiro(e: {
   add("Parcelas k/N", parcelas.length ? false : null,
     parcelas.length ? `${plural(parcelas.length, "parcela", "parcelas")} (2/N em diante) sem título: confira no Consistem se a compra não foi lançada pelo total em outro mês; depois lance.` : "Nenhuma parcela sem título.");
   add("Lançar compras", compras.length ? false : null,
-    compras.length ? `${plural(compras.length, "compra", "compras")} sem título (${soma(compras)}): agrupado para as à vista, Lançar para as demais (ou justificar).` : "Nenhuma compra a lançar.");
+    compras.length ? `${plural(compras.length, "compra", "compras")} sem título (${soma(compras)}): Lançar selecionadas para as à vista (um título por linha), Lançar para as demais (ou justificar).` : "Nenhuma compra a lançar.");
   add("Sobras", sobras.length ? false : null,
     sobras.length ? `${plural(sobras.length, "estorno ou crédito", "estornos ou créditos")}: abata do título da compra e justifique.` : "Sem estornos pendentes.");
   const pronto = r.pendentes === 0 && r.residuoCentavos === 0;

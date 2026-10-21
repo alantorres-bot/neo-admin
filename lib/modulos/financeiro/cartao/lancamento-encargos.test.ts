@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { identificarCartaoDoTitulo } from "./cartoes";
 import { CARTOES_TESTE } from "./cartoes.test";
 import { conciliar, type DecisaoItem, type LinhaFatura, type TituloPagar } from "./conciliacao";
-import { complementoEncargos, documentoDoFechamento, encargosALancar, lerConfigEncargos, montarTituloEncargos } from "./lancamento-encargos";
+import { documentoDoFechamento, encargosALancar, lerConfigEncargos, montarTitulosEncargos } from "./lancamento-encargos";
 
 const SICREDI_PF = CARTOES_TESTE.find((c) => c.codigo === "SICREDI PF")!;
 const CONFIG = {
@@ -31,32 +31,36 @@ describe("encargos a lançar", () => {
   });
 });
 
-describe("título de encargos", () => {
-  it("monta o corpo do Consistem com a soma, as datas do fechamento e os códigos do cartão", () => {
-    const t = montarTituloEncargos({ nomeCartao: "SICREDI PF", config: CONFIG, linhas: encargosALancar(base()), fechamento: "2026-09-26", vencimento: "2026-10-13" });
+describe("títulos de encargos (um por linha)", () => {
+  it("monta um corpo do Consistem por linha, com as datas do fechamento e os códigos do cartão", () => {
+    const t = montarTitulosEncargos({ nomeCartao: "SICREDI PF", config: CONFIG, linhas: encargosALancar(base()), fechamento: "2026-09-26", vencimento: "2026-10-13" });
     expect(t.ok).toBe(true);
     if (!t.ok) return;
     expect(t.valorCentavos).toBe(9_234);
-    expect(t.payload).toEqual({
-      codFornecedor: 80, categoriaDoc: 17, codDocumento: "260926", codPortador: 91, dataEmissao: "2026-09-26", dataEntrada: "2026-09-26", dataVencimento: "2026-10-13",
-      valorDocumento: 92.34, codHistorico: 2, complementoHistorico: "CARTÃO SICREDI PF — ENCARGOS: IOF, JUROS, ANUIDADE", grupoContaFluxoCaixa: 22, contaFluxoCaixa: 28,
+    expect(t.titulos.map((x) => [x.payload.codDocumento, x.payload.valorDocumento, x.complemento])).toEqual([
+      ["260926-1", 12.34, "CARTÃO SICREDI PF 1x — IOF COMPRA INTERNACIONAL"],
+      ["260926-2", 50, "CARTÃO SICREDI PF 1x — JUROS DE MORA"],
+      ["260926-5", 30, "CARTÃO SICREDI PF 1x — ANUIDADE DIFERENCIADA"],
+    ]);
+    expect(t.titulos[0].payload).toEqual({
+      codFornecedor: 80, categoriaDoc: 17, codDocumento: "260926-1", codPortador: 91, dataEmissao: "2026-09-26", dataEntrada: "2026-09-26", dataVencimento: "2026-10-13",
+      valorDocumento: 12.34, codHistorico: 2, complementoHistorico: "CARTÃO SICREDI PF 1x — IOF COMPRA INTERNACIONAL", grupoContaFluxoCaixa: 22, contaFluxoCaixa: 28,
       dadosContabilidade: { contaContabilDebito: 3473, contaContabilCredito: 2004, listaCentroCustoContab: [] },
     });
   });
-  it("recusa sem configuração, sem fechamento, sem linhas ou com soma não positiva", () => {
+  it("recusa sem configuração, sem fechamento, sem linhas ou com linha não positiva", () => {
     const linhas = encargosALancar(base());
-    expect(montarTituloEncargos({ nomeCartao: "X", config: null, linhas, fechamento: "2026-09-26", vencimento: "2026-10-10" })).toMatchObject({ ok: false, erro: /códigos do Consistem/ });
-    expect(montarTituloEncargos({ nomeCartao: "X", config: CONFIG, linhas, fechamento: null, vencimento: "2026-10-10" })).toMatchObject({ ok: false, erro: /fechamento/ });
-    expect(montarTituloEncargos({ nomeCartao: "X", config: CONFIG, linhas: [], fechamento: "2026-09-26", vencimento: "2026-10-10" })).toMatchObject({ ok: false, erro: /Nenhum encargo/ });
+    expect(montarTitulosEncargos({ nomeCartao: "X", config: null, linhas, fechamento: "2026-09-26", vencimento: "2026-10-10" })).toMatchObject({ ok: false, erro: /códigos do Consistem/ });
+    expect(montarTitulosEncargos({ nomeCartao: "X", config: CONFIG, linhas, fechamento: null, vencimento: "2026-10-10" })).toMatchObject({ ok: false, erro: /fechamento/ });
+    expect(montarTitulosEncargos({ nomeCartao: "X", config: CONFIG, linhas: [], fechamento: "2026-09-26", vencimento: "2026-10-10" })).toMatchObject({ ok: false, erro: /Nenhum encargo/ });
     const negativa = [{ ...linhas[0], linha: { ...linhas[0].linha, valorCentavos: -100 } }];
-    expect(montarTituloEncargos({ nomeCartao: "X", config: CONFIG, linhas: negativa, fechamento: "2026-09-26", vencimento: "2026-10-10" })).toMatchObject({ ok: false, erro: /não é positiva/ });
+    expect(montarTitulosEncargos({ nomeCartao: "X", config: CONFIG, linhas: negativa, fechamento: "2026-09-26", vencimento: "2026-10-10" })).toMatchObject({ ok: false, erro: /não tem valor positivo/ });
   });
   it("complemento até 70 caracteres e reconhecido como do cartão", () => {
-    const c = complementoEncargos("SICREDI PF", ["IOF", "JUROS ROTATIVO", "MULTA", "ANUIDADE", "TARIFA AVULSA", "SEGURO PRESTAMISTA", "PARCELAMENTO DE FATURA"]);
-    expect(c.length).toBeLessThanOrEqual(70);
-    expect(c.startsWith("CARTÃO SICREDI PF — ENCARGOS: IOF, JUROS, MULTA")).toBe(true);
-    expect(complementoEncargos("ITAÚ PJ", ["ENCARGOS DIVERSOS"])).toBe("CARTÃO ITAÚ PJ — ENCARGOS");
-    const id = identificarCartaoDoTitulo({ complemento: complementoEncargos("SICREDI PF", ["IOF"]), vencimento: "2026-10-10" }, CARTOES_TESTE);
+    const longa = [{ ...encargosALancar(base())[0], linha: { ...LINHAS[0], descricao: "IOF ".repeat(30) } }];
+    const t = montarTitulosEncargos({ nomeCartao: "SICREDI PF", config: CONFIG, linhas: longa, fechamento: "2026-09-26", vencimento: "2026-10-10" });
+    expect(t.ok && t.titulos[0].complemento.length).toBe(70);
+    const id = identificarCartaoDoTitulo({ complemento: t.ok ? t.titulos[0].complemento : "", vencimento: "2026-10-10" }, CARTOES_TESTE);
     expect(id.situacao === "cartao" && id.cartao?.codigo).toBe("SICREDI PF");
   });
   it("documento = DDMM do fechamento; configuração exige todos os códigos inteiros positivos", () => {
@@ -72,14 +76,16 @@ describe("título de encargos", () => {
 
 describe("depois de lançado", () => {
   it("a decisão 'casar' com o título criado tira os encargos de 'A lançar'", () => {
-    const titulo: TituloPagar = {
-      id: "api:40001", codLancamento: "40001", numeroTitulo: "2609", fornecedor: "BANCO SICREDI", vencimento: "2026-10-13",
-      complemento: "CARTÃO SICREDI PF — ENCARGOS: IOF, JUROS, ANUIDADE", tipoTitulo: "", valorCentavos: 9_234,
-    };
-    const casar: DecisaoItem = { id: "d2", tipo: "casar", linhas: ["l1", "l2", "l5"], titulos: ["40001"], categoria: null, contaFluxo: null, motivo: "lançado", autor: null, em: "2026-10-12" };
-    const r = base([casar], [titulo]);
+    const titulo = (cod: string, complemento: string, centavos: number): TituloPagar => ({
+      id: `api:${cod}`, codLancamento: cod, numeroTitulo: cod, fornecedor: "BANCO SICREDI", vencimento: "2026-10-13", complemento, tipoTitulo: "", valorCentavos: centavos,
+    });
+    const casar = (id: string, linha: string, cod: string): DecisaoItem => ({ id, tipo: "casar", linhas: [linha], titulos: [cod], categoria: null, contaFluxo: null, motivo: "lançado", autor: null, em: "2026-10-12" });
+    const r = base([casar("d1", "l1", "40001"), casar("d2", "l2", "40002"), casar("d3", "l5", "40003")], [
+      titulo("40001", "CARTÃO SICREDI PF 1x — IOF COMPRA INTERNACIONAL", 1_234), titulo("40002", "CARTÃO SICREDI PF 1x — JUROS DE MORA", 5_000),
+      titulo("40003", "CARTÃO SICREDI PF 1x — ANUIDADE DIFERENCIADA", 3_000),
+    ]);
     expect(encargosALancar(r)).toEqual([]);
-    expect(r.conciliados.find((c) => c.modo === "Manual")?.diferencaCentavos).toBe(0);
+    expect(r.conciliados.filter((c) => c.modo === "Manual").map((c) => c.diferencaCentavos)).toEqual([0, 0, 0]);
     expect(r.aLancar.map((a) => a.linha.id)).toEqual(["l3", "l4"]);
   });
 });

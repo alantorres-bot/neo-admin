@@ -34,7 +34,7 @@ export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura
   congelado?: boolean;
 }) {
   const residuoZero = r.residuoCentavos === 0;
-  const encargosLancados = encargos?.ativo?.situacao === "lancado" ? encargos.ativo.cod_lancamento_erp : null;
+  const encargosLancados = (encargos?.ativos ?? []).filter((l) => l.situacao === "lancado").map((l) => l.cod_lancamento_erp ?? "?").join(", ") || null;
   const passos = congelado || !faturaId ? [] : montarRoteiro({ resultado: r, outros, encargosLancados, origemTitulos });
   const atual = passos.find((p) => p.estado === "atual");
   return (
@@ -55,7 +55,7 @@ export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura
           É o provisório do fechamento (os títulos do cartão vão para o borderô e ele é excluído após o pagamento): fica fora do cruzamento linha a linha. Quando ele sair do Consistem, o mês fechado passa a <strong>Paga</strong> sozinho.
         </p>
       )}
-      {!congelado && encargos && <QuadroEncargos dados={encargos} faturaId={faturaId} podeOperar={podeOperar} />}
+      {!congelado && encargos && <QuadroEncargos dados={encargos} faturaId={faturaId} podeOperar={podeOperar} podeGestor={podeGestor} />}
       {!congelado && desdobrar && <QuadroDesdobrar pares={r.aDesdobrar ?? []} dados={desdobrar} faturaId={faturaId} podeOperar={podeOperar} />}
       {!congelado && compras && <ListaComprasLancadas compras={compras} podeOperar={podeOperar} podeGestor={podeGestor} />}
       <AbasConciliacao compras={congelado ? null : compras} resultado={r} outros={outros} linhas={linhas} podeOperar={podeOperar && !congelado} faturaId={congelado ? null : faturaId} decisoesHistorico={decisoesHistorico} />

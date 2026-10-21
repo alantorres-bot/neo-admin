@@ -128,22 +128,27 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     sobrou do cruzamento e tem o **mesmo valor em centavos** (modo "Antecipação", aderência "conferir" — Inter PJ e Sicredi PF vencem
     no mesmo dia 10), ou por decisão "casar". Candidata que não casa aparece em "Outros títulos" e não entra no total.
 31. **Encargos lançados pelo painel** (13/10/2026, decisões do Alan): as linhas "Encargo financeiro" que ficaram a lançar (sem
-    justificativa e sem lançamento anterior) viram **um título com a soma** no Consistem, contra o banco emissor, pela operação
+    justificativa e sem lançamento anterior) viram **um título por linha** (desde 21/10/2026; antes era um título com a soma, que
+    dificultava a conferência) no Consistem, contra o banco emissor, pela operação
     "Gerar um Lançamento de Contas a Pagar" (`PUT financeiro/v10/lancamentoContasPagar`). É a **única escrita** do Neo Admin no ERP.
-32. Campos do título: emissão e entrada = **fechamento** da fatura (mês do cartão); vencimento = o da fatura; documento = **DDMMAA do
-    fechamento** (com o ano desde 20/10/2026: só DDMM repetia todo ano no mesmo fornecedor e o Consistem recusava); complemento `CARTÃO <NOME> — ENCARGOS: IOF, JUROS…` (tipos presentes, até 70 caracteres; a conciliação reconhece
+32. Campos de cada título: valor = o da linha; emissão e entrada = **fechamento** da fatura (mês do cartão); vencimento = o da fatura;
+    documento = **DDMMAA do fechamento + "-" + número da linha** (o ano desde 20/10/2026: só DDMM repetia todo ano no mesmo fornecedor e o
+    Consistem recusava; o número da linha desde 21/10/2026, vários encargos no mesmo fornecedor); complemento
+    `CARTÃO <NOME> 1x — <DESCRIÇÃO DA LINHA>` (ex.: "CARTÃO NUBANK PF 1x — MULTA DE ATRASO"; até 70 caracteres; a conciliação reconhece
     o cartão); fornecedor, histórico, portador, categoria, grupo/conta de fluxo e contas contábeis vêm de
     `crt_cartoes.lancamento_encargos` (gestor edita na aba Cartões). Valores iniciais = os dos lançamentos manuais desde jun/2026
     (levantados pela API em 12/10/2026, confirmados pelo Alan): histórico 2, portador 91, categoria 17, fluxo 22/28, contábil
     débito 3473 / crédito 2004; fornecedor Sicredi 80, Inter 76, Nubank 360, PicPay 391, Itaú 276, Unicred 607.
-33. **Botão com conferência**: "Lançar no Consistem" mostra o título exato; operador ou gestor confirma. Nada sai sozinho. A chave
+33. **Botão com conferência**: "Lançar N títulos no Consistem" mostra os títulos exatos (um por linha); operador ou gestor confirma. Nada sai sozinho. A chave
     geral `financeiro.cartao.lancar_encargos_no_erp` começa **desligada** (o quadro só mostra a prévia). Só mês **em conciliação**.
-34. **Um lançamento de encargos ativo por mês** (reservado, enviando ou lançado): clique duplo ou duas pessoas não duplicam o título.
-    O painel recalcula a conciliação e confere que o título é o que a pessoa viu antes de reservar.
+34. **Um lançamento ativo por linha de encargo** (reservado, enviando ou lançado, sem exclusão no Consistem; até 21/10/2026 era um
+    por mês): clique duplo ou duas pessoas não duplicam o título. O painel recalcula a conciliação e confere que as linhas são as que a
+    pessoa viu antes de reservar (`crt_reservar_lancamentos_encargos`, migration 0175). Os títulos saem num lote, em ordem; se um não
+    voltar lançado, os seguintes esperam e o quadro oferece "Reenviar o que faltou".
 35. **Nunca reenviar sozinho**: 4xx do Consistem = erro (nada criado, pode tentar de novo); 2xx com código = lançado; queda de rede,
     tempo esgotado, 5xx ou 2xx sem código = **sem resposta**: fica "enviando" e uma pessoa confere no Consistem e resolve
     ("Foi criado" com o código, ou "Não foi criado"), registrando o que conferiu.
-36. Lançado: grava a decisão **casar** das linhas com o título criado (as linhas saem de "A lançar"). Tudo fica em
+36. Lançado: grava a decisão **casar** da linha com o seu título (a linha sai de "A lançar"). Tudo fica em
     `crt_lancamentos_erp` (o que foi enviado, a resposta, o código, erros e resoluções), nunca apagado.
 37. **Compras sem título lançadas pelo painel** (13/10/2026, decisões do Alan): linha pendente de "Despesa sem nota fiscal",
     "Não identificado" ou "Parcela não desdobrada" (valor positivo, sem decisão) ganha o botão **Lançar**. Encargos têm o quadro
@@ -192,8 +197,13 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     outra). Google fica no 928 GOOGLE SUITE. Os genéricos do dicionário deixam de ser "fornecedor por compra". Compras com nota
     fiscal continuam pela nota; marketplace casa pelo valor. A sincronização do contas a pagar passou a reler o cadastro de
     fornecedores a cada rodada (fornecedor novo aparece no painel mesmo sem título).
-52. **Lançamento agrupado** (pedido do Alan, 13/10/2026, Sicredi PJ 10/2026 com 14 linhas de transporte por aplicativo;
-    migration 0150): várias linhas à vista, positivas e pendentes viram **um título** com a soma — vencimento da fatura, emissão
+52. **Lançar selecionadas** (desde 21/10/2026, decisão do Alan): várias linhas à vista, positivas e pendentes escolhidas de uma vez viram
+    **um título por linha**, cada um com a descrição e os códigos da própria linha (sugestão do estabelecimento); o diálogo só pede o que
+    faltar (ex.: fornecedor de uma linha sem sugestão) e mostra a prévia de todos os títulos. Envio linha a linha, cada uma num lote
+    próprio pela reserva da compra; para na primeira que não lançar. Mesma trava das regras 66 e 67. Os títulos agrupados lançados
+    antes continuam no histórico ("Compras lançadas") e casam pela decisão gravada no lançamento.
+    *Como era até 21/10/2026* — **lançamento agrupado** (pedido do Alan, 13/10/2026, Sicredi PJ 10/2026 com 14 linhas de transporte por aplicativo;
+    migration 0150): várias linhas à vista, positivas e pendentes viravam **um título** com a soma — vencimento da fatura, emissão
     e entrada no fechamento, documento DDMMAA do fechamento + "-" + o menor número de linha, complemento
     `CARTÃO <NOME> 1x — <GRUPO> (<n> LANÇ.)`. Códigos: os comuns às sugestões das linhas (diferentes → aviso). Na aba A lançar:
     caixa de seleção por linha, atalhos "Agrupar: <fornecedor> — n linhas, R$ X" e "Lançar agrupado". Lançado: "casar" liga
@@ -262,9 +272,11 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     fatura …". Sem resposta: conferir no Consistem e usar "Já está alterado no Consistem" (libera as parcelas) ou desdobrar de
     novo. Parcela que falhar: "Reenviar o que faltou" (as parcelas só saem com o original alterado). Depois do desdobramento a
     linha casa sozinha com o título (valor exato) e as parcelas seguintes casam nas próximas faturas.
-64. **Título excluído no Consistem** (gestor, botão "Excluído no Consistem" na lista de compras lançadas): registra que um título
+64. **Título excluído no Consistem** (gestor, botão "Excluído no Consistem" na lista de compras lançadas e no quadro de encargos): registra que um título
     lançado pelo painel foi excluído no ERP (ex.: duplicava a NF), com motivo, quem e quando. Nada é apagado no Neo Admin; o título
-    deixa de contar como lançamento ativo (a linha pode ser lançada ou desdobrada de novo). O painel não exclui no Consistem.
+    deixa de contar como lançamento ativo e, com o mês em conciliação, a decisão **casar** gravada no lançamento é **desfeita** com o
+    motivo "Título X excluído no Consistem: …" (desde 21/10/2026, migration 0175): a linha volta a "A lançar" e pode ser lançada ou
+    desdobrada de novo. O painel não exclui no Consistem.
 65. **Fechamento passo a passo** (decisão do Alan, 21/10/2026, depois do Nubank PF 10/2026): primeiro resolver o que já existe no
     Consistem, depois criar o que falta. Passos: 0 Preparar (soma = total, títulos lidos do Consistem) · 1 Encargos · 2 Desdobrar ·
     3 Conferir o que já existe (divergências e outros títulos de cartão) · 4 Parcelas k/N sem título (conferir se a compra não foi
@@ -306,7 +318,7 @@ zero a lançar, zero divergências (`conciliacao.test.ts`). Detecção: tirando 
 | **Lançar compra** (botão na aba A lançar; diálogo) | Fornecedor (busca por nome ou código), códigos com a origem (do estabelecimento, do cartão, informado, escolher), títulos que serão criados (parcela, vencimento, documento, valor, complemento), "Lembrar para as próximas compras de", botão "Lançar N títulos" |
 | **Compras lançadas no Consistem** (lista acima das abas) | Lotes do mês: compra (ou desdobramento), parcela, vencimento, valor, situação (Lançado nº, Sem resposta, Não enviado, Não lançado), quem e quando; Resolver e Reenviar o que faltou; **Excluído no Consistem** (gestor, com motivo) |
 | **Compras parceladas lançadas pelo total** (quadro acima das abas, regras 61 a 64) | Cada par linha 1/N × título cheio, a prévia das N parcelas (vencimento, documento, valor, complemento) e o botão **Desdobrar no Consistem** (confirmação em dois cliques); erro do último desdobramento com "Já está alterado no Consistem"; desdobramentos feitos no mês |
-| **Encargos do mês** (quadro na conciliação e no mês em conciliação) | Linhas de encargo pendentes, soma e o título que vai para o Consistem (fornecedor, documento, datas, valor, complemento, códigos); botão **Lançar no Consistem** com conferência; lançamento ativo (lançado com o código, ou sem resposta com **Resolver**); erros anteriores |
+| **Encargos do mês** (quadro na conciliação e no mês em conciliação) | Um título por linha de encargo pendente (linha, documento, complemento, valor) e os códigos comuns; botão **Lançar N títulos no Consistem** com conferência; lançamentos do mês (lançado com o código e **Excluído no Consistem** para o gestor, ou sem resposta com **Resolver**); **Reenviar o que faltou**; excluídos e erros anteriores |
 | **Fechamento passo a passo** (quadro no topo da conciliação ao vivo, regras 65 a 67) | Os 8 passos com o estado e o que falta; o rodapé aponta o próximo passo. Na aba A lançar: aviso da trava geral e, por linha, "Possível título já lançado" com o botão **Não é o mesmo** |
 | **Estabelecimentos** (`/estabelecimentos`) | Dicionário com busca; incluir/editar (operador), com a **sugestão de lançamento no Consistem** (fornecedor, códigos). A aba A lançar tem o atalho "Cadastrar" para item não identificado |
 
@@ -579,3 +591,16 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
 - App: quadro `[id]/roteiro.tsx` no `PainelConciliacao` (fatura importada e mês em conciliação); aba A lançar com a trava geral, o
   aviso por linha e o botão "Não é o mesmo"; ações `lancarCompra` e `lancarAgrupado` recusam com a mesma trava; nova ação
   `conferirNaoEhOMesmo` (grava a observação pela `crt_registrar_decisao`). Sem migration.
+
+## 22. Um título por linha — o que foi feito (21/10/2026)
+- Motivo: os títulos agrupados do Nubank PF 10/2026 (compras 1910-6, 1910-23, 1910-28 e encargos 34002) juntavam linhas de descrições
+  diferentes; o cruzamento não os reconhece e, ao reprocessar a fatura, viravam divergência com as linhas de novo "a lançar".
+- Decisões do Alan: encargos com um clique e um título por linha; "Lançar agrupado" vira "Lançar selecionadas" (um título por linha);
+  os agrupados já lançados no Nubank PF 10/2026 são excluídos no Consistem, registrados como "Excluído no Consistem" e relançados.
+- Migration `0175_crt_titulo_por_linha.sql`: índice de encargos por linha (era um por mês), `crt_reservar_lancamentos_encargos`
+  (lote com um título por linha), `crt_reenviar_lancamentos` aceita o lote de encargos, `crt_registrar_exclusao_erp` desfaz o "casar".
+- Código puro: `lancamento-encargos.ts` (`montarTitulosEncargos`; saem `montarTituloEncargos` e `complementoEncargos`),
+  `lancamento-agrupado.ts` (`camposDaSelecao`; sai `montarTituloAgrupado`).
+- App: `lancarEncargos` (um por linha) e `lancarSelecionadas` (substitui `lancarAgrupado`); quadro de encargos e diálogo de seleção
+  refeitos. A função `crt_reservar_lancamento_agrupado` e a antiga `crt_reservar_lancamento_encargos` ficam no banco, sem uso pelo app.
+- Testes: `lancamento-encargos.test.ts`, `lancamento-agrupado.test.ts`, `tests/db/crt-titulo-por-linha.test.ts`.

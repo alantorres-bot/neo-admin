@@ -46,12 +46,12 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
   // "Selecionar todas" pega só as agrupáveis que o filtro da grade deixou à vista.
   const agrupaveisVisiveis = agrupaveis.filter((i) => visivel(i.linha.id));
   const todasMarcadas = agrupaveisVisiveis.length > 0 && agrupaveisVisiveis.every((i) => selecionadas.has(i.linha.id));
-  // Por que a linha não entra num agrupado (dica na caixa desabilitada).
+  // Por que a linha não entra em "Lançar selecionadas" (dica na caixa desabilitada).
   const motivoFora = (a: (typeof r.aLancar)[number]): string => {
     if (a.justificativa) return "Já tem decisão (justificada)";
     if (trava?.porLinha.has(a.linha.id)) return "Possível título já lançado: case ou use “Não é o mesmo”";
     if (a.linha.valorCentavos <= 0) return "Estorno: abata do título da compra";
-    if ((a.linha.parcelaTotal ?? 1) > 1) return "Parcelada: lance sozinha (todas as parcelas restantes)";
+    if ((a.linha.parcelaTotal ?? 1) > 1) return "Parcelada: lance pelo botão Lançar da linha (todas as parcelas restantes)";
     if (a.natureza === "Encargo financeiro") return "Encargo: use o quadro Encargos do mês";
     if (compras?.marketplace[a.linha.id]) return "Marketplace: casa pelo valor da nota do vendedor";
     return "Já lançada no Consistem";
@@ -87,7 +87,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
         <p className="text-xs text-muted-foreground">Linhas da fatura sem título correspondente, classificadas por natureza. Lançar contra a instituição emissora, com o complemento sugerido (máscara do POP). Encargo: parcela única. Estorno: abater do título da compra, não lançar título novo. Parcela não desdobrada: localizar a compra de origem e desdobrar.</p>
         {lancaCompra && travadoGeral && (
           <div className="rounded-[3px] border border-amber-300 bg-amber-50 p-3 text-sm">
-            <p className="font-medium">Lançar compra e Lançar agrupado estão travados até:</p>
+            <p className="font-medium">Lançar compra e Lançar selecionadas estão travados até:</p>
             <ul className="list-disc pl-5">{trava!.geral.map((m) => <li key={m}>{m}</li>)}</ul>
           </div>
         )}
@@ -95,10 +95,10 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
         {r.aLancar.length === 0 ? <Vazio texto="Nada a lançar: toda linha da fatura tem título." /> : (
           <Table aoFiltrar={aoFiltrar}>
             <TableHeader><TableRow>
-              {agrupaveis.length >= 2 && (
+              {agrupaveis.length >= 1 && (
                 <TableHead className="w-16">
-                  <label className="flex items-center gap-1" title="Selecionar todas as linhas que podem ser agrupadas">
-                    <input type="checkbox" className="size-4" checked={todasMarcadas} aria-label="Selecionar todas as linhas que podem ser agrupadas"
+                  <label className="flex items-center gap-1" title="Selecionar todas as linhas à vista que podem ser lançadas">
+                    <input type="checkbox" className="size-4" checked={todasMarcadas} aria-label="Selecionar todas as linhas à vista que podem ser lançadas"
                       onChange={(e) => setSelecionadas((atual) => {
                         const novo = new Set(atual);
                         for (const i of agrupaveisVisiveis) {
@@ -107,7 +107,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
                         }
                         return novo;
                       })} />
-                    Agrupar
+                    Selecionar
                   </label>
                 </TableHead>
               )}<TableHead>Data</TableHead><TableHead>Descrição na fatura</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Natureza</TableHead>
@@ -116,9 +116,9 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
             <TableBody>
               {r.aLancar.map((a) => (
                 <TableRow key={a.linha.id} className={a.justificativa ? "bg-emerald-50/50" : selecionadas.has(a.linha.id) ? "bg-sky-50" : ""}>
-                  {agrupaveis.length >= 2 && (
+                  {agrupaveis.length >= 1 && (
                     <TableCell>{agrupavel.has(a.linha.id) ? (
-                      <input type="checkbox" className="size-4" aria-label={`Selecionar ${a.linha.descricao} para lançar agrupado`}
+                      <input type="checkbox" className="size-4" aria-label={`Selecionar ${a.linha.descricao} para lançar`}
                         checked={selecionadas.has(a.linha.id)} onChange={(e) => marcar(a.linha.id, e.target.checked)} />
                     ) : (
                       <input type="checkbox" className="size-4 cursor-not-allowed opacity-40" disabled title={motivoFora(a)} aria-label={motivoFora(a)} />

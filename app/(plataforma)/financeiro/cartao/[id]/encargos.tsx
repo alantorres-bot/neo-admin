@@ -1,7 +1,7 @@
 "use client";
 
-// Quadro "Encargos do mês" da conciliação: o título com a soma dos encargos que o painel lança no Consistem (botão com
-// conferência), o lançamento ativo do mês e os erros anteriores. Regras 31 a 36 de docs/modulos/financeiro-cartao.md.
+// Quadro "Encargos do mês" da conciliação: um título por linha de encargo que o painel lança no Consistem (botão com
+// conferência), os lançamentos do mês e os erros anteriores. Regras 31 a 36 de docs/modulos/financeiro-cartao.md.
 import { Fragment, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -9,69 +9,101 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import type { NovoLancamentoContaPagar } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { lancarEncargos, resolverLancamentoEncargos } from "../acoes";
 import type { LancamentoErpLinha, QuadroEncargos as Dados } from "../dados";
+import { BotaoReenviar } from "./compras";
+import { BotaoExcluidoNoConsistem } from "./desdobrar";
 
 const quando = (iso: string | null) => (iso ? new Date(iso).toLocaleString("pt-BR", { timeZone: "America/Cuiaba", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
 
-function CamposTitulo({ p, fornecedorNome }: { p: NovoLancamentoContaPagar; fornecedorNome: string | null }) {
+/** Códigos comuns aos títulos de encargos (os mesmos em todas as linhas). */
+function CodigosComuns({ p, fornecedorNome }: { p: NovoLancamentoContaPagar; fornecedorNome: string | null }) {
   const itens: [string, string][] = [
     ["Fornecedor", `${p.codFornecedor}${fornecedorNome ? ` · ${fornecedorNome}` : ""}`],
-    ["Documento", p.codDocumento],
     ["Emissão e entrada", formatarData(p.dataEmissao)],
     ["Vencimento", formatarData(p.dataVencimento)],
-    ["Valor", formatarMoeda(Math.round(p.valorDocumento * 100))],
-    ["Complemento", p.complementoHistorico],
     ["Histórico · Portador · Categoria", `${p.codHistorico} · ${p.codPortador} · ${p.categoriaDoc}`],
     ["Fluxo de caixa (grupo · conta)", `${p.grupoContaFluxoCaixa} · ${p.contaFluxoCaixa}`],
     ["Contábil (débito · crédito)", `${p.dadosContabilidade.contaContabilDebito} · ${p.dadosContabilidade.contaContabilCredito}`],
   ];
   return (
     <dl className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
-      {itens.map(([k, v]) => (<Fragment key={k}><dt className="text-muted-foreground">{k}</dt><dd className={k === "Complemento" ? "font-mono text-xs" : "tabular-nums"}>{v}</dd></Fragment>))}
+      {itens.map(([k, v]) => (<Fragment key={k}><dt className="text-muted-foreground">{k}</dt><dd className="tabular-nums">{v}</dd></Fragment>))}
     </dl>
   );
 }
 
-export function QuadroEncargos({ dados, faturaId, podeOperar }: { dados: Dados; faturaId: string | null; podeOperar: boolean }) {
-  const { titulo: t, ativo, historico, ligado, mesAberto, fornecedorNome } = dados;
+function TitulosPorLinha({ titulos }: { titulos: { item: { linha: { id: string; descricao: string } }; payload: NovoLancamentoContaPagar }[] }) {
+  return (
+    <Table>
+      <TableHeader><TableRow><TableHead>Linha da fatura</TableHead><TableHead>Documento</TableHead><TableHead>Complemento</TableHead><TableHead className="text-right">Valor</TableHead></TableRow></TableHeader>
+      <TableBody>
+        {titulos.map((x) => (
+          <TableRow key={x.item.linha.id}>
+            <TableCell>{x.item.linha.descricao}</TableCell>
+            <TableCell className="tabular-nums">{x.payload.codDocumento}</TableCell>
+            <TableCell className="font-mono text-xs">{x.payload.complementoHistorico}</TableCell>
+            <TableCell className="text-right tabular-nums">{formatarMoeda(Math.round(x.payload.valorDocumento * 100))}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+export function QuadroEncargos({ dados, faturaId, podeOperar, podeGestor = false }: { dados: Dados; faturaId: string | null; podeOperar: boolean; podeGestor?: boolean }) {
+  const { titulos: t, ativos, historico, ligado, mesAberto, fornecedorNome } = dados;
+  const pendentes = t.ok ? t.titulos.length : t.linhas.length;
   const erros = historico.filter((l) => l.situacao === "erro");
-  if (t.linhas.length === 0 && !ativo && erros.length === 0) return null;
-  const podeLancar = podeOperar && faturaId !== null && ligado && mesAberto && t.ok && !ativo;
+  const excluidos = historico.filter((l) => l.excluido_no_erp_em);
+  if (pendentes === 0 && ativos.length === 0 && erros.length === 0 && excluidos.length === 0) return null;
+  const podeLancar = podeOperar && faturaId !== null && ligado && mesAberto && t.ok;
+  const linhasAtivas = new Set(ativos.flatMap((l) => l.linhas));
+  const lotesAReenviar = [...new Set(erros.filter((l) => (l.erro ?? "").startsWith("Envio interrompido") && l.linha_origem && !linhasAtivas.has(l.linha_origem)).map((l) => l.lote))];
   return (
     <section className="space-y-3 rounded-[3px] border border-grade bg-card p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-sm font-bold">Encargos do mês{t.linhas.length > 0 ? `: ${formatarMoeda(t.valorCentavos)}` : ""}</h3>
+          <h3 className="text-sm font-bold">Encargos do mês{pendentes > 0 ? `: ${pendentes} a lançar, ${formatarMoeda(t.valorCentavos)}` : ""}</h3>
           <p className="text-xs text-muted-foreground">
-            Um título com a soma dos encargos (IOF, juros, multa, anuidade, tarifa) contra o banco emissor, com os códigos do cartão (aba Cartões).
-            {!ligado && " O lançamento pelo painel está desligado: o título abaixo é só a prévia do que seria enviado."}
+            Um título por linha de encargo (multa, IOF, juros, anuidade, tarifa) contra o banco emissor, com os códigos do cartão (aba Cartões).
+            {!ligado && " O lançamento pelo painel está desligado: os títulos abaixo são só a prévia do que seria enviado."}
             {ligado && !mesAberto && " O mês desta fatura não está em conciliação: nada é lançado daqui."}
           </p>
         </div>
         {podeLancar && t.ok && <BotaoLancar faturaId={faturaId!} dados={dados} />}
       </div>
 
-      {ativo && <Ativo l={ativo} podeResolver={podeOperar && faturaId !== null && mesAberto} />}
+      {ativos.map((l) => <Ativo key={l.id} l={l} podeResolver={podeOperar && faturaId !== null && mesAberto} podeGestor={podeGestor} />)}
+      {podeOperar && mesAberto && lotesAReenviar.map((lote) => <BotaoReenviar key={lote} lote={lote} />)}
 
-      {t.linhas.length > 0 && (
-        <div className="grid gap-4 lg:grid-cols-2">
+      {pendentes > 0 && (t.ok ? (
+        <div className="space-y-2">
+          <TitulosPorLinha titulos={t.titulos} />
+          <CodigosComuns p={t.titulos[0].payload} fornecedorNome={fornecedorNome} />
+        </div>
+      ) : (
+        <div className="space-y-1">
           <ul className="space-y-0.5 text-sm">
             {t.linhas.map((a) => (
               <li key={a.linha.id} className="flex justify-between gap-3"><span>{formatarData(a.linha.dataCompra)} · {a.linha.descricao}</span><span className="tabular-nums">{formatarMoeda(a.linha.valorCentavos)}</span></li>
             ))}
           </ul>
-          {t.ok ? <CamposTitulo p={t.payload} fornecedorNome={fornecedorNome} /> : <p className="text-sm font-medium text-amber-800">{t.erro}</p>}
+          <p className="text-sm font-medium text-amber-800">{t.erro}</p>
         </div>
-      )}
+      ))}
 
-      {erros.length > 0 && (
+      {(erros.length > 0 || excluidos.length > 0) && (
         <ul className="space-y-1 text-xs text-muted-foreground">
+          {excluidos.map((l) => (
+            <li key={l.id}><Badge variant="outline" className="mr-1">Excluído no Consistem</Badge>lançamento {l.cod_lancamento_erp} · {formatarMoeda(centavos(l.valor))} · {l.complemento} · {l.excluido_no_erp_por_nome ?? ""}: {l.motivo_exclusao_erp}</li>
+          ))}
           {erros.map((l) => (
-            <li key={l.id}><Badge variant="outline" className="mr-1 border-red-300 text-red-800">Não lançado</Badge>{quando(l.criado_em)} · {l.criado_por_nome ?? ""} · {formatarMoeda(centavos(l.valor))} · {l.erro}{l.motivo_resolucao ? ` · Conferido: ${l.motivo_resolucao}` : ""}</li>
+            <li key={l.id}><Badge variant="outline" className="mr-1 border-red-300 text-red-800">Não lançado</Badge>{quando(l.criado_em)} · {l.criado_por_nome ?? ""} · {l.complemento} · {formatarMoeda(centavos(l.valor))} · {l.erro}{l.motivo_resolucao ? ` · Conferido: ${l.motivo_resolucao}` : ""}</li>
           ))}
         </ul>
       )}
@@ -79,19 +111,22 @@ export function QuadroEncargos({ dados, faturaId, podeOperar }: { dados: Dados; 
   );
 }
 
-function Ativo({ l, podeResolver }: { l: LancamentoErpLinha; podeResolver: boolean }) {
+function Ativo({ l, podeResolver, podeGestor }: { l: LancamentoErpLinha; podeResolver: boolean; podeGestor: boolean }) {
   if (l.situacao === "lancado") {
     return (
-      <p className="rounded-[3px] border border-emerald-300 bg-emerald-50 p-2 text-sm">
-        <strong>Lançado no Consistem:</strong> lançamento {l.cod_lancamento_erp}, {formatarMoeda(centavos(l.valor))}, por {l.criado_por_nome ?? "—"} em {quando(l.concluido_em ?? l.criado_em)}.
-        {l.motivo_resolucao ? ` Registrado à mão por ${l.resolvido_por_nome ?? "—"}: ${l.motivo_resolucao}.` : ""} As linhas de encargo estão casadas com o título.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-[3px] border border-emerald-300 bg-emerald-50 p-2 text-sm">
+        <p>
+          <strong>Lançado no Consistem:</strong> lançamento {l.cod_lancamento_erp}, {formatarMoeda(centavos(l.valor))} · {l.complemento} · por {l.criado_por_nome ?? "—"} em {quando(l.concluido_em ?? l.criado_em)}.
+          {l.motivo_resolucao ? ` Registrado à mão por ${l.resolvido_por_nome ?? "—"}: ${l.motivo_resolucao}.` : ""}
+        </p>
+        {podeGestor && <BotaoExcluidoNoConsistem l={l} />}
+      </div>
     );
   }
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 rounded-[3px] border border-amber-300 bg-amber-50 p-2 text-sm">
       <p>
-        <strong>Sem resposta do Consistem</strong> ({l.situacao === "reservado" ? "não chegou a ser enviado" : `enviado em ${quando(l.enviado_em)}`}).
+        <strong>Sem resposta do Consistem</strong> ({l.complemento}, {formatarMoeda(centavos(l.valor))}; {l.situacao === "reservado" ? "não chegou a ser enviado" : `enviado em ${quando(l.enviado_em)}`}).
         {" "}{l.erro ?? "Confira no Consistem se o título foi criado."} Antes de lançar de novo, confira e registre o resultado.
       </p>
       {podeResolver && <BotaoResolver l={l} />}
@@ -104,31 +139,32 @@ function BotaoLancar({ faturaId, dados }: { faturaId: string; dados: Dados }) {
   const [aberto, setAberto] = useState(false);
   const [erro, setErro] = useState<string>();
   const [pendente, iniciar] = useTransition();
-  const t = dados.titulo;
+  const t = dados.titulos;
   if (!t.ok) return null;
+  const n = t.titulos.length;
   function confirmar() {
     if (!t.ok) return;
     iniciar(async () => {
-      const r = await lancarEncargos({ faturaId, valorCentavos: t.valorCentavos, linhas: t.linhas.map((a) => a.linha.id) });
+      const r = await lancarEncargos({ faturaId, linhas: t.titulos.map((x) => x.item.linha.id) });
       if (r.ok) { toast.success(r.aviso); setAberto(false); router.refresh(); } else { setErro(r.erro); router.refresh(); }
     });
   }
   return (
     <>
-      <Button onClick={() => { setErro(undefined); setAberto(true); }}>Lançar no Consistem</Button>
+      <Button onClick={() => { setErro(undefined); setAberto(true); }}>Lançar {n === 1 ? "1 título" : `${n} títulos`} no Consistem</Button>
       {aberto && (
         <Dialog open onOpenChange={(v) => { if (!v && !pendente) setAberto(false); }}>
-          <DialogContent className="sm:max-w-lg">
+          <DialogContent className="sm:max-w-2xl">
             <DialogHeader>
               <DialogTitle>Lançar os encargos no Consistem</DialogTitle>
-              <DialogDescription>Confira o título. Ao confirmar, ele é criado no Contas a Pagar do Consistem uma única vez e as linhas da fatura ficam casadas com ele.</DialogDescription>
+              <DialogDescription>Confira os títulos: um por linha de encargo. Ao confirmar, eles são criados no Contas a Pagar do Consistem, em ordem, uma única vez, e cada linha fica casada com o seu título.</DialogDescription>
             </DialogHeader>
-            <CamposTitulo p={t.payload} fornecedorNome={dados.fornecedorNome} />
-            <p className="text-xs text-muted-foreground">{t.linhas.length} {t.linhas.length === 1 ? "linha" : "linhas"} de encargo da fatura.</p>
+            <TitulosPorLinha titulos={t.titulos} />
+            <CodigosComuns p={t.titulos[0].payload} fornecedorNome={dados.fornecedorNome} />
             {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setAberto(false)} disabled={pendente}>Voltar</Button>
-              <Button onClick={confirmar} disabled={pendente}>{pendente ? "Lançando…" : `Lançar ${formatarMoeda(t.valorCentavos)}`}</Button>
+              <Button onClick={confirmar} disabled={pendente}>{pendente ? "Lançando…" : `Lançar ${n === 1 ? "1 título" : `${n} títulos`} (${formatarMoeda(t.valorCentavos)})`}</Button>
             </div>
           </DialogContent>
         </Dialog>

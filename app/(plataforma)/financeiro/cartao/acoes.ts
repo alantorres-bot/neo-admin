@@ -17,8 +17,8 @@ import { gerarPlanilha, nomeDaPlanilha } from "@/lib/modulos/financeiro/cartao/p
 import { bloqueioDoFechamento, rotuloCompetencia } from "@/lib/modulos/financeiro/cartao/ciclos";
 import { CAMPOS_CONFIG_ENCARGOS, ROTULO_CAMPO_CONFIG } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
 import { CAMPOS_COMPRA, CAMPOS_PADRAO_CARTAO, conferirContas, lerCampos, montarTitulosCompra, ROTULO_CAMPO_COMPRA } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
-import { chaveTitulo, CONFERIR, type LinhaFatura } from "@/lib/modulos/financeiro/cartao/conciliacao";
-import { montarTituloAgrupado } from "@/lib/modulos/financeiro/cartao/lancamento-agrupado";
+import { chaveTitulo, CONFERIR } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { aVista, camposDaSelecao } from "@/lib/modulos/financeiro/cartao/lancamento-agrupado";
 import { comMarcasDaFatura, titulosParaTrocar } from "@/lib/modulos/financeiro/cartao/portador-fatura";
 import type { ResultadoConciliacao } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { normalizar } from "@/lib/modulos/financeiro/cartao/texto";
@@ -420,11 +420,11 @@ async function mensagemDaFuncao(error: unknown, padrao: string): Promise<{ mensa
 }
 
 /**
- * Lança no Consistem o título com a soma dos encargos da fatura (operador ou acima). Recalcula a conciliação na hora (não
- * confia na tela), confere que o título é o mesmo que a pessoa viu (valor e linhas), reserva (crt_reservar_lancamento_encargos)
- * e chama a Edge Function crt-lancar-encargos, que envia uma vez só.
+ * Lança no Consistem os encargos da fatura, UM TÍTULO POR LINHA (operador ou acima; regra 31 desde 21/10/2026). Recalcula a
+ * conciliação na hora (não confia na tela), confere que as linhas são as que a pessoa viu, reserva o lote
+ * (crt_reservar_lancamentos_encargos) e envia em ordem, um título de cada vez (Edge Function crt-lancar-no-consistem).
  */
-export async function lancarEncargos(entrada: { faturaId: string; valorCentavos: number; linhas: string[] }): Promise<Resultado> {
+export async function lancarEncargos(entrada: { faturaId: string; linhas: string[] }): Promise<Resultado> {
   const sessao = await exigirSessao();
   if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) lança encargos no Consistem." };
   if (!z.string().uuid().safeParse(entrada.faturaId).success) return { ok: false, erro: "Fatura inválida." };
@@ -435,24 +435,20 @@ export async function lancarEncargos(entrada: { faturaId: string; valorCentavos:
   const q = await lerEncargos(supabase, c);
   if (!q.ligado) return { ok: false, erro: "O lançamento de encargos no Consistem está desligado." };
   if (!q.mesAberto) return { ok: false, erro: "Só se lançam encargos de fatura de um mês em conciliação." };
-  if (q.ativo) return { ok: false, erro: `Este mês já tem lançamento de encargos (${q.ativo.cod_lancamento_erp ?? q.ativo.situacao}).` };
-  const t = q.titulo;
+  const t = q.titulos;
   if (!t.ok) return { ok: false, erro: t.erro };
-  const mesmas = [...t.linhas.map((a) => a.linha.id)].sort().join(",") === [...entrada.linhas].sort().join(",");
-  if (t.valorCentavos !== entrada.valorCentavos || !mesmas) return { ok: false, erro: "Os encargos mudaram desde que a tela foi aberta. Recarregue e confira de novo." };
+  const mesmas = t.titulos.map((x) => x.item.linha.id).sort().join(",") === [...entrada.linhas].sort().join(",");
+  if (!mesmas) return { ok: false, erro: "Os encargos mudaram desde que a tela foi aberta. Recarregue e confira de novo." };
 
-  const { data: id, error } = await supabase.rpc("crt_reservar_lancamento_encargos", {
-    p_fatura: c.fatura.id, p_linhas: t.linhas.map((a) => a.linha.id), p_valor: t.valorCentavos / 100, p_complemento: t.complemento, p_payload: t.payload,
+  const { data: lote, error } = await supabase.rpc("crt_reservar_lancamentos_encargos", {
+    p_fatura: c.fatura.id, p_titulos: t.titulos.map((x) => ({ linha: x.item.linha.id, payload: x.payload })),
   });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
-  const { data, error: erroFuncao } = await supabase.functions.invoke("crt-lancar-no-consistem", { body: { id } });
+  const envio = await enviarLote(supabase, lote as string);
   revalidatePath(ROTA_CARTAO, "layout");
-  if (erroFuncao) {
-    const { mensagem, tipo } = await mensagemDaFuncao(erroFuncao, "Não foi possível falar com a função de lançamento.");
-    return { ok: false, erro: tipo === "incerto" ? `${mensagem} Depois de conferir, use “Resolver” na lista de lançamentos.` : mensagem };
-  }
-  const r = data as { codLancamento?: string } | null;
-  return { ok: true, aviso: `Encargos lançados no Consistem: lançamento ${r?.codLancamento ?? "?"} (${(t.valorCentavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}). As linhas foram casadas com o título.` };
+  if (!envio.ok) return { ok: false, erro: envio.erro };
+  const n = envio.codigos.length;
+  return { ok: true, aviso: `${n === 1 ? "Encargo lançado" : `${n} encargos lançados`} no Consistem: ${envio.codigos.join(", ")}. Cada linha foi casada com o seu título.` };
 }
 
 const esquemaResolver = z.object({
@@ -489,7 +485,7 @@ async function enviarLote(supabase: Awaited<ReturnType<typeof criarClienteServid
   const { data, error } = await supabase.functions.invoke("crt-lancar-no-consistem", { body: { lote } });
   if (error) {
     const { mensagem, tipo } = await mensagemDaFuncao(error, "Não foi possível falar com a função de lançamento.");
-    return { ok: false, erro: tipo === "incerto" ? `${mensagem} Depois de conferir, use “Resolver” na lista de compras lançadas.` : mensagem };
+    return { ok: false, erro: tipo === "incerto" ? `${mensagem} Depois de conferir, use “Resolver” na lista de lançamentos.` : mensagem };
   }
   const r = data as { lancados?: { codLancamento: string }[] } | null;
   return { ok: true, codigos: (r?.lancados ?? []).map((x) => x.codLancamento) };
@@ -620,20 +616,24 @@ export async function ligarFornecedor(entrada: { estabelecimentoId: string; codF
   return { ok: true, aviso: `Estabelecimento ligado ao fornecedor ${entrada.codFornecedor}.` };
 }
 
-// ---------------------------------------------------------------- lançar várias linhas num único título (0150)
+// ---------------------------------------------------------------- lançar selecionadas: um título por linha (0175)
 
-const esquemaAgrupado = z.object({
+const esquemaSelecionadas = z.object({
   faturaId: z.string().uuid(),
-  linhas: z.array(z.string().uuid()).min(2, "Escolha pelo menos duas linhas.").max(200),
+  linhas: z.array(z.string().uuid()).min(1, "Escolha as linhas.").max(200),
+  /** Códigos do diálogo: só completam o que faltar na sugestão de cada linha. */
   campos: z.object(Object.fromEntries(CAMPOS_COMPRA.map((k) => [k, codigoCampo])) as Record<(typeof CAMPOS_COMPRA)[number], typeof codigoCampo>),
-  rotulo: z.string().trim().min(2, "Informe o nome do grupo.").max(60),
 });
 
-/** Lança várias linhas à vista da fatura como um único título (operador ou acima): recalcula, confere, reserva e envia. */
-export async function lancarAgrupado(entrada: z.input<typeof esquemaAgrupado>): Promise<Resultado> {
+/**
+ * "Lançar selecionadas" (regra 52, desde 21/10/2026): várias linhas à vista, UM TÍTULO POR LINHA, cada uma com a sua descrição e
+ * os seus códigos. Recalcula e confere tudo antes de começar; depois lança uma linha de cada vez (cada uma num lote próprio, pela
+ * mesma reserva da compra) e para na primeira que não lançar — as já lançadas ficam casadas e não se repetem.
+ */
+export async function lancarSelecionadas(entrada: z.input<typeof esquemaSelecionadas>): Promise<Resultado> {
   const sessao = await exigirSessao();
   if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) lança compras no Consistem." };
-  const dados = esquemaAgrupado.safeParse(entrada);
+  const dados = esquemaSelecionadas.safeParse(entrada);
   if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
   const d = dados.data;
   const c = await conciliacaoDaRequisicao(d.faturaId);
@@ -642,21 +642,39 @@ export async function lancarAgrupado(entrada: z.input<typeof esquemaAgrupado>): 
   const supabase = await criarClienteServidor();
   const q = await lerCompras(supabase, c);
   if (!q.ligado) return { ok: false, erro: "O lançamento no Consistem está desligado." };
-  if (!q.mesAberto) return { ok: false, erro: "Só se lançam compras de fatura de um mês em conciliação." };
-  const linhas = d.linhas.map((id) => c.resultado.aLancar.find((a) => a.linha.id === id && q.propostas[id])?.linha);
-  if (linhas.some((l) => !l)) return { ok: false, erro: "Uma das linhas não está mais entre as compras a lançar. Recarregue a página." };
+  if (!q.mesAberto || !q.competencia) return { ok: false, erro: "Só se lançam compras de fatura de um mês em conciliação." };
   const travada = recusaDeLancamento(travaDeLancamento(c.resultado, c.outros), d.linhas);
   if (travada) return { ok: false, erro: travada };
-  const contas = conferirContas(lerCampos(d.campos), q.creditoPadrao);
-  if (contas) return { ok: false, erro: contas };
-  const t = montarTituloAgrupado({ linhas: linhas as LinhaFatura[], nomeCartao: c.cartao.nome, campos: comMarcasDaFatura(await comCategoriaDoFornecedor(supabase, c.fatura.empresa_id, lerCampos(d.campos)), { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura }), fechamento: q.fechamento, vencimento: c.fatura.vencimento, rotulo: d.rotulo });
-  if (!t.ok) return { ok: false, erro: t.erro };
-  const { data: lote, error } = await supabase.rpc("crt_reservar_lancamento_agrupado", { p_fatura: c.fatura.id, p_linhas: d.linhas, p_payload: t.payload });
-  if (error) return { ok: false, erro: mensagemDeErro(error) };
-  const envio = await enviarLote(supabase, lote as string);
+
+  // Monta e confere todos os títulos antes de enviar o primeiro.
+  const comuns = lerCampos(d.campos);
+  const preparados: { linhaId: string; descricao: string; titulos: { parcela: number; vencimento: string; payload: unknown }[] }[] = [];
+  for (const id of new Set(d.linhas)) {
+    const item = c.resultado.aLancar.find((a) => a.linha.id === id);
+    const proposta = q.propostas[id];
+    if (!item || !proposta || !aVista(item.linha)) return { ok: false, erro: "Uma das linhas não está mais entre as compras à vista a lançar. Recarregue a página." };
+    const campos = camposDaSelecao(proposta.sugestao.campos, comuns);
+    const contas = conferirContas(campos, q.creditoPadrao);
+    if (contas) return { ok: false, erro: `${item.linha.descricao}: ${contas}` };
+    const comMarcas = comMarcasDaFatura(await comCategoriaDoFornecedor(supabase, c.fatura.empresa_id, campos), { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura });
+    const t = montarTitulosCompra({ linha: item.linha, cartao: paraCartaoInfo(c.cartao), campos: comMarcas, vencimentoFatura: c.fatura.vencimento, competencia: q.competencia });
+    if (!t.ok) return { ok: false, erro: `${item.linha.descricao}: ${t.erro}` };
+    preparados.push({ linhaId: id, descricao: item.linha.descricao, titulos: t.titulos.map((x) => ({ parcela: x.parcela, vencimento: x.vencimento, payload: x.payload })) });
+  }
+
+  const codigos: string[] = [];
+  for (const p of preparados) {
+    const { data: lote, error } = await supabase.rpc("crt_reservar_lancamento_compra", { p_fatura: c.fatura.id, p_linha: p.linhaId, p_titulos: p.titulos });
+    const envio = error ? { ok: false as const, erro: mensagemDeErro(error) } : await enviarLote(supabase, lote as string);
+    if (!envio.ok) {
+      revalidatePath(ROTA_CARTAO, "layout");
+      const feitos = codigos.length ? `${codigos.length} ${codigos.length === 1 ? "título lançado" : "títulos lançados"} (${codigos.join(", ")}); ` : "";
+      return { ok: false, erro: `${feitos}parou em “${p.descricao}”: ${envio.erro}` };
+    }
+    codigos.push(...envio.codigos);
+  }
   revalidatePath(ROTA_CARTAO, "layout");
-  if (!envio.ok) return { ok: false, erro: envio.erro };
-  return { ok: true, aviso: `${d.linhas.length} linhas lançadas num título no Consistem: ${envio.codigos.join(", ")} (${(t.valorCentavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}). As linhas foram casadas com ele.` };
+  return { ok: true, aviso: `${codigos.length} ${codigos.length === 1 ? "título lançado" : "títulos lançados"} no Consistem, um por linha: ${codigos.join(", ")}.` };
 }
 
 // ---------------------------------------------------------------- provisório da fatura (0154)
@@ -826,5 +844,5 @@ export async function registrarExclusaoErp(entrada: z.input<typeof esquemaExclus
   const { error } = await supabase.rpc("crt_registrar_exclusao_erp", { p_id: dados.data.id, p_motivo: dados.data.motivo });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   revalidatePath(ROTA_CARTAO, "layout");
-  return { ok: true, aviso: "Exclusão no Consistem registrada. O título deixa de contar como lançado pelo painel." };
+  return { ok: true, aviso: "Exclusão no Consistem registrada. O título deixa de contar como lançado pelo painel e as linhas dele voltam a lançar (mês em conciliação)." };
 }

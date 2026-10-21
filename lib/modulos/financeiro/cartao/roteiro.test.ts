@@ -94,7 +94,7 @@ describe("roteiro", () => {
     const t = titulo("CARTAO NUBANK PF — ENCARGOS: IOF", 5, { fornecedor: "NU PAGAMENTOS" });
     const depois = apurar([iof, compra], [t]);
     const q = montarRoteiro({ resultado: depois.resultado, outros: [], encargosLancados: "34002" });
-    expect(q[1]).toMatchObject({ estado: "feito", detalhe: "Encargos lançados: título 34002." });
+    expect(q[1]).toMatchObject({ estado: "feito", detalhe: "Encargos lançados: 34002." });
     expect(q.find((x) => x.estado === "atual")?.titulo).toBe("Lançar compras");
   });
 

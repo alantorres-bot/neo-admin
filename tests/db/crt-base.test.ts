@@ -34,7 +34,7 @@ describe("módulo e cadastros (0131)", () => {
     expect((await q(`select area, nome, ativo from modulos where codigo = 'financeiro.cartao'`)).rows[0]).toEqual({ area: "financeiro", nome: "Cartão de crédito", ativo: true });
     const cartoes = await rpc(finConsulta, `select codigo, dia_fechamento, dia_vencimento, tipo_titulo, leitor from crt_cartoes order by codigo`);
     expect(cartoes.rows.map((c) => [c.codigo, c.dia_fechamento, c.dia_vencimento, c.tipo_titulo, c.leitor])).toEqual([
-      ["INTER PF", 20, 28, 8, "inter"], ["INTER PJ", 3, 10, 8, "inter"], ["ITAU PJ", 10, 28, 10, "generico"], ["NUBANK PF", 20, 27, 7, "generico"],
+      ["INTER PF", 20, 28, 8, "inter"], ["INTER PJ", 3, 10, 8, "inter"], ["ITAU PJ", 10, 28, 10, "generico"], ["NUBANK PF", 20, 27, 7, "nubank"],
       ["PICPAY PF", 15, 25, 75, "picpay"], ["SICREDI PF", 26, 10, 9, "sicredi"], ["SICREDI PJ", 10, 23, 9, "sicredi"], ["UNICRED PF", 10, 20, 73, "unicred"],
     ]);
     expect((await rpc(finConsulta, `select count(*)::int as n from crt_estabelecimentos`)).rows[0].n).toBe(46);   // 43 da carga inicial + DROGARIA e FARMACIA (0144) + 99 (0150)

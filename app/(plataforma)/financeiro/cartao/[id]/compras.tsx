@@ -226,7 +226,7 @@ export function ListaComprasLancadas({ compras, podeOperar, podeGestor = false }
   );
 }
 
-function BotaoReenviar({ lote }: { lote: string }) {
+export function BotaoReenviar({ lote }: { lote: string }) {
   const router = useRouter();
   const [pendente, iniciar] = useTransition();
   return (

@@ -6,7 +6,7 @@ import { MODULO_CARTAO, type CodigoLeitor } from "@/lib/modulos/financeiro/carta
 import { selecionarTitulos, type LancamentoEspelho, type OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { somarDias } from "@/lib/modulos/financeiro/cartao/texto";
 import { comMarcasDaFatura } from "@/lib/modulos/financeiro/cartao/portador-fatura";
-import { encargosALancar, lerConfigEncargos, montarTituloEncargos, type NovoLancamentoContaPagar, type TituloEncargos } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
+import { encargosALancar, lerConfigEncargos, montarTitulosEncargos, type NovoLancamentoContaPagar, type TitulosEncargos } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
 import type { CategoriaFornecedor, ContaFluxo, ListasConsistem } from "@/lib/modulos/financeiro/cartao/listas";
 import { montarProvisorio, type Provisorio } from "@/lib/modulos/financeiro/cartao/provisorio";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
@@ -236,10 +236,11 @@ export type QuadroEncargos = {
   ligado: boolean;
   /** O mês da fatura está em conciliação (só então se lança). */
   mesAberto: boolean;
-  titulo: TituloEncargos;
+  /** Um título por linha de encargo pendente (regra 31, desde 21/10/2026). */
+  titulos: TitulosEncargos;
   fornecedorNome: string | null;
-  /** Lançamento ativo do mês (reservado, enviando ou lançado), se houver. */
-  ativo: LancamentoErpLinha | null;
+  /** Lançamentos ativos do mês (reservados, enviando ou lançados, sem exclusão no Consistem), mais antigos primeiro. */
+  ativos: LancamentoErpLinha[];
   historico: LancamentoErpLinha[];
 };
 
@@ -256,19 +257,19 @@ export async function lerEncargos(supabase: Cliente, c: Conciliacao): Promise<Qu
   ]);
   if (error) throw new Error(`Falha ao ler os lançamentos de encargos: ${error.message}`);
   const historico = (lancs ?? []) as LancamentoErpLinha[];
-  const ativo = historico.find((l) => l.situacao !== "erro") ?? null;
-  const jaLancadas = new Set(historico.filter((l) => l.situacao !== "erro").flatMap((l) => l.linhas));
+  const ativos = historico.filter((l) => l.situacao !== "erro" && !l.excluido_no_erp_em).reverse();
+  const jaLancadas = new Set(ativos.flatMap((l) => l.linhas));
   const cfgLida = lerConfigEncargos(c.cartao.lancamento_encargos);
   const cfgBruta = cfgLida ? comMarcasDaFatura(cfgLida, { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura }) : cfgLida;
   const catBanco = cfgBruta ? (await categoriasDosFornecedores(supabase, c.fatura.empresa_id, [cfgBruta.codFornecedor])).get(String(cfgBruta.codFornecedor)) : undefined;
   const cfg = cfgBruta && catBanco ? { ...cfgBruta, categoriaDoc: catBanco } : cfgBruta;
-  const titulo = montarTituloEncargos({
+  const titulos = montarTitulosEncargos({
     nomeCartao: c.cartao.nome, config: cfg, linhas: encargosALancar(c.resultado, jaLancadas),
     fechamento: (cic as { fechamento: string } | null)?.fechamento ?? null, vencimento: c.fatura.vencimento,
   });
   const nomes = cfg ? await nomesDosFornecedores(supabase, [String(cfg.codFornecedor)]) : new Map<string, string>();
   const mesAberto = (cic as { situacao: string } | null)?.situacao === "em_conciliacao" && c.fatura.status === "importada";
-  return { ligado: (config as { valor: unknown } | null)?.valor === true, mesAberto, titulo, fornecedorNome: cfg ? nomes.get(String(cfg.codFornecedor)) ?? null : null, ativo, historico };
+  return { ligado: (config as { valor: unknown } | null)?.valor === true, mesAberto, titulos, fornecedorNome: cfg ? nomes.get(String(cfg.codFornecedor)) ?? null : null, ativos, historico };
 }
 
 /** Categoria (codCategoria) dos fornecedores no espelho: o título usa a categoria do fornecedor (regra 55). */
