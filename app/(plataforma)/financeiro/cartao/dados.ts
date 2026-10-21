@@ -3,7 +3,7 @@ import { cache } from "react";
 import type { CartaoInfo, RegraCartao } from "@/lib/modulos/financeiro/cartao/cartoes";
 import { chaveTitulo, conciliar, doDicionario, type DecisaoItem, type Estabelecimento, type LinhaFatura, type ResultadoConciliacao, type TipoDecisao, type TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { MODULO_CARTAO, type CodigoLeitor } from "@/lib/modulos/financeiro/cartao/modulo";
-import { selecionarTitulos, type LancamentoEspelho, type OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
+import { selecionarTitulos, titulosCheiosForaDaJanela, type LancamentoEspelho, type OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { somarDias } from "@/lib/modulos/financeiro/cartao/texto";
 import { comMarcasDaFatura } from "@/lib/modulos/financeiro/cartao/portador-fatura";
 import { encargosALancar, lerConfigEncargos, montarTitulosEncargos, type NovoLancamentoContaPagar, type TitulosEncargos } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
@@ -177,6 +177,23 @@ export const paraDecisaoItem = (d: DecisaoLinha): DecisaoItem => ({
   autor: d.criado_por_nome, em: d.criado_em,
 });
 
+/**
+ * Títulos em aberto do espelho com valor na faixa de N × parcela das linhas k/N (k > 1) da fatura: candidatos a NF lançada pelo
+ * total em outro mês (fora da janela). Só lê o espelho quando há linha assim; `filtrar` aplica o cartão e o valor exato.
+ */
+async function lerCheiosForaDaJanela(supabase: Cliente, empresaId: string, linhas: LinhaFatura[], filtrar: (l: LancamentoEspelho[]) => TituloPagar[]): Promise<TituloPagar[]> {
+  const faixas = linhas.filter((l) => (l.parcelaNum ?? 1) > 1 && (l.parcelaTotal ?? 1) >= (l.parcelaNum ?? 1) && l.valorCentavos > 0)
+    .map((l) => (l.parcelaTotal ?? 1) * l.valorCentavos);
+  if (faixas.length === 0) return [];
+  const folga = 60;   // centavos: N + 5 com N ≤ 48, arredondado para cima
+  const { data, error } = await supabase.from("cap_lancamentos")
+    .select("id, cod_lancamento, num_documento, cod_fornecedor, complemento_historico, categoria_doc, data_vencimento, data_emissao, valor_documento, valor_atualizado, baixado_em, tipo_lancamento, cod_banco, cod_historico")
+    .eq("empresa_id", empresaId).eq("tipo_lancamento", "C").is("baixado_em", null).gt("valor_atualizado", 0)
+    .gte("valor_documento", (Math.min(...faixas) - folga) / 100).lte("valor_documento", (Math.max(...faixas) + folga) / 100).limit(2000);
+  if (error) return [];   // sem o espelho, só não acha a NF de outro mês
+  return filtrar((data ?? []) as LancamentoEspelho[]);
+}
+
 /** Conciliação calculada na hora: fatura + linhas + títulos da janela no espelho + dicionário. */
 export const conciliacaoDaRequisicao = cache(async (id: string): Promise<Conciliacao | null> => {
   const supabase = await criarClienteServidor();
@@ -205,11 +222,13 @@ export const conciliacaoDaRequisicao = cache(async (id: string): Promise<Concili
     id: l.id, ordem: l.ordem, dataCompra: l.data_compra, descricao: l.descricao, valorCentavos: centavos(l.valor), parcelaNum: l.parcela_num, parcelaTotal: l.parcela_total,
   }));
   const estabelecimentos: Estabelecimento[] = dicionario.filter((e) => e.ativo).map((e) => ({ padrao: e.padrao, categoria: e.categoria, contaFluxo: e.conta_fluxo }));
+  const cheiosForaDaJanela = await lerCheiosForaDaJanela(supabase, fatura.empresa_id, linhasUteis, (espelho) =>
+    titulosCheiosForaDaJanela(espelho, paraCartaoInfo(cartao), infos, fatura.vencimento, linhasUteis, { janela: JANELA_VENCIMENTO, regras: regras.map(paraRegraCartao) }));
   const resultado = conciliar({
     cartao: paraCartaoInfo(cartao), cartoes: infos, vencimento: fatura.vencimento, totalInformadoCentavos: centavos(fatura.total_informado),
     linhas: linhasUteis, titulos: selecao.doCartao, estabelecimentos,
     decisoes: decisoesHistorico.filter((d) => !d.desfeito_em).map(paraDecisaoItem), titulosExtras: selecao.outros.map((o) => o.titulo),
-    antecipacoes: selecao.antecipacoes,
+    antecipacoes: selecao.antecipacoes, titulosCheiosForaDaJanela: cheiosForaDaJanela,
   });
   // Antecipações candidatas que não casaram: vão para a aba "Outros títulos" (podem ser casadas à mão).
   const usadas = new Set(resultado.conciliados.flatMap((c) => [c.titulo, ...(c.titulosExtras ?? [])]).map((t) => t.id));
@@ -395,6 +414,8 @@ export type QuadroDesdobrar = {
   mesAberto: boolean;
   /** Competência do mês da fatura (AAAA-MM-01): vencimentos das parcelas 2..N. */
   competencia: string | null;
+  /** Vencimento da fatura: o da parcela desta fatura quando a NF foi lançada em outro mês (k > 1). */
+  vencimentoFatura: string;
   cartao: CartaoInfo;
   /** Desdobramentos do mês (mais novos primeiro). */
   desdobramentos: DesdobramentoLinha[];
@@ -417,7 +438,7 @@ export async function lerDesdobrar(supabase: Cliente, c: Conciliacao): Promise<Q
   return {
     ligado: ligadas.has(CHAVE_DESDOBRAR_NO_ERP) && ligadas.has(CHAVE_LANCAR_NO_ERP),
     mesAberto: cc?.situacao === "em_conciliacao" && c.fatura.status === "importada",
-    competencia: cc?.competencia ?? null, cartao: paraCartaoInfo(c.cartao), desdobramentos: (desd ?? []) as DesdobramentoLinha[],
+    competencia: cc?.competencia ?? null, vencimentoFatura: c.fatura.vencimento, cartao: paraCartaoInfo(c.cartao), desdobramentos: (desd ?? []) as DesdobramentoLinha[],
   };
 }
 

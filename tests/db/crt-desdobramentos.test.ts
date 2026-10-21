@@ -56,8 +56,8 @@ describe("reservar o desdobramento (0165)", () => {
   });
 
   it("confere linha, título e valores", async () => {
-    await expect(reservar(finOperador, linha[3])).rejects.toThrow(/parcela 1/);
-    await expect(reservar(finOperador, linha[4])).rejects.toThrow(/parcela 1/);
+    await expect(reservar(finOperador, linha[3])).rejects.toThrow(/não é a compra inteira/);
+    await expect(reservar(finOperador, linha[4])).rejects.toThrow(/compra parcelada/);
     await expect(reservar(finOperador, linha[1], { cod: "40001" })).rejects.toThrow(/não é do título/);
     await expect(reservar(finOperador, linha[1], { antes: antes(1000) })).rejects.toThrow(/não é a compra inteira/);
     await expect(reservar(finOperador, linha[1], { alteracao: alteracao(500) })).rejects.toThrow(/alteração do título original é inválida/);
@@ -153,5 +153,21 @@ describe("exclusão no Consistem registrada (0165)", () => {
     await expect(rpc(finGestor, `select crt_registrar_exclusao_erp($1, 'duplicava a NF 3615152')`, [lancado])).rejects.toThrow(/já foi registrada/);
     await expect(q(`update crt_lancamentos_erp set motivo_exclusao_erp = 'outro motivo qualquer' where id = $1`, [lancado])).rejects.toThrow(/já foi registrada/);
     await expect(q(`update crt_lancamentos_erp set excluido_no_erp_em = null, excluido_no_erp_por = null, motivo_exclusao_erp = null where id = $1`, [lancado])).rejects.toThrow(/já foi registrada/);
+  });
+});
+
+describe("NF lançada pelo total em outro mês: a partir da parcela k (0177)", () => {
+  it("linha 2/3: o original fica com a parcela 1 (já paga) e são criadas a 2 e a 3; valor ou ordem errados recusam", async () => {
+    const ant = { codLancamento: 40300, codFornecedor: 77, codDocumento: "555", valorDocumento: 300 };
+    const alt = (v = 100) => ({ valorDocumento: v, codDocumento: "555/1", complementoHistorico: "CARTÃO UNICRED PF 3x — LOJA PARC 1/3" });
+    const ps = (inicio = 2) => [inicio, inicio + 1].map((k) => ({ parcela: k, vencimento: `2026-1${k - 2}-20`.replace("2026-10-20", "2026-10-20"),
+      payload: { codFornecedor: 77, codDocumento: `555/${k}`, valorDocumento: 100, dataVencimento: `2026-1${k - 2}-20`, complementoHistorico: `CARTÃO UNICRED PF 3x — LOJA PARC ${k}/3` } }));
+    const res = (o: { alteracao?: unknown; parcelas?: unknown } = {}) => reservar(finOperador, linha[3], { cod: "40300", antes: ant, alteracao: o.alteracao ?? alt(), parcelas: o.parcelas ?? ps() });
+    await expect(res({ alteracao: alt(300) })).rejects.toThrow(/parcelas já pagas 1 a 1/);
+    await expect(res({ parcelas: ps(3) })).rejects.toThrow(/em ordem, a partir da 2/);
+    const lote = (await res()).rows[0].lote as string;
+    const d = await desdobramento(lote);
+    expect([d.parcelas, d.parcela_inicial, Number(d.valor_original)]).toEqual([3, 2, 300]);
+    expect((await doLote(lote)).map((x) => [x.parcela, Number(x.valor)])).toEqual([[2, 100], [3, 100]]);
   });
 });

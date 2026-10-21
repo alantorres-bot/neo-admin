@@ -633,3 +633,27 @@ Regras novas (decisões do Alan, sessão de perguntas de 21/10/2026):
   `corrigirNoConsistem` e `naoEhDestaFatura`, tela `[id]/correcoes.tsx`; `complementoCabeNaAlteracao` em
   `_shared/consistem-inclusao.ts`; migration `0176_crt_correcoes_erp.sql`. Testes: `correcoes.test.ts`,
   `consistem-inclusao.test.ts`, `tests/db/crt-correcoes-erp.test.ts`.
+
+## 24. Casar em um clique, soma de títulos e desdobrar NF de outro mês — o que foi feito (21/10/2026)
+Decisões do Alan (sessão de perguntas de 21/10/2026, depois do PicPay PF 10/2026):
+- **5d. Soma de títulos (NF conjunta):** depois do "pelo total", o cruzamento casa sozinho uma linha com **2 ou 3 títulos deste
+  cartão sem linha** que somam o valor dela (até 5 centavos), se houver **uma única** combinação **vinculada** — linha parcelada:
+  todos os títulos na mesma parcela da linha (sufixo "/k" do número = k da linha); à vista: "CONJUNTA" no complemento de todos ou o
+  mesmo fornecedor. Modo "Soma de títulos" nos Conciliados; a diferença entra no arredondamento. Sem vínculo ou com mais de uma
+  combinação: **sugestão** que trava a linha ("Possíveis títulos: A + B = R$ X" com **São estes** / **Não são estes**). Caso real:
+  Mercado Livre 6/10 R$ 107,61 = 241525/6 Techmoder R$ 42,14 + 8774/6 R.B Queiroz R$ 65,48 (repete até a 10ª).
+- **"É este"** no aviso de possível título já lançado: casa em um clique com o motivo automático ("Mesma compra: título X (R$ …)").
+  Se o título cita outro cartão, logo depois abre a prévia do **Trocar cartão** (Corrigir agora / Depois).
+- **61b. NF lançada pelo total em outro mês:** linha k/N (k > 1) sem título × título **em aberto** deste cartão (complemento ou regra)
+  **fora** da janela, de ≈ N × parcela (N + 5 centavos), lido do espelho (`cap_lancamentos`, sem baixa, com saldo, tipo C). Um só
+  candidato → "a desdobrar" (bloqueia o fechamento como o 1/N). No quadro só a linha pesa (o título não está no total da fatura).
+- **62b. Desdobrar a partir da parcela k:** o original fica com as parcelas **já pagas** 1..k−1 — valor (k−1) × parcela, documento
+  "<NF>/1-(k−1)" (ou "/1" se k = 2), complemento "… PARC 1-(k−1)/N", no vencimento que já tem (baixar à mão) — e o painel cria as
+  parcelas k..N: a k no vencimento desta fatura, as seguintes nos vencimentos das próximas; a última leva o arredondamento; soma =
+  NF. `crt_reservar_desdobramento` generalizado e `crt_desdobramentos.parcela_inicial` (migration 0177).
+- Código: `somaDeTitulos` e `compraPeloTotalForaDaJanela` (`conciliacao.ts`), `titulosCheiosForaDaJanela` (`selecao-titulos.ts`),
+  `desdobramento.ts` com `parcelaInicial`, `somasEmAberto`/`motivoNaoSaoEstes` (`roteiro.ts`), ações `casarComTitulos` e
+  `naoSaoEstes`, tela (botões no aviso amarelo, `DialogoTrocarCartaoAgora`, quadro do desdobramento com "NF lançada em … (fora da
+  janela)").
+- Janela "Casar" (mesmo dia): grade padrão (classificação, funil, busca), ordenada por valor, com filtros rápidos "Valor parecido com
+  a linha" (abre nele quando há), "Deste cartão" e "Outros cartões".

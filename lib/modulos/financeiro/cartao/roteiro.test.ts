@@ -107,3 +107,18 @@ describe("roteiro", () => {
     expect(montarRoteiro({ resultado: r.resultado, outros: [], origemTitulos: "espelho" })[0].estado).toBe("atual");
   });
 });
+
+describe("sugestão de soma (NF conjunta sem certeza)", () => {
+  it("trava a linha com 'São estes'; 'Não são estes' (observação do conjunto) libera", async () => {
+    const { motivoNaoSaoEstes } = await import("./roteiro");
+    const l = linha("LOJA X", 100);
+    const a = titulo("CARTAO NUBANK - A", 40, { codFornecedor: "7" });
+    const b = titulo("CARTAO NUBANK - B", 60, { codFornecedor: "8" });
+    const r = apurar([l], [a, b]);
+    const trava = travaDeLancamento(r.resultado, []);
+    expect(trava.somas.get(l.id)?.titulos.map((t) => t.id).sort()).toEqual([a.id, b.id].sort());
+    expect(recusaDeLancamento({ ...trava, geral: [] }, [l.id])).toMatch(/São estes/);
+    const dispensada = apurar([l], [a, b], { decisoes: [decisao("observar", [l.id], [], motivoNaoSaoEstes([a, b]))] });
+    expect(travaDeLancamento(dispensada.resultado, []).somas.size).toBe(0);
+  });
+});

@@ -128,3 +128,30 @@ export function selecionarTitulos(
   antecipacoes.sort(ordenar);
   return { doCartao, outros, tituloDaFatura, antecipacoes };
 }
+
+/**
+ * Títulos em aberto deste cartão FORA da janela do vencimento com valor ≈ N × parcela de alguma linha k/N (k > 1) da fatura: a NF
+ * lançada pelo total em outro mês (decisão do Alan, 21/10/2026). Vêm do espelho (títulos com saldo, tipo C); citam este cartão no
+ * complemento ou o fornecedor é pago neste cartão pela regra do Neo Fiscal.
+ */
+export function titulosCheiosForaDaJanela(
+  lancamentos: readonly LancamentoEspelho[], cartao: CartaoInfo, cartoes: readonly CartaoInfo[], vencimento: string,
+  linhas: readonly { valorCentavos: number; parcelaNum: number | null; parcelaTotal: number | null }[], opcoes: OpcoesSelecao = {},
+): TituloPagar[] {
+  const janela = opcoes.janela ?? JANELA_VENCIMENTO;
+  const alvos = linhas.filter((l) => (l.parcelaNum ?? 1) > 1 && (l.parcelaTotal ?? 1) >= (l.parcelaNum ?? 1) && l.valorCentavos > 0)
+    .map((l) => ({ cheio: (l.parcelaTotal ?? 1) * l.valorCentavos, folga: (l.parcelaTotal ?? 1) + 5 }));
+  if (alvos.length === 0) return [];
+  const saida: TituloPagar[] = [];
+  for (const l of lancamentos) {
+    if ((l.tipo_lancamento ?? "C") !== "C" || l.baixado_em || Number(l.valor_atualizado) <= 0 || naJanela(l.data_vencimento, vencimento, janela)) continue;
+    const titulo = paraTitulo(l);
+    if (!alvos.some((a) => Math.abs(titulo.valorCentavos - a.cheio) <= a.folga)) continue;
+    const regra = regraVigente(opcoes.regras ?? [], l.cod_fornecedor, l.data_emissao ?? l.data_vencimento);
+    const id = identificarCartaoDoTitulo({ complemento: titulo.complemento, vencimento: titulo.vencimento }, cartoes);
+    const cita = (id.situacao === "cartao" && id.cartao!.codigo === cartao.codigo) || (id.situacao === "ambiguo" && id.candidatos.some((c) => c.codigo === cartao.codigo));
+    if (cita) saida.push(titulo);
+    else if (regra?.cartao === cartao.codigo && id.situacao === "sem_cartao") saida.push({ ...titulo, porRegra: true });
+  }
+  return saida;
+}

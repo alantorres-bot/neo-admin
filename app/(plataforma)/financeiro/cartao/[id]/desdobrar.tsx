@@ -32,31 +32,34 @@ export function QuadroDesdobrar({ pares, dados, faturaId, podeOperar }: { pares:
       <h3 className="text-sm font-bold">Compras parceladas lançadas pelo total no Consistem</h3>
       {pares.length > 0 && (
         <p className="text-sm">
-          A fatura cobra a parcela 1, mas a NF está no Consistem pelo valor da compra inteira. Não lance de novo: <strong>desdobre</strong>.
-          O título vira a parcela 1 e o painel cria as parcelas seguintes, nos vencimentos das próximas faturas. A última parcela fica com o arredondamento.
+          A fatura cobra uma parcela, mas a NF está no Consistem pelo valor da compra inteira. Não lance de novo: <strong>desdobre</strong>.
+          Parcela 1: o título vira a parcela 1 e o painel cria as seguintes. Parcela 2 em diante (NF lançada em outro mês): o título fica com as
+          parcelas já pagas, para baixar à mão, e o painel cria da parcela desta fatura em diante. A última parcela fica com o arredondamento.
           {!dados.ligado && " O desdobramento no Consistem está desligado (Configurações): desdobre à mão no Consistem."}
         </p>
       )}
       {pares.map((p) => {
-        const previa = previaDesdobramento({ par: p, cartao: dados.cartao, competencia: dados.competencia });
+        const previa = previaDesdobramento({ par: p, cartao: dados.cartao, competencia: dados.competencia, vencimentoFatura: dados.vencimentoFatura });
+        const k = Math.max(1, p.parcelaInicial ?? 1);
         const erro = ultimoErro(p.linha.id);
         return (
           <div key={p.linha.id} className="space-y-2 rounded-[3px] border border-grade bg-card p-3">
             <p className="text-sm">
-              <strong>{p.linha.descricao}</strong> · {formatarData(p.linha.dataCompra)} · parcela 1/{p.parcelas} de {formatarMoeda(p.parcelaCentavos)}
+              <strong>{p.linha.descricao}</strong> · {formatarData(p.linha.dataCompra)} · parcela {k}/{p.parcelas} de {formatarMoeda(p.parcelaCentavos)}
               {" "}× título <strong>{cod(p)}</strong> (documento {p.titulo.numeroTitulo}, {p.titulo.fornecedor}, vencimento {formatarData(p.titulo.vencimento)}) de {formatarMoeda(p.titulo.valorCentavos)}
               {p.diferencaCentavos !== 0 && <span className="text-muted-foreground"> · arredondamento de {formatarMoeda(p.diferencaCentavos)} na última parcela</span>}
               {p.titulo.emBordero && <Badge variant="outline" className="ml-1 border-red-300 text-red-800">em borderô: desdobre à mão</Badge>}
+              {p.foraDaJanela && <Badge variant="outline" className="ml-1 border-amber-400 text-amber-800">NF lançada em {formatarData(p.titulo.vencimento)} (fora da janela)</Badge>}
             </p>
             <Table className="w-full text-sm [&_td]:px-2 [&_td]:py-0.5 [&_th]:px-2">
               <TableHeader><tr className="text-left text-xs text-muted-foreground"><TableHead>Parcela</TableHead><TableHead>Vencimento</TableHead><TableHead>Documento</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Complemento</TableHead><TableHead /></tr></TableHeader>
               <TableBody>
                 {previa.map((x) => (
-                  <tr key={x.parcela}>
-                    <td className="tabular-nums">{x.parcela}/{p.parcelas}</td><td className="tabular-nums">{x.vencimento ? formatarData(x.vencimento) : "—"}</td>
+                  <tr key={x.documento}>
+                    <td className="tabular-nums">{x.parcela === 0 ? `1-${k - 1}` : x.parcela}/{p.parcelas}</td><td className="tabular-nums">{x.vencimento ? formatarData(x.vencimento) : "—"}</td>
                     <td className="tabular-nums">{x.documento}</td><td className="text-right tabular-nums">{formatarMoeda(x.valorCentavos)}</td>
                     <td className="font-mono text-xs">{x.complemento}</td>
-                    <td className="text-xs text-muted-foreground">{x.parcela === 1 ? `altera o título ${cod(p)}` : "título novo"}</td>
+                    <td className="text-xs text-muted-foreground">{x === previa[0] ? (k > 1 ? `altera o título ${cod(p)} (já pagas: baixar à mão)` : `altera o título ${cod(p)}`) : "título novo"}</td>
                   </tr>
                 ))}
               </TableBody>

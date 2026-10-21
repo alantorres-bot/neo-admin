@@ -74,3 +74,31 @@ describe("desdobramento da compra lançada pelo total", () => {
     expect(erro(montarDesdobramento({ par: par(), detalhe: detalhe({ tipoLancamento: "A" }), ...base }))).toMatch(/não é um título/);
   });
 });
+
+describe("NF lançada pelo total em outro mês: desdobrar a partir da parcela k (0177)", () => {
+  const parK = (k: number): ADesdobrar => ({ ...par(), linha: { ...par().linha, parcelaNum: k }, parcelaInicial: k, foraDaJanela: true,
+    titulo: { ...par().titulo, vencimento: "2026-08-20" } });
+  it("3/6: o original fica com as parcelas 1-2 (já pagas, vencimento que tem); criadas da 3 (vencimento da fatura) à 6", () => {
+    const p = previaDesdobramento({ par: parK(3), cartao: UNICRED, competencia: "2026-10-01", vencimentoFatura: "2026-10-21" });
+    expect(p.map((x) => [x.parcela, x.vencimento, x.valorCentavos, x.documento])).toEqual([
+      [0, "2026-08-20", 2 * 49_913, "3615152/1-2"], [3, "2026-10-21", 49_913, "3615152/3"], [4, "2026-11-20", 49_913, "3615152/4"],
+      [5, "2026-12-20", 49_913, "3615152/5"], [6, "2027-01-20", 49_913, "3615152/6"],
+    ]);
+    expect(p[0].complemento).toMatch(/PARC 1-2\/6$/);
+    const m = montarDesdobramento({ ...base, par: parK(3), detalhe: detalhe({ dataVencimento: "2026-08-20" }), vencimentoFatura: "2026-10-21" });
+    if (!m.ok) throw new Error(m.erro);
+    expect(m.alteracao).toMatchObject({ valorDocumento: 998.26, codDocumento: "3615152/1-2" });
+    expect(m.parcelas.map((x) => [x.parcela, x.vencimento, x.payload.codDocumento])).toEqual([
+      [3, "2026-10-21", "3615152/3"], [4, "2026-11-20", "3615152/4"], [5, "2026-12-20", "3615152/5"], [6, "2027-01-20", "3615152/6"],
+    ]);
+    const soma = Math.round(m.alteracao.valorDocumento * 100) + m.parcelas.reduce((s, x) => s + Math.round(x.payload.valorDocumento * 100), 0);
+    expect(soma).toBe(299_478);
+  });
+  it("2/4: o original vira a parcela 1 (documento /1)", () => {
+    const p2: ADesdobrar = { ...parK(2), parcelas: 4, titulo: { ...par().titulo, valorCentavos: 4 * 49_913 } };
+    const m = montarDesdobramento({ ...base, par: p2, detalhe: detalhe({ valorDocumento: 1996.52 }), vencimentoFatura: "2026-10-21" });
+    if (!m.ok) throw new Error(m.erro);
+    expect(m.alteracao).toMatchObject({ valorDocumento: 499.13, codDocumento: "3615152/1" });
+    expect(m.parcelas.map((x) => x.parcela)).toEqual([2, 3, 4]);
+  });
+});

@@ -139,3 +139,34 @@ export function ListaCorrecoes({ historico }: { historico: CorrecaoLinha[] }) {
     </section>
   );
 }
+
+/** Logo depois de casar com um título de outro cartão ("É este"): a prévia do "Trocar cartão" para corrigir agora ou depois. */
+export function DialogoTrocarCartaoAgora({ faturaId, cod, alteracao, aoFechar }: { faturaId: string; cod: string; alteracao: Record<string, string | number>; aoFechar: () => void }) {
+  const router = useRouter();
+  const [erro, setErro] = useState<string>();
+  const [pendente, iniciar] = useTransition();
+  function corrigir() {
+    iniciar(async () => {
+      const r = await corrigirNoConsistem({ faturaId, titulo: cod, tipo: "cartao", conta: null });
+      if (r.ok) { toast.success(r.aviso); aoFechar(); router.refresh(); } else { setErro(r.erro); router.refresh(); }
+    });
+  }
+  return (
+    <Dialog open onOpenChange={(v) => { if (!v && !pendente) aoFechar(); }}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Casado. Trocar o cartão do título {cod} no Consistem?</DialogTitle>
+          <DialogDescription>O título cita outro cartão. O painel pode corrigir agora (lê, altera só estes campos, lê de novo e confere) ou você deixa para depois, na aba Conciliados.</DialogDescription>
+        </DialogHeader>
+        <dl className="grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
+          {Object.entries(alteracao).map(([k, v]) => (<Fragment key={k}><dt className="text-muted-foreground">{CAMPO[k] ?? k}</dt><dd className={k === "complementoHistorico" ? "font-mono text-xs" : "tabular-nums"}>{mostrar(k, v)}</dd></Fragment>))}
+        </dl>
+        {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={aoFechar} disabled={pendente}>Depois</Button>
+          <Button onClick={corrigir} disabled={pendente}>{pendente ? "Corrigindo…" : "Corrigir agora"}</Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

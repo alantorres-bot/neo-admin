@@ -269,7 +269,7 @@ describe("compra parcelada lançada pelo total (regra 61)", () => {
     const l = compra();
     const nf = titulo("CARTAO NUBANK 1 X", 2994.78, { fornecedor: "TERABYTE ATACADO" });
     const r = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [l], titulos: [nf] });
-    expect(r.aDesdobrar).toEqual([{ linha: l, titulo: nf, parcelas: 6, parcelaCentavos: 49_913, diferencaCentavos: 0 }]);
+    expect(r.aDesdobrar).toEqual([{ linha: l, titulo: nf, parcelas: 6, parcelaCentavos: 49_913, diferencaCentavos: 0, parcelaInicial: 1 }]);
     expect(r.aLancar).toEqual([]);
     expect(r.divergencias).toEqual([]);
     expect(r.pendentes).toBe(1);
@@ -329,5 +329,67 @@ describe("compra parcelada lançada pelo total (regra 61)", () => {
     expect(r.aLancar[0].justificativa?.id).toBe("d1");
     const r2 = conciliar({ ...base, totalInformadoCentavos: 49_913, linhas: [compra()], titulos: [titulo("NF", 2994.78, { antecipacao: true })] });
     expect(r2.aDesdobrar).toEqual([]);
+  });
+});
+
+describe("soma de títulos — NF conjunta (regra 5d)", () => {
+  const base = { cartao: NUBANK, cartoes: CARTOES_TESTE, vencimento: "2026-06-27", estabelecimentos: [] };
+  it("linha 6/10 paga dois títulos da parcela /6: casa sozinha; a diferença vira arredondamento", () => {
+    const l = linha("MERCADOLIVRE*5", 107.61, { parcelaNum: 6, parcelaTotal: 10 });
+    const a = titulo("CARTÃO NUBANK 10X - NF CONJUNTA COM TECHMODER", 42.14, { numeroTitulo: "241525/6", codFornecedor: "1" });
+    const b = titulo("CARTÃO NUBANK 10X - NF CONJUNTA COM R.B QUEIROZ", 65.48, { numeroTitulo: "8774/6", codFornecedor: "2" });
+    const outro = titulo("CARTAO NUBANK - X", 30, { numeroTitulo: "999/1" });
+    const r = conciliar({ ...base, totalInformadoCentavos: 10_761, linhas: [l], titulos: [a, b, outro] });
+    const c = r.conciliados.find((x) => x.modo === "Soma")!;
+    expect([c.titulo, ...(c.titulosExtras ?? [])].map((t) => t.numeroTitulo).sort()).toEqual(["241525/6", "8774/6"]);
+    expect(c.diferencaCentavos).toBe(-1);
+    expect(r.aLancar).toEqual([]);
+    expect(r.divergencias.map((d) => d.titulo.numeroTitulo)).toEqual(["999/1"]);
+    expect(r.arredondamentoCentavos).toBe(-1);
+  });
+  it("parcela diferente da linha não casa sozinha: vira sugestão (trava)", () => {
+    const l = linha("MERCADOLIVRE*5", 107.61, { parcelaNum: 6, parcelaTotal: 10 });
+    const r = conciliar({ ...base, totalInformadoCentavos: 10_761, linhas: [l], titulos: [titulo("CARTAO NUBANK - A", 42.14, { numeroTitulo: "1/5" }), titulo("CARTAO NUBANK - B", 65.48, { numeroTitulo: "2/6" })] });
+    expect(r.conciliados).toEqual([]);
+    expect(r.sugestoesSoma?.map((x) => x.titulos.map((t) => t.numeroTitulo))).toEqual([["1/5", "2/6"]]);
+    expect(r.aLancar).toHaveLength(1);
+  });
+  it("à vista: casa com 'CONJUNTA' em todos ou o mesmo fornecedor; sem vínculo é sugestão", () => {
+    const l = () => linha("LOJA X", 100);
+    const conj = conciliar({ ...base, totalInformadoCentavos: 10_000, linhas: [l()], titulos: [titulo("CARTAO NUBANK - NF CONJUNTA A", 40), titulo("CARTAO NUBANK - NF CONJUNTA B", 60)] });
+    expect(conj.conciliados[0]?.modo).toBe("Soma");
+    const forn = conciliar({ ...base, totalInformadoCentavos: 10_000, linhas: [l()], titulos: [titulo("CARTAO NUBANK - A", 40, { codFornecedor: "7" }), titulo("CARTAO NUBANK - B", 60, { codFornecedor: "7" })] });
+    expect(forn.conciliados[0]?.modo).toBe("Soma");
+    const sem = conciliar({ ...base, totalInformadoCentavos: 10_000, linhas: [l()], titulos: [titulo("CARTAO NUBANK - A", 40, { codFornecedor: "7" }), titulo("CARTAO NUBANK - B", 60, { codFornecedor: "8" })] });
+    expect(sem.conciliados).toEqual([]);
+    expect(sem.sugestoesSoma).toHaveLength(1);
+  });
+  it("duas combinações vinculadas: não arrisca, vira sugestão", () => {
+    const l = linha("LOJA X", 100);
+    const ts = [titulo("CARTAO NUBANK - NF CONJUNTA A", 40), titulo("CARTAO NUBANK - NF CONJUNTA B", 60), titulo("CARTAO NUBANK - NF CONJUNTA C", 60)];
+    const r = conciliar({ ...base, totalInformadoCentavos: 10_000, linhas: [l], titulos: ts });
+    expect(r.conciliados).toEqual([]);
+    expect(r.sugestoesSoma).toHaveLength(1);
+  });
+});
+
+describe("NF lançada pelo total em outro mês (fora da janela)", () => {
+  const base = { cartao: NUBANK, cartoes: CARTOES_TESTE, vencimento: "2026-10-27", estabelecimentos: [] };
+  it("linha 3/6 × título cheio em aberto fora da janela: a desdobrar a partir da 3; só a linha pesa no quadro", () => {
+    const l = linha("HOTEL", 100, { parcelaNum: 3, parcelaTotal: 6 });
+    const nf = titulo("CARTAO NUBANK 6X - HOTEL", 600.02, { vencimento: "2026-08-27" });
+    const r = conciliar({ ...base, totalInformadoCentavos: 10_000, linhas: [l], titulos: [], titulosCheiosForaDaJanela: [nf] });
+    expect(r.aDesdobrar).toEqual([{ linha: l, titulo: nf, parcelas: 6, parcelaCentavos: 10_000, diferencaCentavos: 2, parcelaInicial: 3, foraDaJanela: true }]);
+    expect(r.aLancar).toEqual([]);
+    expect(r.totalTitulosCentavos).toBe(0);
+    expect(r.desdobrarCentavos).toBe(10_000);
+    expect(r.residuoCentavos).toBe(0);
+    expect(r.pendentes).toBe(1);
+  });
+  it("dois candidatos: não arrisca (a linha continua a lançar)", () => {
+    const l = linha("HOTEL", 100, { parcelaNum: 3, parcelaTotal: 6 });
+    const r = conciliar({ ...base, totalInformadoCentavos: 10_000, linhas: [l], titulos: [], titulosCheiosForaDaJanela: [titulo("CARTAO NUBANK - A", 600), titulo("CARTAO NUBANK - B", 600)] });
+    expect(r.aDesdobrar).toEqual([]);
+    expect(r.aLancar).toHaveLength(1);
   });
 });

@@ -67,8 +67,8 @@ export function padraoSugerido(descricao: string): string {
   return (palavras[0] ?? normalizar(descricao).slice(0, 20)).slice(0, 60);
 }
 
-/** "CARTÃO SICREDI PF 5x — NUVIAGENS PARC 2/5" (até MAX_COMPLEMENTO; a descrição é cortada, a parcela fica). */
-export function complementoCompra(nomeCartao: string, parcela: number, parcelas: number, descricao: string): string {
+/** "CARTÃO SICREDI PF 5x — NUVIAGENS PARC 2/5" (até MAX_COMPLEMENTO; a descrição é cortada, a parcela fica). `parcela` pode ser "1-2". */
+export function complementoCompra(nomeCartao: string, parcela: number | string, parcelas: number, descricao: string): string {
   const base = `CARTÃO ${nomeCartao.toUpperCase()} ${parcelas}x — `;
   const sufixo = parcelas > 1 ? ` PARC ${parcela}/${parcelas}` : "";
   const desc = normalizar(descricao).slice(0, Math.max(0, MAX - base.length - sufixo.length)).trimEnd();

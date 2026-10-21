@@ -17,15 +17,15 @@ import { gerarPlanilha, nomeDaPlanilha } from "@/lib/modulos/financeiro/cartao/p
 import { bloqueioDoFechamento, rotuloCompetencia } from "@/lib/modulos/financeiro/cartao/ciclos";
 import { CAMPOS_CONFIG_ENCARGOS, ROTULO_CAMPO_CONFIG } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
 import { CAMPOS_COMPRA, CAMPOS_PADRAO_CARTAO, conferirContas, lerCampos, montarTitulosCompra, ROTULO_CAMPO_COMPRA } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
-import { chaveTitulo, CONFERIR } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { cartaoDivergente, chaveTitulo, CONFERIR } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { aVista, camposDaSelecao } from "@/lib/modulos/financeiro/cartao/lancamento-agrupado";
 import { comMarcasDaFatura, titulosParaTrocar } from "@/lib/modulos/financeiro/cartao/portador-fatura";
 import type { ResultadoConciliacao } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { normalizar } from "@/lib/modulos/financeiro/cartao/texto";
 import { categoriasDosFornecedores, codigoDoLancamento, conciliacaoDaRequisicao, lerCorrecoes, lerCartoes, lerCiclo, lerCompras, lerDesdobrar, lerDetalheDoConsistem, lerEncargos, lerEstabelecimentos, lerProvisorio, paraCartaoInfo, type FotoFechamento } from "./dados";
 import { montarDesdobramento } from "@/lib/modulos/financeiro/cartao/desdobramento";
-import { motivoNaoEhOMesmo, recusaDeLancamento, travaDeLancamento } from "@/lib/modulos/financeiro/cartao/roteiro";
-import { alteracaoContaFluxo, alteracaoVencimento, titulosConciliados } from "@/lib/modulos/financeiro/cartao/correcoes";
+import { motivoNaoEhOMesmo, motivoNaoSaoEstes, recusaDeLancamento, travaDeLancamento } from "@/lib/modulos/financeiro/cartao/roteiro";
+import { alteracaoContaFluxo, alteracaoTrocarCartao, alteracaoVencimento, titulosConciliados } from "@/lib/modulos/financeiro/cartao/correcoes";
 
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
 const texto = (d: FormData, nome: string) => String(d.get(nome) ?? "").trim();
@@ -798,7 +798,7 @@ export async function desdobrarNoConsistem(entrada: z.input<typeof esquemaDesdob
   } catch (e) {
     return { ok: false, erro: `Não foi possível ler o título ${d.codLancamento} no Consistem: ${(e as Error).message}. Nada foi alterado.` };
   }
-  const m = montarDesdobramento({ par, detalhe, cartao: q.cartao, competencia: q.competencia, marcas: { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura } });
+  const m = montarDesdobramento({ par, detalhe, cartao: q.cartao, competencia: q.competencia, marcas: { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura }, vencimentoFatura: c.fatura.vencimento });
   if (!m.ok) return { ok: false, erro: m.erro };
 
   const { data: lote, error } = await supabase.rpc("crt_reservar_desdobramento", {
@@ -913,4 +913,53 @@ export async function corrigirNoConsistem(entrada: z.input<typeof esquemaCorreca
     return { ok: false, erro: `${mensagem} Confira o título no Consistem; o registro fica na lista de correções.` };
   }
   return { ok: true, aviso: (data as { aviso?: string } | null)?.aviso ?? "Título corrigido no Consistem." };
+}
+
+// ---------------------------------------------------------------- "É este" / "São estes" (casar em um clique)
+
+const esquemaCasarRapido = z.object({
+  faturaId: z.string().uuid(),
+  linhaId: z.string().uuid(),
+  titulos: z.array(z.string().regex(/^[\w:.-]{1,40}$/)).min(1).max(3),
+});
+
+export type ResultadoCasar = { ok: true; aviso: string; trocarCartao?: { cod: string; alteracao: Record<string, string | number> } } | { ok: false; erro: string };
+
+/**
+ * "É este" (um título) e "São estes" (a soma da NF conjunta): casa a linha com o que o painel apontou, com o motivo automático.
+ * Se algum título citar outro cartão, devolve a correção "Trocar cartão" para a tela oferecer na hora (regra 71).
+ */
+export async function casarComTitulos(entrada: z.input<typeof esquemaCasarRapido>): Promise<ResultadoCasar> {
+  const dados = esquemaCasarRapido.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: "Dados inválidos." };
+  const d = dados.data;
+  const c = await conciliacaoDaRequisicao(d.faturaId);
+  if (!c) return { ok: false, erro: "Fatura não encontrada." };
+  const trava = travaDeLancamento(c.resultado, c.outros);
+  const sugeridos = [...(trava.possiveis.get(d.linhaId) ?? []), ...(trava.somas.get(d.linhaId)?.titulos ?? [])];
+  const titulos = d.titulos.map((k) => sugeridos.find((t) => chaveTitulo(t) === k));
+  if (titulos.some((t) => !t)) return { ok: false, erro: "Estes títulos não estão mais sugeridos para a linha. Recarregue a página." };
+  const ts = titulos as NonNullable<(typeof titulos)[number]>[];
+  const reais = (v: number) => (v / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const motivo = ts.length === 1
+    ? `Mesma compra: título ${ts[0].numeroTitulo} (${reais(ts[0].valorCentavos)})`
+    : `Mesma compra: títulos ${ts.map((t) => t.numeroTitulo).join(" + ")} = ${reais(ts.reduce((s, t) => s + t.valorCentavos, 0))}`;
+  const r = await registrarDecisao({ faturaId: d.faturaId, tipo: "casar", linhas: [d.linhaId], titulos: d.titulos, motivo });
+  if (!r.ok) return r;
+  const supabase = await criarClienteServidor();
+  const infos = (await lerCartoes(supabase)).map(paraCartaoInfo);
+  const outro = ts.find((t) => cartaoDivergente({ complemento: t.complemento, vencimento: t.vencimento }, paraCartaoInfo(c.cartao), infos));
+  if (!outro) return { ok: true, aviso: "Casado." };
+  const alt = alteracaoTrocarCartao(outro, { cartoes: infos, nomeCartao: c.cartao.nome, vencimentoFatura: c.fatura.vencimento, portadorFatura: c.cartao.portador_fatura, historicoFatura: c.cartao.historico_fatura });
+  return alt.ok ? { ok: true, aviso: "Casado.", trocarCartao: { cod: chaveTitulo(outro), alteracao: alt.alteracao } } : { ok: true, aviso: `Casado. O cartão do título não pode ser trocado pela API: ${alt.erro}` };
+}
+
+/** "Não são estes": dispensa a sugestão de soma da linha (observação com os títulos do conjunto). */
+export async function naoSaoEstes(entrada: { faturaId: string; linhaId: string }): Promise<Resultado> {
+  if (!z.string().uuid().safeParse(entrada.faturaId).success || !z.string().uuid().safeParse(entrada.linhaId).success) return { ok: false, erro: "Dados inválidos." };
+  const c = await conciliacaoDaRequisicao(entrada.faturaId);
+  if (!c) return { ok: false, erro: "Fatura não encontrada." };
+  const s = travaDeLancamento(c.resultado, c.outros).somas.get(entrada.linhaId);
+  if (!s) return { ok: false, erro: "Esta linha não tem mais sugestão de soma. Recarregue a página." };
+  return registrarDecisao({ faturaId: entrada.faturaId, tipo: "observar", linhas: [entrada.linhaId], titulos: [], motivo: motivoNaoSaoEstes(s.titulos) });
 }

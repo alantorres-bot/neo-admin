@@ -5,7 +5,7 @@
 // parcelada lançada pelo total a desdobrar ou divergência sem decisão e (b) na linha que tem um POSSÍVEL TÍTULO JÁ LANÇADO — um
 // título dos "Outros títulos de cartão" ou das divergências com o valor da linha (até 5 centavos) ou ≈ N × parcela (N + 5
 // centavos, regra 61). Caso real: NuViagens R$ 822,89 × título 30693 de R$ 822,90 com "CRATAO" no complemento (Nubank PF 10/2026).
-import { chaveTitulo, TOLERANCIA_PADRAO, type ItemALancar, type ResultadoConciliacao, type TituloPagar } from "./conciliacao";
+import { chaveTitulo, TOLERANCIA_PADRAO, type ItemALancar, type ResultadoConciliacao, type SugestaoSoma, type TituloPagar } from "./conciliacao";
 import type { OutroTitulo } from "./selecao-titulos";
 
 const reais = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -13,16 +13,44 @@ const reais = (c: number) => (c / 100).toLocaleString("pt-BR", { style: "currenc
 // ---------------------------------------------------------------- "não é o mesmo título" (observação na linha)
 
 const PREFIXO_CONFERIDO = "Conferido: não é o título";
+const PREFIXO_GRUPO = "Conferido: não são os títulos";
+
+/** Motivo da observação que dispensa a sugestão de soma: "Conferido: não são os títulos A + B (R$ …)". */
+export function motivoNaoSaoEstes(ts: readonly TituloPagar[]): string {
+  const total = ts.reduce((s, t) => s + t.valorCentavos, 0);
+  return `${PREFIXO_GRUPO} ${ts.map(chaveTitulo).join(" + ")} (${reais(total)})`.slice(0, 500);
+}
 
 /** Motivo da observação que libera a linha de um possível título: "Conferido: não é o título <chave> (nº …, R$ …)". */
 export function motivoNaoEhOMesmo(t: TituloPagar): string {
   return `${PREFIXO_CONFERIDO} ${chaveTitulo(t)} (nº ${t.numeroTitulo}, ${reais(t.valorCentavos)}, ${t.fornecedor})`.slice(0, 500);
 }
 
-/** Chaves dos títulos que alguém já conferiu e disse que não são a compra da linha. */
-function titulosDispensados(item: ItemALancar): Set<string> {
-  const re = new RegExp(`^${PREFIXO_CONFERIDO} (\\S+)`);
-  return new Set((item.observacoes ?? []).map((o) => re.exec(o.motivo ?? "")?.[1]).filter((c): c is string => !!c));
+/** Chaves dos títulos que alguém já conferiu e disse que não são a compra da linha (um a um ou o conjunto da soma). */
+function titulosDispensados(item: Pick<ItemALancar, "observacoes">): Set<string> {
+  const um = new RegExp(`^${PREFIXO_CONFERIDO} (\\S+)`);
+  const grupo = new RegExp(`^${PREFIXO_GRUPO} (\\S+(?: \\+ \\S+)*)`);
+  const saida = new Set<string>();
+  for (const o of item.observacoes ?? []) {
+    const m = um.exec(o.motivo ?? "");
+    if (m) saida.add(m[1]);
+    const g = grupo.exec(o.motivo ?? "");
+    if (g) g[1].split(" + ").forEach((k) => saida.add(k));
+  }
+  return saida;
+}
+
+/** Sugestões de soma (NF conjunta sem certeza) ainda em aberto: a linha a lançar, sem justificativa, e o conjunto não dispensado. */
+export function somasEmAberto(r: Pick<ResultadoConciliacao, "aLancar" | "sugestoesSoma">): Map<string, SugestaoSoma> {
+  const mapa = new Map<string, SugestaoSoma>();
+  for (const s of r.sugestoesSoma ?? []) {
+    const item = r.aLancar.find((a) => a.linha.id === s.linha.id && !a.justificativa);
+    if (!item) continue;
+    const dispensados = titulosDispensados(item);
+    if (s.titulos.every((t) => dispensados.has(chaveTitulo(t)))) continue;
+    mapa.set(s.linha.id, s);
+  }
+  return mapa;
 }
 
 // ---------------------------------------------------------------- possível título já lançado
@@ -63,10 +91,12 @@ export function possiveisTitulos(r: Pick<ResultadoConciliacao, "aLancar" | "dive
 export type TravaLancamento = {
   /** Motivos que travam todo lançamento de compra (vazio = livre). */
   geral: string[];
-  /** Linha → motivo (possível título já lançado). */
+  /** Linha → motivo (possível título já lançado, ou conjunto de títulos que somam a linha). */
   porLinha: Map<string, string>;
-  /** Linha → títulos que podem ser a mesma compra. */
+  /** Linha → títulos que podem ser a mesma compra (um por um). */
   possiveis: Map<string, TituloPagar[]>;
+  /** Linha → conjunto de títulos que somam a linha (NF conjunta sem certeza): "São estes" casa todos. */
+  somas: Map<string, SugestaoSoma>;
 };
 
 export const descreverTitulo = (t: TituloPagar) => `nº ${t.numeroTitulo}, ${reais(t.valorCentavos)}, ${t.fornecedor}${t.complemento ? `, “${t.complemento}”` : ""}`;
@@ -75,15 +105,20 @@ export const descreverTitulo = (t: TituloPagar) => `nº ${t.numeroTitulo}, ${rea
 export const divergenciasSemDecisao = (r: Pick<ResultadoConciliacao, "divergencias">) => r.divergencias.filter((d) => !d.justificativa && !(d.observacoes ?? []).length);
 
 /** O que trava "Lançar compra" e "Lançar selecionadas" agora. */
-export function travaDeLancamento(r: Pick<ResultadoConciliacao, "aLancar" | "divergencias" | "conciliados" | "aDesdobrar">, outros: readonly OutroTitulo[]): TravaLancamento {
+export function travaDeLancamento(r: Pick<ResultadoConciliacao, "aLancar" | "divergencias" | "conciliados" | "aDesdobrar" | "sugestoesSoma">, outros: readonly OutroTitulo[]): TravaLancamento {
   const geral: string[] = [];
   const nDesdobrar = (r.aDesdobrar ?? []).length;
   if (nDesdobrar) geral.push(`Desdobre antes no Consistem ${nDesdobrar === 1 ? "a compra parcelada lançada" : `as ${nDesdobrar} compras parceladas lançadas`} pelo total (passo 2).`);
   const nDiv = divergenciasSemDecisao(r).length;
   if (nDiv) geral.push(`Confira antes ${nDiv === 1 ? "o título" : `os ${nDiv} títulos`} sem linha na aba Divergências e registre a decisão (casar, justificar ou observar) (passo 3).`);
   const possiveis = possiveisTitulos(r, outros);
-  const porLinha = new Map([...possiveis].map(([id, ts]) => [id, `Possível título já lançado: ${ts.map(descreverTitulo).join("; ")}. Case a linha com ele (Decidir › Casar) ou, se não for a mesma compra, use “Não é o mesmo”.`]));
-  return { geral, porLinha, possiveis };
+  const porLinha = new Map([...possiveis].map(([id, ts]) => [id, `Possível título já lançado: ${ts.map(descreverTitulo).join("; ")}. Use “É este” ou, se não for a mesma compra, “Não é o mesmo”.`]));
+  const somas = somasEmAberto(r);
+  for (const [id, s] of somas) {
+    const texto = `Possíveis títulos já lançados: ${s.titulos.map((t) => `nº ${t.numeroTitulo}`).join(" + ")} = ${reais(s.titulos.reduce((x, t) => x + t.valorCentavos, 0))}. Use “São estes” ou “Não são estes”.`;
+    porLinha.set(id, porLinha.has(id) ? `${porLinha.get(id)} ${texto}` : texto);
+  }
+  return { geral, porLinha, possiveis, somas };
 }
 
 /** Motivo para recusar o lançamento destas linhas (null = pode lançar). */
@@ -123,7 +158,7 @@ export function montarRoteiro(e: {
   const soma = (l: ItemALancar[]) => reais(l.reduce((s, a) => s + a.linha.valorCentavos, 0));
   const nDesdobrar = (r.aDesdobrar ?? []).length;
   const semDecisao = divergenciasSemDecisao(r).length;
-  const possiveis = possiveisTitulos(r, e.outros).size;
+  const possiveis = new Set([...possiveisTitulos(r, e.outros).keys(), ...somasEmAberto(r).keys()]).size;
   const consistem = (e.origemTitulos ?? "consistem") === "consistem";
   const plural = (n: number, um: string, varios: string) => `${n} ${n === 1 ? um : varios}`;
 

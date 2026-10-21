@@ -15,9 +15,9 @@ import { ROTA_CARTAO } from "@/lib/modulos/financeiro/cartao/modulo";
 import { descreverTitulo, travaDeLancamento } from "@/lib/modulos/financeiro/cartao/roteiro";
 import type { OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import { cancelarFatura, conferirNaoEhOMesmo } from "../acoes";
+import { cancelarFatura, casarComTitulos, conferirNaoEhOMesmo, naoSaoEstes } from "../acoes";
 import type { DecisaoLinha, LinhaFaturaBanco, QuadroCompras, QuadroCorrecoes } from "../dados";
-import { AvisosDoTitulo, BotaoNaoEhDestaFatura } from "./correcoes";
+import { AvisosDoTitulo, BotaoNaoEhDestaFatura, DialogoTrocarCartaoAgora } from "./correcoes";
 import { DialogoLancarCompra } from "./compras";
 import { BarraAgrupado, itensAgrupaveis } from "./agrupado";
 import { DialogoDecidir, ListaDecisoes, SeloDecisao, type Candidatos } from "./decisoes";
@@ -147,15 +147,30 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
                     {decide && <DialogoDecidir faturaId={faturaId!} alvo={{ tipo: "linha", item: a }} candidatos={candidatos} />}
                     {trava?.possiveis.get(a.linha.id) && (
                       <div className="space-y-1 rounded-[3px] border border-amber-300 bg-amber-50 p-1.5 text-xs">
-                        <p className="font-medium text-amber-900">Possível título já lançado (Decidir › Casar, se for a mesma compra):</p>
+                        <p className="font-medium text-amber-900">Possível título já lançado:</p>
                         {trava.possiveis.get(a.linha.id)!.map((t) => (
                           <div key={chaveTitulo(t)} className="flex flex-wrap items-center gap-1">
                             <span>{descreverTitulo(t)}</span>
+                            <BotaoEhEste faturaId={faturaId!} linhaId={a.linha.id} titulos={[chaveTitulo(t)]} rotulo="É este" />
                             <BotaoNaoEhOMesmo faturaId={faturaId!} linhaId={a.linha.id} titulo={chaveTitulo(t)} />
                           </div>
                         ))}
                       </div>
                     )}
+                    {trava?.somas.get(a.linha.id) && (() => {
+                      const s = trava.somas.get(a.linha.id)!;
+                      return (
+                        <div className="space-y-1 rounded-[3px] border border-amber-300 bg-amber-50 p-1.5 text-xs">
+                          <p className="font-medium text-amber-900">Possíveis títulos já lançados (a linha paga os dois/três):</p>
+                          {s.titulos.map((t) => <p key={chaveTitulo(t)}>{descreverTitulo(t)}</p>)}
+                          <p>Soma {formatarMoeda(s.titulos.reduce((x, t) => x + t.valorCentavos, 0))}{s.diferencaCentavos !== 0 ? ` (diferença ${formatarMoeda(s.diferencaCentavos)})` : ""}</p>
+                          <div className="flex flex-wrap gap-1">
+                            <BotaoEhEste faturaId={faturaId!} linhaId={a.linha.id} titulos={s.titulos.map(chaveTitulo)} rotulo="São estes" />
+                            <BotaoNaoSaoEstes faturaId={faturaId!} linhaId={a.linha.id} />
+                          </div>
+                        </div>
+                      );
+                    })()}
                     {lancaCompra && !travadoGeral && !trava?.porLinha.has(a.linha.id) && compras!.propostas[a.linha.id] && <DialogoLancarCompra faturaId={faturaId!} item={a} proposta={compras!.propostas[a.linha.id]} compras={compras!} />}
                     {compras?.marketplace[a.linha.id] && <p className="text-xs text-muted-foreground">Marketplace ({compras.marketplace[a.linha.id]}): lance a nota do vendedor no Consistem; a conciliação casa pelo valor.</p>}
                   </TableCell>
@@ -203,7 +218,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
                   <TableCell className="tabular-nums">{c.titulo.numeroTitulo}{c.titulo.emBordero && <Badge variant="outline" className="ml-1">borderô</Badge>}{c.titulo.porRegra && <Badge variant="outline" className="ml-1" title="Entrou pela regra do fornecedor no Neo Fiscal (o complemento não cita o cartão)">pela regra</Badge>}{c.titulo.antecipacao && <Badge variant="outline" className="ml-1 border-sky-400 text-sky-800" title="Antecipação a fornecedor paga no cartão">antecipação</Badge>}</TableCell>
                   <TableCell className="text-xs">{c.titulo.complemento}</TableCell>
                   <TableCell>
-                    {c.modo === "Arredondamento" ? `Arredondamento (${formatarMoeda(c.diferencaCentavos)})` : c.modo === "Manual" ? `À mão (diferença ${formatarMoeda(c.diferencaCentavos)})` : c.modo}
+                    {c.modo === "Arredondamento" ? `Arredondamento (${formatarMoeda(c.diferencaCentavos)})` : c.modo === "Manual" ? `À mão (diferença ${formatarMoeda(c.diferencaCentavos)})` : c.modo === "Soma" ? `Soma de títulos${c.diferencaCentavos ? ` (${formatarMoeda(c.diferencaCentavos)})` : ""}` : c.modo}
                     {c.decisao && <span className="block text-[11px] text-muted-foreground">{c.decisao.motivo} — {c.decisao.autor}</span>}
                     {c.titulosExtras && c.titulosExtras.length > 0 && <span className="block text-[11px] text-muted-foreground">+ {c.titulosExtras.map((t) => t.numeroTitulo).join(", ")}</span>}
                   </TableCell>
@@ -299,6 +314,36 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
 }
 
 const Vazio = ({ texto }: { texto: string }) => <p className="rounded-[3px] border border-grade bg-cabecalho p-3 text-sm text-muted-foreground">{texto}</p>;
+
+/** "É este" / "São estes": casa a linha com o(s) título(s) apontado(s); se for de outro cartão, oferece o "Trocar cartão" na hora. */
+function BotaoEhEste({ faturaId, linhaId, titulos, rotulo }: { faturaId: string; linhaId: string; titulos: string[]; rotulo: string }) {
+  const router = useRouter();
+  const [pendente, iniciar] = useTransition();
+  const [trocar, setTrocar] = useState<{ cod: string; alteracao: Record<string, string | number> } | null>(null);
+  return (
+    <>
+      <Button size="xs" disabled={pendente} onClick={() => iniciar(async () => {
+        const r = await casarComTitulos({ faturaId, linhaId, titulos });
+        if (!r.ok) { toast.error(r.erro); return; }
+        toast.success(r.aviso);
+        if (r.trocarCartao) setTrocar(r.trocarCartao); else router.refresh();
+      })}>{pendente ? "Casando…" : rotulo}</Button>
+      {trocar && <DialogoTrocarCartaoAgora faturaId={faturaId} cod={trocar.cod} alteracao={trocar.alteracao} aoFechar={() => { setTrocar(null); router.refresh(); }} />}
+    </>
+  );
+}
+
+/** "Não são estes": dispensa a sugestão de soma (libera o Lançar). */
+function BotaoNaoSaoEstes({ faturaId, linhaId }: { faturaId: string; linhaId: string }) {
+  const router = useRouter();
+  const [pendente, iniciar] = useTransition();
+  return (
+    <Button size="xs" variant="outline" disabled={pendente} onClick={() => iniciar(async () => {
+      const r = await naoSaoEstes({ faturaId, linhaId });
+      if (r.ok) { toast.success("Registrado: não são estes títulos."); router.refresh(); } else toast.error(r.erro);
+    })}>{pendente ? "Registrando…" : "Não são estes"}</Button>
+  );
+}
 
 /** "Não é o mesmo": registra que o possível título não é a compra da linha (libera o Lançar). */
 function BotaoNaoEhOMesmo({ faturaId, linhaId, titulo }: { faturaId: string; linhaId: string; titulo: string }) {

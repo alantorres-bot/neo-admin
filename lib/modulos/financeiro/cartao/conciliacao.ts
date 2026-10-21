@@ -94,7 +94,8 @@ export type ItemALancar = {
   classificacao?: DecisaoItem;
   observacoes?: DecisaoItem[];
 };
-export type Modo = "Exato" | "Arredondamento" | "Agrupado" | "Manual" | "Antecipação";
+/** "Soma": uma linha da fatura paga 2 ou 3 títulos (NF conjunta de fornecedores diferentes; regra 5d). */
+export type Modo = "Exato" | "Arredondamento" | "Agrupado" | "Manual" | "Antecipação" | "Soma";
 export type Aderencia = "OK" | "Conferir descrição" | "ALERTA: complemento cita outro cartão" | "Conferir: antecipação sem o cartão no texto";
 export type Conciliado = {
   /** Linhas da fatura casadas com o título (uma, ou várias no agrupamento). */
@@ -118,11 +119,20 @@ export type ADesdobrar = {
   linha: LinhaFatura;
   titulo: TituloPagar;
   parcelas: number;
+  /**
+   * Parcela da linha (k). 1 = a NF cheia está na janela desta fatura (caso de sempre). k > 1 = a NF cheia foi lançada com
+   * vencimento de outro mês (fora da janela) e as parcelas 1..k−1 já foram pagas sem título: o original fica com elas e o painel
+   * cria k..N. Resultados gravados antes de 21/10/2026 não têm o campo (vale 1).
+   */
+  parcelaInicial?: number;
+  /** O título cheio está fora da janela do vencimento (não entra no total dos títulos desta fatura). */
+  foraDaJanela?: boolean;
   /** Valor da parcela (o da linha). */
   parcelaCentavos: number;
   /** Título − N × parcela (arredondamento do emissor; vai para a última parcela). */
   diferencaCentavos: number;
 };
+export type SugestaoSoma = { linha: LinhaFatura; titulos: TituloPagar[]; diferencaCentavos: number };
 export type Divergencia = { titulo: TituloPagar; causa: string; justificativa?: DecisaoItem; observacoes?: DecisaoItem[] };
 export type Compensado = { credito: LinhaFatura; debito: LinhaFatura; outras?: LinhaFatura[]; decisao?: DecisaoItem };
 /** Decisão que não teve efeito nesta apuração (o item sumiu, já foi resolvido ou o título saiu da janela). */
@@ -155,6 +165,8 @@ export type ResultadoConciliacao = {
   aDesdobrar?: ADesdobrar[];
   /** Soma de (linha − título) dos pares a desdobrar: justificada até o desdobramento. */
   desdobrarCentavos?: number;
+  /** Linhas que podem ser pagas por 2 ou 3 títulos, sem certeza (sem vínculo ou mais de uma combinação): sugestão que trava o Lançar. */
+  sugestoesSoma?: SugestaoSoma[];
   divergencias: Divergencia[];
   quadro: LinhaQuadro[];
   contagens: { linhas: number; compensados: number; titulos: number; conciliados: number; agrupamentos: number; manuais: number; aLancar: number; pendentes: number; divergencias: number; cartaoDivergente: number; aDesdobrar?: number };
@@ -180,6 +192,11 @@ export type EntradaConciliacao = {
    * sobrou e tem o MESMO valor em centavos (modo "Antecipação", conferir); ou por decisão "casar".
    */
   antecipacoes?: readonly TituloPagar[];
+  /**
+   * Títulos em aberto deste cartão FORA da janela do vencimento, de valor ≈ N × parcela de alguma linha k/N (k > 1): a NF lançada
+   * pelo total em outro mês. Só servem para achar o que desdobrar; não entram no total dos títulos.
+   */
+  titulosCheiosForaDaJanela?: readonly TituloPagar[];
 };
 
 /** Chave do título nas decisões: o código do lançamento no Consistem (ou o id, quando não há). */
@@ -222,7 +239,7 @@ export function compensarEstornos(linhas: readonly LinhaFatura[]): { restantes: 
 
 // ---------------------------------------------------------------- casamento
 
-type Casamento = { linhas: LinhaFatura[]; titulo: TituloPagar; modo: Modo; diferencaCentavos: number; semelhanca: number };
+type Casamento = { linhas: LinhaFatura[]; titulo: TituloPagar; modo: Modo; diferencaCentavos: number; semelhanca: number; titulosExtras?: TituloPagar[] };
 
 /** Três passes: valor exato (desempate pela descrição) → tolerância de centavos → várias linhas iguais num título só. */
 export function casar(linhas: readonly LinhaFatura[], titulos: readonly TituloPagar[], tolerancia: number): { casamentos: Casamento[]; linhasSemTitulo: LinhaFatura[]; titulosSemLinha: TituloPagar[] } {
@@ -289,6 +306,86 @@ export function compraPeloTotal(linhas: readonly LinhaFatura[], titulos: readonl
     pares.push({ linha, titulo: t, parcelas: n, parcelaCentavos: linha.valorCentavos, diferencaCentavos: t.valorCentavos - cheio });
   }
   return { pares, linhasSemTitulo: restantes, titulosSemLinha: titulos.filter((t) => !usados.has(t.id)) };
+}
+
+// ---------------------------------------------------------------- soma de títulos (NF conjunta, regra 5d)
+
+const sufixoParcela = (numero: string) => {
+  const m = /\/(\d+)\s*$/.exec(numero.trim());
+  return m ? Number(m[1]) : null;
+};
+
+/**
+ * Os títulos estão ligados entre si (e à linha)? Linha parcelada: todos na MESMA parcela da linha (sufixo "/k" do número do
+ * título = k da linha). À vista: "CONJUNTA" no complemento de todos, ou o mesmo fornecedor.
+ */
+function vinculados(linha: LinhaFatura, ts: readonly TituloPagar[]): boolean {
+  if ((linha.parcelaTotal ?? 1) > 1) return linha.parcelaNum !== null && ts.every((t) => sufixoParcela(t.numeroTitulo) === linha.parcelaNum);
+  if (ts.every((t) => normalizar(t.complemento).includes("CONJUNTA"))) return true;
+  const f = ts[0].codFornecedor;
+  return !!f && ts.every((t) => t.codFornecedor === f);
+}
+
+/**
+ * Uma linha que paga 2 ou 3 títulos deste cartão (NF conjunta: ex. Mercado Livre 6/10 R$ 107,61 = 241525/6 Techmoder R$ 42,14 +
+ * 8774/6 R.B Queiroz R$ 65,48). Casa sozinho só com UMA combinação vinculada (`vinculados`) dentro da tolerância; senão, se houver
+ * combinação, vira sugestão (trava o Lançar até a pessoa decidir).
+ */
+export function somaDeTitulos(linhas: readonly LinhaFatura[], titulos: readonly TituloPagar[], tolerancia: number): {
+  casamentos: Casamento[]; sugestoes: SugestaoSoma[]; linhasSemTitulo: LinhaFatura[]; titulosSemLinha: TituloPagar[];
+} {
+  const usados = new Set<string>();
+  const casamentos: Casamento[] = [];
+  const sugestoes: SugestaoSoma[] = [];
+  const restantes: LinhaFatura[] = [];
+  const livres = () => titulos.filter((t) => !usados.has(t.id) && !t.antecipacao && t.valorCentavos > 0);
+  for (const linha of linhas) {
+    if (linha.valorCentavos <= 0) { restantes.push(linha); continue; }
+    const cand = livres().filter((t) => t.valorCentavos < linha.valorCentavos + tolerancia);
+    const combos: TituloPagar[][] = [];
+    for (let a = 0; a < cand.length; a++)
+      for (let b = a + 1; b < cand.length; b++) {
+        const ab = cand[a].valorCentavos + cand[b].valorCentavos;
+        if (Math.abs(ab - linha.valorCentavos) <= tolerancia) combos.push([cand[a], cand[b]]);
+        for (let c = b + 1; c < cand.length; c++)
+          if (Math.abs(ab + cand[c].valorCentavos - linha.valorCentavos) <= tolerancia) combos.push([cand[a], cand[b], cand[c]]);
+      }
+    const dif = (ts: TituloPagar[]) => linha.valorCentavos - ts.reduce((s, t) => s + t.valorCentavos, 0);
+    const certos = combos.filter((ts) => vinculados(linha, ts));
+    if (certos.length === 1) {
+      const ts = certos[0];
+      ts.forEach((t) => usados.add(t.id));
+      casamentos.push({ linhas: [linha], titulo: ts[0], titulosExtras: ts.slice(1), modo: "Soma", diferencaCentavos: dif(ts), semelhanca: 1 });
+      continue;
+    }
+    restantes.push(linha);
+    if (combos.length) {
+      const melhor = [...combos].sort((x, y) => Math.abs(dif(x)) - Math.abs(dif(y)) || x.length - y.length)[0];
+      sugestoes.push({ linha, titulos: melhor, diferencaCentavos: dif(melhor) });
+    }
+  }
+  return { casamentos, sugestoes, linhasSemTitulo: restantes, titulosSemLinha: titulos.filter((t) => !usados.has(t.id)) };
+}
+
+/**
+ * Linha k/N (k > 1) sem título × título em aberto deste cartão FORA da janela de ≈ N × parcela (N centavos + tolerância): a NF foi
+ * lançada pelo total em outro mês e não foi desdobrada. Só com UM candidato (dois = não arrisca).
+ */
+export function compraPeloTotalForaDaJanela(linhas: readonly LinhaFatura[], titulos: readonly TituloPagar[], tolerancia: number): { pares: ADesdobrar[]; linhasSemTitulo: LinhaFatura[] } {
+  const usados = new Set<string>();
+  const pares: ADesdobrar[] = [];
+  const restantes: LinhaFatura[] = [];
+  for (const linha of linhas) {
+    const n = linha.parcelaTotal ?? 1;
+    const k = linha.parcelaNum ?? 1;
+    if (k < 2 || n < k || linha.valorCentavos <= 0) { restantes.push(linha); continue; }
+    const cheio = n * linha.valorCentavos;
+    const cand = titulos.filter((t) => !usados.has(t.id) && !t.antecipacao && Math.abs(t.valorCentavos - cheio) <= n + tolerancia);
+    if (cand.length !== 1) { restantes.push(linha); continue; }
+    usados.add(cand[0].id);
+    pares.push({ linha, titulo: cand[0], parcelas: n, parcelaCentavos: linha.valorCentavos, diferencaCentavos: cand[0].valorCentavos - cheio, parcelaInicial: k, foraDaJanela: true });
+  }
+  return { pares, linhasSemTitulo: restantes };
 }
 
 // ---------------------------------------------------------------- classificação
@@ -402,10 +499,14 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
   const ativasPorLinha = (id: string, tipo: TipoDecisao) => decisoes.filter((d) => d.tipo === tipo && d.linhas.includes(id));
   const justificadas = new Set(linhasSemAntecipacao.filter((l) => ativasPorLinha(l.id, "justificar").length > 0).map((l) => l.id));
   const peloTotal = compraPeloTotal(linhasSemAntecipacao.filter((l) => !justificadas.has(l.id)), auto.titulosSemLinha, tolerancia);
-  const aDesdobrar = peloTotal.pares;
-  const desdobradas = new Set(aDesdobrar.map((p) => p.linha.id));
-  const linhasSemTitulo = linhasSemAntecipacao.filter((l) => !desdobradas.has(l.id));
-  const { titulosSemLinha } = peloTotal;
+  // 3d) Uma linha que paga 2 ou 3 títulos (NF conjunta), depois o título cheio de outro mês (fora da janela).
+  const soma = somaDeTitulos(peloTotal.linhasSemTitulo, peloTotal.titulosSemLinha, tolerancia);
+  const foraDaJanela = compraPeloTotalForaDaJanela(soma.linhasSemTitulo, e.titulosCheiosForaDaJanela ?? [], tolerancia);
+  const aDesdobrar = [...peloTotal.pares.map((p) => ({ ...p, parcelaInicial: 1 })), ...foraDaJanela.pares];
+  const resolvidas = new Set([...aDesdobrar.map((p) => p.linha.id), ...soma.casamentos.map((c) => c.linhas[0].id)]);
+  const linhasSemTitulo = linhasSemAntecipacao.filter((l) => !resolvidas.has(l.id));
+  const { titulosSemLinha } = soma;
+  const sugestoesSoma = soma.sugestoes.filter((x) => !justificadas.has(x.linha.id));
 
   // 4) Decisões sobre os itens que restaram.
   const ativasPorTitulo = (t: TituloPagar, tipo: TipoDecisao) => decisoes.filter((d) => d.tipo === tipo && d.titulos.includes(chaveTitulo(t)));
@@ -434,6 +535,7 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
       return { ...c, aderencia: "OK", titulosExtras: todos.slice(1), decisao: d };
     }),
     ...casamentosAntecipacao.map((c): Conciliado => ({ ...c, aderencia: "Conferir: antecipação sem o cartão no texto" })),
+    ...soma.casamentos.map((c): Conciliado => ({ ...c, aderencia: [c.titulo, ...(c.titulosExtras ?? [])].some((t) => cartaoDivergente(t, e.cartao, e.cartoes)) ? "ALERTA: complemento cita outro cartão" : "OK" })),
     ...casamentos.map((c): Conciliado => ({
       ...c,
       aderencia: cartaoDivergente(c.titulo, e.cartao, e.cartoes) ? "ALERTA: complemento cita outro cartão" : c.modo === "Agrupado" || c.semelhanca >= LIMIAR_SEMELHANCA ? "OK" : "Conferir descrição",
@@ -457,9 +559,10 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
   const diferencaCentavos = e.totalInformadoCentavos - totalTitulosCentavos;
   const orfaosCentavos = titulosSemLinha.reduce((s, t) => s + t.valorCentavos, 0);
   const justificado = NATUREZAS.reduce((s, n) => s + porNatureza[n], 0);
-  const arredondamentoCentavos = casamentos.reduce((s, c) => s + c.diferencaCentavos, 0);
+  const arredondamentoCentavos = [...casamentos, ...soma.casamentos].reduce((s, c) => s + c.diferencaCentavos, 0);
   const ajusteManualCentavos = casamentosManuais.reduce((s, c) => s + c.diferencaCentavos, 0);
-  const desdobrarCentavos = aDesdobrar.reduce((s, p) => s + p.linha.valorCentavos - p.titulo.valorCentavos, 0);
+  // O título cheio fora da janela não está no total dos títulos: só a linha pesa (justificada pelo desdobramento pendente).
+  const desdobrarCentavos = aDesdobrar.reduce((s, p) => s + p.linha.valorCentavos - (p.foraDaJanela ? 0 : p.titulo.valorCentavos), 0);
   const residuoCentavos = diferencaCentavos - justificado - arredondamentoCentavos - ajusteManualCentavos - desdobrarCentavos + orfaosCentavos;
   const pendentes = aLancar.filter((a) => !a.justificativa).length + aDesdobrar.length;
   const cartaoDivergenteN = conciliados.filter((c) => c.aderencia.startsWith("ALERTA")).length;
@@ -480,10 +583,10 @@ export function conciliar(e: EntradaConciliacao): ResultadoConciliacao {
     cartao: e.cartao, vencimento: e.vencimento, totalInformadoCentavos: e.totalInformadoCentavos, somaLinhasCentavos,
     integridadeOk: somaLinhasCentavos === e.totalInformadoCentavos, totalTitulosCentavos, diferencaCentavos, residuoCentavos, porNatureza, arredondamentoCentavos,
     ajusteManualCentavos, pendentes, decisoes, decisoesSemEfeito: semEfeito, orfaosCentavos,
-    conciliados, compensados, aLancar, aDesdobrar, desdobrarCentavos, divergencias, quadro,
+    conciliados, compensados, aLancar, aDesdobrar, desdobrarCentavos, sugestoesSoma, divergencias, quadro,
     contagens: {
       linhas: e.linhas.length, compensados: compensados.length, titulos: titulosDoCartao.length,
-      conciliados: casamentos.filter((c) => c.modo !== "Agrupado").length + casamentosAntecipacao.length, agrupamentos: casamentos.filter((c) => c.modo === "Agrupado").length,
+      conciliados: casamentos.filter((c) => c.modo !== "Agrupado").length + casamentosAntecipacao.length + soma.casamentos.length, agrupamentos: casamentos.filter((c) => c.modo === "Agrupado").length,
       manuais: casamentosManuais.length, aLancar: aLancar.length, pendentes, divergencias: divergencias.length, cartaoDivergente: cartaoDivergenteN,
       aDesdobrar: aDesdobrar.length,
     },
