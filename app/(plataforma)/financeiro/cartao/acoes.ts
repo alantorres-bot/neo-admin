@@ -17,13 +17,14 @@ import { gerarPlanilha, nomeDaPlanilha } from "@/lib/modulos/financeiro/cartao/p
 import { bloqueioDoFechamento, rotuloCompetencia } from "@/lib/modulos/financeiro/cartao/ciclos";
 import { CAMPOS_CONFIG_ENCARGOS, ROTULO_CAMPO_CONFIG } from "@/lib/modulos/financeiro/cartao/lancamento-encargos";
 import { CAMPOS_COMPRA, CAMPOS_PADRAO_CARTAO, conferirContas, lerCampos, montarTitulosCompra, ROTULO_CAMPO_COMPRA } from "@/lib/modulos/financeiro/cartao/lancamento-compras";
-import { CONFERIR, type LinhaFatura } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { chaveTitulo, CONFERIR, type LinhaFatura } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { montarTituloAgrupado } from "@/lib/modulos/financeiro/cartao/lancamento-agrupado";
 import { comMarcasDaFatura, titulosParaTrocar } from "@/lib/modulos/financeiro/cartao/portador-fatura";
 import type { ResultadoConciliacao } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { normalizar } from "@/lib/modulos/financeiro/cartao/texto";
 import { categoriasDosFornecedores, codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerCompras, lerDesdobrar, lerDetalheDoConsistem, lerEncargos, lerEstabelecimentos, lerProvisorio, paraCartaoInfo, type FotoFechamento } from "./dados";
 import { montarDesdobramento } from "@/lib/modulos/financeiro/cartao/desdobramento";
+import { motivoNaoEhOMesmo, recusaDeLancamento, travaDeLancamento } from "@/lib/modulos/financeiro/cartao/roteiro";
 
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
 const texto = (d: FormData, nome: string) => String(d.get(nome) ?? "").trim();
@@ -353,6 +354,22 @@ export async function registrarDecisao(entrada: z.input<typeof esquemaDecisao>):
   return { ok: true, aviso };
 }
 
+/**
+ * "Não é o mesmo" (regra 67): a pessoa conferiu que o possível título já lançado não é a compra da linha. Registra a observação
+ * "Conferido: não é o título <código>" na linha, que libera o botão Lançar dela. Recalcula para confirmar que o título ainda é
+ * candidato da linha.
+ */
+export async function conferirNaoEhOMesmo(entrada: { faturaId: string; linhaId: string; titulo: string }): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) registra decisões." };
+  if (!z.string().uuid().safeParse(entrada.faturaId).success || !z.string().uuid().safeParse(entrada.linhaId).success) return { ok: false, erro: "Dados inválidos." };
+  const c = await conciliacaoDaRequisicao(entrada.faturaId);
+  if (!c) return { ok: false, erro: "Fatura não encontrada." };
+  const t = travaDeLancamento(c.resultado, c.outros).possiveis.get(entrada.linhaId)?.find((x) => chaveTitulo(x) === entrada.titulo);
+  if (!t) return { ok: false, erro: "Este título não aparece mais como possível lançamento da linha. Recarregue a página." };
+  return registrarDecisao({ faturaId: entrada.faturaId, tipo: "observar", linhas: [entrada.linhaId], titulos: [], motivo: motivoNaoEhOMesmo(t) });
+}
+
 const esquemaDesfazerDecisao = z.object({ id: z.string().uuid(), motivo: z.string().trim().min(3, "Informe o motivo para desfazer.").max(300) });
 
 export async function desfazerDecisao(entrada: z.input<typeof esquemaDesfazerDecisao>): Promise<Resultado> {
@@ -499,6 +516,8 @@ export async function lancarCompra(entrada: z.input<typeof esquemaCompra>): Prom
   const proposta = q.propostas[d.linhaId];
   const item = c.resultado.aLancar.find((a) => a.linha.id === d.linhaId);
   if (!proposta || !item) return { ok: false, erro: "Esta linha não está mais entre as compras a lançar. Recarregue a página." };
+  const travada = recusaDeLancamento(travaDeLancamento(c.resultado, c.outros), [d.linhaId]);
+  if (travada) return { ok: false, erro: travada };
   const contas = conferirContas(lerCampos(d.campos), q.creditoPadrao);
   if (contas) return { ok: false, erro: contas };
   const camposCompra = comMarcasDaFatura(await comCategoriaDoFornecedor(supabase, c.fatura.empresa_id, lerCampos(d.campos)), { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura });
@@ -626,6 +645,8 @@ export async function lancarAgrupado(entrada: z.input<typeof esquemaAgrupado>): 
   if (!q.mesAberto) return { ok: false, erro: "Só se lançam compras de fatura de um mês em conciliação." };
   const linhas = d.linhas.map((id) => c.resultado.aLancar.find((a) => a.linha.id === id && q.propostas[id])?.linha);
   if (linhas.some((l) => !l)) return { ok: false, erro: "Uma das linhas não está mais entre as compras a lançar. Recarregue a página." };
+  const travada = recusaDeLancamento(travaDeLancamento(c.resultado, c.outros), d.linhas);
+  if (travada) return { ok: false, erro: travada };
   const contas = conferirContas(lerCampos(d.campos), q.creditoPadrao);
   if (contas) return { ok: false, erro: contas };
   const t = montarTituloAgrupado({ linhas: linhas as LinhaFatura[], nomeCartao: c.cartao.nome, campos: comMarcasDaFatura(await comCategoriaDoFornecedor(supabase, c.fatura.empresa_id, lerCampos(d.campos)), { portador: c.cartao.portador_fatura, historico: c.cartao.historico_fatura }), fechamento: q.fechamento, vencimento: c.fatura.vencimento, rotulo: d.rotulo });

@@ -265,6 +265,19 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
 64. **Título excluído no Consistem** (gestor, botão "Excluído no Consistem" na lista de compras lançadas): registra que um título
     lançado pelo painel foi excluído no ERP (ex.: duplicava a NF), com motivo, quem e quando. Nada é apagado no Neo Admin; o título
     deixa de contar como lançamento ativo (a linha pode ser lançada ou desdobrada de novo). O painel não exclui no Consistem.
+65. **Fechamento passo a passo** (decisão do Alan, 21/10/2026, depois do Nubank PF 10/2026): primeiro resolver o que já existe no
+    Consistem, depois criar o que falta. Passos: 0 Preparar (soma = total, títulos lidos do Consistem) · 1 Encargos · 2 Desdobrar ·
+    3 Conferir o que já existe (divergências e outros títulos de cartão) · 4 Parcelas k/N sem título (conferir se a compra não foi
+    lançada pelo total em outro mês) · 5 Lançar compras (agrupado e avulsas) · 6 Sobras (estornos → justificar) · 7 Fechar. O quadro
+    "Fechamento passo a passo" mostra cada passo (✓ feito, → atual, — não se aplica) e o que falta; o atual é o primeiro que falta.
+66. **Trava geral** de "Lançar compra" e "Lançar agrupado" (no painel e no servidor) enquanto houver compra parcelada lançada pelo
+    total a desdobrar ou divergência **sem decisão** (sem justificativa e sem observação). Encargos e desdobramento não travam.
+    "Outros títulos de cartão" não travam tudo: são, em geral, títulos legítimos de outros cartões na mesma janela.
+67. **Possível título já lançado** (trava por linha): linha de compra a lançar (positiva, sem justificativa, não encargo) com um
+    título dos "Outros títulos de cartão" ou das divergências sem justificativa, não casado, de valor a até 5 centavos do da linha ou
+    ≈ N × parcela (N + 5 centavos, regra 61). A linha fica sem Lançar e fora do agrupado até ser **casada** com o título (Decidir ›
+    Casar) ou receber **"Não é o mesmo"** (observação "Conferido: não é o título <código> …", que libera só aquele título). Caso
+    real: NuViagens R$ 822,89 × título 30693 de R$ 822,90 com "CRATAO NUBANK" no complemento.
 49. Cadastro com a mesma regra de envio dos títulos: reserva, envio único, erro (nada criado) ou sem resposta (conferir e
     resolver à mão); cadastrado vai na hora para o espelho `cap_fornecedores`. Prova em `crt_fornecedores_cadastrados`.
 
@@ -294,6 +307,7 @@ zero a lançar, zero divergências (`conciliacao.test.ts`). Detecção: tirando 
 | **Compras lançadas no Consistem** (lista acima das abas) | Lotes do mês: compra (ou desdobramento), parcela, vencimento, valor, situação (Lançado nº, Sem resposta, Não enviado, Não lançado), quem e quando; Resolver e Reenviar o que faltou; **Excluído no Consistem** (gestor, com motivo) |
 | **Compras parceladas lançadas pelo total** (quadro acima das abas, regras 61 a 64) | Cada par linha 1/N × título cheio, a prévia das N parcelas (vencimento, documento, valor, complemento) e o botão **Desdobrar no Consistem** (confirmação em dois cliques); erro do último desdobramento com "Já está alterado no Consistem"; desdobramentos feitos no mês |
 | **Encargos do mês** (quadro na conciliação e no mês em conciliação) | Linhas de encargo pendentes, soma e o título que vai para o Consistem (fornecedor, documento, datas, valor, complemento, códigos); botão **Lançar no Consistem** com conferência; lançamento ativo (lançado com o código, ou sem resposta com **Resolver**); erros anteriores |
+| **Fechamento passo a passo** (quadro no topo da conciliação ao vivo, regras 65 a 67) | Os 8 passos com o estado e o que falta; o rodapé aponta o próximo passo. Na aba A lançar: aviso da trava geral e, por linha, "Possível título já lançado" com o botão **Não é o mesmo** |
 | **Estabelecimentos** (`/estabelecimentos`) | Dicionário com busca; incluir/editar (operador), com a **sugestão de lançamento no Consistem** (fornecedor, códigos). A aba A lançar tem o atalho "Cadastrar" para item não identificado |
 
 ## 8. Dados (prefixo `crt_`, tudo em `public`)
@@ -557,3 +571,11 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
   "Excluído no Consistem" na fatura; reabrir o mês; conferir a linha `MP*TERABYTESHOP` que casava com o 33650 (a decisão "casar"
   fica sem efeito): casa com a parcela da NF, ou aparece em "a desdobrar" se a NF ainda estiver cheia; fechar de novo.
 
+## 21. Fechamento passo a passo — o que foi feito (21/10/2026)
+- Motivo: no Nubank PF 10/2026 o painel tinha todas as ferramentas, mas não a ordem; a linha NuViagens de R$ 822,89 quase foi lançada
+  de novo (o título 30693 de R$ 822,90 estava em "Outros títulos" por causa do "CRATAO").
+- Código puro: `roteiro.ts` (`montarRoteiro`, `travaDeLancamento`, `possiveisTitulos`, `recusaDeLancamento`, `motivoNaoEhOMesmo`)
+  com `roteiro.test.ts`.
+- App: quadro `[id]/roteiro.tsx` no `PainelConciliacao` (fatura importada e mês em conciliação); aba A lançar com a trava geral, o
+  aviso por linha e o botão "Não é o mesmo"; ações `lancarCompra` e `lancarAgrupado` recusam com a mesma trava; nova ação
+  `conferirNaoEhOMesmo` (grava a observação pela `crt_registrar_decisao`). Sem migration.

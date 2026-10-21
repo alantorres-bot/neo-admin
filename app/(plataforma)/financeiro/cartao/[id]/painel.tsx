@@ -1,6 +1,7 @@
 // Painel da conciliação (cartões de resumo, aviso do título provisório, abas e rodapé). Usado pela página da fatura e pela
 // página do mês do cartão — ao vivo (em conciliação) ou congelado (resultado gravado no fechamento).
 import type { ResultadoConciliacao, TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { montarRoteiro } from "@/lib/modulos/financeiro/cartao/roteiro";
 import type { OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import type { DecisaoLinha, LinhaFaturaBanco, QuadroCompras, QuadroDesdobrar as DadosDesdobrar, QuadroEncargos as DadosEncargos } from "../dados";
@@ -8,8 +9,11 @@ import { QuadroDesdobrar } from "./desdobrar";
 import { ListaComprasLancadas } from "./compras";
 import { AbasConciliacao } from "./componentes";
 import { QuadroEncargos } from "./encargos";
+import { QuadroRoteiro } from "./roteiro";
 
-export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false, faturaId = null, decisoesHistorico = [], encargos = null, compras = null, desdobrar = null, podeGestor = false }: {
+export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false, faturaId = null, decisoesHistorico = [], encargos = null, compras = null, desdobrar = null, podeGestor = false, origemTitulos }: {
+  /** De onde vieram os títulos (o roteiro pede o Consistem antes de lançar). */
+  origemTitulos?: "consistem" | "espelho";
   /** Compras parceladas lançadas pelo total (desdobrar no Consistem); nulo = não mostra. */
   desdobrar?: DadosDesdobrar | null;
   /** Gestor: registra a exclusão no Consistem de título lançado pelo painel. */
@@ -30,6 +34,9 @@ export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura
   congelado?: boolean;
 }) {
   const residuoZero = r.residuoCentavos === 0;
+  const encargosLancados = encargos?.ativo?.situacao === "lancado" ? encargos.ativo.cod_lancamento_erp : null;
+  const passos = congelado || !faturaId ? [] : montarRoteiro({ resultado: r, outros, encargosLancados, origemTitulos });
+  const atual = passos.find((p) => p.estado === "atual");
   return (
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -39,6 +46,8 @@ export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura
         <Cartao rotulo="Diferença não justificada" valor={formatarMoeda(r.residuoCentavos)} ruim={!residuoZero} nota={residuoZero ? "Conciliação fecha" : "Deve ser zero antes do borderô"} />
         <Cartao rotulo="Cartão divergente" valor={String(r.contagens.cartaoDivergente)} ruim={r.contagens.cartaoDivergente > 0} nota={outros.length > 0 ? `${outros.length} outros títulos de cartão na janela` : "Conciliados citando outro cartão"} />
       </div>
+
+      {passos.length > 0 && <QuadroRoteiro passos={passos} />}
 
       {tituloDaFatura && (
         <p className="rounded-[3px] border border-amber-300 bg-amber-50 p-3 text-sm">
@@ -55,7 +64,7 @@ export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura
         <p className={`rounded-[3px] border p-3 text-sm font-medium ${residuoZero ? "border-grade bg-cabecalho" : "border-red-300 bg-red-50 text-red-800"}`}>
           {residuoZero
             ? (r.pendentes ?? r.aLancar.length) > 0
-              ? `Diferença não justificada igual a zero. ${(r.aDesdobrar ?? []).length ? "Desdobre no Consistem as compras parceladas lançadas pelo total e lance" : "Lance"} no Consistem o que está pendente em “A lançar” (ou registre a decisão: justificar, casar, compensar); quando não houver pendência, o gestor fecha o mês.`
+              ? `Diferença não justificada igual a zero. Próximo passo: ${atual ? `${atual.numero}. ${atual.titulo} — ${atual.detalhe}` : "lançar ou decidir o que está pendente em “A lançar”."}`
               : "Nada pendente e diferença não justificada zero: o mês pode ser fechado pelo gestor."
             : "Não gerar o borderô enquanto houver diferença não justificada. Apure os itens não identificados com o portador do cartão e os títulos sem correspondência."}
         </p>

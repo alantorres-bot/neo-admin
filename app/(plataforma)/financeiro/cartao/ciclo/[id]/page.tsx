@@ -170,7 +170,7 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
             {" "}<Link href={`${ROTA_CARTAO}/${aoVivo.fatura.id}`} className="text-elo hover:underline">Abrir só a fatura</Link>
           </p>
           <PainelConciliacao resultado={aoVivo.resultado} outros={aoVivo.outros} linhas={aoVivo.linhas} tituloDaFatura={aoVivo.tituloDaFatura} podeOperar={podeOperar}
-            faturaId={aoVivo.fatura.id} decisoesHistorico={aoVivo.decisoesHistorico} encargos={encargos} compras={compras} desdobrar={desdobrar} podeGestor={ehGestor} />
+            faturaId={aoVivo.fatura.id} decisoesHistorico={aoVivo.decisoesHistorico} encargos={encargos} compras={compras} desdobrar={desdobrar} podeGestor={ehGestor} origemTitulos={aoVivo.origemTitulos} />
         </>
       )}
 

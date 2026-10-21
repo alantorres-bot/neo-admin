@@ -63,7 +63,7 @@ export default async function PaginaConciliacao({ params }: PageProps<"/financei
         </p>
       )}
       <PainelConciliacao resultado={r} outros={outros} linhas={c.linhas} tituloDaFatura={c.tituloDaFatura} podeOperar={podeOperar}
-        faturaId={fatura.status === "importada" ? fatura.id : null} decisoesHistorico={c.decisoesHistorico} encargos={encargos} compras={compras} desdobrar={desdobrar}
+        faturaId={fatura.status === "importada" ? fatura.id : null} decisoesHistorico={c.decisoesHistorico} encargos={encargos} compras={compras} desdobrar={desdobrar} origemTitulos={c.origemTitulos}
         podeGestor={temAcesso(sessao.acesso, "financeiro", "gestor")} />
     </div>
   );

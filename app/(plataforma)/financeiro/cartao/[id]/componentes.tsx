@@ -12,9 +12,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, useLinha
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { chaveTitulo, CONFERIR, ROTULO_DECISAO, type ResultadoConciliacao } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { ROTA_CARTAO } from "@/lib/modulos/financeiro/cartao/modulo";
+import { descreverTitulo, travaDeLancamento } from "@/lib/modulos/financeiro/cartao/roteiro";
 import type { OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import { cancelarFatura } from "../acoes";
+import { cancelarFatura, conferirNaoEhOMesmo } from "../acoes";
 import type { DecisaoLinha, LinhaFaturaBanco, QuadroCompras } from "../dados";
 import { DialogoLancarCompra } from "./compras";
 import { BarraAgrupado, itensAgrupaveis } from "./agrupado";
@@ -35,7 +36,10 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
   const decide = podeOperar && faturaId !== null;
   const lancaCompra = decide && !!compras && compras.ligado && compras.mesAberto;
   const [selecionadas, setSelecionadas] = useState<Set<string>>(new Set());
-  const agrupaveis = lancaCompra ? itensAgrupaveis(r.aLancar, compras!) : [];
+  // Trava no risco (regras 66 e 67): geral (desdobrar, divergência sem decisão) e por linha (possível título já lançado).
+  const trava = decide ? travaDeLancamento(r, outros) : null;
+  const travadoGeral = !!trava && trava.geral.length > 0;
+  const agrupaveis = lancaCompra && !travadoGeral ? itensAgrupaveis(r.aLancar, compras!).filter((i) => !trava?.porLinha.has(i.linha.id)) : [];
   const agrupavel = new Set(agrupaveis.map((i) => i.linha.id));
   const marcar = (id: string, v: boolean) => { const n = new Set(selecionadas); if (v) n.add(id); else n.delete(id); setSelecionadas(n); };
   const { visivel, aoFiltrar } = useLinhasVisiveis();
@@ -45,6 +49,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
   // Por que a linha não entra num agrupado (dica na caixa desabilitada).
   const motivoFora = (a: (typeof r.aLancar)[number]): string => {
     if (a.justificativa) return "Já tem decisão (justificada)";
+    if (trava?.porLinha.has(a.linha.id)) return "Possível título já lançado: case ou use “Não é o mesmo”";
     if (a.linha.valorCentavos <= 0) return "Estorno: abata do título da compra";
     if ((a.linha.parcelaTotal ?? 1) > 1) return "Parcelada: lance sozinha (todas as parcelas restantes)";
     if (a.natureza === "Encargo financeiro") return "Encargo: use o quadro Encargos do mês";
@@ -80,7 +85,13 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
 
       <TabsContent value="lancar" className="space-y-2">
         <p className="text-xs text-muted-foreground">Linhas da fatura sem título correspondente, classificadas por natureza. Lançar contra a instituição emissora, com o complemento sugerido (máscara do POP). Encargo: parcela única. Estorno: abater do título da compra, não lançar título novo. Parcela não desdobrada: localizar a compra de origem e desdobrar.</p>
-        {lancaCompra && <BarraAgrupado faturaId={faturaId!} itens={agrupaveis} compras={compras!} selecionadas={selecionadas} setSelecionadas={setSelecionadas} />}
+        {lancaCompra && travadoGeral && (
+          <div className="rounded-[3px] border border-amber-300 bg-amber-50 p-3 text-sm">
+            <p className="font-medium">Lançar compra e Lançar agrupado estão travados até:</p>
+            <ul className="list-disc pl-5">{trava!.geral.map((m) => <li key={m}>{m}</li>)}</ul>
+          </div>
+        )}
+        {lancaCompra && !travadoGeral && <BarraAgrupado faturaId={faturaId!} itens={agrupaveis} compras={compras!} selecionadas={selecionadas} setSelecionadas={setSelecionadas} />}
         {r.aLancar.length === 0 ? <Vazio texto="Nada a lançar: toda linha da fatura tem título." /> : (
           <Table aoFiltrar={aoFiltrar}>
             <TableHeader><TableRow>
@@ -130,7 +141,18 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
                   <TableCell className="min-w-40 space-y-1">
                     <SeloDecisao justificativa={a.justificativa} classificacao={a.classificacao} observacoes={a.observacoes} />
                     {decide && <DialogoDecidir faturaId={faturaId!} alvo={{ tipo: "linha", item: a }} candidatos={candidatos} />}
-                    {lancaCompra && compras!.propostas[a.linha.id] && <DialogoLancarCompra faturaId={faturaId!} item={a} proposta={compras!.propostas[a.linha.id]} compras={compras!} />}
+                    {trava?.possiveis.get(a.linha.id) && (
+                      <div className="space-y-1 rounded-[3px] border border-amber-300 bg-amber-50 p-1.5 text-xs">
+                        <p className="font-medium text-amber-900">Possível título já lançado (Decidir › Casar, se for a mesma compra):</p>
+                        {trava.possiveis.get(a.linha.id)!.map((t) => (
+                          <div key={chaveTitulo(t)} className="flex flex-wrap items-center gap-1">
+                            <span>{descreverTitulo(t)}</span>
+                            <BotaoNaoEhOMesmo faturaId={faturaId!} linhaId={a.linha.id} titulo={chaveTitulo(t)} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {lancaCompra && !travadoGeral && !trava?.porLinha.has(a.linha.id) && compras!.propostas[a.linha.id] && <DialogoLancarCompra faturaId={faturaId!} item={a} proposta={compras!.propostas[a.linha.id]} compras={compras!} />}
                     {compras?.marketplace[a.linha.id] && <p className="text-xs text-muted-foreground">Marketplace ({compras.marketplace[a.linha.id]}): lance a nota do vendedor no Consistem; a conciliação casa pelo valor.</p>}
                   </TableCell>
                 </TableRow>
@@ -264,6 +286,18 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
 }
 
 const Vazio = ({ texto }: { texto: string }) => <p className="rounded-[3px] border border-grade bg-cabecalho p-3 text-sm text-muted-foreground">{texto}</p>;
+
+/** "Não é o mesmo": registra que o possível título não é a compra da linha (libera o Lançar). */
+function BotaoNaoEhOMesmo({ faturaId, linhaId, titulo }: { faturaId: string; linhaId: string; titulo: string }) {
+  const router = useRouter();
+  const [pendente, iniciar] = useTransition();
+  return (
+    <Button size="xs" variant="outline" disabled={pendente} onClick={() => iniciar(async () => {
+      const r = await conferirNaoEhOMesmo({ faturaId, linhaId, titulo });
+      if (r.ok) { toast.success("Registrado: não é o mesmo título. A linha pode ser lançada."); router.refresh(); } else toast.error(r.erro);
+    })}>{pendente ? "Registrando…" : "Não é o mesmo"}</Button>
+  );
+}
 
 export function BotaoCancelarFatura({ id }: { id: string }) {
   const router = useRouter();
