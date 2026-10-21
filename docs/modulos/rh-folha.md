@@ -199,6 +199,9 @@ Nenhum dado pessoal vai para `docs/amostras/` (LGPD).
    - Falta pedir a amostra da Neo Formas Concreto.
    - Para as conferências de INSS/FGTS/IRRF falta o **Extrato Mensal** em Excel/TXT (hoje é PDF só imagem).
 2. **Ponto:** quem envia ao escritório o ponto e as inconsistências de cada quinzena, e até que dia.
+   - As inconsistências de cada quinzena ganharam módulo próprio, **RH > Ponto** (`rh-ponto.md`, 21/10/2026): o líder do setor
+     justifica e o RH ajusta no Control iD. Quando o checklist desta regra 11 existir, ele pode marcar o ponto da quinzena como
+     feito ao concluir os lotes dos setores.
 3. **Tolerância das conferências:** qual diferença é aceita sem justificativa (ex.: R$ 0,05, por causa do centavo da DARF) e quem
    pode justificar.
 4. **FGTS de setembro:** por que a guia mensal é R$ 55,22 menor que o "Valor do FGTS" do extrato.
