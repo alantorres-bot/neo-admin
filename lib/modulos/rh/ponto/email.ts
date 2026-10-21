@@ -24,7 +24,7 @@ export function emailAoLider(d: {
     "",
     abertura,
     "",
-    `Por favor, acesse o link abaixo (entre com a sua conta Google da Neo Formas), escolha a justificativa de cada ocorrência e clique em "Enviar justificativas"${prazo}:`,
+    `Por favor, acesse o link abaixo, escolha a justificativa de cada ocorrência, informe o seu nome e clique em "Enviar justificativas"${prazo}:`,
     d.link,
     "",
     "Atenciosamente,",

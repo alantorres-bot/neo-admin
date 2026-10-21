@@ -2,8 +2,8 @@
 
 export const MODULO_PONTO = "rh.ponto";
 export const ROTA_PONTO = "/rh/ponto";
-/** Tela do líder: fora de /rh (o líder não tem a área RH). */
-export const ROTA_JUSTIFICAR = "/ponto/justificar";
+/** Formulário público do líder: /justificar-ponto/<chave do lote>, sem login (qualquer pessoa com o link). */
+export const ROTA_JUSTIFICAR = "/justificar-ponto";
 
 /** Tipos de justificativa (decisão 4 da especificação), com a ação sugerida ao RH no Control iD. */
 export const TIPOS = ["esqueceu_bater", "batida_indevida", "saida_atraso", "falta_injustificada", "justificada", "outro"] as const;

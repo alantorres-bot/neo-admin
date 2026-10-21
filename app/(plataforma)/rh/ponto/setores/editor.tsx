@@ -7,53 +7,44 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { salvarSetor } from "../acoes";
-import type { Pessoa, Setor } from "../dados";
+import type { Setor } from "../dados";
 
-const SELECAO = "h-8 w-full max-w-64 rounded-[3px] border border-input bg-white px-1 text-sm";
-type Rascunho = { id: string | null; nome: string; lider: string; substituto: string; ativo: boolean };
-const vazio: Rascunho = { id: null, nome: "", lider: "", substituto: "", ativo: true };
+type Rascunho = { id: string | null; nome: string; responsavel: string; email: string; copia: string; ativo: boolean };
+const vazio: Rascunho = { id: null, nome: "", responsavel: "", email: "", copia: "", ativo: true };
 
-function LinhaSetor({ inicial, pessoas, aoSalvar }: { inicial: Rascunho; pessoas: Pessoa[]; aoSalvar: () => void }) {
+function LinhaSetor({ inicial, aoSalvar }: { inicial: Rascunho; aoSalvar: () => void }) {
   const [s, setS] = useState(inicial);
   const [pendente, iniciar] = useTransition();
   const mudou = JSON.stringify(s) !== JSON.stringify(inicial);
   const salvar = () => iniciar(async () => {
-    const r = await salvarSetor({ id: s.id, nome: s.nome, lider: s.lider, substituto: s.substituto || null, ativo: s.ativo });
+    const r = await salvarSetor({ id: s.id, nome: s.nome, responsavel: s.responsavel, email: s.email, copia: s.copia, ativo: s.ativo });
     if (!r.ok) { toast.error(r.erro); return; }
     toast.success(r.aviso ?? "Salvo.");
     if (!s.id) setS(vazio);
     aoSalvar();
   });
-  const opcoes = (excluir: string) => pessoas.filter((p) => p.id !== excluir).map((p) => <option key={p.id} value={p.id}>{p.nome} ({p.email})</option>);
   return (
     <TableRow>
-      <TableCell><Input value={s.nome} onChange={(e) => setS({ ...s, nome: e.target.value })} placeholder="Ex.: Fábrica" aria-label="Setor" className="h-8 max-w-48" maxLength={80} /></TableCell>
-      <TableCell>
-        <select aria-label="Líder" value={s.lider} onChange={(e) => setS({ ...s, lider: e.target.value })} className={SELECAO}>
-          <option value="">Escolha…</option>{opcoes(s.substituto)}
-        </select>
-      </TableCell>
-      <TableCell>
-        <select aria-label="Substituto" value={s.substituto} onChange={(e) => setS({ ...s, substituto: e.target.value })} className={SELECAO}>
-          <option value="">Nenhum</option>{opcoes(s.lider)}
-        </select>
-      </TableCell>
+      <TableCell><Input value={s.nome} onChange={(e) => setS({ ...s, nome: e.target.value })} placeholder="Ex.: Fábrica" aria-label="Setor" className="h-8 w-40" maxLength={80} /></TableCell>
+      <TableCell><Input value={s.responsavel} onChange={(e) => setS({ ...s, responsavel: e.target.value })} placeholder="Ex.: Guilherme" aria-label="Responsável" className="h-8 w-40" maxLength={120} /></TableCell>
+      <TableCell><Input type="email" value={s.email} onChange={(e) => setS({ ...s, email: e.target.value })} placeholder="quem recebe o link" aria-label="E-mail" className="h-8 w-60" maxLength={200} /></TableCell>
+      <TableCell><Input value={s.copia} onChange={(e) => setS({ ...s, copia: e.target.value })} placeholder="opcional; vários com vírgula" aria-label="E-mail em cópia" className="h-8 w-60" maxLength={300} /></TableCell>
       <TableCell><input type="checkbox" className="size-4" aria-label="Ativo" checked={s.ativo} onChange={(e) => setS({ ...s, ativo: e.target.checked })} /></TableCell>
-      <TableCell><Button size="sm" onClick={salvar} disabled={pendente || !mudou || !s.nome.trim() || !s.lider}>{pendente ? "Salvando…" : s.id ? "Salvar" : "Incluir"}</Button></TableCell>
+      <TableCell><Button size="sm" onClick={salvar} disabled={pendente || !mudou || !s.nome.trim() || !s.email.trim()}>{pendente ? "Salvando…" : s.id ? "Salvar" : "Incluir"}</Button></TableCell>
     </TableRow>
   );
 }
 
-export function EditorSetores({ setores, pessoas, ehGestor }: { setores: Setor[]; pessoas: Pessoa[]; ehGestor: boolean }) {
+export function EditorSetores({ setores, ehGestor }: { setores: Setor[]; ehGestor: boolean }) {
   const router = useRouter();
   if (!ehGestor) {
     return (
       <Table>
-        <TableHeader><TableRow><TableHead>Setor</TableHead><TableHead>Líder</TableHead><TableHead>Substituto</TableHead><TableHead>Situação</TableHead></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHead>Setor</TableHead><TableHead>Responsável</TableHead><TableHead>E-mail</TableHead><TableHead>Cópia</TableHead><TableHead>Situação</TableHead></TableRow></TableHeader>
         <TableBody>
           {setores.map((s) => (
             <TableRow key={s.id}>
-              <TableCell>{s.nome}</TableCell><TableCell>{s.lider?.nome ?? "—"}</TableCell><TableCell>{s.substituto?.nome ?? ""}</TableCell><TableCell>{s.ativo ? "Ativo" : "Inativo"}</TableCell>
+              <TableCell>{s.nome}</TableCell><TableCell>{s.responsavel_nome ?? ""}</TableCell><TableCell>{s.email}</TableCell><TableCell>{s.email_copia ?? ""}</TableCell><TableCell>{s.ativo ? "Ativo" : "Inativo"}</TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -62,13 +53,13 @@ export function EditorSetores({ setores, pessoas, ehGestor }: { setores: Setor[]
   }
   return (
     <Table interativa={false}>
-      <TableHeader><TableRow><TableHead>Setor</TableHead><TableHead>Líder</TableHead><TableHead>Substituto</TableHead><TableHead>Ativo</TableHead><TableHead /></TableRow></TableHeader>
+      <TableHeader><TableRow><TableHead>Setor</TableHead><TableHead>Responsável</TableHead><TableHead>E-mail</TableHead><TableHead>Cópia</TableHead><TableHead>Ativo</TableHead><TableHead /></TableRow></TableHeader>
       <TableBody>
         {setores.map((s) => (
-          <LinhaSetor key={`${s.id}-${s.lider_id}-${s.substituto_id}-${s.nome}-${s.ativo}`} pessoas={pessoas} aoSalvar={() => router.refresh()}
-            inicial={{ id: s.id, nome: s.nome, lider: s.lider_id, substituto: s.substituto_id ?? "", ativo: s.ativo }} />
+          <LinhaSetor key={`${s.id}-${s.nome}-${s.responsavel_nome}-${s.email}-${s.email_copia}-${s.ativo}`} aoSalvar={() => router.refresh()}
+            inicial={{ id: s.id, nome: s.nome, responsavel: s.responsavel_nome ?? "", email: s.email, copia: s.email_copia ?? "", ativo: s.ativo }} />
         ))}
-        <LinhaSetor key="novo" inicial={vazio} pessoas={pessoas} aoSalvar={() => router.refresh()} />
+        <LinhaSetor key="novo" inicial={vazio} aoSalvar={() => router.refresh()} />
       </TableBody>
     </Table>
   );

@@ -42,8 +42,8 @@ export default async function PaginaLotePonto({ params }: PageProps<"/rh/ponto/l
             <Badge variant="outline" className={COR_STATUS[lote.status]}>{ROTULO_STATUS[lote.status]}</Badge>
           </h2>
           <p className="text-sm text-muted-foreground">
-            Líder: {setor?.lider ? `${setor.lider.nome} (${setor.lider.email})` : "—"}
-            {setor?.substituto ? ` · substituto: ${setor.substituto.nome}` : ""}
+            Líder: {setor ? `${setor.responsavel_nome ? `${setor.responsavel_nome} — ` : ""}${setor.email}` : "—"}
+            {setor?.email_copia ? ` · cópia: ${setor.email_copia}` : ""}
             {lote.prazo && (lote.status === "enviado" || lote.status === "devolvido") ? <> · prazo <span className={vencido ? "font-medium text-destructive" : ""}>{formatarData(lote.prazo)}</span></> : null}
           </p>
           <p className="text-sm text-muted-foreground">
@@ -51,7 +51,7 @@ export default async function PaginaLotePonto({ params }: PageProps<"/rh/ponto/l
               `Importado em ${quando(lote.importado_em)}`,
               lote.enviado_em && `e-mail ao líder em ${quando(lote.enviado_em)}`,
               lote.lembrete_em && `lembrete em ${quando(lote.lembrete_em)}`,
-              lote.justificado_em && `justificado por ${lote.justificado_por_nome ?? "—"} em ${quando(lote.justificado_em)}`,
+              lote.justificado_em && `justificado pelo link por ${lote.justificado_nome ?? "—"} em ${quando(lote.justificado_em)}`,
               lote.concluido_em && `concluído em ${quando(lote.concluido_em)}`,
             ].filter(Boolean).join(" · ")}
           </p>
@@ -59,7 +59,7 @@ export default async function PaginaLotePonto({ params }: PageProps<"/rh/ponto/l
           {lote.cancelado_motivo && <p className="text-sm text-destructive">Cancelado: {lote.cancelado_motivo}</p>}
         </div>
         <AcoesLote
-          loteId={lote.id} status={lote.status} vencido={vencido} gmail={(gmail.data?.email as string | undefined) ?? null}
+          loteId={lote.id} chave={lote.chave} status={lote.status} vencido={vencido} gmail={(gmail.data?.email as string | undefined) ?? null}
           pdf={pdf.data ? { caminho: pdf.data.arquivo_path as string, nome: pdf.data.nome_arquivo as string } : null}
           podeOperar={temAcesso(sessao.acesso, "rh", "operador")} ehGestor={temAcesso(sessao.acesso, "rh", "gestor")}
         />

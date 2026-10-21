@@ -109,7 +109,7 @@ export async function criarRascunhoLider(loteId: string, modo: ModoEmail): Promi
   const lote = await lerLote(supabase, loteId);
   if (!lote) return { ok: false, erro: "Lote não encontrado." };
   const setor = (await lerSetores(supabase)).find((s) => s.id === lote.setor_id);
-  if (!setor?.lider?.email) return { ok: false, erro: "O setor não tem líder com e-mail. Confira em Ponto > Setores." };
+  if (!setor?.email) return { ok: false, erro: "O setor não tem e-mail para o link. Confira em Ponto > Setores." };
 
   const cab = await headers();
   const host = cab.get("x-forwarded-host") ?? cab.get("host") ?? "localhost:3000";
@@ -122,11 +122,11 @@ export async function criarRascunhoLider(loteId: string, modo: ModoEmail): Promi
   }
   const email = emailAoLider({
     modo, setor: setor.nome, inicio: lote.periodo_inicio, fim: lote.periodo_fim, prazo, ocorrencias: lote.ocorrencias,
-    link: `${protocolo}://${host}${ROTA_JUSTIFICAR}/${lote.id}`, motivo: lote.devolvido_motivo,
+    link: `${protocolo}://${host}${ROTA_JUSTIFICAR}/${lote.chave}`, motivo: lote.devolvido_motivo,
   });
 
   const { data: mensagem, error: erroMensagem } = await supabase.from("mensagens").insert({
-    modulo: MODULO_PONTO, canal: "email", destinatario: setor.lider.email, cc: setor.substituto?.email ?? null,
+    modulo: MODULO_PONTO, canal: "email", destinatario: setor.email, cc: setor.email_copia,
     assunto: email.assunto, corpo: email.corpo, status: "rascunho",
   }).select("id").single();
   if (erroMensagem || !mensagem) return { ok: false, erro: erroMensagem ? mensagemDeErro(erroMensagem) : "Não foi possível preparar a mensagem." };
@@ -205,15 +205,20 @@ export async function linkDoAnexo(caminho: string): Promise<{ ok: true; url: str
 
 // ---------------------------------------------------------------- gestor: setores e prazo
 
+const EMAIL = z.string().trim().toLowerCase().regex(/^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/, "E-mail inválido.");
 const esquemaSetor = z.object({
   id: uuid.nullable(), nome: z.string().trim().min(2, "Informe o nome do setor.").max(80),
-  lider: uuid, substituto: uuid.nullable(), ativo: z.boolean(),
+  responsavel: z.string().trim().max(120), email: EMAIL,
+  copia: z.string().trim().toLowerCase().max(300).refine((v) => v === "" || v.split(/[,;]/).every((e) => EMAIL.safeParse(e).success), "E-mail em cópia inválido."),
+  ativo: z.boolean(),
 });
 
 export async function salvarSetor(entrada: z.input<typeof esquemaSetor>): Promise<Resultado> {
   const d = esquemaSetor.safeParse(entrada);
   if (!d.success) return { ok: false, erro: d.error.issues[0].message };
-  const r = await chamar("rh_pt_salvar_setor", { p_id: d.data.id, p_nome: d.data.nome, p_lider: d.data.lider, p_substituto: d.data.substituto, p_ativo: d.data.ativo }, "gestor");
+  const r = await chamar("rh_pt_salvar_setor", {
+    p_id: d.data.id, p_nome: d.data.nome, p_responsavel: d.data.responsavel, p_email: d.data.email, p_copia: d.data.copia || null, p_ativo: d.data.ativo,
+  }, "gestor");
   return r.ok ? { ok: true, aviso: "Setor salvo." } : r;
 }
 

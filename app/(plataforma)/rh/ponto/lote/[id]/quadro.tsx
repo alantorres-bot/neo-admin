@@ -2,14 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Mail, Paperclip } from "lucide-react";
+import { Link2, Mail, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, useLinhasVisiveis } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import type { ModoEmail } from "@/lib/modulos/rh/ponto/email";
-import { horas, ROTULO_TIPO, type StatusLote } from "@/lib/modulos/rh/ponto/modulo";
+import { horas, ROTA_JUSTIFICAR, ROTULO_TIPO, type StatusLote } from "@/lib/modulos/rh/ponto/modulo";
 import { formatarData } from "@/lib/nucleo/fila";
 import { desconectarGmail, iniciarConexaoGmail } from "@/app/(plataforma)/financeiro/filial/acoes";
 import type { Ocorrencia } from "../../dados";
@@ -46,8 +46,8 @@ function ComMotivo({ rotulo, titulo, descricao, aoConfirmar, variante = "outline
   );
 }
 
-export function AcoesLote({ loteId, status, vencido, gmail, pdf, podeOperar, ehGestor }: {
-  loteId: string; status: StatusLote; vencido: boolean; gmail: string | null; pdf: Arquivo | null; podeOperar: boolean; ehGestor: boolean;
+export function AcoesLote({ loteId, chave, status, vencido, gmail, pdf, podeOperar, ehGestor }: {
+  loteId: string; chave: string; status: StatusLote; vencido: boolean; gmail: string | null; pdf: Arquivo | null; podeOperar: boolean; ehGestor: boolean;
 }) {
   const router = useRouter();
   const [pendente, iniciar] = useTransition();
@@ -71,6 +71,12 @@ export function AcoesLote({ loteId, status, vencido, gmail, pdf, podeOperar, ehG
     <div className="flex flex-col items-end gap-2">
       <div className="flex flex-wrap justify-end gap-2">
         {pdf && <Button variant="outline" size="sm" onClick={() => abrirAnexo(pdf.caminho)}><Paperclip /> PDF do Control iD</Button>}
+        {podeOperar && (status === "enviado" || status === "devolvido") && (
+          // o mesmo link do e-mail, para mandar por outro canal (ex.: WhatsApp); quem tiver o link preenche
+          <Button variant="outline" size="sm" onClick={() => void navigator.clipboard.writeText(`${window.location.origin}${ROTA_JUSTIFICAR}/${chave}`).then(() => toast.success("Link copiado."), () => toast.error("Não foi possível copiar."))}>
+            <Link2 /> Copiar link
+          </Button>
+        )}
         {podeOperar && modoEmail && gmail && (
           <Button size="sm" onClick={() => rascunho(modoEmail)} disabled={pendente}><Mail /> {pendente ? "Criando rascunho…" : rotuloEmail[modoEmail]}</Button>
         )}

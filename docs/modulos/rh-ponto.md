@@ -1,6 +1,7 @@
 # Módulo: RH/SST / Ponto — inconsistências por quinzena (`rh.ponto`)
 
-Rota `/rh/ponto` (RH) e `/ponto/justificar` (líder do setor). Migration `0516_rh_ponto.sql`; Edge Function `rh-ponto-rascunho-gmail`.
+Rota `/rh/ponto` (RH) e `/justificar-ponto/<chave>` (formulário público do líder). Migrations `0516_rh_ponto.sql` e
+`0517_rh_ponto_link_publico.sql`; Edge Function `rh-ponto-rascunho-gmail`.
 Decisões tomadas em 21/10/2026, a partir do e-mail "1ª Quinzena Inconsistência 26/09 a 11/10/2026 - Fábrica".
 
 ## 1. Objetivo
@@ -37,14 +38,19 @@ justifica ocorrência por ocorrência num formulário. O RH ajusta no Control iD
   - Esse arquivo tem só 2 entradas e 2 saídas; o leitor aceita 2 ou 3, pelas colunas que o cabeçalho trouxer.
 
 ## 5. Regras de negócio
-1. **Setores:** cadastro de setor com **líder titular** e **substituto** opcional (perfis do Neo Admin). Começa pela Fábrica.
-2. **Acesso do líder:**
-   - entra pelo link do e-mail, com a conta Google `@neoformas.com.br`; o admin cria o usuário;
-   - **não ganha a área RH**: lê e grava só pelas funções `rh_pt_lotes_do_lider`, `rh_pt_ocorrencias_do_lider`,
-     `rh_pt_justificar` e `rh_pt_enviar_justificativas`, que conferem se ele é titular ou substituto do setor do lote;
-   - vê nome, cargo, dia, previsto, marcações e falta/atraso. **Saldo do banco e extras ficam só com o RH.**
+1. **Setores:** nome, responsável, **e-mail** que recebe o link e e-mails em cópia (qualquer endereço, inclusive fora da Neo).
+   Começa pela Fábrica.
+2. **Link público** (decisão de 21/10/2026, substitui o login do líder):
+   - cada lote tem uma **chave secreta** (64 caracteres hex); o link `/justificar-ponto/<chave>` abre **sem login**, para qualquer
+     pessoa que o tiver (liberado no `proxy.ts`);
+   - lê e grava só pelas funções `rh_pt_link_lote` e `rh_pt_link_salvar` (anon), que conferem a chave e a situação;
+   - as ocorrências só aparecem enquanto o lote está com o líder (enviado/devolvido). Depois do envio, o link mostra só "enviado
+     em … por …";
+   - para enviar, a pessoa **informa o nome**; ficam gravados o nome, a data e hora e o IP (a justificativa é prova);
+   - mostra nome, cargo, dia, previsto, marcações e falta/atraso. **Saldo do banco e extras ficam só com o RH.**
+   - Na tela da quinzena, "Copiar link" permite mandar o mesmo link por outro canal (ex.: WhatsApp).
 3. **E-mail:**
-   - é um rascunho no Gmail de quem clica ("Conectar meu Gmail"), para o titular e com cópia ao substituto. Nada sai sozinho;
+   - é um rascunho no Gmail de quem clica ("Conectar meu Gmail"), para o e-mail do setor, com as cópias. Nada sai sozinho;
    - os modos são envio, lembrete e devolução;
    - termina em "Atenciosamente,".
 4. **Tipos de justificativa** e ação sugerida ao RH (`lib/modulos/rh/ponto/modulo.ts`):
@@ -78,12 +84,10 @@ justifica ocorrência por ocorrência num formulário. O RH ajusta no Control iD
 
 ## 6. Saídas e automações
 - **Pendências (`rh.ponto`):**
-  - "Justificar ponto — <setor> <período>": responsável o titular e o substituto (uma pendência para cada); prazo do líder;
+  - "Aguardando líder — <setor> <período>": do RH, sem responsável; aberta no envio e na devolução, com o prazo do líder;
   - "Cobrar líder — …": criada pelo job `rh-ponto-verificar-prazos` (pg_cron, 07h e 13h de Cuiabá, dias úteis) quando o prazo vence;
-    a pendência do líder fica crítica;
+    "Aguardando líder" fica crítica;
   - "Ajustar no Control iD — …": quando o líder envia; encerrada na conclusão.
-- **Início:** o líder vê um aviso "Justificar o ponto — …" com o link, mesmo sem nenhuma área liberada. A pendência dele fica
-  visível para o RH, mas o líder não a lê: a política de `pendencias` é por módulo e não foi mexida.
 - **Documentos:** o PDF do Control iD é anexo do lote (`relatorio_ponto`); os atestados são anexos das ocorrências (`atestado`).
 
 ## 7. Telas
@@ -92,17 +96,16 @@ justifica ocorrência por ocorrência num formulário. O RH ajusta no Control iD
   - "Importar relatório".
 - **Quinzena** (`/rh/ponto/lote/<id>`):
   - grade com previsto, marcações, falta/atraso, extras, saldo do banco, justificativa, ação sugerida, documento e ajustado;
-  - botões: E-mail ao líder / Lembrete / E-mail da devolução, Devolver ao líder, Cancelar (gestor), PDF do Control iD.
+  - botões: E-mail ao líder / Lembrete / E-mail da devolução, Copiar link, Devolver ao líder, Cancelar (gestor), PDF do Control iD.
 - **Setores e líderes** (gestor edita).
 - **Parâmetros:** prazo do líder (gestor).
-- **Líder:**
-  - `/ponto/justificar`: histórico dos lotes do setor;
-  - `/ponto/justificar/<id>`: formulário com tipo, horário e observação; "Salvar e continuar depois" e "Enviar justificativas".
+- **Formulário público** (`/justificar-ponto/<chave>`): tipo, horário e observação por ocorrência; nome de quem envia; "Salvar e
+  continuar depois" e "Enviar justificativas". Não é indexado.
 
 ## 8. Dados (prefixo `rh_pt_`)
-- **`rh_pt_setores`:** nome, `lider_id`, `substituto_id`, ativo.
-- **`rh_pt_lotes`:** setor, período, status, arquivo, prazo, e quem e quando importou, enviou, lembrou, devolveu (motivo), justificou,
-  concluiu e cancelou (motivo).
+- **`rh_pt_setores`:** nome, `responsavel_nome`, `email`, `email_copia`, ativo.
+- **`rh_pt_lotes`:** setor, período, status, arquivo, prazo, **chave** do link, e quem e quando importou, enviou, lembrou, devolveu
+  (motivo), concluiu e cancelou (motivo); justificado: nome digitado, IP e data/hora.
 - **`rh_pt_ocorrencias`:** lote, colaborador (nulo = sem cadastro), nome, matrícula, cargo, data, dia, previsto, marcações, falta,
   falta/atraso, total normal, extras, saldo do banco, tipo, horário, observação, quem e quando justificou, quem e quando ajustou.
 - **Prazo:** `configuracoes.rh.ponto.prazo_dias_uteis`.
@@ -112,12 +115,13 @@ justifica ocorrência por ocorrência num formulário. O RH ajusta no Control iD
   - consulta lê;
   - **operador** importa, gera os rascunhos, devolve, vincula, anexa atestado e marca o ajuste;
   - **gestor** faz o mesmo e ainda cadastra setores, altera o prazo e cancela.
-- **Líder e substituto:** só o próprio setor, pelas funções do item 5.2, sem área nenhuma.
+- **Quem tem o link:** só o lote daquela chave, pelas funções do item 5.2, sem login. Risco aceito: quem receber o link
+  encaminhado também preenche (por isso o nome e o IP ficam gravados, e o link fecha depois do envio).
 
 ## 10. Pontos em aberto
 1. ~~Amostra original do relatório~~: recebida e calibrada em 21/10/2026.
-2. **Usuário do Guilherme** no Neo Admin, e o setor Fábrica cadastrado com ele como líder.
-3. **Outros setores** e seus líderes.
+2. **Setor Fábrica** com o e-mail do Guilherme (hoje, de teste, com o do Alan).
+3. **Outros setores** e seus e-mails.
 4. **Gmail da Graziele** conectado ("Conectar meu Gmail") para gerar os rascunhos.
 5. **Ligação com a Folha:** marcar "ponto da 1ª e da 2ª quinzena" no checklist do mês quando as quinzenas estiverem concluídas
    (quando o checklist da Folha existir).

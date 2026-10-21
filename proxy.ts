@@ -26,7 +26,8 @@ export async function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const naTelaDeLogin = pathname === "/login";
   // /auth/* = ida e volta do "Entrar com Google" (docs/LOGIN_GOOGLE.md): precisa funcionar sem sessão.
-  const rotaPublica = naTelaDeLogin || pathname.startsWith("/auth/");
+  // /justificar-ponto/<chave> = formulário do ponto aberto a quem tem o link (RH > Ponto; a chave é conferida no banco).
+  const rotaPublica = naTelaDeLogin || pathname.startsWith("/auth/") || pathname.startsWith("/justificar-ponto/");
 
   if (!logado && !rotaPublica) {
     const destino = request.nextUrl.clone();

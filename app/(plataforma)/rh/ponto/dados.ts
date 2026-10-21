@@ -4,13 +4,12 @@ import type { StatusLote, Tipo } from "@/lib/modulos/rh/ponto/modulo";
 
 type Cliente = SupabaseClient;
 
-export type Setor = { id: string; nome: string; lider_id: string; substituto_id: string | null; ativo: boolean; lider: Pessoa | null; substituto: Pessoa | null };
-export type Pessoa = { id: string; nome: string; email: string };
+export type Setor = { id: string; nome: string; responsavel_nome: string | null; email: string; email_copia: string | null; ativo: boolean };
 
 export type Lote = {
   id: string; setor_id: string; setor: string; periodo_inicio: string; periodo_fim: string; status: StatusLote; arquivo_nome: string; prazo: string | null;
   importado_em: string; enviado_em: string | null; lembrete_em: string | null; devolvido_em: string | null; devolvido_motivo: string | null;
-  justificado_em: string | null; justificado_por_nome: string | null; concluido_em: string | null; cancelado_motivo: string | null;
+  justificado_em: string | null; justificado_nome: string | null; chave: string; concluido_em: string | null; cancelado_motivo: string | null;
   ocorrencias: number; justificadas: number; ajustadas: number;
 };
 
@@ -23,23 +22,13 @@ export type Ocorrencia = {
 const um = <T,>(v: T | T[] | null): T | null => (Array.isArray(v) ? (v[0] ?? null) : v);
 
 export async function lerSetores(supabase: Cliente): Promise<Setor[]> {
-  const { data } = await supabase.from("rh_pt_setores")
-    .select("id, nome, lider_id, substituto_id, ativo, lider:perfis!rh_pt_setores_lider_id_fkey(id, nome, email), substituto:perfis!rh_pt_setores_substituto_id_fkey(id, nome, email)")
-    .order("nome");
-  return (data ?? []).map((s) => ({ ...s, lider: um(s.lider as Pessoa | Pessoa[] | null), substituto: um(s.substituto as Pessoa | Pessoa[] | null) })) as Setor[];
+  const { data } = await supabase.from("rh_pt_setores").select("id, nome, responsavel_nome, email, email_copia, ativo").order("nome");
+  return (data ?? []) as Setor[];
 }
 
-/** Pessoas que podem ser líder: perfis ativos (o líder não precisa de área no Neo Admin). */
-export async function lerPessoas(supabase: Cliente): Promise<Pessoa[]> {
-  const { data } = await supabase.from("perfis").select("id, nome, email").eq("ativo", true).order("nome");
-  return (data ?? []) as Pessoa[];
-}
+const COLUNAS_LOTE = "id, setor_id, periodo_inicio, periodo_fim, status, arquivo_nome, prazo, importado_em, enviado_em, lembrete_em, devolvido_em, devolvido_motivo, justificado_em, justificado_nome, chave, concluido_em, cancelado_motivo, setor:rh_pt_setores(nome)";
 
-const COLUNAS_LOTE = "id, setor_id, periodo_inicio, periodo_fim, status, arquivo_nome, prazo, importado_em, enviado_em, lembrete_em, devolvido_em, devolvido_motivo, justificado_em, concluido_em, cancelado_motivo, setor:rh_pt_setores(nome), justificado:perfis!rh_pt_lotes_justificado_por_fkey(nome)";
-
-type LinhaLote = Omit<Lote, "setor" | "justificado_por_nome" | "ocorrencias" | "justificadas" | "ajustadas"> & {
-  setor: { nome: string } | { nome: string }[] | null; justificado: { nome: string } | { nome: string }[] | null;
-};
+type LinhaLote = Omit<Lote, "setor" | "ocorrencias" | "justificadas" | "ajustadas"> & { setor: { nome: string } | { nome: string }[] | null };
 
 async function comContagens(supabase: Cliente, linhas: LinhaLote[]): Promise<Lote[]> {
   const ids = linhas.map((l) => l.id);
@@ -48,9 +37,9 @@ async function comContagens(supabase: Cliente, linhas: LinhaLote[]): Promise<Lot
     : { data: [] };
   return linhas.map((l) => {
     const minhas = (ocs ?? []).filter((o) => o.lote_id === l.id);
-    const { setor, justificado, ...resto } = l;
+    const { setor, ...resto } = l;
     return {
-      ...resto, setor: um(setor)?.nome ?? "", justificado_por_nome: um(justificado)?.nome ?? null,
+      ...resto, setor: um(setor)?.nome ?? "",
       ocorrencias: minhas.length, justificadas: minhas.filter((o) => o.tipo).length, ajustadas: minhas.filter((o) => o.ajustado_em).length,
     };
   });
