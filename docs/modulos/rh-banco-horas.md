@@ -34,12 +34,11 @@ O Control iD calcula o banco (saldo por dia), mas ninguém acompanha o venciment
   - "A Compensar" só repete o movimento do dia.
 - **Conferência na leitura:** o saldo do dia tem de ser o saldo anterior + positivo − negativo. Se não for, o leitor avisa (por
   exemplo, ajuste manual no Control iD).
-- **CSV geral** (todas as pessoas), um ou vários de uma vez (ex.: um por ciclo). O CSV não traz setor: o RH escolhe o
-  setor de cada pessoa uma vez, na grade de Saldos (decisão de 21/10/2026). Os setores são os do RH > Ponto. Sem setor, só o RH é avisado.
+- **CSV geral** (todas as pessoas), um ou vários de uma vez (ex.: um por ciclo). O CSV não traz setor: o setor é o do
+  **colaborador**, que é o setor do RH > Ponto com o mesmo nome do departamento importado do Control iD em RH > Colaboradores
+  (decisão de 21/10/2026, migration 0520). Os campos antigos "seletor por pessoa" e "Setores pelo cadastro" saíram. Sem setor, só o
+  RH é avisado. A pessoa liga ao colaborador por CPF ou nº RHiD.
 - A prévia avisa **buracos** entre os arquivos e se a cobertura começa depois do início da conta.
-- **Setor pelo cadastro do Control iD** (`person_AAAAMMDDhhmmss.csv`): o botão "Setores pelo cadastro" lê o arquivo no navegador e
-  manda só **CPF e Departamento**. O arquivo tem senha, PIN, endereço e filiação, e nada disso é enviado nem guardado. O departamento
-  vira setor quando há setor do RH > Ponto com o mesmo nome (sem acento e caixa); os demais são listados para cadastrar no Ponto.
 - **Empresas:** os CSVs gerais podem vir filtrados por empresa. Em 21/10/2026 a Oeste Formas (1 pessoa com banco) veio em arquivos
   próprios. Importar os dois, porque a pessoa é a mesma pelo CPF.
 - **Leitura no navegador:** o CSV é lido com `lerCsv` + `lerBancoHoras` e só os dias com movimento vão ao servidor. O **PIS não é
@@ -98,7 +97,7 @@ O Control iD calcula o banco (saldo por dia), mas ninguém acompanha o venciment
 - **Parâmetros** (gestor): início da conta, validade, aviso e limite negativo.
 
 ## 8. Dados (prefixo `rh_bh_`)
-- **`rh_bh_pessoas`:** CPF, nome, id do Control iD, colaborador, setor (escolhido pelo RH), último saldo do Control iD.
+- **`rh_bh_pessoas`:** CPF, nome, id do Control iD, colaborador (setor vem dele), último saldo do Control iD.
 - **`rh_bh_movimentos`:** pessoa, dia, positivo e negativo (minutos), importação. Um por pessoa e dia.
 - **`rh_bh_importacoes`:** período, arquivo, contagens, quem e quando.
 - **`rh_bh_lancamentos_folha`** (era `rh_bh_pagamentos`): pessoa, tipo (`pago`/`descontado`), minutos, mês da folha,
@@ -118,5 +117,9 @@ O Control iD calcula o banco (saldo por dia), mas ninguém acompanha o venciment
    falta o ciclo atual dela.
    - Setores no Ponto: só a FABRICA existe. As pessoas do banco são da FABRICA (40), ESCRITÓRIO (5), LOGISTICA (5), ENGENHARIA (4) e
      SUPERVISÃO (3).
-2. **Setores:** cadastrar no RH > Ponto os setores que faltam, com o e-mail do líder, e aplicar "Setores pelo cadastro".
+2. **Setores:** cadastrar no RH > Ponto os setores que faltam (ESCRITÓRIO, LOGISTICA, ENGENHARIA, SUPERVISÃO), com o e-mail do
+   líder. As pessoas entram sozinhas, pelo departamento do colaborador.
 3. **Configurar o fechamento no Control iD?** As colunas "Pagar/Descontar Folha" existem lá e estão vazias.
+4. **Convenção coletiva (cláusula 25):** a CCT 2024/2025 da construção prevê o banco de horas "mediante ACORDO COLETIVO DE
+   TRABALHO", e a regra adotada usa acordo individual de 6 meses. A CCT também está vencida desde 30/04/2025. Validar com o
+   escritório ou o jurídico: CCT vigente, se há acordo coletivo de banco de horas e o prazo dele. A validade é parâmetro.

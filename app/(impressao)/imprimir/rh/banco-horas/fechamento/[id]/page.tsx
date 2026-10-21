@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { BotaoImprimir } from "@/app/(impressao)/imprimir/contas-pagar/autorizacao/[id]/botao-imprimir";
-import { lerFechamento, ROTULO_FECHAMENTO } from "@/app/(plataforma)/rh/banco_horas/dados";
+import { lerFechamento, lerSaldos, ROTULO_FECHAMENTO } from "@/app/(plataforma)/rh/banco_horas/dados";
 import { MODULO_BANCO_HORAS } from "@/lib/modulos/rh/banco-horas/modulo";
 import { horas } from "@/lib/modulos/rh/ponto/modulo";
 import { formatarData, hojeEmCuiaba } from "@/lib/nucleo/fila";
@@ -49,8 +49,7 @@ export default async function PaginaRelatorioFechamento({ params }: PageProps<"/
   const proximo = mais(f.competencia, 1);
   // quem vence no próximo dia 25 (aviso ao líder): horas a folgar ou a repor
   const { data: aVencer } = await supabase.from("rh_bh_aberto").select("pessoa_id, sinal, restante").eq("vencimento", proximo);
-  const { data: pessoas } = await supabase.from("rh_bh_pessoas").select("id, nome, setor:rh_pt_setores(nome)");
-  const nomeDe = new Map((pessoas ?? []).map((p) => [p.id as string, { nome: p.nome as string, setor: ((Array.isArray(p.setor) ? p.setor[0] : p.setor) as { nome: string } | null)?.nome ?? "" }]));
+  const nomeDe = new Map((await lerSaldos(supabase)).map((p) => [p.pessoa_id, { nome: p.nome, setor: p.setor }]));
   const compensar = [...((aVencer ?? []) as { pessoa_id: string; sinal: number; restante: number }[]).reduce((m, a) => {
     const x = m.get(a.pessoa_id) ?? { folgar: 0, repor: 0 };
     if (a.sinal === 1) x.folgar += a.restante; else x.repor += a.restante;

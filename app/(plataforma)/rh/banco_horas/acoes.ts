@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { setoresPorDepartamento } from "@/lib/modulos/rh/banco-horas/departamentos";
 import { emailVencendo } from "@/lib/modulos/rh/banco-horas/email";
 import { MODULO_BANCO_HORAS, ROTA_BANCO_HORAS } from "@/lib/modulos/rh/banco-horas/modulo";
 import { temAcesso } from "@/lib/nucleo/permissoes";
@@ -53,28 +52,6 @@ export async function importarBancoHoras(entrada: z.input<typeof esquemaImportac
   if (!r.ok) return r;
   const x = r.dados as { pessoas: number; movimentos_gravados: number };
   return { ok: true, aviso: `${d.data.arquivo}: ${x.pessoas} pessoa(s); ${x.movimentos_gravados} dia(s) com movimento gravado(s) ou corrigido(s).` };
-}
-
-/** Setor de cada pessoa pelo departamento do cadastro do Control iD (só CPF e departamento chegam aqui). */
-export async function aplicarDepartamentos(itens: { cpf: string; departamento: string }[]): Promise<Resultado> {
-  const d = z.array(z.object({ cpf: z.string().regex(/^\d{11}$/), departamento: z.string().trim().min(1).max(100) })).min(1).max(5000).safeParse(itens);
-  if (!d.success) return { ok: false, erro: "Arquivo inválido." };
-  const negado = await exigir("operador");
-  if (negado) return { ok: false, erro: negado };
-  const supabase = await criarClienteServidor();
-  const { data: setores } = await supabase.from("rh_pt_setores").select("id, nome").eq("ativo", true);
-  const { casados, semSetor } = setoresPorDepartamento(d.data, (setores ?? []) as { id: string; nome: string }[]);
-  const r = await chamar("rh_bh_definir_setores", { p_itens: casados.map((c) => ({ cpf: c.cpf, setor: c.setor })) });
-  if (!r.ok) return r;
-  const falta = semSetor.length ? ` Departamentos sem setor com o mesmo nome no RH > Ponto (cadastre lá e importe de novo): ${semSetor.join(", ")}.` : "";
-  return { ok: true, aviso: `${r.dados as number} pessoa(s) com setor atualizado.${falta}` };
-}
-
-/** Setor da pessoa (para o e-mail ao líder); vazio = sem setor. */
-export async function definirSetor(pessoa: string, setor: string | null): Promise<Resultado> {
-  if (!uuid.safeParse(pessoa).success || (setor !== null && !uuid.safeParse(setor).success)) return { ok: false, erro: "Dados inválidos." };
-  const r = await chamar("rh_bh_definir_setor", { p_pessoa: pessoa, p_setor: setor });
-  return r.ok ? { ok: true } : r;
 }
 
 // ---------------------------------------------------------------- fechamento do ciclo

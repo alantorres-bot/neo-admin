@@ -14,7 +14,7 @@ export const AJUDA: Record<"saldos" | "fechamentos" | "importacoes" | "parametro
     passos: [
       "Confira os cartões amarelos no topo: são os setores com horas vencendo nos próximos 30 dias.",
       "Clique em \"E-mail ao líder\" em cada cartão. O e-mail abre no seu Gmail; confira e envie.",
-      "Pessoa sem setor? Escolha o setor na coluna Setor (só uma vez).",
+      "Pessoa sem setor? O setor vem do departamento em RH > Colaboradores (\"Importar do Control iD\") e precisa existir com o mesmo nome em RH > Ponto > Setores.",
       "Para entregar ao funcionário, abra o nome dele e clique em \"Extrato\" (imprime com linha de assinatura).",
     ],
   },
@@ -34,7 +34,7 @@ export const AJUDA: Record<"saldos" | "fechamentos" | "importacoes" | "parametro
       "No Control iD, exporte o relatório de banco de horas em CSV, de todas as pessoas, do período (Neo e Oeste).",
       "Clique em \"Importar CSV\", escolha os arquivos (pode ser mais de um) e confira a prévia: não pode haver aviso de período sem arquivo.",
       "Clique em \"Gravar\". Importar de novo o mesmo período só corrige; não duplica.",
-      "Entrou gente nova? Clique em \"Setores pelo cadastro\" e escolha o cadastro de funcionários do Control iD (person_….csv).",
+      "Entrou gente nova? Em RH > Colaboradores, clique em \"Importar do Control iD\" com o cadastro de funcionários (person_….csv).",
     ],
   },
   parametros: {

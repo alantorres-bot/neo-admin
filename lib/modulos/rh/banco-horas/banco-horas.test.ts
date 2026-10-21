@@ -83,18 +83,3 @@ describe("lerBancoHoras", () => {
   });
 });
 
-describe("departamentos do cadastro do Control iD", () => {
-  it("lê só CPF e Departamento e casa com o setor pelo nome sem acento", async () => {
-    const { lerDepartamentos, setoresPorDepartamento } = await import("./departamentos");
-    const r = lerDepartamentos([
-      ["﻿id_funcionario", "CPF", "PIS", "Nome", "Senha para Uso no REP", "Departamento"],
-      ["1", "111.222.333-44", "x", "A", "1234", "FABRICA"],
-      ["2", "55566677788", "x", "B", "", "ESCRITÓRIO"],
-      ["3", "99988877766", "x", "C", "", ""],
-    ]);
-    expect(r).toEqual({ itens: [{ cpf: "11122233344", departamento: "FABRICA" }, { cpf: "55566677788", departamento: "ESCRITÓRIO" }], erro: null });
-    expect(setoresPorDepartamento(r.itens, [{ id: "s1", nome: "Fábrica" }, { id: "s2", nome: "Escritorio" }])).toEqual({ casados: [{ cpf: "11122233344", setor: "s1" }, { cpf: "55566677788", setor: "s2" }], semSetor: [] });
-    expect(setoresPorDepartamento(r.itens, [{ id: "s1", nome: "FABRICA" }]).semSetor).toEqual(["ESCRITÓRIO"]);
-    expect(lerDepartamentos([["Nome"], ["x"]]).erro).toMatch(/faltam/);
-  });
-});

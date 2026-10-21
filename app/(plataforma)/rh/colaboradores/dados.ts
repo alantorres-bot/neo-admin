@@ -6,11 +6,13 @@ type Cliente = Awaited<ReturnType<typeof criarClienteServidor>>;
 const numero = (v: number | string | null) => (v === null ? null : Number(v));
 
 export type ColaboradorLinha = {
-  id: string; empresa_id: string; empregador: string; cod_fornecedor: string; matricula_escritorio: string | null; nome: string; cpf: string | null;
+  /** cod_fornecedor vazio = incluído pelo Control iD, cadastro a completar (fora da folha e do VT). */
+  id: string; empresa_id: string; empregador: string; cod_fornecedor: string | null; matricula_escritorio: string | null; nome: string; cpf: string | null;
   agencia: string | null; conta: string | null; forma_pagamento: FormaPagamento; ativo: boolean; observacao: string | null;
   recebe_vt: boolean; tarifa: number | null; valor_fixo: number | null; passagens_dia: number;
+  id_rhid: string | null; departamento: string | null; data_admissao: string | null; funcao: string | null;
 };
-export const COLUNAS_COLABORADOR = "id, empresa_id, empregador, cod_fornecedor, matricula_escritorio, nome, cpf, agencia, conta, forma_pagamento, ativo, observacao, recebe_vt, tarifa, valor_fixo, passagens_dia";
+export const COLUNAS_COLABORADOR = "id, empresa_id, empregador, cod_fornecedor, matricula_escritorio, nome, cpf, agencia, conta, forma_pagamento, ativo, observacao, recebe_vt, tarifa, valor_fixo, passagens_dia, id_rhid, departamento, data_admissao, funcao";
 
 /** numeric chega como texto do PostgREST. */
 type ColaboradorBruto = Omit<ColaboradorLinha, "tarifa" | "valor_fixo"> & { tarifa: number | string | null; valor_fixo: number | string | null };

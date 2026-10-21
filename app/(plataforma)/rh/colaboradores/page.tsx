@@ -9,6 +9,7 @@ import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { lerColaboradores, lerEmpresas } from "./dados";
 import { ConferenciaConsistem } from "./conferencia";
 import { DialogoColaborador } from "./form-colaborador";
+import { ImportarControlId } from "./importar-controlid";
 
 export const metadata: Metadata = { title: "Colaboradores" };
 
@@ -23,8 +24,9 @@ export default async function PaginaColaboradores({ searchParams }: PageProps<"/
   const empregadores = [...new Set(colaboradores.map((c) => c.empregador))];
   const ativos = colaboradores.filter((c) => c.ativo);
   const comVt = ativos.filter((c) => c.recebe_vt).length;
-  const fopagSemConta = ativos.filter((c) => c.forma_pagamento === "fopag" && (!c.cpf || !c.agencia || !c.conta));
+  const fopagSemConta = ativos.filter((c) => c.cod_fornecedor && c.forma_pagamento === "fopag" && (!c.cpf || !c.agencia || !c.conta));
   const inativos = colaboradores.length - ativos.length;
+  const incompletos = ativos.filter((c) => !c.cod_fornecedor);
   // Inativos ficam escondidos: são ex-funcionários que seguem no histórico (VT e folha já pagos), por isso não se apagam.
   const lista = verInativos ? colaboradores : ativos;
 
@@ -39,18 +41,23 @@ export default async function PaginaColaboradores({ searchParams }: PageProps<"/
             </Link>
           )}
         </p>
-        {podeOperar && <DialogoColaborador empresas={empresas} empregadores={empregadores} />}
+        {podeOperar && <div className="flex gap-2"><ImportarControlId /><DialogoColaborador empresas={empresas} empregadores={empregadores} /></div>}
       </div>
       {fopagSemConta.length > 0 && (
         <p className="rounded-[3px] border border-destructive/40 p-3 text-sm text-destructive">
-          FOPAG sem CPF, agência ou conta (não poderão entrar no arquivo do BB): {fopagSemConta.map((c) => `${c.cod_fornecedor} ${c.nome}`).join(", ")}.
+          FOPAG sem CPF, agência ou conta (não poderão entrar no arquivo do BB): {fopagSemConta.map((c) => `${c.cod_fornecedor ?? ""} ${c.nome}`.trim()).join(", ")}.
+        </p>
+      )}
+      {incompletos.length > 0 && (
+        <p className="rounded-[3px] border border-amber-600/50 p-3 text-sm text-amber-800">
+          Completar cadastro (incluídos pelo Control iD; ficam fora da folha e do VT até ter o nº de fornecedor do Consistem): {incompletos.map((c) => c.nome).join(", ")}.
         </p>
       )}
       {podeOperar && colaboradores.length > 0 && <ConferenciaConsistem />}
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Nº</TableHead><TableHead>Matr. escritório</TableHead><TableHead>Nome</TableHead><TableHead>Empresa</TableHead><TableHead>CPF</TableHead>
+            <TableHead>Nº</TableHead><TableHead>Matr. escritório</TableHead><TableHead>RHiD</TableHead><TableHead>Nome</TableHead><TableHead>Empresa</TableHead><TableHead>Setor</TableHead><TableHead>CPF</TableHead>
             <TableHead>Pagamento</TableHead><TableHead>Agência</TableHead><TableHead>Conta</TableHead>
             <TableHead>VT</TableHead><TableHead className="text-right">Passagem</TableHead><TableHead className="text-right">Por dia</TableHead><TableHead className="text-right">Valor fixo</TableHead><TableHead>Situação</TableHead>
             {podeOperar && <TableHead />}
@@ -59,10 +66,12 @@ export default async function PaginaColaboradores({ searchParams }: PageProps<"/
         <TableBody>
           {lista.map((c) => (
             <TableRow key={c.id} className={c.ativo ? "" : "text-muted-foreground"}>
-              <TableCell className="tabular-nums">{c.cod_fornecedor}</TableCell>
+              <TableCell className="tabular-nums">{c.cod_fornecedor ?? <Badge variant="outline" className="border-amber-600 text-amber-800">Completar</Badge>}</TableCell>
               <TableCell className="tabular-nums">{c.matricula_escritorio ?? ""}</TableCell>
+              <TableCell className="tabular-nums">{c.id_rhid ?? ""}</TableCell>
               <TableCell className="font-medium">{c.nome}</TableCell>
               <TableCell>{c.empregador}</TableCell>
+              <TableCell>{c.departamento ?? ""}</TableCell>
               <TableCell className="tabular-nums">{c.cpf ?? "—"}</TableCell>
               <TableCell>{ROTULO_FORMA[c.forma_pagamento]}</TableCell>
               <TableCell className="tabular-nums">{c.agencia ?? ""}</TableCell>

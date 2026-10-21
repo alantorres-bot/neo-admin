@@ -7,7 +7,6 @@ import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { lerImportacoes, lerParametros } from "../dados";
-import { ImportarDepartamentos } from "./departamentos";
 import { ImportarCsv } from "./importar";
 
 export const metadata: Metadata = { title: "Banco de horas — importações" };
@@ -22,9 +21,9 @@ export default async function PaginaImportacoesBanco() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           CSV de banco de horas do Control iD, geral (todas as pessoas), um ou vários de uma vez (ex.: um por ciclo). Reimportar um período corrige os dias.
-          Na primeira carga, cubra desde {formatarData(par.inicio)}, sem buracos. O setor de cada pessoa vem do cadastro de funcionários do Control iD (botão &quot;Setores pelo cadastro&quot;: usa só CPF e Departamento) ou é escolhido em Saldos.
+          Na primeira carga, cubra desde {formatarData(par.inicio)}, sem buracos. O setor de cada pessoa vem do departamento dela em RH &gt; Colaboradores (&quot;Importar do Control iD&quot;).
         </p>
-        {temAcesso(sessao.acesso, "rh", "operador") && <div className="flex gap-2"><ImportarDepartamentos /><ImportarCsv inicioConta={par.inicio} /></div>}
+        {temAcesso(sessao.acesso, "rh", "operador") && <ImportarCsv inicioConta={par.inicio} />}
       </div>
       <Table>
         <TableHeader>

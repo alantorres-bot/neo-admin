@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { EstadoForm } from "@/components/formularios/dialogo-formulario";
+import { casarComCadastro, type Casamento, type FuncionarioControlId } from "@/lib/modulos/rh/colaboradores/controlid";
 import { divergencias, lerTarifa, normalizarAgencia, normalizarCodFornecedor, normalizarConta, normalizarCpf, type Divergencia, type FornecedorConsistem } from "@/lib/modulos/rh/colaboradores/cadastro";
 import { ehFormaPagamento, ROTA_COLABORADORES } from "@/lib/modulos/rh/colaboradores/modulo";
 import { ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
@@ -114,9 +115,10 @@ export async function conferirNoConsistem(): Promise<ResultadoConferencia> {
   if (!temAcesso(sessao.acesso, "rh", "operador")) return { ok: false, erro: SEM_PERMISSAO };
   const supabase = await criarClienteServidor();
   const { data } = await supabase.from("rh_colaboradores").select(COLUNAS_COLABORADOR).eq("ativo", true);
-  const ativos = (data ?? []).map(paraColaborador);
+  // sem nº de fornecedor (incluído pelo Control iD) não há o que conferir no Consistem
+  const ativos = (data ?? []).map(paraColaborador).filter((c): c is ColaboradorLinha & { cod_fornecedor: string } => !!c.cod_fornecedor);
   if (ativos.length === 0) return { ok: false, erro: "Nenhum colaborador ativo para conferir." };
-  const porEmpresa = new Map<string, ColaboradorLinha[]>();
+  const porEmpresa = new Map<string, (ColaboradorLinha & { cod_fornecedor: string })[]>();
   for (const c of ativos) porEmpresa.set(c.empresa_id, [...(porEmpresa.get(c.empresa_id) ?? []), c]);
   const divergentes: DivergenciaColaborador[] = [];
   const naoEncontrados: { id: string; cod_fornecedor: string; nome: string }[] = [];
@@ -147,6 +149,7 @@ export async function aplicarDoConsistem(id: string): Promise<{ ok: true } | { o
   const { data } = await supabase.from("rh_colaboradores").select(COLUNAS_COLABORADOR).eq("id", id).maybeSingle();
   const c = data ? paraColaborador(data) : null;
   if (!c) return { ok: false, erro: "Colaborador não encontrado." };
+  if (!c.cod_fornecedor) return { ok: false, erro: "Informe antes o nº de fornecedor do Consistem." };
   const r = await consultar(supabase, c.empresa_id, [c.cod_fornecedor]);
   if (!r.ok) return r;
   const f = r.valor.fornecedores[0];
@@ -159,4 +162,50 @@ export async function aplicarDoConsistem(id: string): Promise<{ ok: true } | { o
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   revalidar();
   return { ok: true };
+}
+
+// ---------------------------------------------------------------- cadastro do Control iD / RHiD (decisão de 21/10/2026)
+
+const esquemaControlId = z.array(z.object({
+  rhid: z.string().regex(/^\d{1,9}$/), cpf: z.string().regex(/^\d{11}$/), nome: z.string().trim().min(2).max(120),
+  empregador: z.string().trim().min(2).max(40), departamento: z.string().trim().max(60).nullable(),
+  cargo: z.string().trim().max(80).nullable(), admissao: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+})).min(1).max(2000);
+
+async function casar(supabase: Cliente, itens: FuncionarioControlId[]): Promise<Casamento[]> {
+  const { data } = await supabase.from("rh_colaboradores").select("id, nome, cpf, id_rhid, cod_fornecedor, empregador, departamento, funcao, data_admissao");
+  return casarComCadastro(itens, (data ?? []) as Parameters<typeof casarComCadastro>[1]);
+}
+
+export type PreviaControlId = { casamentos: Casamento[] };
+
+/** Mostra o que a importação faria (não grava nada). Os itens chegam lidos no navegador, só com os campos necessários. */
+export async function previaControlId(itens: FuncionarioControlId[]): Promise<{ ok: true; previa: PreviaControlId } | { ok: false; erro: string }> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "rh", "operador")) return { ok: false, erro: SEM_PERMISSAO };
+  const d = esquemaControlId.safeParse(itens);
+  if (!d.success) return { ok: false, erro: "Arquivo inválido." };
+  return { ok: true, previa: { casamentos: await casar(await criarClienteServidor(), d.data) } };
+}
+
+/** Grava: completa o que está vazio nos cadastros casados e inclui os novos. Refaz o casamento (não confia na tela). */
+export async function gravarControlId(itens: FuncionarioControlId[]): Promise<{ ok: true; aviso: string } | { ok: false; erro: string }> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "rh", "operador")) return { ok: false, erro: SEM_PERMISSAO };
+  const d = esquemaControlId.safeParse(itens);
+  if (!d.success) return { ok: false, erro: "Arquivo inválido." };
+  const supabase = await criarClienteServidor();
+  const cs = await casar(supabase, d.data);
+  const cpf = (c: string) => c.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4");
+  const { data, error } = await supabase.rpc("rh_col_importar_controlid", {
+    p_atualizar: cs.filter((c) => c.colaborador && Object.keys(c.completa).length).map((c) => ({ id: c.colaborador!.id, ...c.completa })),
+    p_incluir: cs.filter((c) => c.como === "novo").map(({ item: i }) => ({
+      nome: i.nome, cpf: cpf(i.cpf), id_rhid: i.rhid, empregador: i.empregador, departamento: i.departamento, funcao: i.cargo, data_admissao: i.admissao,
+    })),
+  });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidar();
+  revalidatePath("/rh/banco_horas", "layout");
+  const r = data as { atualizados: number; incluidos: number };
+  return { ok: true, aviso: `${r.atualizados} cadastro(s) completado(s) e ${r.incluidos} incluído(s). Os incluídos estão marcados "Completar cadastro".` };
 }

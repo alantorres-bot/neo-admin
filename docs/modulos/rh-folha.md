@@ -88,6 +88,18 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
 1. **Cadastro único** (decisão de 14/10/2026): RH > Colaboradores passa a valer para o VT e para a folha. Os dados de VT (tarifa,
    passagens por dia, valor fixo) ficam em campos próprios. Quem não recebe VT fica marcado como tal. O cadastro atual do VT
    (`rh_vt_colaboradores`) é migrado sem perda.
+   - **Control iD / RHiD (decisão de 21/10/2026, migration 0520):** o cadastro de funcionários do Control iD (person_….csv) é importado
+     em RH > Colaboradores ("Importar do Control iD"), unindo numa linha o **nº de fornecedor** (Consistem), a **matrícula da folha**
+     (escritório) e o **nº RHiD** (`id_rhid`, o mesmo "Id" dos CSVs de banco de horas).
+     - **Casamento, nesta ordem:** nº RHiD, CPF (o Control iD tira o zero da frente), nome igual e nome parecido. O nome parecido só
+       vale com quem está sem CPF; foi o caso do Jean da Oeste, "VAUDREIL PIERRI" × "VAUDREUIL PIERRE".
+     - **Só completa o que está vazio** (RHiD, CPF, departamento, cargo, admissão). Fornecedor e matrícula nunca vêm do Control iD;
+       as diferenças (nomes, CPF, empresa) aparecem na prévia para o RH corrigir.
+     - **Quem não existe no cadastro é incluído** sem nº de fornecedor e sem VT, marcado "Completar". Esse colaborador **fica fora da
+       folha** (abertura, atualização pelo cadastro e recibos) e do VT até o RH informar o fornecedor.
+     - Do arquivo só saem nº RHiD, CPF, nome, empresa, departamento, cargo e admissão, lidos no navegador. Senha, PIN, endereço e
+       filiação não são enviados.
+     - O **departamento** dá o setor do colaborador: é o setor do RH > Ponto com o mesmo nome. Esse setor é usado pelo Banco de horas.
 2. **Competência e pagamento:** a folha do mês M é paga no **5º dia útil de M+1** (decisão de 14/10/2026). Ex.: setembro/2026 é
    pago até 07/10/2026. Para contar os dias úteis, a semana vai de segunda a sexta; feriados ajustados à mão, como no VT.
 3. **Um mês por empresa:** o fechamento junta as três empresas, mas cada uma tem a sua lista, os seus totais e as suas guias.

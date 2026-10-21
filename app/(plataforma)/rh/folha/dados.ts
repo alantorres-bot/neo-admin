@@ -94,7 +94,8 @@ export async function lerVigencias(supabase: Cliente): Promise<Vigencia[]> {
 export type PessoaRecibo = { id: string; cod_fornecedor: string; nome: string; empregador: string; cpf: string | null; funcao: string | null; salario: number | null; insalubridade_pct: number; adicional_noturno_pct: number; ativo: boolean };
 
 export async function lerPessoasRecibo(supabase: Cliente): Promise<PessoaRecibo[]> {
-  const { data } = await supabase.from("rh_colaboradores").select("id, cod_fornecedor, nome, empregador, cpf, funcao, salario, insalubridade_pct, adicional_noturno_pct, ativo").order("nome");
+  const { data } = await supabase.from("rh_colaboradores").select("id, cod_fornecedor, nome, empregador, cpf, funcao, salario, insalubridade_pct, adicional_noturno_pct, ativo")
+    .not("cod_fornecedor", "is", null).order("nome");   // sem nº de fornecedor (cadastro a completar) não entra na folha
   return (data ?? []).map((p) => ({ ...(p as PessoaRecibo), salario: p.salario === null ? null : Number(p.salario) }));
 }
 

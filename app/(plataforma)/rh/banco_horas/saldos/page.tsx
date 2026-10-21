@@ -11,19 +11,16 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { lerParametros, lerSaldos } from "../dados";
 import { AvisoAoLider } from "./aviso-lider";
-import { SetorDaPessoa } from "./setor-pessoa";
 
 export const metadata: Metadata = { title: "Banco de horas" };
 
 export default async function PaginaBancoHoras() {
   const sessao = await exigirSessao();
   const supabase = await criarClienteServidor();
-  const [saldos, par, gmail, { data: setoresAtivos }] = await Promise.all([
+  const [saldos, par, gmail] = await Promise.all([
     lerSaldos(supabase), lerParametros(supabase),
     supabase.from("gmail_contas").select("email").eq("perfil_id", sessao.userId).is("desconectado_em", null).maybeSingle(),
-    supabase.from("rh_pt_setores").select("id, nome").eq("ativo", true).order("nome"),
   ]);
-  const listaSetores = (setoresAtivos ?? []) as { id: string; nome: string }[];
   const semSetor = saldos.filter((s) => !s.setor_id).length;
   const podeOperar = temAcesso(sessao.acesso, "rh", "operador");
   const vencendo = (s: (typeof saldos)[number]) => s.folgar_min > 0 || s.repor_min > 0;
@@ -49,7 +46,7 @@ export default async function PaginaBancoHoras() {
           {pendentesFolha} pessoa(s) com horas vencidas a acertar na folha. Vá em <Link href={`${ROTA_BANCO_HORAS}/fechamentos`} className="underline">Fechamento do mês</Link>.
         </p>
       )}
-      {semSetor > 0 && <p className="text-sm text-amber-800">{semSetor} pessoa(s) sem setor: escolha na coluna Setor (o CSV do Control iD não traz). Sem setor, só o RH é avisado.</p>}
+      {semSetor > 0 && <p className="text-sm text-amber-800">{semSetor} pessoa(s) sem setor. O setor vem do departamento do colaborador (RH &gt; Colaboradores, &quot;Importar do Control iD&quot;) e tem de existir com o mesmo nome em RH &gt; Ponto &gt; Setores. Sem setor, só o RH é avisado.</p>}
       {setores.length > 0 && (
         <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {setores.map((s) => (
@@ -79,7 +76,7 @@ export default async function PaginaBancoHoras() {
             return (
               <TableRow key={s.pessoa_id}>
                 <TableCell className="font-medium"><Link href={`${ROTA_BANCO_HORAS}/pessoa/${s.pessoa_id}`} className="text-elo hover:underline">{s.nome}</Link></TableCell>
-                <TableCell>{podeOperar ? <SetorDaPessoa pessoa={s.pessoa_id} setor={s.setor_id} setores={listaSetores} nome={s.nome} /> : s.setor || "Sem setor"}</TableCell>
+                <TableCell>{s.setor || <span className="text-amber-800">Sem setor</span>}</TableCell>
                 <TableCell className={`text-right tabular-nums ${s.saldo_min < 0 ? "text-destructive" : ""} ${negativo ? "font-bold" : ""}`}>{horas(s.saldo_min)}</TableCell>
                 <TableCell className="text-right tabular-nums text-muted-foreground">{horas(s.saldo_controlid_min)}</TableCell>
                 <TableCell className="text-right tabular-nums">{s.folgar_min ? horas(s.folgar_min) : ""}</TableCell>
