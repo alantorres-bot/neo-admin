@@ -4,14 +4,17 @@ import type { ResultadoConciliacao, TituloPagar } from "@/lib/modulos/financeiro
 import { montarRoteiro } from "@/lib/modulos/financeiro/cartao/roteiro";
 import type { OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
-import type { DecisaoLinha, LinhaFaturaBanco, QuadroCompras, QuadroDesdobrar as DadosDesdobrar, QuadroEncargos as DadosEncargos } from "../dados";
+import type { DecisaoLinha, LinhaFaturaBanco, QuadroCompras, QuadroCorrecoes, QuadroDesdobrar as DadosDesdobrar, QuadroEncargos as DadosEncargos } from "../dados";
+import { ListaCorrecoes } from "./correcoes";
 import { QuadroDesdobrar } from "./desdobrar";
 import { ListaComprasLancadas } from "./compras";
 import { AbasConciliacao } from "./componentes";
 import { QuadroEncargos } from "./encargos";
 import { QuadroRoteiro } from "./roteiro";
 
-export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false, faturaId = null, decisoesHistorico = [], encargos = null, compras = null, desdobrar = null, podeGestor = false, origemTitulos }: {
+export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura, podeOperar, congelado = false, faturaId = null, decisoesHistorico = [], encargos = null, compras = null, desdobrar = null, podeGestor = false, origemTitulos, correcoes = null }: {
+  /** Avisos dos conciliados e correções no Consistem; nulo = não mostra. */
+  correcoes?: QuadroCorrecoes | null;
   /** De onde vieram os títulos (o roteiro pede o Consistem antes de lançar). */
   origemTitulos?: "consistem" | "espelho";
   /** Compras parceladas lançadas pelo total (desdobrar no Consistem); nulo = não mostra. */
@@ -35,7 +38,8 @@ export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura
 }) {
   const residuoZero = r.residuoCentavos === 0;
   const encargosLancados = (encargos?.ativos ?? []).filter((l) => l.situacao === "lancado").map((l) => l.cod_lancamento_erp ?? "?").join(", ") || null;
-  const passos = congelado || !faturaId ? [] : montarRoteiro({ resultado: r, outros, encargosLancados, origemTitulos });
+  const nAvisos = correcoes ? Object.keys(correcoes.avisos).length : 0;
+  const passos = congelado || !faturaId ? [] : montarRoteiro({ resultado: r, outros, encargosLancados, origemTitulos, titulosComAviso: nAvisos });
   const atual = passos.find((p) => p.estado === "atual");
   return (
     <div className="space-y-5">
@@ -58,7 +62,9 @@ export function PainelConciliacao({ resultado: r, outros, linhas, tituloDaFatura
       {!congelado && encargos && <QuadroEncargos dados={encargos} faturaId={faturaId} podeOperar={podeOperar} podeGestor={podeGestor} />}
       {!congelado && desdobrar && <QuadroDesdobrar pares={r.aDesdobrar ?? []} dados={desdobrar} faturaId={faturaId} podeOperar={podeOperar} />}
       {!congelado && compras && <ListaComprasLancadas compras={compras} podeOperar={podeOperar} podeGestor={podeGestor} />}
-      <AbasConciliacao compras={congelado ? null : compras} resultado={r} outros={outros} linhas={linhas} podeOperar={podeOperar && !congelado} faturaId={congelado ? null : faturaId} decisoesHistorico={decisoesHistorico} />
+      {!congelado && correcoes && <ListaCorrecoes historico={correcoes.historico} />}
+      {!congelado && correcoes?.avisoLeitura && <p className="text-xs text-amber-800">{correcoes.avisoLeitura}</p>}
+      <AbasConciliacao compras={congelado ? null : compras} correcoes={congelado ? null : correcoes} resultado={r} outros={outros} linhas={linhas} podeOperar={podeOperar && !congelado} faturaId={congelado ? null : faturaId} decisoesHistorico={decisoesHistorico} />
 
       {!congelado && (
         <p className={`rounded-[3px] border p-3 text-sm font-medium ${residuoZero ? "border-grade bg-cabecalho" : "border-red-300 bg-red-50 text-red-800"}`}>

@@ -8,7 +8,7 @@ import { ROTA_CARTAO } from "@/lib/modulos/financeiro/cartao/modulo";
 import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
-import { conciliacaoDaRequisicao, lerCompras, lerDesdobrar, lerEncargos, quandoEm } from "../dados";
+import { conciliacaoDaRequisicao, lerCompras, lerCorrecoes, lerDesdobrar, lerEncargos, quandoEm } from "../dados";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { BotaoCancelarFatura } from "./componentes";
 import { PainelConciliacao } from "./painel";
@@ -24,7 +24,7 @@ export default async function PaginaConciliacao({ params }: PageProps<"/financei
   const { fatura, resultado: r, outros } = c;
   const podeOperar = temAcesso(sessao.acesso, "financeiro", "operador");
   const supabase = await criarClienteServidor();
-  const [encargos, compras, desdobrar] = fatura.status === "importada" ? await Promise.all([lerEncargos(supabase, c), lerCompras(supabase, c), lerDesdobrar(supabase, c)]) : [null, null, null];
+  const [encargos, compras, desdobrar, correcoes] = fatura.status === "importada" ? await Promise.all([lerEncargos(supabase, c), lerCompras(supabase, c), lerDesdobrar(supabase, c), lerCorrecoes(c.fatura.id)]) : [null, null, null, null];
   const podeCancelar = fatura.status === "importada" && (temAcesso(sessao.acesso, "financeiro", "gestor") || (podeOperar && fatura.importado_por === sessao.userId));
 
   return (
@@ -63,7 +63,7 @@ export default async function PaginaConciliacao({ params }: PageProps<"/financei
         </p>
       )}
       <PainelConciliacao resultado={r} outros={outros} linhas={c.linhas} tituloDaFatura={c.tituloDaFatura} podeOperar={podeOperar}
-        faturaId={fatura.status === "importada" ? fatura.id : null} decisoesHistorico={c.decisoesHistorico} encargos={encargos} compras={compras} desdobrar={desdobrar} origemTitulos={c.origemTitulos}
+        faturaId={fatura.status === "importada" ? fatura.id : null} decisoesHistorico={c.decisoesHistorico} encargos={encargos} compras={compras} desdobrar={desdobrar} origemTitulos={c.origemTitulos} correcoes={correcoes}
         podeGestor={temAcesso(sessao.acesso, "financeiro", "gestor")} />
     </div>
   );

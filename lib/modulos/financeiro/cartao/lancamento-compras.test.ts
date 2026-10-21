@@ -65,9 +65,9 @@ describe("títulos da compra", () => {
     expect(montarTitulosCompra({ ...base, linha: { ...linha("X", 10), dataCompra: null }, campos: CAMPOS })).toMatchObject({ ok: false, erro: /data da compra/ });
     expect(montarTitulosCompra({ ...base, fechamento: null, linha: linha("X", 10), campos: CAMPOS })).toMatchObject({ ok: false, erro: /fechamento/ });
   });
-  it("complemento até 70 caracteres, mantendo a parcela, e reconhecido como do cartão", () => {
+  it("complemento até 60 caracteres, mantendo a parcela, e reconhecido como do cartão", () => {
     const c = complementoCompra("SICREDI PF", 10, 12, "LOJA COM UM NOME MUITO GRANDE QUE NAO CABE NO CAMPO DO CONSISTEM");
-    expect(c.length).toBeLessThanOrEqual(70);
+    expect(c.length).toBeLessThanOrEqual(60);
     expect(c.endsWith(" PARC 10/12")).toBe(true);
     const id = identificarCartaoDoTitulo({ complemento: c, vencimento: "2026-10-10" }, CARTOES_TESTE);
     expect(id.situacao === "cartao" && id.cartao?.codigo).toBe("SICREDI PF");

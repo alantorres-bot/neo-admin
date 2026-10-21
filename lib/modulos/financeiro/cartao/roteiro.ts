@@ -113,6 +113,8 @@ export function montarRoteiro(e: {
   /** Códigos dos títulos de encargos já lançados no mês ("34010, 34011"), se houver. */
   encargosLancados?: string | null;
   origemTitulos?: "consistem" | "espelho";
+  /** Títulos conciliados com aviso (cartão, vencimento, conta de fluxo, complemento): não bloqueiam, mas vale corrigir antes. */
+  titulosComAviso?: number;
 }): Passo[] {
   const r = e.resultado;
   const pend = r.aLancar.filter((a) => !a.justificativa);
@@ -151,7 +153,7 @@ export function montarRoteiro(e: {
     sobras.length ? `${plural(sobras.length, "estorno ou crédito", "estornos ou créditos")}: abata do título da compra e justifique.` : "Sem estornos pendentes.");
   const pronto = r.pendentes === 0 && r.residuoCentavos === 0;
   add("Fechar", pronto ? null : false,
-    pronto ? "Nada pendente e diferença não justificada zero: o gestor fecha o mês (troca o banco dos títulos e cria o provisório)."
+    pronto ? `Nada pendente e diferença não justificada zero: o gestor fecha o mês (troca o banco dos títulos e cria o provisório).${e.titulosComAviso ? ` Antes, veja ${plural(e.titulosComAviso, "título com aviso", "títulos com aviso")} na aba Conciliados.` : ""}`
       : r.residuoCentavos !== 0 && r.pendentes === 0 ? `Diferença não justificada de ${reais(r.residuoCentavos)}: apurar antes de fechar.`
         : "Fecha quando não houver pendência e a diferença não justificada for zero.");
 

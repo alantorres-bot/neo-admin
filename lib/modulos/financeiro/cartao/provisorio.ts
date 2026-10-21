@@ -4,6 +4,7 @@
 // Os demais códigos vêm de financeiro.cartao.provisorio (nada é inventado: sem eles, recusa).
 import { CAMPOS_COMPRA, lerCampos, ROTULO_CAMPO_COMPRA } from "./lancamento-compras";
 import type { NovoLancamentoContaPagar } from "./lancamento-encargos";
+import { MAX_COMPLEMENTO } from "./cartoes";
 import { normalizar } from "./texto";
 
 export type Provisorio = { ok: true; payload: NovoLancamentoContaPagar } | { ok: false; erro: string };
@@ -11,9 +12,9 @@ export type Provisorio = { ok: true; payload: NovoLancamentoContaPagar } | { ok:
 /** "231026" (dia, mês e ano com 2 dígitos do vencimento). */
 export const documentoProvisorio = (vencimento: string) => `${vencimento.slice(8, 10)}${vencimento.slice(5, 7)}${vencimento.slice(2, 4)}`;
 
-/** "FATURA CARTÃO SICREDI PJ 10/2026" (até 70). */
+/** "FATURA CARTÃO SICREDI PJ 10/2026" (até MAX_COMPLEMENTO). */
 export const complementoProvisorio = (nomeCartao: string, competencia: string) =>
-  `FATURA CARTÃO ${normalizar(nomeCartao)} ${competencia.slice(5, 7)}/${competencia.slice(0, 4)}`.slice(0, 70);
+  `FATURA CARTÃO ${normalizar(nomeCartao)} ${competencia.slice(5, 7)}/${competencia.slice(0, 4)}`.slice(0, MAX_COMPLEMENTO);
 
 export function montarProvisorio(e: {
   nomeCartao: string;

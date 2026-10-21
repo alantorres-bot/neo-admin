@@ -56,10 +56,10 @@ describe("títulos de encargos (um por linha)", () => {
     const negativa = [{ ...linhas[0], linha: { ...linhas[0].linha, valorCentavos: -100 } }];
     expect(montarTitulosEncargos({ nomeCartao: "X", config: CONFIG, linhas: negativa, fechamento: "2026-09-26", vencimento: "2026-10-10" })).toMatchObject({ ok: false, erro: /não tem valor positivo/ });
   });
-  it("complemento até 70 caracteres e reconhecido como do cartão", () => {
+  it("complemento até 60 caracteres e reconhecido como do cartão", () => {
     const longa = [{ ...encargosALancar(base())[0], linha: { ...LINHAS[0], descricao: "IOF ".repeat(30) } }];
     const t = montarTitulosEncargos({ nomeCartao: "SICREDI PF", config: CONFIG, linhas: longa, fechamento: "2026-09-26", vencimento: "2026-10-10" });
-    expect(t.ok && t.titulos[0].complemento.length).toBe(70);
+    expect(t.ok && t.titulos[0].complemento.length).toBe(60);
     const id = identificarCartaoDoTitulo({ complemento: t.ok ? t.titulos[0].complemento : "", vencimento: "2026-10-10" }, CARTOES_TESTE);
     expect(id.situacao === "cartao" && id.cartao?.codigo).toBe("SICREDI PF");
   });

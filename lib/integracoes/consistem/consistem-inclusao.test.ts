@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alterarPortador, alterarTitulo, conferirAlteracao, conferirTroca, incluirLancamento, jaAlterado, jaMarcado, lerRespostaInclusao, type Enviar } from "@/supabase/functions/_shared/consistem-inclusao";
+import { alterarPortador, alterarTitulo, complementoCabeNaAlteracao, conferirAlteracao, conferirTroca, incluirLancamento, jaAlterado, jaMarcado, lerRespostaInclusao, type Enviar } from "@/supabase/functions/_shared/consistem-inclusao";
 
 const cfg = { baseUrl: "https://erp.exemplo/api/", token: "tok", empresa: "1" };
 
@@ -124,5 +124,21 @@ describe("alteração do título no desdobramento (0165)", () => {
     expect(naoGravou).toMatchObject({ ok: false, mensagem: expect.stringContaining("valorDocumento = 2994.78 (esperado 499.13)") });
     const mudouOutro = conferirAlteracao(antes, { ...antes, ...esperado, codPortador: 1 }, esperado);
     expect(mudouOutro).toMatchObject({ ok: false, diferencas: ["codPortador: 91 → 1"] });
+  });
+});
+
+describe("complemento na alteração (21/10/2026)", () => {
+  it("até 60 caracteres pode alterar; acima disso o Consistem cortaria o texto", () => {
+    expect(complementoCabeNaAlteracao({ complementoHistorico: "X".repeat(60) })).toBeNull();
+    expect(complementoCabeNaAlteracao({})).toBeNull();
+    expect(complementoCabeNaAlteracao({ complementoHistorico: "CARTÃO NUBANK - PAASAGENS 4xEBW*NUVIAGENS - NUPAY - PARCELA 1/4" })).toMatch(/63 caracteres.*máx\. 60/);
+  });
+});
+
+describe("conferência da correção de vencimento (0176)", () => {
+  it("o prazo recalculado acompanha o vencimento novo; outro campo mudado continua erro", () => {
+    const antes = { dataVencimento: "2026-10-28", dataVencimentoOriginal: "2026-09-28", diasPrazo: "60", valorDocumento: "378.84" };
+    expect(conferirAlteracao(antes, { ...antes, dataVencimento: "2026-10-27", diasPrazo: "59" }, { dataVencimento: "2026-10-27" })).toEqual({ ok: true });
+    expect(conferirAlteracao(antes, { ...antes, dataVencimento: "2026-10-27", valorDocumento: "1.00" }, { dataVencimento: "2026-10-27" }).ok).toBe(false);
   });
 });

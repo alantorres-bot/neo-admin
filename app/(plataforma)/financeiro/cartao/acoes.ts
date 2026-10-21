@@ -22,9 +22,10 @@ import { aVista, camposDaSelecao } from "@/lib/modulos/financeiro/cartao/lancame
 import { comMarcasDaFatura, titulosParaTrocar } from "@/lib/modulos/financeiro/cartao/portador-fatura";
 import type { ResultadoConciliacao } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { normalizar } from "@/lib/modulos/financeiro/cartao/texto";
-import { categoriasDosFornecedores, codigoDoLancamento, conciliacaoDaRequisicao, lerCartoes, lerCiclo, lerCompras, lerDesdobrar, lerDetalheDoConsistem, lerEncargos, lerEstabelecimentos, lerProvisorio, paraCartaoInfo, type FotoFechamento } from "./dados";
+import { categoriasDosFornecedores, codigoDoLancamento, conciliacaoDaRequisicao, lerCorrecoes, lerCartoes, lerCiclo, lerCompras, lerDesdobrar, lerDetalheDoConsistem, lerEncargos, lerEstabelecimentos, lerProvisorio, paraCartaoInfo, type FotoFechamento } from "./dados";
 import { montarDesdobramento } from "@/lib/modulos/financeiro/cartao/desdobramento";
 import { motivoNaoEhOMesmo, recusaDeLancamento, travaDeLancamento } from "@/lib/modulos/financeiro/cartao/roteiro";
+import { alteracaoContaFluxo, alteracaoVencimento, titulosConciliados } from "@/lib/modulos/financeiro/cartao/correcoes";
 
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
 const texto = (d: FormData, nome: string) => String(d.get(nome) ?? "").trim();
@@ -845,4 +846,71 @@ export async function registrarExclusaoErp(entrada: z.input<typeof esquemaExclus
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   revalidatePath(ROTA_CARTAO, "layout");
   return { ok: true, aviso: "Exclusão no Consistem registrada. O título deixa de contar como lançado pelo painel e as linhas dele voltam a lançar (mês em conciliação)." };
+}
+
+// ---------------------------------------------------------------- "Não é desta fatura" e correções no Consistem (0176)
+
+/** "Não é desta fatura" (regra 69): observação de um clique num título sem linha; conta como decisão para a trava do Lançar. */
+export async function naoEhDestaFatura(entrada: { faturaId: string; titulo: string }): Promise<Resultado> {
+  if (!z.string().uuid().safeParse(entrada.faturaId).success || !/^[\w:.-]{1,40}$/.test(entrada.titulo)) return { ok: false, erro: "Dados inválidos." };
+  const c = await conciliacaoDaRequisicao(entrada.faturaId);
+  if (!c) return { ok: false, erro: "Fatura não encontrada." };
+  if (!c.resultado.divergencias.some((d) => chaveTitulo(d.titulo) === entrada.titulo)) return { ok: false, erro: "Este título não está mais entre os sem linha. Recarregue a página." };
+  return registrarDecisao({ faturaId: entrada.faturaId, tipo: "observar", linhas: [], titulos: [entrada.titulo], motivo: "Conferido: não é desta fatura" });
+}
+
+const esquemaCorrecao = z.object({
+  faturaId: z.string().uuid(),
+  titulo: z.string().regex(/^\d{1,12}$/, "Título inválido."),
+  tipo: z.enum(["cartao", "vencimento", "conta_fluxo"]),
+  /** Só em conta_fluxo: a conta ativa escolhida. */
+  conta: z.object({ grupo: z.number().int().positive(), conta: z.number().int().positive() }).nullable().default(null),
+});
+
+const AVISO_DA_CORRECAO = { cartao: "cartao", vencimento: "vencimento", conta_fluxo: "fluxo_inativo" } as const;
+
+/**
+ * Corrige no Consistem um título conciliado (regras 70 e 71; operador, mês em conciliação): recalcula, confere que o título tem o
+ * aviso da correção, monta a alteração, reserva (crt_reservar_correcao) e chama a Edge Function crt-corrigir-no-consistem, que
+ * lê antes, altera só esses campos, lê depois e confere.
+ */
+export async function corrigirNoConsistem(entrada: z.input<typeof esquemaCorrecao>): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "operador")) return { ok: false, erro: "Somente operador do Financeiro (ou acima) corrige títulos no Consistem." };
+  const dados = esquemaCorrecao.safeParse(entrada);
+  if (!dados.success) return { ok: false, erro: dados.error.issues[0].message };
+  const d = dados.data;
+  const c = await conciliacaoDaRequisicao(d.faturaId);
+  if (!c) return { ok: false, erro: "Fatura não encontrada." };
+  if (c.origemTitulos !== "consistem") return { ok: false, erro: `Não foi possível consultar o Consistem agora (${c.avisoOrigem}). Tente de novo.` };
+  const q = await lerCorrecoes(d.faturaId);
+  if (!q) return { ok: false, erro: "Fatura não encontrada." };
+  if (!q.ligado) return { ok: false, erro: "As correções no Consistem estão desligadas." };
+  if (!q.mesAberto) return { ok: false, erro: "Só se corrigem títulos com o mês em conciliação." };
+  if (!(q.avisos[d.titulo] ?? []).some((a) => a.tipo === AVISO_DA_CORRECAO[d.tipo])) return { ok: false, erro: "Este título não precisa mais desta correção. Recarregue a página." };
+  const titulo = titulosConciliados(c.resultado).find((t) => chaveTitulo(t) === d.titulo)!;
+  let alteracao: Record<string, string | number>;
+  if (d.tipo === "cartao") {
+    if (titulo.emBordero) return { ok: false, erro: "O título está num borderô: corrija à mão no Consistem." };
+    const t = q.trocarCartao[d.titulo];
+    if (!t?.ok) return { ok: false, erro: t?.erro ?? "Não foi possível montar a correção." };
+    alteracao = t.alteracao;
+  } else if (d.tipo === "vencimento") {
+    alteracao = alteracaoVencimento(c.fatura.vencimento);
+  } else {
+    if (!d.conta) return { ok: false, erro: "Escolha a conta de fluxo ativa." };
+    alteracao = alteracaoContaFluxo(d.conta);
+  }
+  const supabase = await criarClienteServidor();
+  const { data: id, error } = await supabase.rpc("crt_reservar_correcao", {
+    p_fatura: c.fatura.id, p_cod: d.titulo, p_num_documento: titulo.numeroTitulo, p_tipo: d.tipo, p_alteracao: alteracao,
+  });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  const { data, error: erroFuncao } = await supabase.functions.invoke("crt-corrigir-no-consistem", { body: { id } });
+  revalidatePath(ROTA_CARTAO, "layout");
+  if (erroFuncao) {
+    const { mensagem } = await mensagemDaFuncao(erroFuncao, "Não foi possível falar com a função de correção.");
+    return { ok: false, erro: `${mensagem} Confira o título no Consistem; o registro fica na lista de correções.` };
+  }
+  return { ok: true, aviso: (data as { aviso?: string } | null)?.aviso ?? "Título corrigido no Consistem." };
 }

@@ -4,7 +4,7 @@
 // Sugestão: o estabelecimento do dicionário (crt_estabelecimentos.lancamento_erp) e os padrões do cartão
 // (crt_cartoes.lancamento_compras); o operador confere e pode mudar tudo. Parcelada sem título (ex.: 2/5): um título por parcela
 // restante, a primeira no vencimento desta fatura e as demais nos vencimentos nominais das competências seguintes.
-import type { CartaoInfo } from "./cartoes";
+import { MAX_COMPLEMENTO, type CartaoInfo } from "./cartoes";
 import { cicloDaCompetencia } from "./ciclos";
 import { doDicionario, type LinhaFatura } from "./conciliacao";
 import type { NovoLancamentoContaPagar } from "./lancamento-encargos";
@@ -25,7 +25,7 @@ export const ROTULO_CAMPO_COMPRA: Record<CampoCompra, string> = {
 /** Padrões do cartão para compras (crt_cartoes.lancamento_compras). */
 export const CAMPOS_PADRAO_CARTAO = ["codPortador", "categoriaDoc", "codHistorico", "contaContabilCredito"] as const;
 
-const MAX = 70;
+const MAX = MAX_COMPLEMENTO;
 const inteiro = (v: unknown) => {
   const n = typeof v === "string" && v.trim() !== "" ? Number(v) : v;
   return typeof n === "number" && Number.isInteger(n) && n > 0 ? n : undefined;
@@ -67,7 +67,7 @@ export function padraoSugerido(descricao: string): string {
   return (palavras[0] ?? normalizar(descricao).slice(0, 20)).slice(0, 60);
 }
 
-/** "CARTÃO SICREDI PF 5x — NUVIAGENS PARC 2/5" (até 70; a descrição é cortada, a parcela fica). */
+/** "CARTÃO SICREDI PF 5x — NUVIAGENS PARC 2/5" (até MAX_COMPLEMENTO; a descrição é cortada, a parcela fica). */
 export function complementoCompra(nomeCartao: string, parcela: number, parcelas: number, descricao: string): string {
   const base = `CARTÃO ${nomeCartao.toUpperCase()} ${parcelas}x — `;
   const sufixo = parcelas > 1 ? ` PARC ${parcela}/${parcelas}` : "";

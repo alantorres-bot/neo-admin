@@ -10,7 +10,6 @@ import type { ItemALancar, ResultadoConciliacao } from "./conciliacao";
 import { montarComplemento } from "./cartoes";
 import { normalizar } from "./texto";
 
-export const MAX_COMPLEMENTO_ERP = 70;
 const CAMPOS_CONFIG = [
   "codFornecedor", "codHistorico", "codPortador", "categoriaDoc", "grupoContaFluxoCaixa", "contaFluxoCaixa", "contaContabilDebito", "contaContabilCredito",
 ] as const;

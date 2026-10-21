@@ -53,7 +53,7 @@ describe("desdobramento da compra lançada pelo total", () => {
       codFornecedor: 1345, categoriaDoc: 9, codPortador: 994, codHistorico: 2, dataEmissao: "2026-09-23", dataEntrada: "2026-09-25", dataVencimento: "2026-11-20",
       grupoContaFluxoCaixa: 16, contaFluxoCaixa: 5, dadosContabilidade: { contaContabilDebito: 3240, contaContabilCredito: 2004, listaCentroCustoContab: [] },
     });
-    expect(r.parcelas.every((p) => p.payload.complementoHistorico.length <= 70)).toBe(true);
+    expect(r.parcelas.every((p) => p.payload.complementoHistorico.length <= 60)).toBe(true);
     const total = Math.round(r.alteracao.valorDocumento * 100) + r.parcelas.reduce((s, p) => s + Math.round(p.payload.valorDocumento * 100), 0);
     expect(total).toBe(299_480);
   });

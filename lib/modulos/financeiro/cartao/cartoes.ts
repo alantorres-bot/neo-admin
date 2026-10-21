@@ -18,8 +18,11 @@ export interface CartaoInfo {
   tipoTitulo?: number | null;
 }
 
-/** Tamanho máximo do complemento do histórico no Contas a Pagar do Consistem. */
-export const MAX_COMPLEMENTO = 70;
+/**
+ * Tamanho máximo do complemento que o painel grava. A inclusão no Consistem aceita 70, mas ao ALTERAR o título (troca do banco,
+ * desdobramento) ele guarda só 60 e corta o resto; por isso o painel cria com até 60 (decisão do Alan, 21/10/2026).
+ */
+export const MAX_COMPLEMENTO = 60;
 
 // ------------------------------------------------------------------ texto
 
@@ -45,13 +48,13 @@ function distancia(a: string, b: string): number {
 }
 
 /** O token é a palavra CARTÃO? Aceita "CART", "CARTOES" e 1 erro de digitação com as 6 letras ("CRATAO", "CARTOA"; "CARTA" não). */
-function ehMarcaCartao(token: string): boolean {
+export function ehMarcaCartao(token: string): boolean {
   if (token === "CART" || token === "CARTOES") return true;
   return token.length >= 6 && distancia(token, "CARTAO") <= 1;
 }
 
 /** O token escrito no título é o banco do cartão? Tolera abreviação ("SICRED") e 1 erro de grafia ("NUBANCK", "NUBNAK"). */
-function mesmoBanco(token: string, banco: string): boolean {
+export function mesmoBanco(token: string, banco: string): boolean {
   if (token === banco) return true;
   if (banco.length < 5 || token.length < 4) return false;
   if (banco.startsWith(token) && token.length >= banco.length - 2) return true;
@@ -182,7 +185,7 @@ export function vencimentoSeguinte(vencimento: string, c: Pick<CartaoInfo, "diaV
 // ------------------------------------------------------------------ complemento padrão do POP
 
 /**
- * Complemento no padrão do POP: `CARTÃO <NOME> <Nx> — <DESCRIÇÃO>` (até 70 caracteres, limite do campo; a descrição é cortada
+ * Complemento no padrão do POP: `CARTÃO <NOME> <Nx> — <DESCRIÇÃO>` (até MAX_COMPLEMENTO caracteres; a descrição é cortada
  * se não couber).
  */
 export function montarComplemento(cartao: Pick<CartaoInfo, "nome">, parcelas: number, descricao: string): string {

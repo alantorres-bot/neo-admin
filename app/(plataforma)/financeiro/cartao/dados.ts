@@ -1,7 +1,7 @@
 // Leituras do módulo Cartão de crédito (RLS de quem chama; nada é gravado aqui).
 import { cache } from "react";
 import type { CartaoInfo, RegraCartao } from "@/lib/modulos/financeiro/cartao/cartoes";
-import { conciliar, doDicionario, type DecisaoItem, type Estabelecimento, type LinhaFatura, type ResultadoConciliacao, type TipoDecisao, type TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
+import { chaveTitulo, conciliar, doDicionario, type DecisaoItem, type Estabelecimento, type LinhaFatura, type ResultadoConciliacao, type TipoDecisao, type TituloPagar } from "@/lib/modulos/financeiro/cartao/conciliacao";
 import { MODULO_CARTAO, type CodigoLeitor } from "@/lib/modulos/financeiro/cartao/modulo";
 import { selecionarTitulos, type LancamentoEspelho, type OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { somarDias } from "@/lib/modulos/financeiro/cartao/texto";
@@ -16,6 +16,7 @@ import { FUSO } from "@/lib/nucleo/fila";
 import { urlAssinadaAnexo } from "@/lib/nucleo/anexos";
 import type { SituacaoCiclo } from "@/lib/modulos/financeiro/cartao/ciclos";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
+import { alteracaoTrocarCartao, avisosDosConciliados, chaveConta, titulosConciliados, type Alteracao, type Aviso, type ContaFluxo as ContaCorrecao } from "@/lib/modulos/financeiro/cartao/correcoes";
 
 type Cliente = Awaited<ReturnType<typeof criarClienteServidor>>;
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
@@ -604,3 +605,100 @@ export function codigoDoLancamento(t: TituloPagar): string | null {
 }
 
 export { MODULO_CARTAO };
+
+// ---------------------------------------------------------------- avisos e correções dos conciliados (0176)
+
+export type CorrecaoLinha = {
+  id: string; cod_lancamento: string; num_documento: string | null; tipo: "cartao" | "vencimento" | "conta_fluxo"; alteracao: Record<string, string | number>;
+  situacao: "reservado" | "enviando" | "corrigido" | "erro"; antes: Record<string, unknown> | null; depois: Record<string, unknown> | null; erro: string | null;
+  criado_por_nome: string | null; criado_em: string; concluido_em: string | null;
+};
+
+export type QuadroCorrecoes = {
+  /** Chave financeiro.cartao.corrigir_no_erp. */
+  ligado: boolean;
+  /** O mês está em conciliação (só então se corrige). */
+  mesAberto: boolean;
+  /** Avisos por título conciliado (chave do título). */
+  avisos: Record<string, Aviso[]>;
+  /** "Trocar cartão": a alteração proposta (ou por que não dá) por título com aviso de cartão. */
+  trocarCartao: Record<string, { ok: true; alteracao: Alteracao } | { ok: false; erro: string }>;
+  /** Conta de fluxo atual (lida do detalhe) e a sugerida pelo estabelecimento, por título com conta inativa. */
+  fluxo: Record<string, { atual: ContaCorrecao; sugerida: ContaCorrecao | null }>;
+  /** Não foi possível ler o detalhe de algum título (sem aviso de conta inativa para ele). */
+  avisoLeitura: string | null;
+  historico: CorrecaoLinha[];
+};
+
+/** Detalhe (GET lancamentoContasPagar/{id}) de vários títulos, de 20 em 20, em paralelo. Falha de um lote não derruba os demais. */
+async function lerDetalhesDoConsistem(supabase: Cliente, empresaId: string, codigos: string[]): Promise<{ detalhes: Map<string, Record<string, unknown>>; falhou: boolean }> {
+  const lotes: string[][] = [];
+  for (let i = 0; i < codigos.length; i += 20) lotes.push(codigos.slice(i, i + 20));
+  const detalhes = new Map<string, Record<string, unknown>>();
+  let falhou = false;
+  await Promise.all(lotes.map(async (lote) => {
+    const { data, error } = await supabase.functions.invoke("cap-sincronizar-consistem", { body: { acao: "detalhe_lancamentos", empresaId, codigos: lote } });
+    if (error) { falhou = true; return; }
+    for (const d of (data as { detalhes?: Record<string, unknown>[] } | null)?.detalhes ?? []) {
+      if (d.erro) { falhou = true; continue; }
+      detalhes.set(String(d.codLancamento), d);
+    }
+  }));
+  return { detalhes, falhou };
+}
+
+const MAX_DETALHES = 60;
+
+/**
+ * Avisos dos títulos conciliados (cartão de outro banco, vencimento, conta de fluxo inativa, complemento acima de 60) e o que as
+ * correções enviariam. A conta de fluxo só vem do detalhe do título: lido para os conciliados (até 60), uma vez por requisição.
+ */
+export const lerCorrecoes = cache(async (faturaId: string): Promise<QuadroCorrecoes | null> => {
+  const c = await conciliacaoDaRequisicao(faturaId);
+  if (!c) return null;
+  const supabase = await criarClienteServidor();
+  const ciclo = c.fatura.ciclo_id;
+  const titulos = titulosConciliados(c.resultado);
+  const codigos = titulos.map((t) => t.codLancamento).filter((x): x is string => !!x && /^\d+$/.test(x)).slice(0, MAX_DETALHES);
+  const [{ data: config }, { data: inativas }, { data: cic }, { data: hist }, lidos, cartoes, estabelecimentos] = await Promise.all([
+    supabase.from("configuracoes").select("valor").eq("chave", "financeiro.cartao.corrigir_no_erp").maybeSingle(),
+    supabase.from("cap_contas_fluxo").select("grupo, item").eq("ativa", false),
+    ciclo ? supabase.from("crt_ciclos").select("situacao").eq("id", ciclo).maybeSingle() : Promise.resolve({ data: null }),
+    ciclo ? supabase.from("crt_vw_correcoes_erp").select("id, cod_lancamento, num_documento, tipo, alteracao, situacao, antes, depois, erro, criado_por_nome, criado_em, concluido_em")
+      .eq("ciclo_id", ciclo).order("criado_em", { ascending: false }).limit(200) : Promise.resolve({ data: [] }),
+    lerDetalhesDoConsistem(supabase, c.fatura.empresa_id, codigos),
+    lerCartoes(supabase),
+    lerEstabelecimentos(supabase),
+  ]);
+  const contasInativas = new Set(((inativas ?? []) as { grupo: number; item: number }[]).map((x) => chaveConta({ grupo: x.grupo, conta: x.item })));
+  const fluxoPorTitulo = new Map<string, ContaCorrecao>();
+  for (const [cod, d] of lidos.detalhes) {
+    const grupo = Number(d.grupoContaFluxoCaixa), conta = Number(d.contaFluxoCaixa);
+    if (grupo > 0 && conta > 0) fluxoPorTitulo.set(cod, { grupo, conta });
+  }
+  const infos = cartoes.map(paraCartaoInfo);
+  const avisos = avisosDosConciliados(c.resultado, { cartao: paraCartaoInfo(c.cartao), cartoes: infos, vencimentoFatura: c.fatura.vencimento, fluxoPorTitulo, contasInativas });
+  const trocarCartao: QuadroCorrecoes["trocarCartao"] = {};
+  const fluxo: QuadroCorrecoes["fluxo"] = {};
+  const estabs: EstabelecimentoCodigos[] = estabelecimentos.filter((e) => e.ativo).map((e) => ({ padrao: e.padrao, lancamentoErp: lerCampos(e.lancamento_erp) }));
+  for (const t of titulos) {
+    const k = chaveTitulo(t);
+    if (avisos[k]?.some((a) => a.tipo === "cartao")) {
+      trocarCartao[k] = alteracaoTrocarCartao(t, { cartoes: infos, nomeCartao: c.cartao.nome, vencimentoFatura: c.fatura.vencimento, portadorFatura: c.cartao.portador_fatura, historicoFatura: c.cartao.historico_fatura });
+    }
+    if (avisos[k]?.some((a) => a.tipo === "fluxo_inativo")) {
+      const linha = c.resultado.conciliados.find((x) => [x.titulo, ...(x.titulosExtras ?? [])].some((y) => chaveTitulo(y) === k))?.linhas[0];
+      const s = linha ? sugestaoDaLinha(linha.descricao, estabs, {}).campos : {};
+      const sugerida = s.grupoContaFluxoCaixa && s.contaFluxoCaixa && !contasInativas.has(`${s.grupoContaFluxoCaixa}/${s.contaFluxoCaixa}`) ? { grupo: s.grupoContaFluxoCaixa, conta: s.contaFluxoCaixa } : null;
+      fluxo[k] = { atual: fluxoPorTitulo.get(k)!, sugerida };
+    }
+  }
+  const semDetalhe = codigos.length - lidos.detalhes.size + Math.max(0, titulos.length - MAX_DETALHES);
+  return {
+    ligado: (config as { valor: unknown } | null)?.valor === true,
+    mesAberto: (cic as { situacao: string } | null)?.situacao === "em_conciliacao" && c.fatura.status === "importada",
+    avisos, trocarCartao, fluxo,
+    avisoLeitura: lidos.falhou || semDetalhe > 0 ? `A conta de fluxo de ${semDetalhe} título(s) não foi lida do Consistem: sem aviso de conta inativa para eles.` : null,
+    historico: (hist ?? []) as CorrecaoLinha[],
+  };
+});

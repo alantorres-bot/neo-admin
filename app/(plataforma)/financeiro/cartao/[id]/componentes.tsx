@@ -16,7 +16,8 @@ import { descreverTitulo, travaDeLancamento } from "@/lib/modulos/financeiro/car
 import type { OutroTitulo } from "@/lib/modulos/financeiro/cartao/selecao-titulos";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { cancelarFatura, conferirNaoEhOMesmo } from "../acoes";
-import type { DecisaoLinha, LinhaFaturaBanco, QuadroCompras } from "../dados";
+import type { DecisaoLinha, LinhaFaturaBanco, QuadroCompras, QuadroCorrecoes } from "../dados";
+import { AvisosDoTitulo, BotaoNaoEhDestaFatura } from "./correcoes";
 import { DialogoLancarCompra } from "./compras";
 import { BarraAgrupado, itensAgrupaveis } from "./agrupado";
 import { DialogoDecidir, ListaDecisoes, SeloDecisao, type Candidatos } from "./decisoes";
@@ -24,7 +25,9 @@ import { DialogoDecidir, ListaDecisoes, SeloDecisao, type Candidatos } from "./d
 const centavos = (v: number | string) => Math.round(Number(v) * 100);
 const Conferir = ({ texto }: { texto: string }) => (texto === CONFERIR ? <span className="font-bold text-amber-700">{texto}</span> : <>{texto}</>);
 
-export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, faturaId = null, decisoesHistorico = [], compras = null }: {
+export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, faturaId = null, decisoesHistorico = [], compras = null, correcoes = null }: {
+  /** Avisos dos conciliados e correções no Consistem (regras 68 a 71); nulo = sem a coluna Avisos. */
+  correcoes?: QuadroCorrecoes | null;
   /** Compras sem título que podem ser lançadas no Consistem; nulo = sem botão Lançar. */
   compras?: QuadroCompras | null;
   resultado: ResultadoConciliacao; outros: OutroTitulo[]; linhas: LinhaFaturaBanco[]; podeOperar: boolean;
@@ -176,6 +179,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
                   <TableCell className="min-w-40 space-y-1">
                     <SeloDecisao justificativa={d.justificativa} observacoes={d.observacoes} />
                     {decide && <DialogoDecidir faturaId={faturaId!} alvo={{ tipo: "titulo", titulo: d.titulo }} candidatos={candidatos} />}
+                    {decide && !d.justificativa && !(d.observacoes ?? []).length && <BotaoNaoEhDestaFatura faturaId={faturaId!} titulo={chaveTitulo(d.titulo)} />}
                   </TableCell>
                 </TableRow>
               ))}
@@ -188,7 +192,7 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
         <p className="text-xs text-muted-foreground">Casamentos encontrados (o valor é a chave; a descrição só desempata). “Conferir descrição” = semelhança baixa entre a fatura e o complemento; “ALERTA” = complemento cita outro cartão (erro de classificação, não gera diferença).</p>
         {r.conciliados.length === 0 ? <Vazio texto="Nenhum casamento. Atualize do Consistem se os títulos ainda não foram lançados." /> : (
           <Table>
-            <TableHeader><TableRow><TableHead>Data</TableHead><TableHead>Descrição na fatura</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Nº do título</TableHead><TableHead>Complemento do título</TableHead><TableHead>Modo</TableHead><TableHead>Aderência</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow><TableHead>Data</TableHead><TableHead>Descrição na fatura</TableHead><TableHead className="text-right">Valor</TableHead><TableHead>Nº do título</TableHead><TableHead>Complemento do título</TableHead><TableHead>Modo</TableHead><TableHead>Aderência</TableHead>{correcoes && <TableHead>Avisos</TableHead>}</TableRow></TableHeader>
             <TableBody>
               {r.conciliados.map((c) => (
                 <TableRow key={c.titulo.id}>
@@ -203,6 +207,14 @@ export function AbasConciliacao({ resultado: r, outros, linhas, podeOperar, fatu
                     {c.titulosExtras && c.titulosExtras.length > 0 && <span className="block text-[11px] text-muted-foreground">+ {c.titulosExtras.map((t) => t.numeroTitulo).join(", ")}</span>}
                   </TableCell>
                   <TableCell className={c.aderencia.startsWith("ALERTA") ? "font-bold text-red-700" : c.aderencia === "OK" ? "" : "text-amber-800"}>{c.aderencia}</TableCell>
+                  {correcoes && (
+                    <TableCell className="min-w-48 space-y-1">
+                      {[c.titulo, ...(c.titulosExtras ?? [])].map((t) => (
+                        <AvisosDoTitulo key={chaveTitulo(t)} cod={chaveTitulo(t)} correcoes={correcoes} faturaId={faturaId} podeCorrigir={podeOperar}
+                          contas={compras?.listas.contasFluxo ?? []} vencimentoFatura={r.vencimento} />
+                      ))}
+                    </TableCell>
+                  )}
                 </TableRow>
               ))}
             </TableBody>

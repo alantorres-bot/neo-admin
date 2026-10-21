@@ -247,7 +247,11 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
     original" vazio que o Consistem preenche com o próprio vencimento na primeira alteração também não — visto no 33456). Já no código: só
     registra. Recusa, falta de resposta ou diferença = erro com o antes/depois (diferença em outros campos para o lote: corrigir no
     Consistem antes de tentar de novo). Trocar o portador é idempotente: a decisão é sempre pelo que o Consistem mostra depois.
-60. **Prova e pendência:** `crt_trocas_portador` (um registro por título e mês, sem delete). Erro abre a pendência "Trocar o banco
+60. **Desde 21/10/2026 a troca não para o lote no erro de um título** (decisão do Alan, depois do Nubank PF 10/2026, em que 11 títulos
+    nem foram tentados): o erro fica naquele título e os demais seguem; só "acesso negado"/"excesso de requisições" interrompem.
+    Antes do PUT, título com complemento acima de **60 caracteres** não é alterado (ao alterar, o Consistem guarda só 60 e corta o
+    resto: o 2407/4 perdeu o "1/4") e fica com o erro "corrija o complemento no Consistem (máx. 60)".
+    **Prova e pendência:** `crt_trocas_portador` (um registro por título e mês, sem delete). Erro abre a pendência "Trocar o banco
     dos títulos da fatura …" (concluída quando não sobra erro). Falha não desfaz o fechamento. Chave
     `financeiro.cartao.trocar_portador_no_erp` (começa desligada: o primeiro envio real é acompanhado pelo Alan).
 61. **Compra parcelada com a NF lançada pelo total** (caso real Unicred PF 10/2026, 14/10/2026; migration 0165): linha "1/N"
@@ -605,3 +609,27 @@ automática; fechar só gestor com zero a lançar e diferença zero; pendências
 - App: `lancarEncargos` (um por linha) e `lancarSelecionadas` (substitui `lancarAgrupado`); quadro de encargos e diálogo de seleção
   refeitos. A função `crt_reservar_lancamento_agrupado` e a antiga `crt_reservar_lancamento_encargos` ficam no banco, sem uso pelo app.
 - Testes: `lancamento-encargos.test.ts`, `lancamento-agrupado.test.ts`, `tests/db/crt-titulo-por-linha.test.ts`.
+
+## 23. Avisos e correções dos conciliados — o que foi feito (21/10/2026)
+Regras novas (decisões do Alan, sessão de perguntas de 21/10/2026):
+- **68. Complemento de até 60 caracteres** em tudo que o painel cria (compra, parcelas, encargos, provisório, desdobramento):
+  `MAX_COMPLEMENTO = 60` em `cartoes.ts`; corta a descrição, nunca o "PARC k/N". As conferências do banco seguem aceitando 70.
+- **69. Avisos nos conciliados** (coluna "Avisos" da aba Conciliados, contagem no roteiro e na prévia do fechamento; **não
+  bloqueiam**): complemento cita outro cartão; vencimento fora do vencimento da fatura **e** do dia nominal do cartão (o deslocado
+  para o dia útil e o nominal passam); conta de fluxo **inativa** (`cap_contas_fluxo`); complemento acima de 60. A conta de fluxo
+  só vem do detalhe do título (a listagem do Consistem não traz): o painel lê o detalhe dos conciliados, até 60, de 20 em 20 em
+  paralelo (~1,6 s por lote); se falhar, avisa que não leu.
+- **70. "Não é desta fatura"**: botão de um clique nas Divergências que grava a observação "Conferido: não é desta fatura" (libera
+  a trava do Lançar, regra 66).
+- **71. Correções pela API** (operador, só com o mês **em conciliação**, chave `financeiro.cartao.corrigir_no_erp`, começa ligada):
+  **Trocar cartão** (título com o aviso de outro cartão: troca só o trecho "CARTÃO <banco> [PF/PJ]" do complemento pelo cartão
+  certo, até 60; vencimento = o da fatura; banco e histórico = `portador_fatura`/`historico_fatura` do cartão; recusa título em
+  borderô ou no fechamento vigente de mês fechado/pago de outro cartão); **Acertar vencimento** (só o título, não as parcelas
+  seguintes); **Trocar conta de fluxo** (o operador escolhe uma conta ativa; sugestão pelo estabelecimento da linha). A Edge
+  Function `crt-corrigir-no-consistem` lê o título, altera só esses campos, lê de novo e confere (`conferirAlteracao`; o
+  `diasPrazo` acompanha o vencimento novo). Título com complemento acima de 60 não é alterado (salvo a troca de cartão, que grava
+  um novo). Prova em `crt_correcoes_erp` (antes, depois, quem, erro; sem delete); lista "Correções no Consistem" no mês.
+- Código: `correcoes.ts` (avisos, `trocarCartaoNoComplemento`, alterações), `lerCorrecoes` em `dados.ts`, ações
+  `corrigirNoConsistem` e `naoEhDestaFatura`, tela `[id]/correcoes.tsx`; `complementoCabeNaAlteracao` em
+  `_shared/consistem-inclusao.ts`; migration `0176_crt_correcoes_erp.sql`. Testes: `correcoes.test.ts`,
+  `consistem-inclusao.test.ts`, `tests/db/crt-correcoes-erp.test.ts`.

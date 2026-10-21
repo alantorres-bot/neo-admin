@@ -107,6 +107,20 @@ export async function alterarTitulo(enviar: Enviar, cfg: Cfg, codLancamento: str
   return r.tipo === "erro" ? r : { tipo: "incerto", mensagem: r.mensagem.replace(CONFERIR, comoConferir), resposta: r.resposta };
 }
 
+/**
+ * Ao ALTERAR um título, o Consistem grava o complemento com no máximo 60 caracteres e corta o resto (visto no 2407/4 do Nubank PF,
+ * 21/10/2026: "… PARCELA 1/4" virou "… PARCELA "). Na inclusão aceita 70. Antes de qualquer alteração o título é conferido aqui.
+ */
+export const MAX_COMPLEMENTO_ALTERACAO = 60;
+
+/** Motivo para não alterar o título (complemento que o Consistem cortaria), ou null. */
+export function complementoCabeNaAlteracao(d: Record<string, unknown>): string | null {
+  const n = String(d.complementoHistorico ?? "").length;
+  return n > MAX_COMPLEMENTO_ALTERACAO
+    ? `Complemento com ${n} caracteres: ao alterar, o Consistem corta em ${MAX_COMPLEMENTO_ALTERACAO}. Corrija o complemento no Consistem (máx. ${MAX_COMPLEMENTO_ALTERACAO}) e tente de novo.`
+    : null;
+}
+
 /** Campos que mudam sozinhos numa alteração (data/usuário da alteração): fora da conferência. */
 const VOLATEIS = /alterac|atualiz|usuario|hora|^data(Ult|Ultima)/i;
 
@@ -155,7 +169,8 @@ export function jaAlterado(d: Record<string, unknown>, esperado: Record<string, 
 
 /**
  * Confere uma alteração pelo detalhe lido antes e depois do PUT: os campos de `esperado` com o valor novo e TODO o resto igual.
- * `valorOriginalDocumento` pode acompanhar o valor novo; o vencimento original vazio pode virar o próprio vencimento.
+ * `valorOriginalDocumento` pode acompanhar o valor novo; o vencimento original vazio pode virar o próprio vencimento; `diasPrazo`
+ * acompanha o vencimento novo.
  */
 export function conferirAlteracao(antes: Record<string, unknown>, depois: Record<string, unknown>, esperado: Record<string, unknown>):
   { ok: true } | { ok: false; mensagem: string; diferencas: string[] } {
@@ -165,6 +180,8 @@ export function conferirAlteracao(antes: Record<string, unknown>, depois: Record
     if (k in esperado || VOLATEIS.test(k)) continue;
     if (k === "dataVencimentoOriginal" && !antes[k] && depois[k] === antes.dataVencimento) continue;
     if (k === "valorOriginalDocumento" && "valorDocumento" in esperado && mesmoValor(esperado.valorDocumento, depois[k])) continue;
+    // Mudar o vencimento recalcula o prazo (dias entre a entrada e o vencimento): acompanha a alteração.
+    if (k === "diasPrazo" && "dataVencimento" in esperado) continue;
     const a = JSON.stringify(antes[k] ?? null);
     const d = JSON.stringify(depois[k] ?? null);
     if (a !== d) diferencas.push(`${k}: ${a.slice(0, 80)} → ${d.slice(0, 80)}`);

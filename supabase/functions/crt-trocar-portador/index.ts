@@ -5,15 +5,17 @@
 //
 // Quem chama: SÓ um usuário logado, operador do Financeiro (ou acima), pelo fechamento do mês ou pelo botão "Trocar de novo".
 // Corpo: { "lote": "<uuid>" } (reservado por crt_reservar_trocas). Para cada título, em ordem:
-//   GET lancamentoContasPagar/{id} (antes) → se já está marcado, só registra; senão PUT .../{id} com { codPortador, codHistorico }
-//   → GET de novo (depois) e confere: portador novo e TODO o resto igual. Diferença = erro com o antes/depois (corrigir no ERP)
-//   e o lote para. Trocar o portador é idempotente: a decisão é sempre pelo que o Consistem mostra depois.
+//   GET lancamentoContasPagar/{id} (antes) → se já está marcado, só registra; complemento com mais de 60 caracteres não é
+//   alterado (o Consistem cortaria o texto) e fica com erro; senão PUT .../{id} com { codPortador, codHistorico } → GET de novo
+//   (depois) e confere: portador novo e TODO o resto igual. Diferença = erro daquele título com o antes/depois (corrigir no ERP).
+//   Desde 21/10/2026 o erro de um título não para os demais; só "acesso negado"/"excesso de requisições" interrompem o lote.
+//   Trocar o portador é idempotente: a decisão é sempre pelo que o Consistem mostra depois.
 // Segredos: CONSISTEM_API_KEY (token do CSMEN050, com permissão de alteração) e CONSISTEM_BASE_URL (opcional).
 //
 // Deploy: npx supabase functions deploy crt-trocar-portador --project-ref chdszjpbtfpstjrqnmmm
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { BASE_URL_PADRAO, buscarObjeto, limparToken } from "../_shared/consistem-receber.ts";
-import { alterarPortador, conferirTroca, jaMarcado, ROTA_INCLUSAO_LANCAMENTO } from "../_shared/consistem-inclusao.ts";
+import { alterarPortador, complementoCabeNaAlteracao, conferirTroca, jaMarcado, ROTA_INCLUSAO_LANCAMENTO } from "../_shared/consistem-inclusao.ts";
 
 const responder = (corpo: unknown, status = 200) => new Response(JSON.stringify(corpo), { status, headers: { "Content-Type": "application/json" } });
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -91,6 +93,13 @@ Deno.serve(async (req) => {
       trocados.push(cod);
       continue;
     }
+    // O Consistem cortaria o complemento ao alterar: não altera; o título fica com erro e o envio segue.
+    const longo = complementoCabeNaAlteracao(antes);
+    if (longo) {
+      await concluir(false, anterior, antes, null, null, longo);
+      erros.push({ cod, mensagem: longo });
+      continue;
+    }
     const r = await alterarPortador(enviar, cfg, cod, marcas);
     if (r.tipo === "erro") {
       await concluir(false, anterior, antes, null, r.resposta ?? null, r.mensagem);
@@ -115,9 +124,8 @@ Deno.serve(async (req) => {
     }
     const mensagem = r.tipo === "incerto" && !jaMarcado(depois, marcas) ? r.mensagem : conf.mensagem;
     await concluir(false, anterior, antes, depois, r.resposta ?? null, mensagem);
+    // O PUT mexeu em outros campos: o erro fica só neste título (com o antes/depois); os demais seguem (decisão do Alan, 21/10/2026).
     erros.push({ cod, mensagem });
-    // O PUT mexeu em outros campos: para o lote (os demais ficam como erro, para conferir antes de tentar de novo).
-    if (conf.diferencas.length) break;
   }
   await banco.rpc("crt_interromper_trocas", { p_lote: lote, p_motivo: "Envio interrompido: confira o erro do título anterior antes de tentar de novo." });
   return responder({ ok: erros.length === 0, trocados, erros });

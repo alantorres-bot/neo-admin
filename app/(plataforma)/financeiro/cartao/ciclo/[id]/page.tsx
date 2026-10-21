@@ -11,7 +11,7 @@ import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { conciliacaoDaRequisicao, lerCiclo, lerCompras, lerDesdobrar, lerEncargos, lerFatura, lerProvisorio, lerTrocas, quandoEm, registrarApuracao } from "../../dados";
+import { conciliacaoDaRequisicao, lerCiclo, lerCompras, lerCorrecoes, lerDesdobrar, lerEncargos, lerFatura, lerProvisorio, lerTrocas, quandoEm, registrarApuracao } from "../../dados";
 import { BotaoResolver } from "../../[id]/encargos";
 import { PainelConciliacao } from "../../[id]/painel";
 import { BotaoCancelarFatura } from "../../[id]/componentes";
@@ -38,7 +38,7 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
   // Em conciliação: calcula ao vivo e grava a apuração (mantém as pendências). Fechada/paga: mostra a foto do fechamento.
   const aoVivo = ciclo.situacao === "em_conciliacao" && ciclo.fatura_id ? await conciliacaoDaRequisicao(ciclo.fatura_id) : null;
   if (aoVivo) await registrarApuracao(supabase, ciclo.id, aoVivo);
-  const [encargos, compras, desdobrar] = aoVivo ? await Promise.all([lerEncargos(supabase, aoVivo), lerCompras(supabase, aoVivo), lerDesdobrar(supabase, aoVivo)]) : [null, null, null];
+  const [encargos, compras, desdobrar, correcoes] = aoVivo ? await Promise.all([lerEncargos(supabase, aoVivo), lerCompras(supabase, aoVivo), lerDesdobrar(supabase, aoVivo), lerCorrecoes(aoVivo.fatura.id)]) : [null, null, null, null];
   const linhasCongeladas = !aoVivo && vigente ? (await lerFatura(supabase, vigente.fatura_id))?.linhas ?? [] : [];
   const provisorio = ciclo.situacao === "em_conciliacao" || (ciclo.situacao === "fechada" && !ciclo.provisorio_cod_lancamento) ? await lerProvisorio(supabase, ciclo) : null;
   const previaProvisorio = provisorio && aoVivo && !aoVivo.tituloDaFatura
@@ -53,6 +53,9 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
       ? ` Os títulos conciliados passarão para ${alvo} no Consistem (filtro do borderô).`
       : ` A troca dos títulos para ${alvo} no Consistem está desligada.`
     : "";
+  // Avisos dos conciliados (regra 68): não bloqueiam, mas o fechamento mostra quantos são.
+  const nAvisos = correcoes ? Object.keys(correcoes.avisos).length : 0;
+  const previaAvisos = nAvisos ? ` Atenção: ${nAvisos} ${nAvisos === 1 ? "título conciliado tem aviso" : "títulos conciliados têm aviso"} (cartão, vencimento, conta de fluxo ou complemento) na aba Conciliados; o que não for corrigido pode falhar na troca do banco.` : "";
   // Pronto = trocado com o histórico atual do cartão (troca antiga só de portador não conta).
   const trocados = trocas?.trocas.filter((t) => t.situacao === "trocado" && (!trocas.historico || t.historico_novo === trocas.historico)).length ?? 0;
   const comErro = trocas?.trocas.filter((t) => t.situacao === "erro") ?? [];
@@ -93,7 +96,7 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
             <Button variant="outline" render={<a href={`/imprimir/cartao/ciclo/${ciclo.id}`} target="_blank" rel="noopener" />}><Printer /> Imprimir / salvar PDF</Button>
           )}
           {podeCancelarFatura && fatura && <BotaoCancelarFatura id={fatura.id} />}
-          {ciclo.situacao === "em_conciliacao" && ehGestor && <BotaoFechar id={ciclo.id} rotulo={rotulo} bloqueio={bloqueio} previaProvisorio={previaProvisorio || previaPortador ? `${previaProvisorio ?? ""}${previaPortador}`.trim() : null} />}
+          {ciclo.situacao === "em_conciliacao" && ehGestor && <BotaoFechar id={ciclo.id} rotulo={rotulo} bloqueio={bloqueio} previaProvisorio={previaProvisorio || previaPortador || previaAvisos ? `${previaProvisorio ?? ""}${previaPortador}${previaAvisos}`.trim() : null} />}
           {ciclo.situacao === "fechada" && ehGestor && <BotaoReabrir id={ciclo.id} />}
         </div>
       </div>
@@ -170,7 +173,7 @@ export default async function PaginaCiclo({ params }: PageProps<"/financeiro/car
             {" "}<Link href={`${ROTA_CARTAO}/${aoVivo.fatura.id}`} className="text-elo hover:underline">Abrir só a fatura</Link>
           </p>
           <PainelConciliacao resultado={aoVivo.resultado} outros={aoVivo.outros} linhas={aoVivo.linhas} tituloDaFatura={aoVivo.tituloDaFatura} podeOperar={podeOperar}
-            faturaId={aoVivo.fatura.id} decisoesHistorico={aoVivo.decisoesHistorico} encargos={encargos} compras={compras} desdobrar={desdobrar} podeGestor={ehGestor} origemTitulos={aoVivo.origemTitulos} />
+            faturaId={aoVivo.fatura.id} decisoesHistorico={aoVivo.decisoesHistorico} encargos={encargos} compras={compras} desdobrar={desdobrar} podeGestor={ehGestor} origemTitulos={aoVivo.origemTitulos} correcoes={correcoes} />
         </>
       )}
 
