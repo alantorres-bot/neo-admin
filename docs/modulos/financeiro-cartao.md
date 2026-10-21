@@ -161,8 +161,9 @@ Frequência: um fechamento por cartão por mês (8 cartões). As datas de fecham
 39. O operador pode **mudar todos os códigos**. Com **"Lembrar para as próximas compras de <trecho>"**, os códigos viram a
     sugestão do estabelecimento (cria o estabelecimento no dicionário, se não existir).
 40. **Parcelada sem título** (ex.: 2/5): lança **todas as parcelas restantes** de uma vez, uma por mês: a da fatura no vencimento
-    da fatura; as seguintes no vencimento nominal das competências seguintes (Planilha Cartões). Emissão e entrada = data da
-    compra; documento = DDMMAA da compra (com "/k" quando parcelada); complemento `CARTÃO <NOME> <N>x — <DESCRIÇÃO> PARC k/N`
+    da fatura; as seguintes no vencimento nominal das competências seguintes (Planilha Cartões). Emissão = data da compra; entrada =
+    **fechamento da fatura** (desde 21/10/2026: com a data da compra o Consistem recusava compra de mês com a contabilidade fechada,
+    "Contabilidade já fechada para a data de entrada (20/09/2026)"); documento = DDMMAA da compra (com "/k" quando parcelada); complemento `CARTÃO <NOME> <N>x — <DESCRIÇÃO> PARC k/N`
     (até 70); valor = o da linha em todas as parcelas. Aviso no diálogo: conferir se a compra não foi lançada pelo total.
 41. Um clique = um **lote**. O envio é em ordem, um título de cada vez, sem repetir; para no primeiro que não voltar lançado.
     Os seguintes ficam "Não lançado: envio interrompido" e o botão **Reenviar o que faltou** cria só as parcelas sem lançamento
