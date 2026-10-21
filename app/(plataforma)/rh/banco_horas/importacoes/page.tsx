@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { Ajuda } from "@/components/plataforma/ajuda";
+import { AJUDA } from "@/lib/modulos/rh/banco-horas/ajuda";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { formatarData } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
@@ -16,6 +18,7 @@ export default async function PaginaImportacoesBanco() {
   const [importacoes, par] = await Promise.all([lerImportacoes(supabase), lerParametros(supabase)]);
   return (
     <div className="space-y-4">
+      <Ajuda titulo={AJUDA.importacoes.titulo} passos={AJUDA.importacoes.passos} />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           CSV de banco de horas do Control iD, geral (todas as pessoas), um ou vários de uma vez (ex.: um por ciclo). Reimportar um período corrige os dias.

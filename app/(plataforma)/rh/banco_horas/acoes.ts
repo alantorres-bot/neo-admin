@@ -77,18 +77,26 @@ export async function definirSetor(pessoa: string, setor: string | null): Promis
   return r.ok ? { ok: true } : r;
 }
 
-export async function registrarPagamento(entrada: { pessoa: string; minutos: number; competencia: string; observacao: string }): Promise<Resultado> {
-  const d = z.object({ pessoa: uuid, minutos: z.number().int().positive(), competencia: z.string().regex(/^\d{4}-\d{2}$/, "Escolha o mês da folha."), observacao: z.string().max(300) }).safeParse(entrada);
-  if (!d.success) return { ok: false, erro: d.error.issues[0].message };
-  const r = await chamar("rh_bh_registrar_pagamento", { p_pessoa: d.data.pessoa, p_minutos: d.data.minutos, p_competencia: `${d.data.competencia}-01`, p_observacao: d.data.observacao });
-  return r.ok ? { ok: true, aviso: "Pagamento na folha registrado." } : r;
+// ---------------------------------------------------------------- fechamento do ciclo
+
+export async function emitirFechamento(mes: string): Promise<{ ok: true; id: string } | { ok: false; erro: string }> {
+  if (!/^\d{4}-\d{2}$/.test(mes)) return { ok: false, erro: "Escolha o mês." };
+  const r = await chamar("rh_bh_emitir_fechamento", { p_competencia: `${mes}-01` });
+  return r.ok ? { ok: true, id: r.dados as string } : r;
 }
 
-export async function cancelarPagamento(id: string, motivo: string): Promise<Resultado> {
+export async function passoFechamento(id: string, passo: "aprovar" | "enviado" | "lancado"): Promise<Resultado> {
+  if (!uuid.safeParse(id).success) return { ok: false, erro: "Fechamento inválido." };
+  const funcao = { aprovar: "rh_bh_aprovar_fechamento", enviado: "rh_bh_marcar_enviado", lancado: "rh_bh_marcar_lancado" }[passo];
+  const r = await chamar(funcao, { p_id: id }, passo === "aprovar" ? "gestor" : "operador");
+  return r.ok ? { ok: true, aviso: { aprovar: "Fechamento aprovado.", enviado: "Marcado como enviado ao escritório.", lancado: "Lançado na folha: as horas saíram do saldo." }[passo] } : r;
+}
+
+export async function devolverOuCancelarFechamento(id: string, acao: "devolver" | "cancelar", motivo: string): Promise<Resultado> {
   const m = z.string().trim().min(5, "Informe o motivo.").max(300).safeParse(motivo);
-  if (!m.success || !uuid.safeParse(id).success) return { ok: false, erro: m.success ? "Pagamento inválido." : m.error.issues[0].message };
-  const r = await chamar("rh_bh_cancelar_pagamento", { p_id: id, p_motivo: m.data }, "gestor");
-  return r.ok ? { ok: true, aviso: "Pagamento cancelado." } : r;
+  if (!m.success || !uuid.safeParse(id).success) return { ok: false, erro: m.success ? "Fechamento inválido." : m.error.issues[0].message };
+  const r = await chamar(acao === "devolver" ? "rh_bh_devolver_fechamento" : "rh_bh_cancelar_fechamento", { p_id: id, p_motivo: m.data }, "gestor");
+  return r.ok ? { ok: true, aviso: acao === "devolver" ? "Fechamento devolvido." : "Fechamento cancelado." } : r;
 }
 
 export async function salvarParametros(entrada: { inicio: string; validadeMeses: number; avisoDias: number; limiteNegativoMin: number }): Promise<Resultado> {
@@ -98,7 +106,7 @@ export async function salvarParametros(entrada: { inicio: string; validadeMeses:
   return r.ok ? { ok: true, aviso: "Parâmetros salvos." } : r;
 }
 
-/** Rascunho no Gmail de quem clica, ao e-mail do setor (o mesmo do RH > Ponto), com quem tem crédito vencendo. */
+/** Rascunho no Gmail de quem clica, ao e-mail do setor (o mesmo do RH > Ponto), com quem precisa folgar ou repor horas. */
 export async function rascunhoAoLider(setorId: string): Promise<{ ok: true; url: string; aviso?: string } | { ok: false; erro: string }> {
   const negado = await exigir("operador");
   if (negado) return { ok: false, erro: negado };
@@ -106,9 +114,9 @@ export async function rascunhoAoLider(setorId: string): Promise<{ ok: true; url:
   const supabase = await criarClienteServidor();
   const { data: setor } = await supabase.from("rh_pt_setores").select("nome, email, email_copia").eq("id", setorId).maybeSingle();
   if (!setor?.email) return { ok: false, erro: "O setor não tem e-mail. Confira em RH > Ponto > Setores e líderes." };
-  const pessoas = (await lerSaldos(supabase)).filter((s) => s.setor_id === setorId && s.vencendo_min > 0 && s.proximo_vencimento);
-  if (!pessoas.length) return { ok: false, erro: "Ninguém do setor tem crédito vencendo." };
-  const email = emailVencendo(setor.nome as string, pessoas.map((p) => ({ nome: p.nome, vencendoMin: p.vencendo_min, vencimento: p.proximo_vencimento! })));
+  const pessoas = (await lerSaldos(supabase)).filter((s) => s.setor_id === setorId && (s.folgar_min > 0 || s.repor_min > 0) && s.proximo_vencimento);
+  if (!pessoas.length) return { ok: false, erro: "Ninguém do setor tem horas vencendo." };
+  const email = emailVencendo(setor.nome as string, pessoas.map((p) => ({ nome: p.nome, folgarMin: p.folgar_min, reporMin: p.repor_min, vencimento: p.proximo_vencimento! })));
 
   const { data: mensagem, error: erroMensagem } = await supabase.from("mensagens").insert({
     modulo: MODULO_BANCO_HORAS, canal: "email", destinatario: setor.email, cc: setor.email_copia, assunto: email.assunto, corpo: email.corpo, status: "rascunho",

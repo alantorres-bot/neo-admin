@@ -28,34 +28,52 @@ export function inicioDoCiclo(fim: string): string {
 }
 
 export type Movimento = { data: string; positivoMin: number; negativoMin: number };
-export type CreditoAberto = { data: string; creditoMin: number; restanteMin: number; vencimento: string };
+/** Horas acertadas na folha pelo fechamento do ciclo: entram na conta no dia 25 da competência. */
+export type LancamentoFolha = { competencia: string; tipo: "pago" | "descontado"; minutos: number };
+/** Item em aberto: +1 = horas a folgar (a empresa deve), −1 = horas a repor (o funcionário deve). */
+export type ItemAberto = { data: string; sinal: 1 | -1; restanteMin: number; vencimento: string };
 
 /**
- * Créditos em aberto pela regra "o mais antigo primeiro" (o mesmo cálculo da view rh_bh_creditos no banco): todo débito do
- * período e todo pagamento na folha consomem os créditos mais antigos. Só entram movimentos a partir de `inicio`
- * (o saldo anterior é ignorado). Saldo = créditos − débitos − pagos (pode ser negativo).
+ * Fila do banco de horas nos dois sentidos (o mesmo cálculo de rh_bh_em_aberto no banco), em ordem de data:
+ * hora a mais abate primeiro a hora a menos mais antiga e vice-versa; o que sobra fica em aberto e vence no fim do ciclo de
+ * origem + validade. "Pago" na folha conta como hora a menos (consome os créditos mais antigos, os vencidos) e "descontado" como
+ * hora a mais. Só entram movimentos a partir de `inicio` (o saldo anterior é ignorado). Saldo = soma dos itens com sinal.
  */
-export function creditosEmAberto(movimentos: readonly Movimento[], pagosMin: number, inicio: string, validadeMeses: number): { saldoMin: number; creditos: CreditoAberto[] } {
-  const validos = movimentos.filter((m) => m.data >= inicio).sort((a, b) => a.data.localeCompare(b.data));
-  let consumir = validos.reduce((s, m) => s + m.negativoMin, 0) + pagosMin;
-  const total = validos.reduce((s, m) => s + m.positivoMin, 0);
-  const creditos: CreditoAberto[] = [];
-  for (const m of validos.filter((x) => x.positivoMin > 0)) {
-    const consumido = Math.min(m.positivoMin, Math.max(0, consumir));
-    consumir -= consumido;
-    creditos.push({ data: m.data, creditoMin: m.positivoMin, restanteMin: m.positivoMin - consumido, vencimento: vencimentoDoCredito(m.data, validadeMeses) });
+export function emAberto(movimentos: readonly Movimento[], lancamentos: readonly LancamentoFolha[], inicio: string, validadeMeses: number): { saldoMin: number; itens: ItemAberto[] } {
+  const eventos = [
+    ...movimentos.filter((m) => m.data >= inicio && m.positivoMin !== m.negativoMin).map((m) => ({ data: m.data, valor: m.positivoMin - m.negativoMin, ordem: 0 })),
+    ...lancamentos.map((l) => ({ data: `${l.competencia.slice(0, 7)}-${DIA_CORTE}`, valor: l.tipo === "pago" ? -l.minutos : l.minutos, ordem: 1 })),
+  ].sort((a, b) => a.data.localeCompare(b.data) || a.ordem - b.ordem);
+  const fila: ItemAberto[] = [];
+  for (const e of eventos) {
+    const sinal = e.valor > 0 ? 1 : -1;
+    let resto = Math.abs(e.valor);
+    for (const item of fila) {
+      if (resto === 0) break;
+      if (item.sinal === sinal || item.restanteMin === 0) continue;
+      const usado = Math.min(item.restanteMin, resto);
+      item.restanteMin -= usado;
+      resto -= usado;
+    }
+    if (resto > 0) fila.push({ data: e.data, sinal, restanteMin: resto, vencimento: vencimentoDoCredito(e.data, validadeMeses) });
   }
-  return { saldoMin: total - (validos.reduce((s, m) => s + m.negativoMin, 0) + pagosMin), creditos };
+  const itens = fila.filter((i) => i.restanteMin > 0);
+  return { saldoMin: itens.reduce((s, i) => s + i.sinal * i.restanteMin, 0), itens };
 }
 
-/** Separa os créditos em aberto: vencidos (vencimento antes de hoje: pagar na folha) e vencendo até hoje + `avisoDias`. */
-export function situacao(creditos: readonly CreditoAberto[], hoje: string, avisoDias: number): { vencidoMin: number; vencendoMin: number; proximoVencimento: string | null } {
+/**
+ * Situação na data `hoje`: vencidos (vencimento antes de hoje) a pagar (+) ou a descontar (−) no fechamento, e o que vence até
+ * hoje + `avisoDias` (folgar ou repor).
+ */
+export function situacao(itens: readonly ItemAberto[], hoje: string, avisoDias: number) {
   const limite = new Date(Date.parse(`${hoje}T00:00:00Z`) + avisoDias * 86_400_000).toISOString().slice(0, 10);
-  const abertos = creditos.filter((c) => c.restanteMin > 0);
-  const vencendo = abertos.filter((c) => c.vencimento >= hoje && c.vencimento <= limite);
+  const soma = (f: (i: ItemAberto) => boolean) => itens.filter(f).reduce((s, i) => s + i.restanteMin, 0);
+  const vencendo = (i: ItemAberto) => i.vencimento >= hoje && i.vencimento <= limite;
   return {
-    vencidoMin: abertos.filter((c) => c.vencimento < hoje).reduce((s, c) => s + c.restanteMin, 0),
-    vencendoMin: vencendo.reduce((s, c) => s + c.restanteMin, 0),
-    proximoVencimento: abertos.filter((c) => c.vencimento >= hoje).map((c) => c.vencimento).sort()[0] ?? null,
+    pagarMin: soma((i) => i.sinal === 1 && i.vencimento < hoje),
+    descontarMin: soma((i) => i.sinal === -1 && i.vencimento < hoje),
+    folgarMin: soma((i) => i.sinal === 1 && vencendo(i)),
+    reporMin: soma((i) => i.sinal === -1 && vencendo(i)),
+    proximoVencimento: itens.filter((i) => i.vencimento >= hoje).map((i) => i.vencimento).sort()[0] ?? null,
   };
 }

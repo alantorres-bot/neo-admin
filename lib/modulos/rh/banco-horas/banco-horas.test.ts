@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { lerBancoHoras } from "./leitor-csv";
-import { creditosEmAberto, fimDoCiclo, inicioDoCiclo, situacao, vencimentoDoCredito } from "./modulo";
+import { emAberto, fimDoCiclo, inicioDoCiclo, situacao, vencimentoDoCredito } from "./modulo";
 
 describe("ciclo de 26 a 25", () => {
   it("fim do ciclo", () => {
@@ -19,30 +19,40 @@ describe("ciclo de 26 a 25", () => {
   });
 });
 
-describe("créditos em aberto (o mais antigo primeiro)", () => {
-  const movs = [
-    { data: "2026-04-10", positivoMin: 600, negativoMin: 0 },   // antes do início: ignorado
-    { data: "2026-05-10", positivoMin: 120, negativoMin: 0 },
-    { data: "2026-06-10", positivoMin: 60, negativoMin: 0 },
-    { data: "2026-07-01", positivoMin: 0, negativoMin: 90 },    // consome os 120 de maio primeiro
-  ];
-  it("débito consome o crédito mais antigo; saldo ignora o que veio antes do início", () => {
-    const r = creditosEmAberto(movs, 0, "2026-04-26", 6);
-    expect(r.saldoMin).toBe(90);
-    expect(r.creditos.map((c) => [c.data, c.restanteMin, c.vencimento])).toEqual([["2026-05-10", 30, "2026-11-25"], ["2026-06-10", 60, "2026-12-25"]]);
+describe("fila nos dois sentidos (o mais antigo primeiro)", () => {
+  const ini = "2026-04-26";
+  const mov = (data: string, pos: number, neg = 0) => ({ data, positivoMin: pos, negativoMin: neg });
+
+  it("exemplos do plano: 3h a mais em 10/05 vence 25/11 (pagar); 2h a menos em 03/06 vence 25/12 (descontar)", () => {
+    const r = emAberto([mov("2026-05-10", 180), mov("2026-06-03", 0, 120)], [], ini, 6);
+    // a hora a menos de 03/06 abate a hora a mais de 10/05 (mais antiga): sobra 1h a folgar até 25/11
+    expect(r.saldoMin).toBe(60);
+    expect(r.itens).toEqual([{ data: "2026-05-10", sinal: 1, restanteMin: 60, vencimento: "2026-11-25" }]);
+    const so = emAberto([mov("2026-06-03", 0, 120)], [], ini, 6);
+    expect(so.itens).toEqual([{ data: "2026-06-03", sinal: -1, restanteMin: 120, vencimento: "2026-12-25" }]);
+    expect(situacao(so.itens, "2026-12-26", 30)).toMatchObject({ pagarMin: 0, descontarMin: 120 });
+    expect(situacao(r.itens, "2026-11-26", 30)).toMatchObject({ pagarMin: 60, descontarMin: 0 });
   });
-  it("vencido, vencendo e pagamento na folha", () => {
-    const r = creditosEmAberto(movs, 0, "2026-04-26", 6);
-    expect(situacao(r.creditos, "2026-11-26", 30)).toEqual({ vencidoMin: 30, vencendoMin: 60, proximoVencimento: "2026-12-25" });
-    expect(situacao(r.creditos, "2026-11-01", 30)).toEqual({ vencidoMin: 0, vencendoMin: 30, proximoVencimento: "2026-11-25" });
-    const pago = creditosEmAberto(movs, 30, "2026-04-26", 6);   // pagos os 30 vencidos de maio
-    expect(pago.saldoMin).toBe(60);
-    expect(situacao(pago.creditos, "2026-11-26", 30).vencidoMin).toBe(0);
+
+  it("hora a mais abate primeiro o débito mais antigo; o que sobra vira crédito novo", () => {
+    const r = emAberto([mov("2026-05-01", 0, 60), mov("2026-06-01", 0, 30), mov("2026-07-01", 120)], [], ini, 6);
+    expect(r.saldoMin).toBe(30);
+    expect(r.itens).toEqual([{ data: "2026-07-01", sinal: 1, restanteMin: 30, vencimento: "2027-01-25" }]);
   });
-  it("saldo negativo: nenhum crédito em aberto", () => {
-    const r = creditosEmAberto([{ data: "2026-05-01", positivoMin: 30, negativoMin: 0 }, { data: "2026-05-02", positivoMin: 0, negativoMin: 100 }], 0, "2026-04-26", 6);
-    expect(r.saldoMin).toBe(-70);
-    expect(r.creditos[0].restanteMin).toBe(0);
+
+  it("ignora o que veio antes do início; vencendo no aviso por sinal", () => {
+    const r = emAberto([mov("2026-04-10", 600), mov("2026-05-10", 120), mov("2026-06-10", 0, 45)], [], ini, 6);
+    expect(r.saldoMin).toBe(75);
+    expect(situacao(r.itens, "2026-11-01", 30)).toEqual({ pagarMin: 0, descontarMin: 0, folgarMin: 75, reporMin: 0, proximoVencimento: "2026-11-25" });
+  });
+
+  it("lançamento na folha entra no dia 25 da competência, na ordem certa", () => {
+    // 2h a mais em maio vencem 25/11; pagas na folha de novembro; depois, 1h a menos em dezembro vira hora a repor
+    const r = emAberto([mov("2026-05-10", 120), mov("2026-12-01", 0, 60)], [{ competencia: "2026-11-01", tipo: "pago", minutos: 120 }], ini, 6);
+    expect(r.saldoMin).toBe(-60);
+    expect(r.itens).toEqual([{ data: "2026-12-01", sinal: -1, restanteMin: 60, vencimento: "2027-06-25" }]);
+    const d = emAberto([mov("2026-06-03", 0, 120)], [{ competencia: "2026-12-01", tipo: "descontado", minutos: 120 }], ini, 6);
+    expect(d).toEqual({ saldoMin: 0, itens: [] });
   });
 });
 

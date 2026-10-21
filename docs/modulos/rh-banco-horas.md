@@ -1,6 +1,13 @@
 # Módulo: RH/SST / Banco de horas — saldo e vencimento (`rh.banco_horas`)
 
-Rota `/rh/banco_horas`. Migration `0518_rh_banco_horas.sql`; Edge Function `rh-bh-rascunho-gmail`. Decisões tomadas em 21/10/2026.
+Rota `/rh/banco_horas`. Migrations `0518_rh_banco_horas.sql` e `0519_rh_bh_fechamento.sql`; Edge Function `rh-bh-rascunho-gmail`.
+Decisões tomadas em 21/10/2026. POP: só depois de concluído o módulo (decisão de 21/10/2026), com a skill `pop-neoformas:gerar-pop`.
+
+## A regra, em uma frase
+- **Horas a mais:** folgar até o dia 25 do 6º mês depois do mês em que as fez. O que sobrar, **a empresa paga** na folha daquele mês.
+- **Horas a menos:** repor no mesmo prazo. O que sobrar é **descontado** na folha daquele mês.
+- **O mais antigo é acertado primeiro**, nos dois sentidos.
+- **Exemplos:** 3h a mais em 10/05 → até 25/11 → senão paga na folha de novembro. 2h a menos em 03/06 → até 25/12 → senão desconta na folha de dezembro.
 
 ## 1. Objetivo
 Saber o saldo de banco de horas de cada pessoa, o que vence e quando, avisar o RH e o líder do setor a tempo de compensar,
@@ -43,26 +50,34 @@ O Control iD calcula o banco (saldo por dia), mas ninguém acompanha o venciment
 1. **Ciclo de 26 a 25**, o mesmo da folha.
 2. **Vencimento:** fim do ciclo em que o crédito nasceu + **6 meses** (acordo individual). Exemplo: crédito de 10/05 → ciclo
    26/04–25/05 → vence em **25/11** e entra na folha de novembro.
-3. **O mais antigo primeiro:** cada débito e cada pagamento na folha consome o crédito mais antigo. Crédito em aberto de um dia =
-   `clamp(créditos acumulados até ele − (débitos + pagos), 0, crédito do dia)`.
-   - Fonte única no banco: view `rh_bh_creditos`.
-   - Espelho em TS para testes e documentação: `creditosEmAberto` em `lib/modulos/rh/banco-horas/modulo.ts`.
+3. **O mais antigo primeiro, nos dois sentidos** (0519):
+   - fila em ordem de data: hora a mais abate primeiro a hora a menos mais antiga e vice-versa; o que sobra fica em aberto com o seu
+     vencimento;
+   - os acertos na folha entram no dia 25 da competência ("pago" consome créditos; "descontado" consome débitos);
+   - fonte única no banco: `rh_bh_em_aberto(pessoa)` e a view `rh_bh_aberto`; espelho em TS: `emAberto` em
+     `lib/modulos/rh/banco-horas/modulo.ts`;
+   - conferido em 21/10/2026: 432 itens em aberto idênticos entre SQL e TS com os dados reais.
 4. **Só os últimos 6 meses:** contam os movimentos a partir do **início da conta** (parâmetro, um dia 26; começa em 26/04/2026).
    - O saldo anterior é **ignorado**: crédito antigo não se cobra, débito antigo não se desconta.
    - A tela mostra o saldo do Control iD ao lado.
 5. **Aviso:** 30 dias antes do vencimento (parâmetro). Fica crítico nos últimos 7 dias.
-6. **Vencido:**
-   - aparece em "A pagar na folha";
-   - o RH registra "Pago na folha de <mês>" com as horas (até o vencido), e elas saem do saldo;
-   - o gestor cancela um pagamento com motivo.
-7. **Negativo:** saldo abaixo de −10:00 (parâmetro) gera alerta. Nada é descontado sozinho.
+6. **Vencido → fechamento do mês** (0519). Todo mês, depois do dia 25:
+   - a operadora importa o CSV até o dia 25 e **emite o fechamento** (foto de quem vence até o dia 25: "a empresa paga" e
+     "descontar");
+   - o **gestor aprova** (ou devolve, com motivo);
+   - a operadora envia o relatório ao **escritório** e marca "Enviado";
+   - depois da folha, marca **"Lançado na folha"**: as horas saem do saldo (lançamentos `pago`/`descontado` no dia 25);
+   - o gestor pode cancelar com motivo (os lançamentos voltam).
+   A emissão é recusada se os dados não chegam até o dia 25.
+7. **Negativo:** saldo abaixo de −10:00 (parâmetro) gera alerta. O desconto só acontece pelo fechamento, com horas vencidas.
 8. **Reimportação:** atualiza os dias do período; dia que tinha movimento e não veio no arquivo fica zerado. A auditoria guarda o
    anterior.
 
 ## 6. Saídas e automações
 - **Pendências (`rh.banco_horas`):**
   - "Banco de horas vencendo — <setor ou "sem setor"> (<data>)";
-  - "Banco de horas a pagar na folha — <pessoa>";
+  - "Emitir fechamento do banco de horas — <mês>" (há horas vencidas sem fechamento), "Aprovar…", "Enviar ao escritório…",
+    "Marcar lançado…";
   - "Banco negativo — <pessoa>".
 - **Atualização das pendências:** na importação, no pagamento, nos parâmetros e pelo job `rh-banco-horas-pendencias` (06h30 de
   Cuiabá). O que deixa de valer é encerrado.
@@ -74,7 +89,11 @@ O Control iD calcula o banco (saldo por dia), mas ninguém acompanha o venciment
   - cartões por setor com crédito vencendo e o botão "E-mail ao líder";
   - grade com pessoa, setor, saldo (6 meses), saldo do Control iD, vencendo, próximo vencimento, vencido e situação.
 - **Pessoa:** créditos com o que está em aberto e o vencimento, movimentos do Control iD e pagamentos na folha.
-- **A pagar na folha:** vencidos por pessoa, com horas pagas, mês da folha e observação.
+- **Fechamento do mês:** lista, "Emitir fechamento", passos (aprovar, enviado, lançado) e o **Relatório** impresso
+  (`/imprimir/rh/banco-horas/fechamento/<id>`): "A empresa paga", "Descontar na folha", "Precisa compensar até…" e "Como ler".
+- **Extrato do funcionário** (`/imprimir/rh/banco-horas/extrato/<pessoa>`): saldo, horas a folgar e a repor com prazos,
+  movimentos e linha de assinatura.
+- **Ajuda na tela:** caixa "O que fazer aqui" em cada aba (textos em `lib/modulos/rh/banco-horas/ajuda.ts`, base do futuro POP).
 - **Importações:** histórico e "Importar CSV" (um ou vários arquivos, com prévia por arquivo).
 - **Parâmetros** (gestor): início da conta, validade, aviso e limite negativo.
 
@@ -82,14 +101,17 @@ O Control iD calcula o banco (saldo por dia), mas ninguém acompanha o venciment
 - **`rh_bh_pessoas`:** CPF, nome, id do Control iD, colaborador, setor (escolhido pelo RH), último saldo do Control iD.
 - **`rh_bh_movimentos`:** pessoa, dia, positivo e negativo (minutos), importação. Um por pessoa e dia.
 - **`rh_bh_importacoes`:** período, arquivo, contagens, quem e quando.
-- **`rh_bh_pagamentos`:** pessoa, minutos, mês da folha, observação; cancelamento com motivo.
-- **Views:** `rh_bh_creditos` e `rh_bh_saldos` (`security_invoker`). Parâmetros em `configuracoes` (`rh.banco_horas.*`).
+- **`rh_bh_lancamentos_folha`** (era `rh_bh_pagamentos`): pessoa, tipo (`pago`/`descontado`), minutos, mês da folha,
+  fechamento; cancelamento com motivo.
+- **`rh_bh_fechamentos`** e **`rh_bh_fechamento_itens`** (foto por pessoa: pagar, descontar, ciclos de origem).
+- **Views:** `rh_bh_aberto` e `rh_bh_saldos` (`security_invoker`); `rh_bh_saldos` traz `pagar_min`, `descontar_min`,
+  `folgar_min`, `repor_min` e `proximo_vencimento`. Parâmetros em `configuracoes` (`rh.banco_horas.*`).
 
 ## 9. Permissões
 - Área `rh`:
   - consulta lê;
-  - **operador** importa, registra pagamento e gera o e-mail;
-  - **gestor** faz o mesmo e ainda altera parâmetros e cancela pagamento.
+  - **operador** importa, emite o fechamento, marca enviado e lançado e gera o e-mail;
+  - **gestor** faz o mesmo e ainda aprova, devolve e cancela fechamento e altera parâmetros.
 
 ## 10. Pontos em aberto
 1. **Carga inicial (21/10/2026):** a Neo foi coberta de 26/03 a 21/10, sem buracos. A Oeste (1 pessoa) foi coberta de 26/04 a 25/09;

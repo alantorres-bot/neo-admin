@@ -6,7 +6,7 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 
 const ABAS = [
   { href: `${ROTA_BANCO_HORAS}/saldos`, rotulo: "Saldos" },
-  { href: `${ROTA_BANCO_HORAS}/pagar`, rotulo: "A pagar na folha" },
+  { href: `${ROTA_BANCO_HORAS}/fechamentos`, rotulo: "Fechamento do mês" },
   { href: `${ROTA_BANCO_HORAS}/importacoes`, rotulo: "Importações" },
   { href: `${ROTA_BANCO_HORAS}/parametros`, rotulo: "Parâmetros" },
 ];
@@ -20,8 +20,8 @@ export default async function LayoutBancoHoras({ children }: LayoutProps<"/rh/ba
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Banco de horas</h1>
         <p className="text-sm text-muted-foreground">
-          Saldo dos últimos 6 meses pelo CSV do Control iD. Ciclo de 26 a 25; cada crédito vence no fim do ciclo em que nasceu + 6 meses, e os débitos
-          consomem o crédito mais antigo primeiro. O que vence sem compensação vai para a folha.
+          Horas a mais: folgar até o dia 25 do 6º mês depois; senão a empresa paga na folha. Horas a menos: repor no mesmo prazo; senão desconta na
+          folha. O mais antigo é acertado primeiro. Dados do Control iD (CSV), ciclo de 26 a 25.
         </p>
       </div>
       <Abas abas={ABAS} />
