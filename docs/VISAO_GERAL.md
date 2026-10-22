@@ -29,7 +29,8 @@ uma rotina que hoje é feita em planilha, e-mail, ERP ou skill avulsa.
 | RH/SST | Vale-transporte | Apuração mensal do VT de Cuiabá (dias, faltas, extras, tarifa), aprovação, arquivo do BB, PIX e títulos no Consistem (ver `modulos/rh-vale-transporte.md`; Fases A, B e C entregues em 14/10/2026: cadastro, mês a mês com ocorrências, aprovação, relatório, arquivo do BB, PIX, resumo do ano, histórico 2026 e títulos no Consistem) | em construção |
 | **Comercial** | Pedidos | Carteira e previsão de faturamento, expedição (separação, NF, transporte, MDF-e), títulos e comissão do representante, pós-venda (cancelamentos e devoluções), tudo pela API Comercial do Consistem, só leitura na v1 (ver `modulos/comercial-pedidos.md`; Fase 0 e Fase 1 (carteira e faturamento) em 19/10/2026) | em construção |
 | Comercial | Comissões | Fechamento mensal da comissão dos representantes (títulos pagos + CCCCI010), histórico das planilhas, teto por pedido, relatório e extrato por representante (ver `modulos/comercial-comissoes.md`; movido do Financeiro em 20/10/2026) | em construção |
-| **Administrativo geral** | POPs | Procedimentos padrão por área, versionados | 5 |
+| **Administrativo geral** | Central de Gestão | Visão gerencial das pendências de todos os módulos (indicadores, "Exige minha intervenção", equipe, fila consolidada), tarefas manuais com bloqueio e decisão do gestor, destaque gerencial com motivo e sugestões de melhoria (ver `modulos/administrativo-gestao.md`; especificação em rascunho desde 22/10/2026) | em especificação |
+| Administrativo geral | POPs | Procedimentos padrão por área, versionados | 5 |
 
 Prioridade: 1 = primeiro a construir. Ajustável.
 
