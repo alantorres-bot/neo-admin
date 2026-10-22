@@ -1,7 +1,7 @@
 # Módulo: Administrativo geral / Central de Gestão (`administrativo.gestao`)
 
-Status: em construção. Especificação aprovada em 22/10/2026; **Fase 2 entregue em 22/10/2026** (migration 0092 + tela de
-leitura `/gestao`), aguardando avaliação. O que foi construído e como testar estão na seção 14.
+Status: em construção. Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
+0093: tela `/gestao`, criação e distribuição de tarefas, ações, comentários e histórico), aguardando avaliação. O que foi construído e como testar estão na seção 14.
 
 Decisões já tomadas por Alan (22/10/2026):
 - **Alan e Rodrigo veem tudo.** Alan é `admin_geral`. Rodrigo será **gestor em todas as áreas** pelo cadastro de permissões
@@ -440,7 +440,8 @@ aberto 3).
   pendências"**, a padrão de quem não é gestor.
 - Filtros: área, módulo, responsável, situação, prioridade, destaque, origem e período do prazo (de/até). O período
   vale sobre o prazo, inclusive quando a situação filtrada é concluída ou cancelada.
-- Botões "Nova tarefa" (Fase 3) e "Sugestões" (Fase 5). Só aparecem quando a ação existir: a tela não tem botão sem efeito.
+- Botão "Nova tarefa" (Fase 3), para quem é operador ou acima em alguma área. "Sugestões" entra na Fase 5: a tela não
+  tem botão sem efeito.
 
 **Blocos**
 1. **Indicadores:** os da seção 5.4, clicáveis, com a nota de sobreposição.
@@ -479,8 +480,8 @@ A Fila do dia atual continua no Recebíveis, sem mudanças.
 
 ## 8. Dados
 
-Migrations do núcleo: `0092_nucleo_central_gestao.sql` (Fase 2), `0093_nucleo_atividades.sql` (Fase 3B),
-`0094_nucleo_sugestoes.sql` (Fase 5) e `0095_nucleo_notificacoes.sql` (Fase 7). O Fiscal ganha uma migration na faixa 0200 (Fase 6).
+Migrations do núcleo: `0092_nucleo_central_gestao.sql` (Fase 2), `0093_nucleo_central_acoes.sql` (Fase 3),
+`0094_nucleo_atividades.sql` (Fase 3B), `0095_nucleo_sugestoes.sql` (Fase 5) e `0096_nucleo_notificacoes.sql` (Fase 7). O Fiscal ganha uma migration na faixa 0200 (Fase 6).
 
 **`pendencias`: colunas novas (nada é removido nem renomeado)**
 
@@ -527,7 +528,8 @@ sincronização são omitidas.
 | Atribuir a terceiros, editar dados, reabrir, ajustar destaque, marcar "precisa distribuir", desligar "aguardando gestor" | gestor da área (Alan e Rodrigo em todas) | gatilho |
 | Iniciar, concluir, bloquear, pedir decisão | responsável ou gestor | gatilho |
 | Cancelar tarefa manual | gestor ou quem criou, com motivo | gatilho |
-| Comentar | quem vê a pendência | função `security definer` com a mesma checagem |
+| Comentar | operador da área, o responsável ou quem criou (nível consulta só lê) | função `pendencia_comentar` (`security definer`, confere antes) |
+| Iniciar, concluir, bloquear, pedir decisão sendo responsável **fora da área** | o responsável | política `pendencias_alterar_proprias` + gatilho |
 | Ver o histórico | quem vê a pendência | função `security definer` |
 | Anexos | regra do módulo (atual) | RLS + Storage |
 | Enviar sugestão | qualquer usuário ativo com alguma área | RLS |
@@ -619,7 +621,7 @@ será informado.
 | 1 | Esta especificação |
 | 2 | Migration 0092 + tela de leitura (indicadores, "Exige minha intervenção", equipe, fila consolidada) |
 | 3 | Criar e distribuir tarefas, situação, bloqueio, decisão do gestor, comentários, histórico |
-| 3B | Atividades e acessos (seção 5.9): migration 0093, catálogo inicial, autoria nas funções automáticas, conversor do histórico, aba "Atividades da equipe" |
+| 3B | Atividades e acessos (seção 5.9): migration 0094, catálogo inicial, autoria nas funções automáticas, conversor do histórico, aba "Atividades da equipe" |
 | 4 | Destaque gerencial configurável e ajuste manual |
 | 5 | Sugestões de melhoria |
 | 6 | Contrato de publicação + Fiscal (obrigações e divergências); grupo Cobrança |
@@ -663,4 +665,33 @@ PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium npx playwright test -c playwright.
 
 **Publicação (só Alan):** aplicar a `0092` em produção e registrá-la em `supabase_migrations.schema_migrations`
 (`docs/PUBLICACAO.md`, seção 2). Ela não depende de nenhuma Edge Function.
+
+### Fase 3 (22/10/2026): criação, distribuição e andamento
+| Item | Onde |
+| --- | --- |
+| Responsável fora da área atualiza a própria pendência; título obrigatório nas manuais; índices do histórico | `supabase/migrations/0093_nucleo_central_acoes.sql` |
+| `pendencia_criar`, `pendencia_acao` (15 ações), `pendencia_comentar`, `pendencia_historico` | idem |
+| Ações de servidor (validação com zod; quem pode é decidido no banco) | `app/(plataforma)/gestao/acoes.ts` |
+| Nova tarefa, ações do detalhe, comentários e histórico | `app/(plataforma)/gestao/formularios.tsx`, `app/(plataforma)/gestao/[id]/page.tsx` |
+| Frases do histórico | `lib/nucleo/gestao/historico.ts` |
+| Testes | `tests/db/central-acoes.test.ts` (16), `lib/nucleo/gestao/historico.test.ts`, `e2e/central-gestao.spec.ts` (3 fluxos novos) |
+
+**Ações disponíveis** (`pendencia_acao`): iniciar, voltar para aberta, concluir (observação opcional), cancelar (motivo
+obrigatório), reabrir (gestor), assumir, atribuir (gestor), alterar dados (gestor), bloquear (motivo; dependência
+opcional), desbloquear, pedir decisão (responsável), responder decisão (gestor; a resposta vai para o histórico),
+ajustar destaque (gestor, com motivo), cobrar andamento (gestor; fica no histórico) e comentar.
+
+**Decisões tomadas na construção**
+- **Uma transação por ação:** a alteração e o comentário que a justifica (motivo, resposta) gravam juntos ou nenhum.
+- **Candidatos a responsável:** nas "Tarefas gerais", qualquer pessoa ativa; nos módulos, quem atua na área
+  (`usuarios_da_area`). O operador só escolhe "eu" ou "sem responsável".
+- **Cancelar pela Central:** só as tarefas manuais. As pendências de módulo continuam encerradas pelo próprio módulo,
+  senão a sincronização as recriaria.
+- **Prazo de tarefa nova:** não pode ser anterior a hoje. A alteração feita pelo gestor depois aceita qualquer data.
+- **Histórico:** reescritas de título e descrição feitas pela sincronização ficam de fora. As mudanças de situação feitas
+  pelas rotinas aparecem como "Sistema".
+
+**Ainda não entra:** anexos na pendência pela Central (seguem nas telas dos módulos) e recorrência de tarefas manuais.
+
+**Publicação (só Alan):** aplicar a `0093` depois da `0092` e registrar as duas em `schema_migrations`.
 

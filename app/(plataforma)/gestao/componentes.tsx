@@ -28,8 +28,9 @@ export function textoSituacao(p: Pick<LinhaCentral, "status" | "bloqueada" | "ag
   return partes.join(" · ");
 }
 
-/** Link interno do módulo de origem (só rotas do próprio painel). */
-export const linkInterno = (link: string | null) => (link && link.startsWith("/") && !link.startsWith("//") ? link : null);
+/** Link para a tela do módulo de origem: só rotas do próprio painel, e não a da própria Central (tarefas manuais). */
+export const linkInterno = (link: string | null) =>
+  link && link.startsWith("/") && !link.startsWith("//") && !link.startsWith("/gestao") ? link : null;
 
 const COR_DESTAQUE: Record<NivelDestaque, string> = {
   intervir: "border-marca bg-marca-clara text-marca",

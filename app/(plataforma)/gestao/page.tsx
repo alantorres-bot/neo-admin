@@ -4,11 +4,13 @@ import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { FUSO, hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { hrefCentral, lerFiltros, temFiltro } from "@/lib/nucleo/gestao/filtros";
+import { MODULO_TAREFAS_GERAIS } from "@/lib/nucleo/gestao/tarefas";
 import { areasComNivel, temAcesso, temAcessoAlgumaArea } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { Equipe, Filtros, Fila, Indicadores, Intervencao } from "./componentes";
 import { lerCentral } from "./dados";
+import { NovaTarefa, type OpcaoModulo, type Pessoa } from "./formularios";
 
 export const metadata: Metadata = { title: "Central de Gestão" };
 
@@ -28,7 +30,18 @@ export default async function PaginaCentral({ searchParams }: PageProps<"/gestao
   const ehGestor = areasGestor.length > 0;
   const { visao, filtros, pagina } = lerFiltros(await searchParams, ehGestor);
   const supabase = await criarClienteServidor();
-  const { resumo, intervencao, fila, total, porPagina, equipe } = await lerCentral(supabase, visao, filtros, pagina);
+  // Nova tarefa: módulos ativos das áreas em que sou operador ou acima, mais "Tarefas gerais" (inativo no menu).
+  const areasOperador = new Set(areasComNivel(sessao.acesso, sessao.areas, "operador"));
+  const [{ resumo, intervencao, fila, total, porPagina, equipe }, candidatosPorArea, todasPessoas] = await Promise.all([
+    lerCentral(supabase, visao, filtros, pagina),
+    Promise.all(areasGestor.map(async (area) => {
+      const r = await supabase.rpc("usuarios_da_area", { p_area: area });
+      return [area, ((r.data ?? []) as Pessoa[]).map((x) => ({ id: x.id, nome: x.nome }))] as const;
+    })),
+    areasGestor.includes("administrativo")
+      ? supabase.from("perfis").select("id, nome").eq("ativo", true).order("nome").then((r) => (r.data ?? []) as Pessoa[])
+      : Promise.resolve([] as Pessoa[]),
+  ]);
 
   const hoje = hojeEmCuiaba();
   const extenso = new Intl.DateTimeFormat("pt-BR", { timeZone: FUSO, weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(new Date());
@@ -40,6 +53,10 @@ export default async function PaginaCentral({ searchParams }: PageProps<"/gestao
     .filter((m) => codigosAreas.has(m.area) && (!filtros.area || m.area === filtros.area))
     .map((m) => ({ valor: m.codigo, rotulo: `${nomeArea.get(m.area)} › ${m.nome}` }))
     .sort((a, b) => a.rotulo.localeCompare(b.rotulo, "pt-BR"));
+  const modulosTarefa: OpcaoModulo[] = sessao.modulos
+    .filter((m) => areasOperador.has(m.area) && (m.ativo || m.codigo === MODULO_TAREFAS_GERAIS))
+    .map((m) => ({ codigo: m.codigo, area: m.area, rotulo: m.codigo === MODULO_TAREFAS_GERAIS ? "Tarefas gerais (Administrativo)" : `${nomeArea.get(m.area) ?? m.area} › ${m.nome}` }))
+    .sort((a, b) => (a.codigo === MODULO_TAREFAS_GERAIS ? -1 : b.codigo === MODULO_TAREFAS_GERAIS ? 1 : a.rotulo.localeCompare(b.rotulo, "pt-BR")));
   const opcoesResponsaveis = equipe?.map((l) => ({ valor: l.responsavel_id, rotulo: l.nome })) ?? null;
   const descricaoVisao = visao === "gestao"
     ? areasGestor.length === sessao.areas.length ? "Gestão: todas as áreas" : "Gestão: as áreas em que você é gestor"
@@ -52,12 +69,20 @@ export default async function PaginaCentral({ searchParams }: PageProps<"/gestao
           <h1 className="text-2xl font-semibold tracking-tight">Central de Gestão</h1>
           <p className="text-sm text-muted-foreground">{dataExtenso} · {descricaoVisao}</p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        {modulosTarefa.length > 0 && (
+          <NovaTarefa
+            modulos={modulosTarefa} areasGestor={areasGestor} pessoasPorArea={Object.fromEntries(candidatosPorArea)}
+            todasPessoas={todasPessoas} eu={{ id: sessao.userId, nome: sessao.perfil.nome }} hoje={hoje}
+          />
+        )}
         {ehGestor && (
           <nav aria-label="Visão da Central" className="flex gap-1 rounded-[3px] border border-grade p-0.5">
             <Button size="sm" variant={visao === "gestao" ? "secondary" : "ghost"} nativeButton={false} render={<Link href={hrefCentral("gestao", filtros)} />}>Gestão</Button>
             <Button size="sm" variant={visao === "minhas" ? "secondary" : "ghost"} nativeButton={false} render={<Link href={hrefCentral("minhas", filtros)} />}>Minhas pendências</Button>
           </nav>
         )}
+        </div>
       </header>
 
       <Indicadores resumo={resumo} visao={visao} filtros={filtros} />

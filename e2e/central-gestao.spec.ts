@@ -79,3 +79,104 @@ test.describe("operador do Fiscal", () => {
     expect(resposta?.status()).toBe(404);
   });
 });
+
+// --- Fase 3: criação, distribuição e andamento -------------------------------------------------------------------------
+
+const sufixo = Date.now().toString().slice(-6);
+const dialogo = (page: Page) => page.getByRole("dialog");
+
+async function abrirPorBusca(page: Page, titulo: string) {
+  await page.goto(`/gestao?visao=minhas&busca=${encodeURIComponent(titulo)}`);
+  await page.goto((await fila(page).getByRole("link", { name: titulo }).getAttribute("href"))!);
+  await expect(page.getByRole("heading", { name: titulo })).toBeVisible();
+}
+
+test.describe("tarefas (Fase 3)", () => {
+  test("gestor cria e atribui; responsável de outra área inicia, bloqueia, comenta, desbloqueia e conclui", async ({ page }) => {
+    const titulo = `[DEMO] Levantar contratos ${sufixo}`;
+    await entrar(page, "gestor.teste");
+    await page.goto("/gestao");
+    await page.getByRole("button", { name: "Nova tarefa" }).click();
+    await dialogo(page).getByLabel("Título").fill(titulo);
+    await dialogo(page).getByLabel("Módulo").selectOption("administrativo.gestao");
+    await dialogo(page).getByLabel("Responsável").selectOption({ label: "Operador Fiscal Teste" });
+    await dialogo(page).getByLabel("Prioridade").selectOption("alta");
+    await dialogo(page).getByLabel("Observações (opcional)").fill("Começar pelos de locação");
+    await dialogo(page).getByRole("button", { name: "Criar tarefa" }).click();
+    await expect(page.getByText("Tarefa criada.")).toBeVisible();
+
+    await entrar(page, "operador.fiscal.teste");
+    await abrirPorBusca(page, titulo);
+    await page.getByRole("button", { name: "Iniciar" }).click();
+    await expect(page.getByText("Pendência em andamento.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Bloquear" }).click();
+    await dialogo(page).getByLabel("Motivo do bloqueio").fill("Aguardando cópia do jurídico");
+    await dialogo(page).getByRole("button", { name: "Bloquear" }).click();
+    await expect(page.getByText("Bloqueio registrado.")).toBeVisible();
+    await expect(page.getByText("Em andamento · bloqueada").first()).toBeVisible();
+
+    await page.getByRole("button", { name: "Comentar" }).click();
+    await dialogo(page).getByLabel("Comentário").fill("Pedi a cópia por e-mail");
+    await dialogo(page).getByRole("button", { name: "Comentar" }).click();
+    await expect(page.getByText("Comentário registrado.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Desbloquear" }).click();
+    await dialogo(page).getByRole("button", { name: "Desbloquear" }).click();
+    await expect(page.getByText("Pendência desbloqueada.")).toBeVisible();
+
+    await page.getByRole("button", { name: "Concluir" }).click();
+    await dialogo(page).getByLabel("Observação da conclusão (opcional)").fill("Planilha enviada ao Alan");
+    await dialogo(page).getByRole("button", { name: "Concluir" }).click();
+    await expect(page.getByText("Pendência concluída.")).toBeVisible();
+
+    const historico = page.locator("ol");
+    for (const texto of ["Criou a tarefa", "Observação: Começar pelos de locação", "Situação: Aberta → Em andamento",
+      "Bloqueou: Aguardando cópia do jurídico", "Comentou: Pedi a cópia por e-mail", "Desbloqueou",
+      "Situação: Em andamento → Concluída", "Comentou: Planilha enviada ao Alan"]) {
+      await expect(historico.getByText(texto, { exact: true })).toBeVisible();
+    }
+    // O responsável não reabre (só o gestor).
+    await expect(page.getByRole("button", { name: "Reabrir" })).toHaveCount(0);
+  });
+
+  test("pedido de decisão: o responsável pede, aparece em 'Aguardando gestor' e o gestor responde", async ({ page }) => {
+    const titulo = `[DEMO] Desconto para cliente ${sufixo}`;
+    await entrar(page, "gestor.teste");
+    await page.goto("/gestao");
+    await page.getByRole("button", { name: "Nova tarefa" }).click();
+    await dialogo(page).getByLabel("Título").fill(titulo);
+    await dialogo(page).getByLabel("Módulo").selectOption("financeiro.recebiveis");
+    await dialogo(page).getByLabel("Responsável").selectOption({ label: "Operador Financeiro Teste" });
+    await dialogo(page).getByRole("button", { name: "Criar tarefa" }).click();
+    await expect(page.getByText("Tarefa criada.")).toBeVisible();
+
+    await entrar(page, "operador.financeiro.teste");
+    await abrirPorBusca(page, titulo);
+    await page.getByRole("button", { name: "Pedir decisão do gestor" }).click();
+    await dialogo(page).getByLabel("O que precisa ser decidido?").fill("Posso conceder 5% de desconto?");
+    await dialogo(page).getByRole("button", { name: "Pedir decisão do gestor" }).click();
+    await expect(page.getByText("Pedido enviado ao gestor.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Responder decisão" })).toHaveCount(0);
+
+    await entrar(page, "gestor.teste");
+    await page.goto(`/gestao?recorte=aguarda_gestor&busca=${encodeURIComponent(titulo)}`);
+    await page.goto((await fila(page).getByRole("link", { name: titulo }).getAttribute("href"))!);
+    await expect(page.getByText(/Aguarda decisão do gestor desde .*Posso conceder 5% de desconto\?/).first()).toBeVisible();
+    await page.getByRole("button", { name: "Responder decisão" }).click();
+    await dialogo(page).getByLabel("Sua decisão").fill("Pode, até 5%.");
+    await dialogo(page).getByRole("button", { name: "Responder decisão" }).click();
+    await expect(page.getByText("Decisão registrada.")).toBeVisible();
+    await expect(page.locator("ol").getByText("Respondeu ao pedido de decisão: Pode, até 5%.", { exact: true })).toBeVisible();
+  });
+
+  test("operador só cria tarefa para si ou sem responsável", async ({ page }) => {
+    await entrar(page, "operador.fiscal.teste");
+    await page.goto("/gestao");
+    await page.getByRole("button", { name: "Nova tarefa" }).click();
+    const opcoes = await dialogo(page).getByLabel("Responsável").locator("option").allTextContents();
+    expect(opcoes).toEqual(["Sem responsável", "Operador Fiscal Teste (eu)"]);
+    const modulos = await dialogo(page).getByLabel("Módulo").locator("option").allTextContents();
+    expect(modulos.every((m) => m.startsWith("Fiscal"))).toBe(true);
+  });
+});
