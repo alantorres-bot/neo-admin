@@ -16,5 +16,6 @@ e guarda o arquivo em `.local-supabase/arquivos`; a URL assinada é um HMAC com 
 ```
 sudo bash scripts/local-sem-docker/iniciar.sh     # 1ª vez: cria o banco, aplica as migrations e mostra as chaves para o .env.local
 sudo -u postgres node scripts/fiscal-demo.mjs --banco postgresql:///neo --confirmar   # dados fictícios
+sudo bash scripts/local-sem-docker/central-demo.sh   # Central de Gestão: usuários *.teste e pendências [DEMO]
 ```
 Chaves e segredo são fixos e públicos (`chaves.mjs`): **nunca** use este ambiente para dados reais nem exponha as portas.

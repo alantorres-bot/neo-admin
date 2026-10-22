@@ -1,6 +1,7 @@
 # Módulo: Administrativo geral / Central de Gestão (`administrativo.gestao`)
 
-Status: rascunho (Fase 1, 22/10/2026), aguardando aprovação de Alan Torres. Nada foi construído.
+Status: em construção. Especificação aprovada em 22/10/2026; **Fase 2 entregue em 22/10/2026** (migration 0092 + tela de
+leitura `/gestao`), aguardando avaliação. O que foi construído e como testar estão na seção 14.
 
 Decisões já tomadas por Alan (22/10/2026):
 - **Alan e Rodrigo veem tudo.** Alan é `admin_geral`. Rodrigo será **gestor em todas as áreas** pelo cadastro de permissões
@@ -93,7 +94,8 @@ motivos (Intervir > Avaliar > Acompanhar > Normal). A tela mostra **todos** os m
 | `AGUARDA_GESTOR` | Marca "aguardando gestor" ligada | Intervir | "Aguarda sua decisão desde 20/10/2026: <motivo>" |
 | `ATRASO_RELEVANTE` | Atraso > `dias_atraso_relevante`, **ou** atrasada com prioridade crítica | Intervir | "Atrasada há 8 dias (limite 5)" |
 | `IMPACTO_REGISTRADO` | Impacto financeiro ou fiscal registrado **com fundamento** e prazo atrasado, de hoje ou próximo | Intervir | "Impacto fiscal: <fundamento>, vence hoje" |
-| `BLOQUEIO_RELEVANTE` | Bloqueada há mais de `dias_bloqueio_relevante`, **ou** indicada como dependência de outra pendência aberta | Intervir | "Bloqueada há 3 dias: <motivo>" / "Impede: <título>" |
+| `BLOQUEIO_RELEVANTE` | Bloqueada há mais de `dias_bloqueio_relevante` | Intervir | "Bloqueada há 3 dias (limite de 2 dias): <motivo>" |
+| `IMPEDE_OUTRA` | Indicada como dependência no bloqueio de outra pendência aberta | Intervir | "Impede outra pendência de avançar" |
 | `PRECISA_DISTRIBUIR` | Precisa distribuir e (prioridade alta/crítica, ou prazo de hoje, atrasado ou próximo) | Intervir | "Sem responsável, prioridade alta, vence em 2 dias" |
 | `PRECISA_DISTRIBUIR` | Precisa distribuir nos demais casos | Acompanhar | "Sem responsável" |
 | `ATRASO_SIMPLES` | Atrasada, sem cair em `ATRASO_RELEVANTE` | Acompanhar | "Atrasada há 2 dias" |
@@ -436,8 +438,9 @@ aberto 3).
 - Título, data de hoje por extenso (Cuiabá) e a visão.
 - Visões: **"Gestão"**, para quem é gestor em alguma área (as áreas que gerencia; para Alan e Rodrigo, todas), e **"Minhas
   pendências"**, a padrão de quem não é gestor.
-- Filtros: área, módulo, responsável, situação, prioridade, destaque, origem e período do prazo (de/até).
-- Botões "Nova tarefa" e "Sugestões".
+- Filtros: área, módulo, responsável, situação, prioridade, destaque, origem e período do prazo (de/até). O período
+  vale sobre o prazo, inclusive quando a situação filtrada é concluída ou cancelada.
+- Botões "Nova tarefa" (Fase 3) e "Sugestões" (Fase 5). Só aparecem quando a ação existir: a tela não tem botão sem efeito.
 
 **Blocos**
 1. **Indicadores:** os da seção 5.4, clicáveis, com a nota de sobreposição.
@@ -476,8 +479,8 @@ A Fila do dia atual continua no Recebíveis, sem mudanças.
 
 ## 8. Dados
 
-Migrations do núcleo: `0008_nucleo_central_gestao.sql` (Fase 2), `0009_nucleo_atividades.sql` (Fase 3B),
-`0010_nucleo_sugestoes.sql` (Fase 5) e `0011_nucleo_notificacoes.sql` (Fase 7). O Fiscal ganha uma migration na faixa 0200 (Fase 6).
+Migrations do núcleo: `0092_nucleo_central_gestao.sql` (Fase 2), `0093_nucleo_atividades.sql` (Fase 3B),
+`0094_nucleo_sugestoes.sql` (Fase 5) e `0095_nucleo_notificacoes.sql` (Fase 7). O Fiscal ganha uma migration na faixa 0200 (Fase 6).
 
 **`pendencias`: colunas novas (nada é removido nem renomeado)**
 
@@ -614,9 +617,9 @@ será informado.
 | Fase | Entrega |
 | --- | --- |
 | 1 | Esta especificação |
-| 2 | Migration 0008 + tela de leitura (indicadores, "Exige minha intervenção", equipe, fila consolidada) |
+| 2 | Migration 0092 + tela de leitura (indicadores, "Exige minha intervenção", equipe, fila consolidada) |
 | 3 | Criar e distribuir tarefas, situação, bloqueio, decisão do gestor, comentários, histórico |
-| 3B | Atividades e acessos (seção 5.9): migration 0009, catálogo inicial, autoria nas funções automáticas, conversor do histórico, aba "Atividades da equipe" |
+| 3B | Atividades e acessos (seção 5.9): migration 0093, catálogo inicial, autoria nas funções automáticas, conversor do histórico, aba "Atividades da equipe" |
 | 4 | Destaque gerencial configurável e ajuste manual |
 | 5 | Sugestões de melhoria |
 | 6 | Contrato de publicação + Fiscal (obrigações e divergências); grupo Cobrança |
@@ -624,3 +627,40 @@ será informado.
 | 8 | Testes de interface, regressão final, documentação |
 
 Cada fase começa com um plano curto e termina com o relatório; a seguinte só começa com aprovação.
+
+## 14. Entregas
+
+### Fase 2 (22/10/2026): base no banco e tela de leitura
+| Item | Onde |
+| --- | --- |
+| Colunas, regras do gatilho, leitura pelo responsável, módulo "Tarefas gerais", parâmetros, destaque e funções da Central | `supabase/migrations/0092_nucleo_central_gestao.sql` |
+| Textos dos motivos, ação recomendada, leitura e validação dos filtros da URL | `lib/nucleo/gestao/destaque.ts`, `lib/nucleo/gestao/filtros.ts` |
+| Tela `/gestao` (indicadores, "Exige minha intervenção", equipe, fila paginada com filtros) e detalhe `/gestao/<id>` | `app/(plataforma)/gestao/` |
+| Item "Central" no trilho (todos com alguma área, menos o restrito à unidade) | `components/plataforma/casca.tsx`, `app/(plataforma)/layout.tsx` |
+| Testes de banco (regras, permissões, destaque, indicadores, equipe, preenchimento das linhas antigas) | `tests/db/central-gestao.test.ts` |
+| Testes de interface com banco local e dados fictícios | `e2e/central-gestao.spec.ts`, `playwright.central.config.ts`, `scripts/local-sem-docker/central-demo.sh` |
+
+**Decisões tomadas na construção**
+- **Numeração:** a migration é a `0092`, a próxima livre da faixa do núcleo depois da `0091`, e não a `0008`.
+- **Fonte única do cálculo:** o destaque é calculado em SQL (`pendencia_destaque`). A tela só monta as frases.
+  Indicador, lista e detalhe sempre concordam.
+- **`movimentado_em` das linhas existentes:** recebe a data de conclusão ou de criação. O preenchimento roda com a
+  auditoria desligada só nesse comando, para não gravar milhares de linhas técnicas. Daqui para frente, só ação humana
+  atualiza.
+- **Visão "Gestão":** mostra as pendências dos módulos em que a pessoa é gestora, mais as atribuídas a ela. Quem não é
+  gestor fica sempre em "Minhas pendências".
+- **Ações:** nenhuma nesta fase. A pendência é tratada na tela do módulo ("Abrir no módulo"). Criar, atribuir, bloquear,
+  pedir decisão e concluir pela Central entram na Fase 3, que vai usar os campos e as regras já gravados no banco pela
+  0092.
+
+**Como testar localmente (sem dados reais)**
+```
+sudo bash scripts/local-sem-docker/iniciar.sh         # Supabase local; anote a chave anon para o .env.local
+sudo bash scripts/local-sem-docker/central-demo.sh    # usuários *.teste@neoformas.com.br e pendências [DEMO]
+npm run dev                                           # entrar com gestor.teste@neoformas.com.br / Teste-local-123 e abrir /gestao
+PLAYWRIGHT_CHROMIUM=/opt/pw-browsers/chromium npx playwright test -c playwright.central.config.ts
+```
+
+**Publicação (só Alan):** aplicar a `0092` em produção e registrá-la em `supabase_migrations.schema_migrations`
+(`docs/PUBLICACAO.md`, seção 2). Ela não depende de nenhuma Edge Function.
+

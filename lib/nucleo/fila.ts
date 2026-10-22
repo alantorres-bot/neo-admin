@@ -24,6 +24,16 @@ export function formatarData(iso: string | null | undefined): string {
   return `${d}/${m}/${a}`;
 }
 
+const DATA_HORA = new Intl.DateTimeFormat("pt-BR", {
+  timeZone: FUSO, day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
+});
+
+/** Momento (timestamptz) -> 'dd/mm/aaaa hh:mm' no fuso de Cuiabá. */
+export function formatarDataHora(iso: string | null | undefined): string {
+  if (!iso) return "";
+  return DATA_HORA.format(new Date(iso)).replace(",", "");
+}
+
 export function descreverPrazo(prazo: string | null, hoje: string): string {
   if (!prazo) return "Sem prazo";
   const dias = diferencaDias(prazo, hoje);
