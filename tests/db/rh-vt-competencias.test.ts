@@ -24,7 +24,7 @@ beforeAll(async () => {
     q(`insert into rh_colaboradores (empresa_id, empregador, cod_fornecedor, nome, cpf, agencia, conta, forma_pagamento, tarifa, valor_fixo, ativo)
        values ($1, 'NEO SERVIÇOS', $2::text, 'PESSOA ' || $2::text, $3::text, case when $3::text is null then null else '2764-2' end, case when $3::text is null then null else '9999-9' end, $4, $5::numeric, $6::numeric, $7)`,
       [empresa, cod, cpf, forma, tarifa, fixo, ativo]);
-  await cad("660", null, "pix_neo_formas", 4.95, null);
+  await cad("660", null, "pix", 4.95, null);
   await cad("658", "111.444.777-35", "fopag", 4.95, null);
   await cad("659", "222.333.444-05", "fopag", null, 800);
   await cad("700", "123.456.789-09", "fopag", 8, null);

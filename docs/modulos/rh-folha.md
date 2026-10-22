@@ -1,6 +1,6 @@
 # Módulo: RH/SST / Folha de pagamento (fechamento mensal)
 
-Status: em construção. Especificação aprovada em 14/10/2026; **F1 (cadastro único), F2 (mês e pagamento) e F6 (importação da Relação dos Líquidos) entregues em 14/10/2026**.
+Status: em construção. Especificação aprovada em 14/10/2026; **F1 (cadastro único), F2 (mês e pagamento) e F6 (importação da Relação dos Líquidos) entregues em 14/10/2026**; **F4 (títulos dos funcionários no Consistem) feita em 22/10/2026**, falta publicar.
 
 ## 1. Objetivo
 Fechar todo mês a folha de Cuiabá no Neo Admin, a partir do que o escritório de contabilidade calcula. São seis frentes:
@@ -114,7 +114,9 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
      - No arquivo do BB vai **somado** ao salário: um crédito por pessoa.
      - O aniversário **não** é controlado no Neo Admin por enquanto. Não há data de nascimento no cadastro; quem deveria receber,
        os admitidos depois do aniversário e o adiantamento nas férias o RH acompanha por fora.
-   - A forma de pagamento (FOPAG / PIX Neo Formas / PIX Neo Serviços) vem do cadastro e pode ser trocada só no mês.
+   - A forma de pagamento vem do cadastro e pode ser trocada só no mês. Desde 22/10/2026 (0521) é só **FOPAG** ou **PIX**: a conta
+     que paga o PIX sai da empregadora, na tabela de portadores (regra 10). As formas antigas (PIX Neo Formas / PIX Neo Serviços)
+     ficam só nos meses fechados antes disso.
    - Líquido zero (ex.: afastado) aparece, mas não gera pagamento nem título.
 5. **Fluxo:** aberto → conferido → aprovado (gestor) → pago, com o mesmo desenho do VT.
    - Para passar a "conferido", as conferências da regra 6 têm de estar ok ou justificadas.
@@ -135,7 +137,8 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
    - Uma linha por pessoa **FOPAG** com valor > 0; colunas `CPF | AG | CONTA | SALÁRIO`, iguais às da exportação de hoje.
    - Falta de CPF, agência ou conta bloqueia a geração.
    - Cada geração fica registrada.
-8. **PIX:** lista por pagadora (Neo Formas / Neo Serviços), cada linha marcada como "paga". O mês só vai para "pago" com o arquivo
+8. **PIX:** lista por pagadora (a "conta pagadora" da tabela de portadores; hoje PIX de Neo Formas e Oeste sai da conta da Oeste e
+   PIX da Neo Serviços sai da conta da Neo Serviços), cada linha marcada como "paga". O mês só vai para "pago" com o arquivo
    do BB gerado e todos os PIX marcados.
 9. **Avulsos** (decisões de 14 e 15/10/2026): o valor vem **só dos recibos avulsos** do mês (capítulo "Recibos avulsos").
    - O avulso da pessoa na folha é a soma dos recibos dela no mês, e o motivo é montado pelos recibos. Na grade, a coluna fica
@@ -143,13 +146,30 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
    - Os avulsos aparecem **separados** da folha do escritório no relatório e nos totais.
    - Não entram nas conferências C1–C5.
    - Entram no arquivo do BB, no PIX e nos títulos, conforme a forma de pagamento.
-10. **Títulos no Consistem** (decisão de 14/10/2026). Nada sai sozinho: a chave liga/desliga começa desligada e o operador confere
-    e clica, com o mesmo livro imutável e envio único do VT.
-    - **Por funcionário:** fornecedor = Nº; valor = valor a pagar; vencimento = 5º dia útil de M+1.
-    - **Por guia:** DARF, FGTS mensal e FGTS consignado, contra o fornecedor do órgão no Consistem, com o valor e o vencimento da
-      guia.
-    - **Códigos** (histórico, portador, categoria, conta de fluxo, contas contábeis) por tipo de título, nos Parâmetros. São
-      copiados de lançamentos antigos, como no VT; a categoria tem de ser a do fornecedor.
+10. **Títulos no Consistem** (decisões de 14/10 e 22/10/2026; migration 0521). Nada sai sozinho.
+    - A chave liga/desliga começa desligada; o operador confere e clica, com o mesmo livro imutável e envio único do VT.
+    - O botão aparece com a folha **aprovada**. Depois do primeiro título lançado, a folha não reabre.
+    - **Por funcionário:** um título por pessoa × **tipo** com valor no mês. O 13º fica separado do salário; no BB continua um
+      crédito só.
+      - Tipos: **salário** (líquido), **férias** (férias/acréscimos), **13º 1ª parcela**, **13º 2ª parcela** e **avulso** (soma dos
+        recibos do mês).
+      - O 13º da folha de **dezembro** é a 2ª parcela; nos outros meses é a 1ª.
+      - Fornecedor = Nº; valor = o do tipo; vencimento = 5º dia útil de M+1; documento = sigla + MMAA (SA, FE, D1, D2, AV; o VT
+        continua VT).
+      - Complemento: `<TIPO> - MM/AAAA`, ex.: `SALÁRIO - 10/2026`, `13º SALÁRIO 1ª PARCELA - 10/2026`.
+    - **Códigos** nos Parâmetros (`configuracoes` `rh.lancamento`), os **mesmos para a folha e o VT**:
+      - **por tipo** (vale transporte, salário, férias, 13º 1ª, 13º 2ª, avulso): histórico, grupo e conta de fluxo, contas
+        contábeis de débito e crédito. A conta contábil depende só do tipo.
+      - **categoria única** (6, a dos fornecedores-funcionários);
+      - **portador** por **empregadora × forma** (FOPAG ou PIX), a conta que paga. Hoje:
+        - PIX de Neo Formas e Oeste → conta da Oeste;
+        - PIX da Neo Serviços → conta da Neo Serviços;
+        - FOPAG → portador de salários FOPAG.
+      - Em novembro/2026 todos os funcionários passam para a Neo Formas: basta mudar a empregadora no cadastro.
+    - Os códigos podem ser copiados de um título já lançado. Tipo, categoria ou portador faltando travam o botão e a reserva.
+    - Todos os títulos vão para a empresa **1 (Neo Formas)** do Consistem.
+    - **Por guia** (DARF, FGTS mensal e FGTS consignado, contra o fornecedor do órgão): fica para depois, junto com a F3.
+
 11. **Checklist do mês e prazos** (Fila do dia):
     - ponto da 1ª e da 2ª quinzena enviado ao escritório (prazo: ponto em aberto 2);
     - folha do escritório recebida;
@@ -180,8 +200,10 @@ As abas de RH > Folha de pagamento:
   - os documentos e o checklist;
   - botões: Conferido, Aprovar, Arquivo do BB, PIX, Lançar no Consistem, Relatório, Reabrir.
 - **Colaboradores:** o cadastro único do RH (regra 1). O VT passa a usar este.
-- **Parâmetros** (gestor): códigos dos títulos por tipo (salário, DARF, FGTS, FGTS consignado), fornecedores das guias, tolerância
-  das conferências e a chave do Consistem.
+- **Parâmetros** (gestor):
+  - títulos no Consistem: códigos por tipo, categoria, portadores e as chaves da folha e do VT (os mesmos da aba do VT);
+  - valores com vigência e rubricas dos recibos;
+  - depois, com a F3: fornecedores das guias e tolerância das conferências.
 
 ## 8. Dados (prefixo `rh_` / `rh_fp_`; migrations na faixa 0510+)
 - **`rh_colaboradores`:** o cadastro único (Nº de fornecedor, nome, CPF, agência, conta, forma habitual, empresa empregadora, ativo),
@@ -193,7 +215,8 @@ As abas de RH > Folha de pagamento:
 - **`rh_fp_extrato`:** o que veio do escritório, por pessoa e nos totais, quando houver o arquivo. É a base das conferências.
 - **`rh_fp_guias`:** tipo (`darf | fgts_mensal | fgts_consignado`), empresa, competência, número, vencimento, valor, anexo.
 - **`rh_fp_conferencias`:** apontamentos C1–C6, com valor esperado, valor achado, diferença, justificativa, quem e quando.
-- **`rh_fp_lancamentos_erp`:** livro dos títulos no Consistem, igual ao do VT.
+- **`rh_fp_lancamentos_erp`** (0521): livro dos títulos no Consistem, igual ao do VT, com o `tipo`; no máximo um ativo por pessoa ×
+  tipo.
 - **Documentos:** pelo núcleo `anexos`.
 
 Nenhum dado pessoal vai para `docs/amostras/` (LGPD).
@@ -217,8 +240,8 @@ Nenhum dado pessoal vai para `docs/amostras/` (LGPD).
 3. **Tolerância das conferências:** qual diferença é aceita sem justificativa (ex.: R$ 0,05, por causa do centavo da DARF) e quem
    pode justificar.
 4. **FGTS de setembro:** por que a guia mensal é R$ 55,22 menor que o "Valor do FGTS" do extrato.
-5. **Empresas no Consistem e no núcleo:** em qual empresa do Consistem vão os títulos de cada CNPJ (salários e guias). Hoje só a
-   Neo Formas (código 1) está cadastrada no núcleo; ver se Neo Serviços e Oeste entram como empresas.
+5. **Empresas no Consistem e no núcleo:** resolvido em 22/10/2026 para os salários: todos os títulos vão para a empresa 1 (Neo
+   Formas). As guias ficam para a F3.
 6. **Fornecedores das guias no Consistem:** os códigos de Receita Federal e de Caixa/FGTS, e se o consignado vai contra a Caixa
    ou contra o banco do empréstimo.
 7. **Férias, rescisões e 13º:** se entram como natureza no mês (como hoje na planilha) ou como lançamentos com data própria.
@@ -313,7 +336,20 @@ modelos recorrentes.
       totais por forma.
   - Testes: `tests/db/rh-fp-base.test.ts` e `lib/modulos/rh/folha/modulo.test.ts`.
 - **F3:** guias e conferências C1–C6.
-- **F4:** títulos no Consistem (funcionários e guias).
+- **F4:** títulos no Consistem. **Funcionários feitos em 22/10/2026** (falta publicar); as guias ficam para a F3.
+  - Migration `0521_rh_lancamento_consistem.sql`:
+    - `rh.lancamento` (códigos por tipo, categoria, portadores) e a chave `rh.folha.lancar_no_erp`;
+    - `rh_codigos_titulo`, `rh_salvar_parametros_lancamento` (substitui `rh_vt_salvar_parametros`);
+    - forma de pagamento fopag | pix;
+    - VT conferindo pelos parâmetros novos;
+    - `rh_fp_lancamentos_erp` e as funções de reserva, envio, resolução e reabertura.
+  - Regras puras: `lib/modulos/rh/lancamento.ts` (comum à folha e ao VT) e `lib/modulos/rh/folha/lancamento.ts`.
+  - Edge Function `rh-vt-lancar-no-consistem` com `origem: "folha" | "vt"`; o envio está em `_shared/rh-envio-lote.ts`.
+  - Telas:
+    - seção "Títulos no Consistem" nas abas Parâmetros da folha e do VT (`app/(plataforma)/rh/_consistem/`);
+    - quadro "Contas a pagar no Consistem" na folha aprovada.
+  - Testes: `lib/modulos/rh/lancamento.test.ts`, `lib/modulos/rh/folha/lancamento.test.ts`, `tests/db/rh-fp-consistem.test.ts` e
+    `tests/db/rh-vt-consistem.test.ts`.
 - **F5:** documentos e checklist com prazos na Fila do dia.
 - **F7 — recibos avulsos padronizados:** entregue em 15/10/2026 (capítulo acima; migration 0514).
 - **F6:** importação da Relação Geral dos Líquidos (.xls). As amostras de setembro/2026 chegaram em 14/10/2026; esta fase pode

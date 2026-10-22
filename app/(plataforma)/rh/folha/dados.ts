@@ -1,5 +1,6 @@
 // Leituras do módulo Folha de pagamento (RLS de quem chama; nada é gravado aqui).
 import type { FormaPagamento } from "@/lib/modulos/rh/colaboradores/modulo";
+import type { TipoTitulo } from "@/lib/modulos/rh/lancamento";
 import type { ChaveParametro, Rubrica, TipoRecibo, Vigencia } from "@/lib/modulos/rh/folha/recibos";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
@@ -74,6 +75,15 @@ export async function lerImportacoes(supabase: Cliente, competenciaId: string): 
   const { data: perfis } = ids.length ? await supabase.from("perfis").select("id, nome").in("id", ids) : { data: [] };
   const nome = new Map((perfis ?? []).map((p) => [p.id as string, p.nome as string]));
   return (data ?? []).map((i) => ({ ...(i as Omit<ImportacaoLinha, "total" | "importado_por_nome">), total: Number(i.total), importado_por_nome: i.importado_por ? nome.get(i.importado_por) ?? null : null }));
+}
+
+// ---------------------------------------------------------------- Consistem (0521)
+
+export type LancamentoFolhaLinha = { id: string; item_id: string; tipo: TipoTitulo; lote: string; situacao: "reservado" | "enviando" | "lancado" | "erro"; cod_lancamento_erp: string | null; erro: string | null; valor: number; criado_em: string };
+
+export async function lerLancamentos(supabase: Cliente, competenciaId: string): Promise<LancamentoFolhaLinha[]> {
+  const { data } = await supabase.from("rh_fp_lancamentos_erp").select("id, item_id, tipo, lote, situacao, cod_lancamento_erp, erro, valor, criado_em").eq("competencia_id", competenciaId).order("criado_em");
+  return ((data ?? []) as (LancamentoFolhaLinha & { valor: string | number })[]).map((l) => ({ ...l, valor: Number(l.valor) }));
 }
 
 // ---------------------------------------------------------------- recibos avulsos (0514)

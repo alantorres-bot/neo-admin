@@ -59,9 +59,9 @@ describe("cadastro único de colaboradores do RH (0500, 0501, 0510)", () => {
 
   it("altera e desativa (sem apagar); a auditoria guarda o antes e o depois", async () => {
     const id = (await rpc(rhConsulta, `select id from rh_colaboradores where cod_fornecedor = '660'`)).rows[0].id;
-    await salvar(rhOperador, { id, forma: "pix_neo_servicos", tarifa: 5.95, ativo: false, agencia: null, conta: null });
+    await salvar(rhOperador, { id, forma: "pix", tarifa: 5.95, ativo: false, agencia: null, conta: null });
     const c = (await rpc(rhConsulta, `select forma_pagamento, tarifa::text, ativo, agencia, atualizado_por from rh_colaboradores where id = $1`, [id])).rows[0];
-    expect(c).toEqual({ forma_pagamento: "pix_neo_servicos", tarifa: "5.95", ativo: false, agencia: null, atualizado_por: rhOperador });
+    expect(c).toEqual({ forma_pagamento: "pix", tarifa: "5.95", ativo: false, agencia: null, atualizado_por: rhOperador });
     await expect(rpc(rhOperador, `delete from rh_colaboradores where id = $1`, [id])).resolves.toMatchObject({ affectedRows: 0 });
     await expect(q(`delete from rh_colaboradores where id = $1`, [id])).rejects.toThrow(/não podem ser excluídos/);
     expect((await q(`select count(*)::int as n from auditoria where tabela = 'rh_colaboradores' and registro_id = $1`, [id])).rows[0].n).toBe(2);

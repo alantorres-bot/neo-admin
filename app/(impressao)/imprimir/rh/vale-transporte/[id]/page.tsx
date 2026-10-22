@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { BotaoImprimir } from "@/app/(impressao)/imprimir/contas-pagar/autorizacao/[id]/botao-imprimir";
 import { lerItens, lerMes, ROTULO_STATUS, type ItemLinha } from "@/app/(plataforma)/rh/vale_transporte/dados";
 import { rotuloMes } from "@/lib/modulos/rh/calendario";
-import { FORMAS_PAGAMENTO, MODULO_VT, ROTULO_FORMA } from "@/lib/modulos/rh/vale-transporte/modulo";
+import { FORMAS_GRAVADAS, MODULO_VT, ROTULO_FORMA } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
@@ -25,7 +25,7 @@ export default async function PaginaImprimirVt({ params }: PageProps<"/imprimir/
   const [mes, itens] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id)]);
   if (!mes) notFound();
   const empresas = [...new Set(itens.map((i) => i.empregador))].sort();
-  const formas = FORMAS_PAGAMENTO.filter((f) => itens.some((i) => i.forma_pagamento === f));
+  const formas = FORMAS_GRAVADAS.filter((f) => itens.some((i) => i.forma_pagamento === f));
   const selo = mes.status === "aberta" || mes.status === "enviada" ? "PRÉVIA — MÊS AINDA NÃO APROVADO" : null;
 
   return (

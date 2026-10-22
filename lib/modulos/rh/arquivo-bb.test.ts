@@ -10,7 +10,7 @@ describe("arquivo do BB", () => {
   });
 
   it("só FOPAG com valor; ordem por nome; total", () => {
-    const r = linhasBB([item({ nome: "Zé" }), item({ nome: "Ana", valor: 207.9 }), item({ forma_pagamento: "pix_neo_formas", cpf: null }), item({ valor: 0, cpf: null })]);
+    const r = linhasBB([item({ nome: "Zé" }), item({ nome: "Ana", valor: 207.9 }), item({ forma_pagamento: "pix", cpf: null }), item({ valor: 0, cpf: null })]);
     expect(r).toEqual({ ok: true, total: 405.9, linhas: [["071225481-12", "2764-2", "98657-7", 207.9], ["071225481-12", "2764-2", "98657-7", 198]] });
   });
 

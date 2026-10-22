@@ -34,7 +34,7 @@ const editavelDe = (i: ItemLinha): Editavel => ({
   abat_valor_texto: i.abat_valor ? i.abat_valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "",
 });
 const paraEnvio = (id: string, e: Editavel): ItemEditado => ({
-  id, forma_pagamento: e.forma_pagamento, dias_uteis: e.dias_uteis, faltas: e.faltas, atestados: e.atestados, extras: e.extras, abat_dias: e.abat_dias,
+  id, forma_pagamento: e.forma_pagamento === "fopag" ? "fopag" : "pix", dias_uteis: e.dias_uteis, faltas: e.faltas, atestados: e.atestados, extras: e.extras, abat_dias: e.abat_dias,
   ferias_inicio: e.ferias_inicio || null, ferias_fim: e.ferias_fim || null, afastamento_inicio: e.afastamento_inicio || null, afastamento_fim: e.afastamento_fim || null,
   abat_valor: e.abat_valor_texto ? lerReais(e.abat_valor_texto) : 0, abat_motivo: e.abat_motivo?.trim() || null,
   sem_vt: e.sem_vt, sem_vt_motivo: e.sem_vt_motivo?.trim() || null, observacao: e.observacao?.trim() || null,

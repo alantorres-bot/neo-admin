@@ -109,9 +109,15 @@ Consistem.
     valor e ainda sem título:
     - **fornecedor** = Nº; **valor** = valor do mês; **vencimento** = dia do pagamento;
     - **emissão e entrada** = dia do lançamento; **documento** = `VT` + MMAA;
-    - **complemento** = `VALE TRANSPORTE <MÊS>/<ANO> - <FOPAG|PIX NEO FORMAS|PIX NEO SERVICOS>`;
-    - **histórico, portador, categoria, conta de fluxo e contas contábeis** vêm dos **Parâmetros**. Podem ser copiados de um VT
-      já lançado: o último título do fornecedor 660, ou um código de lançamento.
+    - **complemento** = `VALE TRANSPORTE - MM/AAAA` (decisão de 22/10/2026);
+    - desde 22/10/2026 (migration 0521) os códigos são os **mesmos Parâmetros da folha** (regra 10 de `rh-folha.md`):
+      - o tipo "vale transporte" dá histórico, fluxo e contas contábeis;
+      - a **categoria** é única;
+      - o **portador** sai da tabela empregadora × forma (FOPAG ou PIX).
+      - Os códigos do VT de 0503 viraram o tipo "vale transporte"; o portador fixo (91) saiu, e a tabela de portadores precisa estar
+        preenchida para lançar.
+    - A forma de pagamento passou a ser só **FOPAG** ou **PIX**; a conta que paga o PIX vem da tabela.
+    - Podem ser copiados de um título já lançado: o último título do fornecedor 660, ou um código de lançamento.
 
     Como o envio funciona:
     - O painel monta os títulos, a reserva confere de novo no banco (valor, fornecedor, vencimento, códigos) e grava o payload
@@ -146,7 +152,8 @@ As abas de RH > Vale-transporte:
 - **Resumo do ano**: o fechamento anual dividido por mês.
 - **Colaboradores**: o cadastro. Desde 14/10/2026 é o **cadastro único do RH** (RH > Colaboradores, migration 0510; ver
   `docs/modulos/rh-folha.md`, regra 1). O VT considera só quem está ativo **e** recebe VT.
-- **Parâmetros** (gestor): os códigos do título no Consistem, a cópia de um VT já lançado e a chave liga/desliga.
+- **Parâmetros** (gestor): os títulos no Consistem, os mesmos da aba Parâmetros da folha (códigos por tipo, categoria, portadores e as
+  chaves do VT e da folha), com a cópia de um título já lançado.
 
 Todas as grades usam `components/ui/table.tsx` (classificação e filtro).
 
@@ -168,11 +175,11 @@ Todas as grades usam `components/ui/table.tsx` (classificação e filtro).
   - no máximo um ativo por item; nunca apagado.
 - **Configurações**:
   - `rh.vale_transporte.lancar_no_erp`: começa desligada;
-  - `rh.vale_transporte.lancamento`: códigos do título.
+  - `rh.vale_transporte.lancamento`: códigos do título (obsoleto desde 0521; os códigos estão em `rh.lancamento`).
 - **Funções**:
   - fluxo: `rh_vt_abrir_competencia`, `rh_vt_atualizar_do_cadastro`, `rh_vt_definir_dias_uteis`, `rh_vt_salvar_itens`,
     `rh_vt_enviar`, `rh_vt_aprovar`, `rh_vt_reabrir`, `rh_vt_marcar_pix`, `rh_vt_registrar_arquivo_bb`, `rh_vt_marcar_paga`;
-  - Consistem: `rh_vt_salvar_parametros`, `rh_vt_reservar_lancamentos`, `rh_vt_resolver_lancamento`; envio só pela Edge
+  - Consistem: `rh_salvar_parametros_lancamento` (0521; substituiu `rh_vt_salvar_parametros`), `rh_vt_reservar_lancamentos`, `rh_vt_resolver_lancamento`; envio só pela Edge
     Function (`rh_vt_iniciar_envio_erp`, `rh_vt_concluir_lancamento_erp`, `rh_vt_interromper_lote`).
 
 ## 9. Permissões

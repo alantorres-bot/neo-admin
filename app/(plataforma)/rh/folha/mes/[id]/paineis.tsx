@@ -68,7 +68,8 @@ export function FluxoFolha({ id, status, podeOperar, ehGestor, temFopag }: { id:
   );
 }
 
-export type LinhaPixFolha = { id: string; cod_fornecedor: string; nome: string; empregador: string; forma_pagamento: FormaPagamento; valor: number; pix_pago_em: string | null };
+/** pagadora = conta pagadora dos Parâmetros (empregadora × PIX) ou a forma gravada no mês. */
+export type LinhaPixFolha = { id: string; cod_fornecedor: string; nome: string; empregador: string; pagadora: string; valor: number; pix_pago_em: string | null };
 
 /** PIX do mês (pagos à mão): marcar pago depois de aprovada. */
 export function PixFolha({ id, linhas, podeMarcar }: { id: string; linhas: LinhaPixFolha[]; podeMarcar: boolean }) {
@@ -90,7 +91,7 @@ export function PixFolha({ id, linhas, podeMarcar }: { id: string; linhas: Linha
               <TableCell className="tabular-nums">{l.cod_fornecedor}</TableCell>
               <TableCell>{l.nome}</TableCell>
               <TableCell className="text-xs">{l.empregador}</TableCell>
-              <TableCell>{ROTULO_FORMA[l.forma_pagamento]}</TableCell>
+              <TableCell>{l.pagadora}</TableCell>
               <TableCell className="text-right tabular-nums">{reais(l.valor)}</TableCell>
               <TableCell>{l.pix_pago_em ? <Badge variant="outline" className="border-marca text-marca">Pago</Badge> : <Badge variant="outline">A pagar</Badge>}</TableCell>
             </TableRow>

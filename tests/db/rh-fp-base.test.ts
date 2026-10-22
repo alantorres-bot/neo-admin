@@ -24,7 +24,7 @@ beforeAll(async () => {
     q(`insert into rh_colaboradores (empresa_id, empregador, cod_fornecedor, nome, cpf, agencia, conta, forma_pagamento, recebe_vt, tarifa, ativo)
        values ($1, $7, $2::text, 'PESSOA ' || $2::text, $3::text, case when $3::text is null then null else '2764-2' end, case when $3::text is null then null else '9999-9' end, $4, $5, case when $5 then 4.95 end, $6)`,
       [empresa, cod, cpf, forma, vt, ativo, empregador]);
-  await cad("660", null, "pix_neo_formas", true, true, "OESTE");
+  await cad("660", null, "pix", true, true, "OESTE");
   await cad("658", "111.444.777-35", "fopag", true);
   await cad("662", "222.333.444-05", "fopag", false);
   await cad("999", null, "fopag", false, false);
@@ -55,7 +55,7 @@ describe("folha de pagamento: mês e pagamento (0511)", () => {
     await salvar([
       { id: itens["658"], liquido: 2398.59 },
       { id: itens["662"], liquido: 5112.46, ferias_acrescimos: 1000, decimo_terceiro: 500.005, avulso: 4749.27, avulso_motivo: "ignorado: vem dos recibos" },
-      { id: itens["660"], liquido: 3775.57, forma_pagamento: "pix_neo_formas" },
+      { id: itens["660"], liquido: 3775.57, forma_pagamento: "pix" },
     ]);
     expect(await item("662")).toMatchObject({ decimo_terceiro: "500.01", avulso: "0.00", valor: "6612.47" });   // avulso só pelos recibos (0514)
     await expect(salvar([{ id: itens["658"], liquido: -1 }])).rejects.toThrow(/check/i);

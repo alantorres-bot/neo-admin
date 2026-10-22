@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { BotaoImprimir } from "@/app/(impressao)/imprimir/contas-pagar/autorizacao/[id]/botao-imprimir";
 import { lerItens, lerMes, ROTULO_STATUS, type ItemFolha } from "@/app/(plataforma)/rh/folha/dados";
 import { rotuloMes } from "@/lib/modulos/rh/calendario";
-import { FORMAS_PAGAMENTO, ROTULO_FORMA } from "@/lib/modulos/rh/colaboradores/modulo";
+import { FORMAS_GRAVADAS, ROTULO_FORMA } from "@/lib/modulos/rh/colaboradores/modulo";
 import { MODULO_FOLHA } from "@/lib/modulos/rh/folha/modulo";
 import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
@@ -31,7 +31,7 @@ export default async function PaginaImprimirFolha({ params }: PageProps<"/imprim
   const decimos = itens.filter((i) => i.decimo_terceiro > 0);
   const empresas = [...new Set(itens.map((i) => i.empregador))].sort();
   const avulsos = itens.filter((i) => i.avulso > 0);
-  const formas = FORMAS_PAGAMENTO.filter((f) => itens.some((i) => i.forma_pagamento === f));
+  const formas = FORMAS_GRAVADAS.filter((f) => itens.some((i) => i.forma_pagamento === f));
   const selo = mes.status === "aberta" || mes.status === "conferida" ? "PRÉVIA — FOLHA AINDA NÃO APROVADA" : null;
 
   return (

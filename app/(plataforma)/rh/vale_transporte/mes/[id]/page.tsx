@@ -5,14 +5,18 @@ import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { rotuloMes } from "@/lib/modulos/rh/calendario";
-import { ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
+import { codigosDoTitulo, contaPagadora } from "@/lib/modulos/rh/lancamento";
+import { ROTA_VT, ROTULO_FORMA } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { lerItens, lerLancamentos, lerMes, lerParametros, ROTULO_STATUS } from "../../dados";
+import { lerParametrosRh } from "../../../_consistem/dados";
+import { PainelConsistem } from "../../../_consistem/painel";
+import { lerItens, lerLancamentos, lerMes, ROTULO_STATUS } from "../../dados";
+import { lancarNoConsistem, resolverLancamento } from "../acoes";
 import { GradeMes } from "./grade";
-import { FluxoMes, PainelConsistem, PainelPix } from "./paineis";
+import { FluxoMes, PainelPix } from "./paineis";
 
 export const metadata: Metadata = { title: "Vale-transporte do mês" };
 
@@ -25,7 +29,7 @@ export default async function PaginaMes({ params }: PageProps<"/rh/vale_transpor
   const podeOperar = temAcesso(sessao.acesso, "rh", "operador");
   const ehGestor = temAcesso(sessao.acesso, "rh", "gestor");
   const supabase = await criarClienteServidor();
-  const [mes, itens, lancamentos, parametros] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id), lerLancamentos(supabase, id), lerParametros(supabase)]);
+  const [mes, itens, lancamentos, parametros] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id), lerLancamentos(supabase, id), lerParametrosRh(supabase)]);
   if (!mes) notFound();
 
   const editavel = podeOperar && mes.status === "aberta" && !mes.importada;
@@ -64,14 +68,18 @@ export default async function PaginaMes({ params }: PageProps<"/rh/vale_transpor
           <section className="space-y-2">
             <h3 className="text-base font-bold">PIX</h3>
             <PainelPix id={mes.id} podeMarcar={podeOperar && mes.status === "aprovada"}
-              linhas={pix.map((i) => ({ id: i.id, cod_fornecedor: i.cod_fornecedor, nome: i.nome, forma_pagamento: i.forma_pagamento, valor: i.valor, pix_pago_em: i.pix_pago_em }))} />
+              linhas={pix.map((i) => ({ id: i.id, cod_fornecedor: i.cod_fornecedor, nome: i.nome, pagadora: contaPagadora(parametros.parametros, i.empregador, i.forma_pagamento) ?? ROTULO_FORMA[i.forma_pagamento], valor: i.valor, pix_pago_em: i.pix_pago_em }))} />
           </section>
           <section className="space-y-2">
             <h3 className="text-base font-bold">Contas a pagar no Consistem</h3>
-            <PainelConsistem id={mes.id} ligado={parametros.ligado} codigosOk={!!parametros.codigos} podeLancar={podeOperar}
+            <PainelConsistem id={mes.id} ligado={parametros.vtLigado} podeLancar={podeOperar} parametrosHref={`${ROTA_VT}/parametros`}
+              descricao="Um título por pessoa, contra o fornecedor (Nº), com vencimento no dia do pagamento e o portador da empregadora/forma."
+              lancar={lancarNoConsistem} resolver={resolverLancamento}
               linhas={itens.map((i) => {
                 const l = ultimo.get(i.id);
-                return { item_id: i.id, cod_fornecedor: i.cod_fornecedor, nome: i.nome, valor: i.valor, lancamento: l ? { id: l.id, situacao: l.situacao, cod: l.cod_lancamento_erp, erro: l.erro } : null };
+                return { chave: i.id, cod_fornecedor: i.cod_fornecedor, nome: i.nome, valor: i.valor,
+                  portador: codigosDoTitulo(parametros.parametros, "vt", i.empregador, i.forma_pagamento)?.codPortador ?? null,
+                  lancamento: l ? { id: l.id, situacao: l.situacao, cod: l.cod_lancamento_erp, erro: l.erro } : null };
               })} />
           </section>
         </>

@@ -57,7 +57,7 @@ export function GradeFolha({ mesId, editavel, itens }: { mesId: string; editavel
   const salvar = () => iniciar(async () => {
     if (alteradas.some((l) => l.invalido)) { toast.error("Há valor inválido em alguma linha (use 1.234,56)."); return; }
     const envio: ItemEditado[] = alteradas.map(({ i, e, v }) => ({
-      id: i.id, forma_pagamento: e.forma_pagamento, ...v, avulso_motivo: e.avulso_motivo.trim() || null, observacao: e.observacao.trim() || null,
+      id: i.id, forma_pagamento: e.forma_pagamento === "fopag" ? "fopag" : "pix", ...v, avulso_motivo: e.avulso_motivo.trim() || null, observacao: e.observacao.trim() || null,
     }));
     const r = await salvarItens(mesId, envio);
     if (!r.ok) { toast.error(r.erro); return; }

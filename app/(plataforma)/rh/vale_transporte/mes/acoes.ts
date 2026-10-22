@@ -3,13 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { inicioDoMes } from "@/lib/modulos/rh/calendario";
+import { codigosDoTitulo } from "@/lib/modulos/rh/lancamento";
 import { itensALancar, montarTituloVt } from "@/lib/modulos/rh/vale-transporte/lancamento";
 import { FORMAS_PAGAMENTO, ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { lerItens, lerLancamentos, lerMes, lerParametros } from "../dados";
+import { lerParametrosRh } from "../../_consistem/dados";
+import { lerItens, lerLancamentos, lerMes } from "../dados";
 
 export type Resultado = { ok: true; aviso?: string } | { ok: false; erro: string };
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
@@ -138,20 +140,24 @@ export async function lancarNoConsistem(id: string, esperado: { quantidade: numb
   if (negado) return { ok: false, erro: negado };
   if (!uuid.safeParse(id).success) return { ok: false, erro: "Mês inválido." };
   const supabase = await criarClienteServidor();
-  const [mes, itens, lancamentos, parametros] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id), lerLancamentos(supabase, id), lerParametros(supabase)]);
+  const [mes, itens, lancamentos, parametros] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id), lerLancamentos(supabase, id), lerParametrosRh(supabase)]);
   if (!mes) return { ok: false, erro: "Mês não encontrado." };
-  if (!parametros.ligado) return { ok: false, erro: "O lançamento no Consistem está desligado (aba Parâmetros)." };
-  if (!parametros.codigos) return { ok: false, erro: "Faltam os códigos do título (aba Parâmetros)." };
+  if (!parametros.vtLigado) return { ok: false, erro: "O lançamento no Consistem está desligado (aba Parâmetros)." };
   const ativos = new Set(lancamentos.filter((l) => l.situacao !== "erro").map((l) => l.item_id));
   const alvo = itensALancar(itens, ativos);
   const total = alvo.reduce((s, i) => s + Math.round(i.valor * 100), 0);
   if (alvo.length !== esperado.quantidade || total !== esperado.totalCentavos) return { ok: false, erro: "Os títulos mudaram desde que a página abriu; recarregue e confira de novo." };
   if (!alvo.length) return { ok: false, erro: "Nenhum título a lançar." };
   const hoje = hojeEmCuiaba();
-  const titulos = alvo.map((i) => ({ item_id: i.id, payload: montarTituloVt({ item: i, competencia: mes.competencia, dataPagamento: mes.data_pagamento, hoje, codigos: parametros.codigos! }) }));
+  const titulos = [];
+  for (const i of alvo) {
+    const codigos = codigosDoTitulo(parametros.parametros, "vt", i.empregador, i.forma_pagamento);
+    if (!codigos) return { ok: false, erro: `Faltam nos Parâmetros os códigos do VT ou o portador de ${i.empregador} (${i.forma_pagamento === "fopag" ? "FOPAG" : "PIX"}).` };
+    titulos.push({ item_id: i.id, payload: montarTituloVt({ item: i, competencia: mes.competencia, dataPagamento: mes.data_pagamento, hoje, codigos }) });
+  }
   const { data: lote, error } = await supabase.rpc("rh_vt_reservar_lancamentos", { p_competencia: id, p_titulos: titulos });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
-  const { data, error: erroFuncao } = await supabase.functions.invoke("rh-vt-lancar-no-consistem", { body: { lote } });
+  const { data, error: erroFuncao } = await supabase.functions.invoke("rh-vt-lancar-no-consistem", { body: { lote, origem: "vt" } });
   revalidatePath(ROTA_VT, "layout");
   if (erroFuncao) return { ok: false, erro: await mensagemDaFuncao(erroFuncao, "Não foi possível falar com a função de lançamento. Confira a situação dos títulos.") };
   const r = data as { ok: boolean; lancados: number; recusados: { mensagem: string }[] };

@@ -11,9 +11,12 @@ let itens: Linha[];
 const q = (sql: string, p: unknown[] = []) => db.query<Linha>(sql, p);
 const rpc = (usuario: string, sql: string, p: unknown[] = []) => como(db, usuario, () => q(sql, p));
 const codigos = { codHistorico: 3, codPortador: 91, categoriaDoc: 17, grupoContaFluxoCaixa: 2, contaFluxoCaixa: 45, contaContabilDebito: 3101, contaContabilCredito: 2101 };
+const vt = { codHistorico: 3, grupoContaFluxoCaixa: 2, contaFluxoCaixa: 45, contaContabilDebito: 3101, contaContabilCredito: 2101 };
+const parametros = { categoriaDoc: 17, tipos: { vt }, portadores: [{ empregador: "oeste", forma: "pix", codPortador: 91, conta: "Conta Oeste" }] };
+const salvarParametros = (usuario: string, p: unknown, vtLigado = false) => rpc(usuario, `select rh_salvar_parametros_lancamento($1::jsonb, $2, false)`, [JSON.stringify(p), vtLigado]);
 const titulo = (i: Linha, mudar: Record<string, unknown> = {}) => ({
   item_id: i.id,
-  payload: { ...montarTituloVt({ item: { id: i.id as string, cod_fornecedor: i.cod_fornecedor as string, nome: i.nome as string, valor: Number(i.valor), forma_pagamento: "fopag" },
+  payload: { ...montarTituloVt({ item: { id: i.id as string, cod_fornecedor: i.cod_fornecedor as string, nome: i.nome as string, valor: Number(i.valor), empregador: "OESTE", forma_pagamento: "pix" },
     competencia: "2026-11-01", dataPagamento: "2026-10-30", hoje: "2026-10-29", codigos }), ...mudar },
 });
 const reservar = (usuario: string, titulos: unknown[]) => rpc(usuario, `select rh_vt_reservar_lancamentos($1, $2::jsonb) as lote`, [comp, JSON.stringify(titulos)]);
@@ -25,25 +28,29 @@ beforeAll(async () => {
   rhGestor = await novoUsuario(db, "gestor@neo.com", { rh: "gestor" });
   const empresa = (await q(`insert into empresas (razao_social, nome_curto, codigo_erp) values ('Neo Formas', 'NEO FORMAS', '1') returning id`)).rows[0].id;
   for (const cod of ["660", "658"]) {
-    await q(`insert into rh_colaboradores (empresa_id, empregador, cod_fornecedor, nome, forma_pagamento, tarifa) values ($1, 'OESTE', $2, 'PESSOA ' || $2::text, 'pix_neo_formas', 4.95)`, [empresa, cod]);
+    await q(`insert into rh_colaboradores (empresa_id, empregador, cod_fornecedor, nome, forma_pagamento, tarifa) values ($1, 'OESTE', $2, 'PESSOA ' || $2::text, 'pix', 4.95)`, [empresa, cod]);
   }
   comp = (await rpc(rhOperador, `select rh_vt_abrir_competencia('2026-11-01', 21) as id`)).rows[0].id;
   itens = (await q(`select id, cod_fornecedor, nome, valor from rh_vt_itens where competencia_id = $1 order by cod_fornecedor`, [comp])).rows;
 });
 
 describe("contas a pagar no Consistem (0503)", () => {
-  it("parâmetros: só gestor; códigos completos; débito ≠ crédito; não liga sem códigos", async () => {
-    await expect(rpc(rhOperador, `select rh_vt_salvar_parametros($1::jsonb, false)`, [JSON.stringify(codigos)])).rejects.toThrow(/gestor/);
-    await expect(rpc(rhGestor, `select rh_vt_salvar_parametros($1::jsonb, false)`, [JSON.stringify({ ...codigos, codPortador: undefined })])).rejects.toThrow(/todos os códigos/);
-    await expect(rpc(rhGestor, `select rh_vt_salvar_parametros($1::jsonb, false)`, [JSON.stringify({ ...codigos, contaContabilCredito: 3101 })])).rejects.toThrow(/mesma/);
-    await expect(rpc(rhGestor, `select rh_vt_salvar_parametros(null, true)`)).rejects.toThrow(/Preencha os códigos/);
-    await rpc(rhGestor, `select rh_vt_salvar_parametros($1::jsonb, false)`, [JSON.stringify(codigos)]);
-    expect((await q(`select rh_vt_codigos_lancamento() as c`)).rows[0].c).toEqual(codigos);
+  it("parâmetros (0521): só gestor; códigos completos por tipo; débito ≠ crédito; portador; não liga sem códigos", async () => {
+    await expect(salvarParametros(rhOperador, parametros)).rejects.toThrow(/gestor/);
+    await expect(salvarParametros(rhGestor, { ...parametros, tipos: { vt: { ...vt, contaFluxoCaixa: undefined } } })).rejects.toThrow(/todos os códigos do tipo vt/);
+    await expect(salvarParametros(rhGestor, { ...parametros, tipos: { vt: { ...vt, contaContabilCredito: 3101 } } })).rejects.toThrow(/mesma/);
+    await expect(salvarParametros(rhGestor, { ...parametros, tipos: { outro: vt } })).rejects.toThrow(/desconhecido/);
+    await expect(salvarParametros(rhGestor, { ...parametros, portadores: [{ empregador: "OESTE", forma: "pix_neo_formas", codPortador: 91 }] })).rejects.toThrow(/Cada portador/);
+    await expect(salvarParametros(rhGestor, { ...parametros, portadores: [...parametros.portadores, { empregador: "Oeste ", forma: "pix", codPortador: 92 }] })).rejects.toThrow(/repetido/);
+    await expect(salvarParametros(rhGestor, { ...parametros, tipos: {} }, true)).rejects.toThrow(/antes de ligar/);
+    await salvarParametros(rhGestor, parametros);
+    expect((await q(`select rh_codigos_titulo('vt', 'Oeste', 'pix_neo_formas') as c`)).rows[0].c).toEqual(codigos);   // forma antiga = PIX
+    expect((await q(`select rh_codigos_titulo('vt', 'OESTE', 'fopag') as c, rh_codigos_titulo('salario', 'OESTE', 'pix') as s`)).rows[0]).toEqual({ c: null, s: null });
   });
 
   it("reservar: só com a chave ligada e mês aprovado; confere valor, fornecedor e códigos", async () => {
     await expect(reservar(rhOperador, [titulo(itens[0])])).rejects.toThrow(/desligado/);
-    await rpc(rhGestor, `select rh_vt_salvar_parametros($1::jsonb, true)`, [JSON.stringify(codigos)]);
+    await salvarParametros(rhGestor, parametros, true);
     await expect(reservar(rhOperador, [titulo(itens[0])])).rejects.toThrow(/esta ação não vale/);
     await rpc(rhOperador, `select rh_vt_enviar($1)`, [comp]);
     await rpc(rhGestor, `select rh_vt_aprovar($1)`, [comp]);

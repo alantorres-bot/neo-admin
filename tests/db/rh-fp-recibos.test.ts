@@ -30,7 +30,7 @@ beforeAll(async () => {
   const empresa = (await q(`insert into empresas (razao_social, nome_curto, codigo_erp) values ('Neo Formas', 'NEO FORMAS', '1') returning id`)).rows[0].id;
   for (const cod of ["717", "703"]) {
     pessoa[cod] = (await q(`insert into rh_colaboradores (empresa_id, empregador, cod_fornecedor, nome, forma_pagamento, recebe_vt)
-                             values ($1, 'NEO SERVIÇOS', $2, 'PESSOA ' || $2::text, 'pix_neo_servicos', false) returning id`, [empresa, cod])).rows[0].id;
+                             values ($1, 'NEO SERVIÇOS', $2, 'PESSOA ' || $2::text, 'pix', false) returning id`, [empresa, cod])).rows[0].id;
   }
   set = (await rpc(rhOperador, `select rh_fp_abrir_competencia('2026-09-01') as id`)).rows[0].id;
 });

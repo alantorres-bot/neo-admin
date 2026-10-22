@@ -4,11 +4,16 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { FORMAS_PAGAMENTO } from "@/lib/modulos/rh/colaboradores/modulo";
 import { inicioDoMes } from "@/lib/modulos/rh/calendario";
+import { titulosALancar } from "@/lib/modulos/rh/folha/lancamento";
 import { ROTA_FOLHA } from "@/lib/modulos/rh/folha/modulo";
+import { codigosDoTitulo, montarTitulo, ROTULO_TIPO } from "@/lib/modulos/rh/lancamento";
+import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { gerarRecorrentes } from "../recibos-acoes";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
+import { lerParametrosRh } from "../../_consistem/dados";
+import { lerItens, lerLancamentos, lerMes } from "../dados";
 
 export type Resultado = { ok: true; aviso?: string } | { ok: false; erro: string };
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
@@ -91,4 +96,58 @@ export async function reabrirMes(id: string, motivo: string): Promise<Resultado>
 export async function marcarPix(id: string, itens: string[], pago: boolean): Promise<Resultado> {
   if (!uuid.safeParse(id).success || !z.array(uuid).min(1).max(1000).safeParse(itens).success) return { ok: false, erro: "Escolha as linhas." };
   return chamar("rh_fp_marcar_pix", { p_id: id, p_itens: itens, p_pago: pago });
+}
+
+// ---------------------------------------------------------------- Consistem (0521)
+
+async function mensagemDaFuncao(error: unknown, padrao: string): Promise<string> {
+  const resposta = (error as { context?: Response }).context;
+  if (resposta && typeof resposta.json === "function") {
+    try {
+      const j = (await resposta.json()) as { erro?: string; mensagem?: string };
+      return j.mensagem ?? j.erro ?? padrao;
+    } catch { /* mantém */ }
+  }
+  return padrao;
+}
+
+/**
+ * Lança no Consistem os títulos da folha aprovada (um por pessoa × tipo com valor e ainda sem título). Monta tudo de novo aqui (não
+ * confia na tela), confere com o que a pessoa viu (quantidade e total), reserva (rh_fp_reservar_lancamentos) e chama a Edge Function.
+ */
+export async function lancarNoConsistem(id: string, esperado: { quantidade: number; totalCentavos: number }): Promise<Resultado> {
+  const negado = await exigir("operador");
+  if (negado) return { ok: false, erro: negado };
+  if (!uuid.safeParse(id).success) return { ok: false, erro: "Mês inválido." };
+  const supabase = await criarClienteServidor();
+  const [mes, itens, lancamentos, parametros] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id), lerLancamentos(supabase, id), lerParametrosRh(supabase)]);
+  if (!mes) return { ok: false, erro: "Mês não encontrado." };
+  if (!parametros.folhaLigado) return { ok: false, erro: "O lançamento da folha no Consistem está desligado (aba Parâmetros)." };
+  const ativos = new Set(lancamentos.filter((l) => l.situacao !== "erro").map((l) => `${l.item_id}:${l.tipo}`));
+  const alvo = titulosALancar(itens, mes.competencia, ativos);
+  const total = alvo.reduce((s, t) => s + Math.round(t.valor * 100), 0);
+  if (alvo.length !== esperado.quantidade || total !== esperado.totalCentavos) return { ok: false, erro: "Os títulos mudaram desde que a página abriu; recarregue e confira de novo." };
+  if (!alvo.length) return { ok: false, erro: "Nenhum título a lançar." };
+  const item = new Map(itens.map((i) => [i.id, i]));
+  const hoje = hojeEmCuiaba();
+  const titulos = [];
+  for (const t of alvo) {
+    const i = item.get(t.item_id)!;
+    const codigos = codigosDoTitulo(parametros.parametros, t.tipo, i.empregador, i.forma_pagamento);
+    if (!codigos) return { ok: false, erro: `Faltam nos Parâmetros os códigos de ${ROTULO_TIPO[t.tipo]} ou o portador de ${i.empregador} (${i.forma_pagamento === "fopag" ? "FOPAG" : "PIX"}).` };
+    titulos.push({ item_id: t.item_id, tipo: t.tipo, payload: montarTitulo({ tipo: t.tipo, codFornecedor: i.cod_fornecedor, valor: t.valor, competencia: mes.competencia, dataPagamento: mes.data_pagamento, hoje, codigos }) });
+  }
+  const { data: lote, error } = await supabase.rpc("rh_fp_reservar_lancamentos", { p_competencia: id, p_titulos: titulos });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  const { data, error: erroFuncao } = await supabase.functions.invoke("rh-vt-lancar-no-consistem", { body: { lote, origem: "folha" } });
+  revalidatePath(ROTA_FOLHA, "layout");
+  if (erroFuncao) return { ok: false, erro: await mensagemDaFuncao(erroFuncao, "Não foi possível falar com a função de lançamento. Confira a situação dos títulos.") };
+  const r = data as { ok: boolean; lancados: number; recusados: { mensagem: string }[] };
+  if (r.ok) return { ok: true, aviso: `${r.lancados} título(s) lançado(s) no Consistem.` };
+  return { ok: false, erro: `${r.lancados} lançado(s); ${r.recusados.length} recusado(s) pelo Consistem: ${r.recusados.map((x) => x.mensagem).slice(0, 3).join(" | ")}. Corrija e lance de novo.` };
+}
+
+export async function resolverLancamento(idLancamento: string, cod: string, motivo: string): Promise<Resultado> {
+  if (!uuid.safeParse(idLancamento).success) return { ok: false, erro: "Lançamento inválido." };
+  return chamar("rh_fp_resolver_lancamento", { p_id: idLancamento, p_cod: cod.trim() || null, p_motivo: motivo.trim() });
 }

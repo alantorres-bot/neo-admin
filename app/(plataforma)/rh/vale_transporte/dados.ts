@@ -1,6 +1,5 @@
 // Leituras do módulo Vale-transporte (RLS de quem chama; nada é gravado aqui).
 import type { FormaPagamento } from "@/lib/modulos/rh/vale-transporte/modulo";
-import { lerCodigosLancamento, type CodigosLancamento } from "@/lib/modulos/rh/vale-transporte/lancamento";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
 type Cliente = Awaited<ReturnType<typeof criarClienteServidor>>;
@@ -98,14 +97,4 @@ export type LancamentoVtLinha = { id: string; item_id: string; lote: string; sit
 export async function lerLancamentos(supabase: Cliente, competenciaId: string): Promise<LancamentoVtLinha[]> {
   const { data } = await supabase.from("rh_vt_lancamentos_erp").select("id, item_id, lote, situacao, cod_lancamento_erp, erro, valor, criado_em").eq("competencia_id", competenciaId).order("criado_em");
   return ((data ?? []) as (LancamentoVtLinha & { valor: string | number })[]).map((l) => ({ ...l, valor: Number(l.valor) }));
-}
-
-export const CHAVE_LANCAR = "rh.vale_transporte.lancar_no_erp";
-export const CHAVE_CODIGOS = "rh.vale_transporte.lancamento";
-
-export async function lerParametros(supabase: Cliente): Promise<{ ligado: boolean; codigos: CodigosLancamento | null; bruto: Record<string, unknown> | null }> {
-  const { data } = await supabase.from("configuracoes").select("chave, valor").in("chave", [CHAVE_LANCAR, CHAVE_CODIGOS]);
-  const valor = (k: string) => (data ?? []).find((c) => c.chave === k)?.valor;
-  const bruto = valor(CHAVE_CODIGOS);
-  return { ligado: valor(CHAVE_LANCAR) === true, codigos: lerCodigosLancamento(bruto), bruto: bruto && typeof bruto === "object" ? (bruto as Record<string, unknown>) : null };
 }
