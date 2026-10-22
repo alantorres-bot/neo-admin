@@ -39,3 +39,6 @@ backups/
 /.next-*/
 sondagem-comercial*.json
 extrato-comissoes-*.json
+
+# ambiente local sem Docker (scripts/local-sem-docker)
+/.local-supabase/
