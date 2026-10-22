@@ -82,5 +82,6 @@ descrito. Conferência: saldo do razão = saldo declarado em todos os meses.
 - Importação em duas etapas: créditos do mês e ajustes; aprovar os ajustes; depois as utilizações. Utilização que depende de ajuste
   ainda pendente é recusada na confirmação.
 - Créditos arquivados na implantação (testes e versões descartadas): CR-2026-00001, CR-2021-00002, CR-2024-00003, CR-2025-00005.
+- Manual de uso (conceitos, papéis, calendário, passo a passo e cadastros sugeridos de obrigações): `docs/fiscal-control/MANUAL_DE_USO.md`.
 - Rotina mensal: `docs/fiscal-control/ROTEIRO_MENSAL_EFD.md` (script `scripts/fiscal-efd-mensal.mjs`, regra em
   `lib/modulos/fiscal/creditos/efd-mensal.ts`). Conferido com 09/2026 (ICMS) e 08/2026 (PIS/Cofins): gera os mesmos lançamentos da implantação.
