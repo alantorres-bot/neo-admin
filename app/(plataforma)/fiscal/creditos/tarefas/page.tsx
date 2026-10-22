@@ -14,7 +14,7 @@ import { Campo, FormularioAcao, SELECT, TEXTAREA } from "../ui";
 export const metadata: Metadata = { title: "Tarefas e aprovações" };
 
 export default async function PaginaTarefas({ searchParams }: PageProps<"/fiscal/creditos/tarefas">) {
-  const { supabase, papel, sessao } = await contexto();
+  const { supabase, papel, sessao, autoaprova } = await contexto();
   const sp = await searchParams;
   const hoje = hojeEmCuiaba();
   const filtro = sp.ver === "todas" ? "todas" : sp.ver === "encerradas" ? "encerradas" : "minhas";
@@ -81,7 +81,7 @@ export default async function PaginaTarefas({ searchParams }: PageProps<"/fiscal
                         <TableCell title={m.descricao}>{n.tipoMov.get(m.tipo)}</TableCell>
                         <TableCell className="text-right tabular-nums">{reais(m.valor_assinado)}</TableCell>
                         <TableCell className="text-xs">{m.registrado_por ? n.usuario.get(m.registrado_por) : "sistema"}</TableCell>
-                        <TableCell><AcoesMovimento m={m} papel={papel} usuarioId={sessao.userId} /></TableCell>
+                        <TableCell><AcoesMovimento m={m} papel={papel} usuarioId={sessao.userId} autoaprova={autoaprova} /></TableCell>
                       </TableRow>
                     ))}
                   </TableBody>

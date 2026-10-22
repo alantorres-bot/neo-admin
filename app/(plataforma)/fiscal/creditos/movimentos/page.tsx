@@ -17,7 +17,7 @@ const link = "inline-flex h-7 items-center rounded-[3px] border bg-botao-claro p
 const SITUACOES = { efetivo: "Efetivo", pendente: "Pendente de aprovação", rejeitado: "Rejeitado", estornado: "Estornado" };
 
 export default async function PaginaMovimentos({ searchParams }: PageProps<"/fiscal/creditos/movimentos">) {
-  const { supabase, papel, sessao } = await contexto();
+  const { supabase, papel, sessao, autoaprova } = await contexto();
   const sp = await searchParams;
   const f = lerFiltros(sp, Number(hojeEmCuiaba().slice(0, 4)));
   const tipo = typeof sp.tipo === "string" && /^[a-z0-9_]+$/.test(sp.tipo) ? sp.tipo : "";
@@ -84,7 +84,7 @@ export default async function PaginaMovimentos({ searchParams }: PageProps<"/fis
                   <TableCell>{m.protocolo ?? (m.tipo === "compensacao" ? <Selo tom="atencao">sem protocolo</Selo> : "—")}</TableCell>
                   <TableCell>{m.estornado ? <Selo>Estornado</Selo> : <Selo tom={m.status === "efetivo" ? "bom" : m.status === "pendente" ? "atencao" : "grave"}>{ROTULO_STATUS_MOV[m.status]}</Selo>}</TableCell>
                   <TableCell className="text-xs">{m.registrado_por ? n.usuario.get(m.registrado_por) : "sistema"}<br />{dataHora(m.registrado_em)}</TableCell>
-                  <TableCell><AcoesMovimento m={m} papel={papel} usuarioId={sessao.userId} /></TableCell>
+                  <TableCell><AcoesMovimento m={m} papel={papel} usuarioId={sessao.userId} autoaprova={autoaprova} /></TableCell>
                 </TableRow>
               ))}
             </TableBody>

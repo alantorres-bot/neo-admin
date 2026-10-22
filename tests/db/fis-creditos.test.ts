@@ -108,6 +108,28 @@ describe("crédito, validação e razão", () => {
     await expect(rpc(revisor, "fis_credito_validar", [outro, "validado", null, null], ["uuid", "fis_validacao", "numeric", "text"])).rejects.toThrow(/segregação/);
   });
 
+  it("autoaprovação (0204): só com a chave ligada, só o Administrador e com justificativa", async () => {
+    const tipos = ["uuid", "fis_validacao", "numeric", "text"];
+    const proprio = await criarCredito(admin, { ...base(), estabelecimento_id: estabA2, competencia_origem: "2025-01-01", descricao: "Crédito lançado pelo admin", valor_original: 700, tipo_entrada: "saldo_inicial", data_entrada: "2025-01-01" });
+    await anexar(admin, empA, "memoria_calculo", "credito", proprio);
+    const inicial = (await q(`select id from fis_movimentos where credito_id = $1`, [proprio])).rows[0].id;
+    await expect(rpc(admin, "fis_movimento_decidir", [inicial, true, "Conferido com a EFD"], ["uuid", "boolean", "text"])).rejects.toThrow(/segregação/);
+    await q(`update configuracoes set valor = 'true' where chave = 'fiscal.creditos.permitir_autoaprovacao'`);
+    try {
+      await expect(rpc(admin, "fis_movimento_decidir", [inicial, true, null], ["uuid", "boolean", "text"])).rejects.toThrow(/Autoaprovação: justifique/);
+      await rpc(admin, "fis_movimento_decidir", [inicial, true, "Conferido com a EFD"], ["uuid", "boolean", "text"]);
+      await rpc(admin, "fis_credito_validar", [proprio, "validado", null, "Saldo conferido com a EFD"], tipos);
+      const d = (await q(`select justificativa from fis_decisoes where alvo_id = $1 order by id desc limit 1`, [proprio])).rows[0];
+      expect(d.justificativa).toBe("[autoaprovação] Saldo conferido com a EFD");
+      // revisor continua sem a exceção
+      const doRevisor = await criarCredito(revisor, { ...base(), estabelecimento_id: estabA2, competencia_origem: "2025-01-01", descricao: "Crédito do revisor", valor_original: 300 });
+      await anexar(revisor, empA, "memoria_calculo", "credito", doRevisor);
+      await expect(rpc(revisor, "fis_credito_validar", [doRevisor, "validado", null, "Conferido por mim mesmo"], tipos)).rejects.toThrow(/segregação/);
+    } finally {
+      await q(`update configuracoes set valor = 'false' where chave = 'fiscal.creditos.permitir_autoaprovacao'`);
+    }
+  });
+
   it("utilização parcial, saldo transportado e bloqueio acima do saldo", async () => {
     await mov(analista, { credito_id: cr, tipo: "utilizacao", valor: "3000.00", data: "2025-02-20", competencia: "2025-02-01", descricao: "Dedução na apuração de fev" });
     expect(await saldo(cr)).toBe(7000);

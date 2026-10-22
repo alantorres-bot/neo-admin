@@ -31,8 +31,14 @@ export const contexto = cache(async () => {
   const sessao = await exigirSessao();
   if (!temAcessoModulo(sessao.acesso, sessao.modulos, MODULO_CREDITOS)) notFound();
   const supabase = await criarClienteServidor();
-  const { data } = await supabase.rpc("fis_papel_atual");
-  return { sessao, supabase, papel: (data as Papel | null) ?? null };
+  const [{ data }, { data: chave }] = await Promise.all([
+    supabase.rpc("fis_papel_atual"),
+    supabase.from("configuracoes").select("valor").eq("chave", "fiscal.creditos.permitir_autoaprovacao").maybeSingle(),
+  ]);
+  const papel = (data as Papel | null) ?? null;
+  // Exceção à segregação (migration 0204): o Administrador valida/aprova o que ele mesmo lançou, com justificativa.
+  const autoaprova = papel === "administrador" && chave?.valor === true;
+  return { sessao, supabase, papel, autoaprova };
 });
 
 export const lerCadastros = cache(async (): Promise<Cadastros> => {

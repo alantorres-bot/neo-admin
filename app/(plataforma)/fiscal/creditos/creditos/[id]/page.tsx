@@ -21,7 +21,7 @@ export const metadata: Metadata = { title: "Crédito" };
 export default async function PaginaCredito({ params }: PageProps<"/fiscal/creditos/creditos/[id]">) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
-  const { supabase, papel, sessao } = await contexto();
+  const { supabase, papel, sessao, autoaprova } = await contexto();
   const [{ data: c }, cad] = await Promise.all([supabase.from("fis_creditos_saldos").select("*").eq("id", id).maybeSingle(), lerCadastros()]);
   if (!c) notFound();
   const hoje = hojeEmCuiaba();
@@ -61,8 +61,8 @@ export default async function PaginaCredito({ params }: PageProps<"/fiscal/credi
 
       <div className="flex flex-wrap gap-2">
         {pode(papel, "lancar") && !c.arquivado && <FormMovimento cad={cad} creditoId={id} />}
-        {pode(papel, "validar") && !c.arquivado && (lancou === sessao.userId
-          ? <span className="self-center text-xs text-muted-foreground">Validação: outra pessoa precisa validar (você lançou este crédito).</span>
+        {pode(papel, "validar") && !c.arquivado && (lancou === sessao.userId && !autoaprova
+          ?<span className="self-center text-xs text-muted-foreground">Validação: outra pessoa precisa validar (você lançou este crédito).</span>
           : (
           <FormularioAcao titulo="Validar crédito" botao="Validar / decidir" acao={validarCredito} ocultos={{ id }} rotuloSalvar="Registrar decisão"
             descricao="Validar exige os documentos exigidos pela categoria vinculados. Reconhecimento parcial gera ajuste negativo (glosa) no razão.">
@@ -72,7 +72,9 @@ export default async function PaginaCredito({ params }: PageProps<"/fiscal/credi
               </select>
             </Campo>
             <Campo rotulo="Valor reconhecido (R$)" htmlFor="valor_reconhecido" dica={`Vazio: ${reais(c.valor_reconhecido ?? c.valor_original)}`}><CampoValor name="valor_reconhecido" permitirZero /></Campo>
-            <Campo rotulo="Justificativa" htmlFor="vd-just" dica="Obrigatória para rejeitar, contestar ou reconhecer parcialmente."><textarea id="vd-just" name="justificativa" className={TEXTAREA} /></Campo>
+            {lancou === sessao.userId
+              ? <Campo rotulo="Justificativa da autoaprovação *" htmlFor="vd-just" dica="Você lançou este crédito: a justificativa é obrigatória (mínimo 10 caracteres)."><textarea id="vd-just" name="justificativa" required minLength={10} className={TEXTAREA} /></Campo>
+              : <Campo rotulo="Justificativa" htmlFor="vd-just" dica="Obrigatória para rejeitar, contestar ou reconhecer parcialmente."><textarea id="vd-just" name="justificativa" className={TEXTAREA} /></Campo>}
           </FormularioAcao>
         ))}
         {pode(papel, "lancar") && !c.arquivado && (
@@ -206,7 +208,7 @@ export default async function PaginaCredito({ params }: PageProps<"/fiscal/credi
                 <TableCell>{m.protocolo ?? (m.tipo === "compensacao" ? <Selo tom="atencao">sem protocolo</Selo> : "—")}</TableCell>
                 <TableCell>{m.estornado ? "Estornado" : ROTULO_STATUS_MOV[m.status]}{m.decisao_motivo ? <span className="block text-[11px]">{m.decisao_motivo}</span> : null}</TableCell>
                 <TableCell>{m.registrado_por ? n.usuario.get(m.registrado_por) : "sistema"}</TableCell>
-                <TableCell><AcoesMovimento m={m} papel={papel} usuarioId={sessao.userId} /></TableCell>
+                <TableCell><AcoesMovimento m={m} papel={papel} usuarioId={sessao.userId} autoaprova={autoaprova} /></TableCell>
               </TableRow>
             ))}
           </TableBody>

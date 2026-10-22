@@ -11,13 +11,16 @@ import { Campo, CampoValor, FormularioAcao, TEXTAREA } from "./ui";
 
 export type MovimentoLinha = { id: string; numero: number; tipo: string; status: string; estornado: boolean; registrado_por: string | null };
 
-export function AcoesMovimento({ m, papel, usuarioId }: { m: MovimentoLinha; papel: Papel | null; usuarioId: string }) {
+export function AcoesMovimento({ m, papel, usuarioId, autoaprova = false }: { m: MovimentoLinha; papel: Papel | null; usuarioId: string; autoaprova?: boolean }) {
   if (m.status === "pendente") {
-    if (!pode(papel, "validar") || m.registrado_por === usuarioId) return <span className="text-[11px] text-muted-foreground">Aguarda aprovação de outro revisor</span>;
+    const proprio = m.registrado_por === usuarioId;
+    if (!pode(papel, "validar") || (proprio && !autoaprova)) return <span className="text-[11px] text-muted-foreground">Aguarda aprovação de outro revisor</span>;
     return (
       <div className="flex gap-1">
         <FormularioAcao titulo={`Aprovar lançamento nº ${m.numero}`} botao="Aprovar" tamanho="xs" acao={decidirMovimento} ocultos={{ id: m.id, decisao: "aprovar" }} rotuloSalvar="Aprovar">
-          <Campo rotulo="Observação (opcional)" htmlFor={`ap-${m.id}`}><Input id={`ap-${m.id}`} name="motivo" maxLength={500} /></Campo>
+          {proprio
+            ? <Campo rotulo="Justificativa da autoaprovação *" htmlFor={`ap-${m.id}`}><Input id={`ap-${m.id}`} name="motivo" required minLength={10} maxLength={500} /></Campo>
+            : <Campo rotulo="Observação (opcional)" htmlFor={`ap-${m.id}`}><Input id={`ap-${m.id}`} name="motivo" maxLength={500} /></Campo>}
         </FormularioAcao>
         <FormularioAcao titulo={`Rejeitar lançamento nº ${m.numero}`} botao="Rejeitar" tamanho="xs" acao={decidirMovimento} ocultos={{ id: m.id, decisao: "rejeitar" }} rotuloSalvar="Rejeitar">
           <Campo rotulo="Motivo *" htmlFor={`rj-${m.id}`}><textarea id={`rj-${m.id}`} name="motivo" required minLength={10} className={TEXTAREA} /></Campo>
