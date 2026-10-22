@@ -14,6 +14,7 @@ uma rotina que hoje é feita em planilha, e-mail, ERP ou skill avulsa.
 | Financeiro | Fluxo de caixa | Previsão a partir de recebíveis, pagáveis e parcelamentos | 5 |
 | **Fiscal/Tributário** | Parcelamentos | Acordos (Receita, PGFN, SEFAZ/MT, PGE/MT), parcelas, risco de rescisão | 2 |
 | Fiscal/Tributário | Análise de entradas | Conferência semanal de CFOP/CST/bases (CCESE735) | 4 |
+| Fiscal/Tributário | Créditos tributários (Fiscal Control) | Créditos (registro, validação, disponibilidade), razão imutável, apuração mensal com transporte de saldo, fechamento, consolidado anual, obrigações com recibo, documentos privados, conciliação e tarefas com o contador (ver `modulos/fiscal-creditos.md` e `fiscal-control/`; primeira versão em 22/10/2026, aguardando avaliação) | em construção |
 | Fiscal/Tributário | Notificações e guias | Notificações de órgãos, guias recebidas, prazos de resposta | 2 |
 | **Contratos** | Contratos de venda/locação | Proposta → dados → minuta; aditivos; vencimentos contratuais | 3 |
 | Contratos | Remessas e retornos (locação) | Controle REM x RET de equipamentos locados, pendências de devolução | 4 |

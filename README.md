@@ -11,3 +11,7 @@ npx playwright test            # fumaça e2e
 ```
 
 Status e instruções de implantação: `docs/FASE_0_NUCLEO.md`.
+
+## Módulos com documentação própria
+- **Fiscal > Créditos tributários (Fiscal Control):** `docs/fiscal-control/README.md` (instalação, migrations 0200–0203, dados de
+  demonstração fictícios, testes, permissões, backup e limitações), `docs/fiscal-control/STATUS.md` e `docs/fiscal-control/ARCHITECTURE.md`.
