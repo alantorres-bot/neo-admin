@@ -176,10 +176,11 @@ begin
   -- Créditos (situação atual)
   select r || jsonb_build_object('creditos', jsonb_build_object(
     'quantidade', count(*) filter (where not arquivado),
-    'registrado', coalesce(sum(valor_original) filter (where not arquivado), 0),
-    'validado', coalesce(sum(coalesce(valor_reconhecido, valor_original)) filter (where not arquivado and validacao = 'validado'), 0),
-    'pendente_validacao', coalesce(sum(valor_original) filter (where not arquivado and validacao in ('pendente', 'em_analise')), 0),
-    'contestado_rejeitado', coalesce(sum(saldo) filter (where not arquivado and validacao in ('contestado', 'rejeitado')), 0),
+    -- registrado = entradas efetivas no razão (saldo inicial, apurado, reconhecido); validado + pendente + contestado/rejeitado = registrado
+    'registrado', coalesce(sum(entradas) filter (where not arquivado), 0),
+    'validado', coalesce(sum(entradas) filter (where not arquivado and validacao = 'validado'), 0),
+    'pendente_validacao', coalesce(sum(entradas + pendente_entrada) filter (where not arquivado and validacao in ('pendente', 'em_analise')), 0),
+    'contestado_rejeitado', coalesce(sum(entradas) filter (where not arquivado and validacao in ('contestado', 'rejeitado')), 0),
     'saldo_registrado', coalesce(sum(saldo) filter (where not arquivado), 0),
     'disponivel', coalesce(sum(saldo_disponivel), 0),
     'utilizado_total', coalesce(sum(utilizado), 0),

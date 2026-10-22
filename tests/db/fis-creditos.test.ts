@@ -4,8 +4,8 @@ import type { PGlite } from "@electric-sql/pglite";
 import { como, criarBanco, novoUsuario, type Linha } from "./harness";
 
 let db: PGlite;
-let admin: string, leitor: string, analista: string, revisor: string, contador: string, analistaB: string, revisor2: string;
-let empA: string, empB: string, estabA: string, estabA2: string, estabB: string;
+let admin: string, leitor: string, analista: string, revisor: string, contador: string, analistaB: string;
+let empA: string, empB: string, estabA: string, estabA2: string;
 let icms: string, pis: string, catIcms: string, catPis: string;
 
 const q = (sql: string, p: unknown[] = []) => db.query<Linha>(sql, p);
@@ -35,14 +35,13 @@ beforeAll(async () => {
   leitor = await novoUsuario(db, "leitor@neo.com", { fiscal: "consulta" });
   analista = await novoUsuario(db, "analista@neo.com", { fiscal: "operador" });
   revisor = await novoUsuario(db, "revisor@neo.com", { fiscal: "gestor" });
-  revisor2 = await novoUsuario(db, "revisor2@neo.com", { fiscal: "gestor" });
   contador = await novoUsuario(db, "contador@neo.com", { fiscal: "gestor" });
   analistaB = await novoUsuario(db, "analista.b@neo.com", { fiscal: "operador" });
   empA = (await q(`insert into empresas (razao_social, nome_curto, cnpj) values ('Indústria A (FICTÍCIA)', 'A', '11.111.111/0001-11') returning id`)).rows[0].id;
   empB = (await q(`insert into empresas (razao_social, nome_curto, cnpj) values ('Indústria B (FICTÍCIA)', 'B', '22.222.222/0001-22') returning id`)).rows[0].id;
   estabA = await rpc(admin, "fis_salvar_estabelecimento", [j({ empresa_id: empA, nome: "Matriz A", cnpj: "11111111000111", uf: "MT", matriz: true })], ["jsonb"]);
   estabA2 = await rpc(admin, "fis_salvar_estabelecimento", [j({ empresa_id: empA, nome: "Filial A", cnpj: "11111111000292", uf: "MT" })], ["jsonb"]);
-  estabB = await rpc(admin, "fis_salvar_estabelecimento", [j({ empresa_id: empB, nome: "Matriz B", cnpj: "22222222000122", uf: "SP" })], ["jsonb"]);
+  await rpc(admin, "fis_salvar_estabelecimento", [j({ empresa_id: empB, nome: "Matriz B", cnpj: "22222222000122", uf: "SP" })], ["jsonb"]);
   await como(db, admin, () => q(`select fis_definir_membro($1, 'contador', null)`, [contador]));
   await como(db, admin, () => q(`select fis_definir_membro($1, 'analista', $2::uuid[])`, [analistaB, `{${empB}}`]));
   icms = (await q(`select id from fis_tributos where codigo = 'ICMS'`)).rows[0].id;
@@ -424,7 +423,7 @@ describe("importação com validação, prévia e confirmação", () => {
 describe("painel", () => {
   it("indicadores saem dos dados e respeitam os filtros", async () => {
     const p = await rpc(revisor, "fis_painel", [j({ ano: 2025, empresa_id: empA })], ["jsonb"]);
-    const s = (await q(`select sum(saldo_disponivel)::float8 d, sum(valor_original) filter (where not arquivado)::float8 r from fis_creditos_saldos where empresa_id = $1`, [empA])).rows[0];
+    const s = (await q(`select sum(saldo_disponivel)::float8 d, sum(entradas) filter (where not arquivado)::float8 r from fis_creditos_saldos where empresa_id = $1`, [empA])).rows[0];
     expect(Number(p.creditos.disponivel)).toBe(s.d);
     expect(Number(p.creditos.registrado)).toBe(s.r);
     expect(p.mensal).toHaveLength(12);

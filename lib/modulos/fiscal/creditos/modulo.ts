@@ -45,7 +45,8 @@ export function papelEfetivo(nivel: "sem_acesso" | "consulta" | "operador" | "ge
   const ordem = ["sem_acesso", "consulta", "operador", "gestor", "administrador"];
   if (ordem.indexOf(nivel) < 1) return null;
   if (escolhido && ordem.indexOf(nivel) >= ordem.indexOf(NIVEL_DO_PAPEL[escolhido])) return escolhido;
-  return ({ consulta: "leitor", operador: "analista", gestor: "revisor", administrador: "administrador" } as const)[nivel];
+  const derivado: Record<string, Papel> = { consulta: "leitor", operador: "analista", gestor: "revisor", administrador: "administrador" };
+  return derivado[nivel] ?? null;
 }
 
 export type Validacao = "pendente" | "em_analise" | "validado" | "rejeitado" | "contestado";

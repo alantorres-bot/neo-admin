@@ -173,9 +173,12 @@ insert into storage.buckets (id, name, public, file_size_limit)
 values ('fiscal', 'fiscal', false, 20971520)
 on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit;
 
--- Ler: só o arquivo de um documento que o usuário enxerga (a subconsulta passa pela RLS de fis_documentos).
+-- Ler: o arquivo de um documento que o usuário enxerga (a subconsulta passa pela RLS de fis_documentos), ou o que ele mesmo
+-- acabou de enviar (o envio devolve a linha gravada; o documento só é registrado em seguida).
 create policy fiscal_storage_ler on storage.objects for select to authenticated
-  using (bucket_id = 'fiscal' and exists (select 1 from fis_documentos d where d.arquivo_path = storage.objects.name));
+  using (bucket_id = 'fiscal' and (
+    exists (select 1 from fis_documentos d where d.arquivo_path = storage.objects.name)
+    or (owner = auth.uid() and fis_pode('lancar', nullif((storage.foldername(name))[2], '')::uuid))));
 -- Enviar: quem lança, na pasta de uma empresa do seu escopo. Sem update nem delete (documento é prova).
 create policy fiscal_storage_enviar on storage.objects for insert to authenticated
   with check (bucket_id = 'fiscal' and (storage.foldername(name))[1] = 'fiscal.creditos'

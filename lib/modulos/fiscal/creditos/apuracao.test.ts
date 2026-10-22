@@ -54,3 +54,24 @@ describe("agregação e consolidado", () => {
     expect(consolidadoFechaConta(c)).toBe(true);
   });
 });
+
+import { consolidarPor, totalGeral } from "./consolidado";
+
+describe("consolidado anual", () => {
+  const b = (credito: string, tributo: string, competencia: string, si: number, sf: number, g = 0, u = 0, im = 0) => ({
+    credito_id: credito, empresa_id: "e", estabelecimento_id: "s", tributo_id: tributo, competencia,
+    saldo_inicial: si.toFixed(2), implantado: im.toFixed(2), gerado: g.toFixed(2), reconhecido: "0", ajustes_positivos: "0", ajustes_negativos: "0",
+    utilizado: u.toFixed(2), compensado: "0", baixado: "0", transferido_entrada: "0", transferido_saida: "0", saldo_final: sf.toFixed(2), pendentes: 0,
+  });
+  it("janeiro começa no saldo de dezembro anterior; crédito que nasce no meio do ano não distorce o inicial", () => {
+    const g = consolidarPor([
+      b("a", "ICMS", "2025-12-01", 100, 120, 20), b("a", "ICMS", "2026-01-01", 120, 110, 0, 10), b("a", "ICMS", "2026-02-01", 110, 110),
+      b("b", "ICMS", "2026-02-01", 50, 50, 0, 0, 50),
+    ], 2026, (l) => l.tributo_id);
+    expect(g).toHaveLength(1);
+    expect(g[0].transportadoDoAnterior).toBe(12000);
+    expect(g[0].atual).toMatchObject({ saldoInicial: 12000, implantadoNoAno: 5000, utilizado: 1000, saldoFinal: 16000 });
+    expect(g[0].anterior).toMatchObject({ saldoFinal: 12000 });
+    expect(totalGeral(g, "atual")?.saldoFinal).toBe(16000);
+  });
+});
