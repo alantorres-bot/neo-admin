@@ -282,10 +282,29 @@ Objetivo: o gestor saber o que cada pessoa **fez** e **viu** no Neo Admin. Exemp
     `fis.transmitiu_obrigacao`;
   - descrição ("Confirmou o pagamento de <cliente> — venc. 25/10/2026"), registro de origem e link;
   - origem do registro: `direto`, `servico_a_pedido` ou `historico`.
-- **Daqui para frente:** a função `registrar_atividade()` é chamada pelas rotinas dos módulos. É a fonte mais fiel.
-- **Funções automáticas:** passam a informar quem pediu a ação. Isso fecha a lacuna do usuário vazio.
-- **Passado:** um conversor de uso único traduz a `auditoria`, as colunas `_por`, `interacoes` e `anexos` para o catálogo. Os
-  relatórios já nascem com histórico. Quando o autor não foi gravado, aparece "autor não registrado", sem adivinhar.
+- **Como é alimentada (decisão da construção, 22/10/2026):** sem mexer nas telas nem nas funções dos módulos. Um catálogo
+  (`atividade_regras`) diz que alteração vira qual ação, por exemplo: "em `rh_fp_competencias`, status passou para `paga`"
+  vira "Marcou como paga a folha de 09/2026".
+  - Um gatilho classifica cada linha nova da `auditoria`, de `interacoes` e de `anexos`.
+  - `atividades_reprocessar()` classifica o histórico uma vez; rodar de novo não duplica.
+  - Uma regra com defeito não impede as outras nem a gravação do módulo.
+- **Autor:**
+  - quem estava logado;
+  - quando a gravação veio de uma Edge Function a pedido de alguém, a coluna `_por` do próprio registro
+    (ex.: `enviado_por` no envio do ponto, `solicitada_por` na AKF, `slack_enviada_por` no Contas a pagar). Essas
+    atividades aparecem como "por rotina a pedido";
+  - sem pessoa por trás, não há atividade.
+- **Cada área declara as regras das próprias tabelas, na sua faixa de migrations:**
+
+  | Faixa | Migration |
+  | --- | --- |
+  | Núcleo | `0094` |
+  | Financeiro | `0179` |
+  | Fiscal | `0205` |
+  | RH | `0522` |
+  | Comercial | `0704` |
+
+  Módulo novo acrescenta as suas regras do mesmo jeito.
 - **Fica fora:** as gravações de sincronização e rotina agendada sem pessoa por trás.
 - **Imutável:** sem edição nem exclusão. É prova (regra global 4).
 - **Catálogo inicial:**
@@ -694,4 +713,29 @@ ajustar destaque (gestor, com motivo), cobrar andamento (gestor; fica no histór
 **Ainda não entra:** anexos na pendência pela Central (seguem nas telas dos módulos) e recorrência de tarefas manuais.
 
 **Publicação (só Alan):** aplicar a `0093` depois da `0092` e registrar as duas em `schema_migrations`.
+
+### Fase 3B (22/10/2026): atividades e acessos da equipe
+| Item | Onde |
+| --- | --- |
+| Tabelas `atividade_regras`, `atividades`, `acessos`; `perfis.acompanha_equipe`; classificação, reprocessamento, registro e retenção de acessos; relatórios | `supabase/migrations/0094_nucleo_atividades.sql` |
+| Catálogo: 27 regras do Financeiro (Recebíveis, Cobrança, Filial, Contas a pagar, Cartão, AKF), 12 do Fiscal, 23 do RH (folha, VT, ponto, banco de horas), 2 do Comercial e 8 do núcleo (pendências e tarefas) | `0179_fin_atividades.sql`, `0205_fis_atividades.sql`, `0522_rh_atividades.sql`, `0704_com_atividades.sql` |
+| Registro de acessos a cada navegação (no servidor, depois da resposta) | `proxy.ts` |
+| Tela `/gestao/atividades` (resumo por pessoa, linha do tempo, "quem mais atuou" num registro, exportação Excel) | `app/(plataforma)/gestao/atividades/` |
+| Marca "Acompanha a equipe" | Configurações > Usuários > Permissões |
+| Testes | `tests/db/central-atividades.test.ts` (17, inclui a conferência de todas as regras contra o banco), `lib/nucleo/gestao/atividades.test.ts`, `e2e/central-gestao.spec.ts` (4 fluxos) |
+
+**Fica sem autor no sistema (limitações conhecidas)**
+- Justificativa do ponto pelo link público: é anônima; só o nome digitado fica no lote.
+- Fatura do cartão marcada como paga pela sincronização do Contas a pagar: é automática, não é ação de pessoa.
+- Gravações anteriores a esta fase feitas por Edge Function que não gravava a coluna `_por`.
+
+**Publicação (só Alan), nesta ordem**
+1. Aplicar `0094`, `0179`, `0205`, `0522` e `0704` e registrá-las em `schema_migrations` (`docs/PUBLICACAO.md`).
+2. Rodar uma vez `select atividades_reprocessar();`, que monta o histórico a partir da auditoria. Pode demorar alguns
+   minutos, conforme o tamanho da auditoria.
+3. Publicar o código. Ele lê `perfis.acompanha_equipe`: publicar antes da migration quebra a tela de usuários e a de
+   atividades.
+4. Marcar "Acompanha a equipe" para o Rodrigo em Configurações > Usuários.
+5. **Só depois de comunicar a equipe**, ligar o registro de acessos na própria tela de atividades (botão do
+   administrador).
 

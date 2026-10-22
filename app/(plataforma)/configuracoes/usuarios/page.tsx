@@ -14,7 +14,7 @@ export default async function PaginaUsuarios() {
   const supabase = await criarClienteServidor();
 
   const [perfis, permissoes] = await Promise.all([
-    supabase.from("perfis").select("id, nome, email, admin_geral, ativo, deve_trocar_senha, unidade_restrita").order("ativo", { ascending: false }).order("nome"),
+    supabase.from("perfis").select("id, nome, email, admin_geral, ativo, deve_trocar_senha, unidade_restrita, acompanha_equipe").order("ativo", { ascending: false }).order("nome"),
     supabase.from("permissoes").select("perfil_id, area, nivel"),
   ]);
   if (perfis.error) throw new Error(`Falha ao ler os usuários: ${perfis.error.message}`);
@@ -62,6 +62,7 @@ export default async function PaginaUsuarios() {
                   <TableCell className="space-x-1 space-y-1">
                     {p.admin_geral && <Badge>Administrador geral</Badge>}
                     {p.unidade_restrita && <Badge variant="outline">Restrito: Filial Contagem (só Faturamento Filial)</Badge>}
+                    {p.acompanha_equipe && !p.admin_geral && <Badge variant="outline">Acompanha a equipe</Badge>}
                     {!p.ativo && <Badge variant="outline">Desativado</Badge>}
                     {p.ativo && p.deve_trocar_senha && <Badge variant="outline">Aguardando troca de senha</Badge>}
                     {!p.admin_geral && liberadas.length === 0 && <span className="text-xs text-muted-foreground">Sem permissão em nenhuma área</span>}

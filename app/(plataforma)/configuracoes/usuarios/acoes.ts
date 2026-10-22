@@ -86,11 +86,13 @@ export async function salvarUsuario(_anterior: EstadoForm, dados: FormData): Pro
   const restricao = alvoEhEuMesmo ? "" : String(dados.get("unidade_restrita") ?? "");
   if (restricao !== "" && restricao !== "contagem") return { erro: "Unidade inválida." };
   if (restricao && adminGeral) return { erro: "Administrador geral não pode ser restrito a uma unidade." };
+  const acompanhaEquipe = dados.get("acompanha_equipe") === "on";
+  if (acompanhaEquipe && restricao) return { erro: "Usuário restrito à unidade não acompanha a equipe." };
 
   const permissoes = await supabase.from("permissoes").upsert(linhas, { onConflict: "perfil_id,area" });
   if (permissoes.error) return { erro: mensagemDeErroBanco(permissoes.error) };
 
-  const perfil = await supabase.from("perfis").update({ admin_geral: adminGeral, unidade_restrita: restricao || null }).eq("id", id.data).select("id, ativo");
+  const perfil = await supabase.from("perfis").update({ admin_geral: adminGeral, unidade_restrita: restricao || null, acompanha_equipe: acompanhaEquipe }).eq("id", id.data).select("id, ativo");
   if (perfil.error) return { erro: mensagemDeErroBanco(perfil.error) };
   const atual = perfil.data?.[0];
   if (!atual) return { erro: "Usuário não encontrado." };

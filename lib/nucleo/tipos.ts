@@ -25,6 +25,8 @@ export type Perfil = {
   deve_trocar_senha: boolean;
   /** Restrito a uma unidade (hoje só 'contagem'): vê só o Faturamento Filial (migration 0152). */
   unidade_restrita?: string | null;
+  /** Vê as atividades e os acessos de toda a equipe na Central de Gestão (migration 0094). Admin geral sempre vê. */
+  acompanha_equipe?: boolean;
 };
 
 export type Empresa = {

@@ -180,3 +180,76 @@ test.describe("tarefas (Fase 3)", () => {
     expect(modulos.every((m) => m.startsWith("Fiscal"))).toBe(true);
   });
 });
+
+// --- Fase 3B: atividades e acessos -------------------------------------------------------------------------------------
+
+test.describe.serial("atividades da equipe (Fase 3B)", () => {
+  test("cada um vê só as próprias atividades; gestor de área sem a marca também", async ({ page }) => {
+    await entrar(page, "operador.fiscal.teste");
+    await page.goto("/gestao/atividades");
+    await expect(page.getByRole("heading", { name: "Minhas atividades" })).toBeVisible();
+    await expect(page.getByLabel("Pessoa")).toHaveCount(0);
+    await expect(page.getByText("Linha do tempo de Operador Fiscal Teste")).toBeVisible();
+    await expect(page.locator("table").getByText(/Concluiu "\[DEMO\] Levantar contratos/).first()).toBeVisible();
+    await expect(page.locator("table").getByText("Operador Financeiro Teste")).toHaveCount(0);
+
+    await entrar(page, "gestor.teste");
+    await page.goto("/gestao/atividades");
+    await expect(page.getByRole("heading", { name: "Minhas atividades" })).toBeVisible();
+  });
+
+  test("o admin marca 'Acompanha a equipe' e o gestor passa a ver o resumo de todos", async ({ page }) => {
+    await entrar(page, "admin.teste");
+    await page.goto("/configuracoes/usuarios");
+    const linha = page.getByRole("row", { name: /Gestor Geral Teste/ });
+    await linha.getByRole("button", { name: "Permissões" }).click();
+    const caixa = page.getByRole("dialog").getByLabel(/Acompanha a equipe/);
+    if (!(await caixa.isChecked())) await caixa.check();
+    await page.getByRole("dialog").getByRole("button", { name: "Salvar" }).click();
+    await expect(page.getByText("Permissões salvas.")).toBeVisible();
+
+    await entrar(page, "gestor.teste");
+    await page.goto("/gestao/atividades");
+    await expect(page.getByRole("heading", { name: "Atividades da equipe" })).toBeVisible();
+    const resumo = page.locator("table").first();
+    await expect(resumo.getByRole("link", { name: "Operador Fiscal Teste" })).toBeVisible();
+    await resumo.getByRole("link", { name: "Operador Fiscal Teste" }).click();
+    await expect(page.getByText("Linha do tempo de Operador Fiscal Teste")).toBeVisible();
+
+    // Desfaz a marca (o teste pode rodar de novo no mesmo banco).
+    await entrar(page, "admin.teste");
+    await page.goto("/configuracoes/usuarios");
+    await page.getByRole("row", { name: /Gestor Geral Teste/ }).getByRole("button", { name: "Permissões" }).click();
+    await page.getByRole("dialog").getByLabel(/Acompanha a equipe/).uncheck();
+    await page.getByRole("dialog").getByRole("button", { name: "Salvar" }).click();
+    await expect(page.getByText("Permissões salvas.")).toBeVisible();
+  });
+
+  test("registro de acessos: desligado por padrão; o admin liga e a navegação passa a aparecer", async ({ page }) => {
+    await entrar(page, "admin.teste");
+    await page.goto("/gestao/atividades");
+    await expect(page.getByText(/O registro de acessos .* está desligado/)).toBeVisible();
+    page.once("dialog", (d) => d.accept());
+    await page.getByRole("button", { name: "Ligar registro de acessos" }).click();
+    await expect(page.getByText("Registro de acessos ligado.")).toBeVisible();
+
+    await entrar(page, "operador.fiscal.teste");
+    await page.goto("/fiscal/creditos");
+    await page.goto("/gestao/atividades");
+    await expect(page.locator("table").getByText("/fiscal/creditos", { exact: true }).first()).toBeVisible();
+
+    await entrar(page, "admin.teste");
+    await page.goto("/gestao/atividades");
+    page.once("dialog", (d) => d.accept());
+    await page.getByRole("button", { name: "Desligar registro de acessos" }).click();
+    await expect(page.getByText("Registro de acessos desligado.")).toBeVisible();
+  });
+
+  test("exporta a planilha com os mesmos filtros", async ({ page }) => {
+    await entrar(page, "gestor.teste");
+    const r = await page.request.get("/gestao/atividades/exportar");
+    expect(r.status()).toBe(200);
+    expect(r.headers()["content-type"]).toContain("spreadsheetml");
+    expect((await r.body()).length).toBeGreaterThan(1000);
+  });
+});

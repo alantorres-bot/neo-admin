@@ -70,6 +70,7 @@ export default async function PaginaCentral({ searchParams }: PageProps<"/gestao
           <p className="text-sm text-muted-foreground">{dataExtenso} · {descricaoVisao}</p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="outline" nativeButton={false} render={<Link href="/gestao/atividades" />}>Atividades</Button>
         {modulosTarefa.length > 0 && (
           <NovaTarefa
             modulos={modulosTarefa} areasGestor={areasGestor} pessoasPorArea={Object.fromEntries(candidatosPorArea)}
