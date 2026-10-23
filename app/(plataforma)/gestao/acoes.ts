@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import type { EstadoForm } from "@/components/formularios/dialogo-formulario";
 import { mensagemDeErroBanco } from "@/lib/nucleo/erros";
-import { ACOES_PENDENCIA, CATEGORIAS } from "@/lib/nucleo/gestao/tarefas";
+import { ACOES_PENDENCIA, CATEGORIAS, LIMITE_LOTE, executarEmLote, type ResultadoLote } from "@/lib/nucleo/gestao/tarefas";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
@@ -84,4 +84,27 @@ export async function executarAcao(_anterior: EstadoForm, dados: FormData): Prom
   revalidatePath("/gestao");
   revalidatePath(`/gestao/${id}`);
   return { ok: true, chave: Date.now() };
+}
+
+const esquemaLote = z.object({
+  ids: z.array(z.string().uuid("Pendência inválida.")).min(1, "Marque ao menos uma pendência.")
+    .max(LIMITE_LOTE, `Até ${LIMITE_LOTE} pendências por vez.`),
+  responsavel_id: uuidOuVazio,
+  texto: texto(4000, "Recado"),
+});
+
+/** Atribuição em lote: a mesma ação "atribuir" da tela de detalhe, pendência por pendência (cada uma no seu histórico). */
+export async function atribuirEmLote(entrada: z.input<typeof esquemaLote>): Promise<ResultadoLote | { erro: string }> {
+  await exigirSessao();
+  const dados = esquemaLote.safeParse(entrada);
+  if (!dados.success) return { erro: dados.error.issues[0].message };
+  const { ids, ...p_dados } = dados.data;
+
+  const supabase = await criarClienteServidor();
+  const resultado = await executarEmLote(ids, async (id) => {
+    const { error } = await supabase.rpc("pendencia_acao", { p_id: id, p_acao: "atribuir", p_dados });
+    return error ? mensagemDeErroBanco(error) : null;
+  });
+  revalidatePath("/gestao");
+  return resultado;
 }

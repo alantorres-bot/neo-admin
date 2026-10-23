@@ -441,3 +441,31 @@ test.describe.serial("avisos e ClickUp (Fase 7)", () => {
     await expect(page.getByText("Permissões salvas.")).toBeVisible();
   });
 });
+
+test.describe("atribuição em lote", () => {
+  test("gestor marca na fila e atribui de uma vez; a pendência de área que a pessoa não tem é recusada e as demais seguem", async ({ page }) => {
+    const marca = `[DEMO] Lote ${sufixo}`;
+    await entrar(page, "gestor.teste");
+    await page.goto("/gestao");
+    for (const [titulo, modulo] of [[`${marca} geral`, "administrativo.gestao"], [`${marca} recebiveis`, "financeiro.recebiveis"]]) {
+      await page.getByRole("button", { name: "Nova tarefa" }).click();
+      await dialogo(page).getByLabel("Título").fill(titulo);
+      await dialogo(page).getByLabel("Módulo").selectOption(modulo);
+      await dialogo(page).getByRole("button", { name: "Criar tarefa" }).click();
+      await expect(page.getByText("Tarefa criada.").first()).toBeVisible();
+    }
+
+    await page.goto(`/gestao?visao=gestao&busca=${encodeURIComponent(marca)}`);
+    await fila(page).getByLabel("Marcar todas as visíveis desta página").check();
+    await expect(page.getByText("2 selecionadas")).toBeVisible();
+    await page.getByLabel("Atribuir a").selectOption({ label: "Operador Fiscal Teste" });
+    await page.getByLabel("Recado ao responsável").fill("Distribuídas em lote");
+    await page.getByRole("button", { name: "Atribuir selecionadas" }).click();
+    await expect(page.getByText("1 atribuída; 1 recusada")).toBeVisible();
+    await expect(page.getByText(new RegExp(`Recusada: .*${marca} recebiveis`))).toBeVisible();
+    await expect(page.getByText("1 selecionada")).toBeVisible();
+
+    await abrirPorBusca(page, `${marca} geral`, "gestao");
+    await expect(page.locator("ol").getByText("Comentou: Distribuídas em lote", { exact: true })).toBeVisible();
+  });
+});

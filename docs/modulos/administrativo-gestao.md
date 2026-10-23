@@ -1,7 +1,8 @@
 # Módulo: Administrativo geral / Central de Gestão (`administrativo.gestao`)
 
-Status: construído (Fases 2 a 8 entregues em 22 e 23/10/2026), **não publicado em produção**. O envio real pelo Slack e
-pelo ClickUp depende de credenciais (seção 14, Fase 7). Para publicar, siga o roteiro único da seção 14, Fase 8. Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
+Status: **publicado em produção em 23/10/2026** (Fases 2 a 8: banco com as 14 migrations do roteiro da Fase 8, já com a
+`0207_fis_atividades`, e aplicação no Cloud Run). Atribuição em lote na fila acrescentada em 23/10/2026 (seção 5.7). O envio
+real pelo Slack e pelo ClickUp depende de credenciais (seção 14, Fase 7). Faltam os passos 5 a 7 do roteiro da Fase 8. Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
 0093: tela `/gestao`, criação e distribuição de tarefas, ações, comentários e histórico), aguardando avaliação. O que foi construído e como testar estão na seção 14.
 
 Decisões já tomadas por Alan (22/10/2026):
@@ -183,6 +184,16 @@ O banco carimba quem criou e quando.
 | Criar sem responsável | Operador do módulo ou acima |
 | Atribuir a outra pessoa, reatribuir | Gestor da área do módulo (regra atual do gatilho `fn_pendencias_regras`). Candidatos: `usuarios_da_area()` |
 | Alterar título, descrição, prazo, prioridade, categoria | Gestor (regra atual) |
+
+**Atribuição em lote (23/10/2026)**
+- Na "Fila consolidada", quem é gestor de alguma área marca as pendências abertas dessas áreas, uma a uma ou por "marcar
+  todas as visíveis desta página" (respeita o filtro das colunas). Até 100 por vez.
+- A barra "Atribuir a" oferece quem atua nas áreas em que a pessoa é gestora, mais todos os ativos para quem é gestor do
+  Administrativo (Tarefas gerais), e "Sem responsável". O recado é opcional.
+- Cada pendência passa pela mesma ação `atribuir` da tela de detalhe (`pendencia_acao`), com as mesmas travas (0099) e o
+  registro no histórico e o recado como comentário em cada uma. Sem migration.
+- Uma recusa não impede as demais. A tela mostra "N atribuídas; M recusadas", lista as recusadas com o motivo e deixa
+  só elas marcadas.
 
 **Fluxo**
 
@@ -908,7 +919,8 @@ usavam a data UTC. Passaram a usar a data de Cuiabá, como as regras do sistema.
 **Não validado de verdade:** o envio pelo Slack e pelo ClickUp (faltam as credenciais). O teste de interface do Fiscal
 Control não rodou neste ambiente: os usuários de teste do Fiscal não estavam no banco local.
 
-**Roteiro único de publicação (só Alan; nada disto foi feito por mim)**
+**Roteiro único de publicação** (passos 1 a 4 feitos em 23/10/2026: cópia em `backups/chdszjpbtfpstjrqnmmm-2026-10-23T13-06-17`,
+14 migrations registradas, `atividades_reprocessar()` = 440, aplicação na revisão `neo-admin-00099`; faltam 5 a 7)
 Pré-requisito: as migrations do Fiscal Control (`0200` a `0205`) já aplicadas e registradas, porque a `0206` depende delas.
 
 1. **Cópia de segurança antes:** `node scripts/banco-copia.mjs exportar --ref chdszjpbtfpstjrqnmmm`.

@@ -1,4 +1,5 @@
-// Blocos da Central de Gestão (componentes de servidor; a interação é por links e formulário GET).
+// Blocos da Central de Gestão (componentes de servidor; a interação é por links e formulário GET). A fila, com a
+// atribuição em lote, fica em fila.tsx.
 // Regras e textos: docs/modulos/administrativo-gestao.md, seções 5 e 7.
 import Link from "next/link";
 import { ArrowUpRight } from "lucide-react";
@@ -7,9 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import { descreverPrazo, formatarData, formatarDataHora } from "@/lib/nucleo/fila";
+import { descreverPrazo, formatarDataHora } from "@/lib/nucleo/fila";
 import {
-  ROTULO_DESTAQUE, ROTULO_PRIORIDADE, acaoRecomendada, descreverMotivo, ordenarMotivos, type NivelDestaque,
+  ROTULO_DESTAQUE, acaoRecomendada, descreverMotivo, ordenarMotivos, type NivelDestaque,
 } from "@/lib/nucleo/gestao/destaque";
 import { hrefCentral, type FiltrosCentral, type Recorte, type Visao } from "@/lib/nucleo/gestao/filtros";
 import type { LinhaArea, LinhaCentral, LinhaEquipe, Resumo } from "./dados";
@@ -311,64 +312,5 @@ export function Filtros({
         <Button size="sm" variant="outline" nativeButton={false} render={<Link href={hrefCentral(visao, {})} />}>Limpar</Button>
       </div>
     </form>
-  );
-}
-
-// --- Fila consolidada -------------------------------------------------------------------------------------------------
-
-export function Fila({
-  linhas, total, pagina, porPagina, hoje, visao, filtros,
-}: { linhas: LinhaCentral[]; total: number; pagina: number; porPagina: number; hoje: string; visao: Visao; filtros: FiltrosCentral }) {
-  const paginas = Math.max(1, Math.ceil(total / porPagina));
-  if (linhas.length === 0) {
-    return (
-      <p className="rounded-[3px] border border-dashed p-8 text-center text-sm text-muted-foreground">
-        Nenhuma pendência encontrada com estes filtros.
-      </p>
-    );
-  }
-  return (
-    <div className="space-y-2">
-      <Table className="cartoes">
-        <TableHeader>
-          <TableRow>
-            <TableHead>Título</TableHead><TableHead>Módulo</TableHead><TableHead>Área</TableHead><TableHead>Responsável</TableHead>
-            <TableHead>Prazo</TableHead><TableHead>Prioridade</TableHead><TableHead>Situação</TableHead><TableHead>Destaque</TableHead>
-            <TableHead>Origem</TableHead><TableHead>Última movimentação</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {linhas.map((p) => (
-            <TableRow key={p.id}>
-              <TableCell className="max-w-[28rem] whitespace-normal">
-                <Link href={`/gestao/${p.id}`} className="text-elo hover:underline">{p.titulo}</Link>
-                {p.contraparte_nome && <span className="block text-[11px] text-muted-foreground">{p.contraparte_nome}</span>}
-              </TableCell>
-              <TableCell>{p.modulo_nome}</TableCell>
-              <TableCell>{p.area_nome}</TableCell>
-              <TableCell>{p.responsavel_nome ?? "Sem responsável"}</TableCell>
-              <TableCell className={p.atrasada ? "text-marca" : undefined} title={descreverPrazo(p.prazo, hoje)}>
-                {p.prazo ? formatarData(p.prazo) : "Sem prazo"}
-              </TableCell>
-              <TableCell>{ROTULO_PRIORIDADE[p.prioridade]}</TableCell>
-              <TableCell>{textoSituacao(p)}</TableCell>
-              <TableCell><SeloDestaque nivel={p.destaque} /></TableCell>
-              <TableCell>{ROTULO_ORIGEM[p.origem]}</TableCell>
-              <TableCell>{formatarDataHora(p.movimentado_em)}</TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-      <nav aria-label="Páginas" className="flex flex-wrap items-center justify-between gap-2 text-[12px] text-muted-foreground">
-        <span>
-          {total} {total === 1 ? "pendência" : "pendências"} · página {pagina} de {paginas}. A classificação e o filtro das colunas valem
-          para esta página; os filtros acima valem para todas.
-        </span>
-        <span className="flex gap-1">
-          {pagina > 1 && <Button size="sm" variant="outline" nativeButton={false} render={<Link href={`${hrefCentral(visao, filtros, { pagina: pagina - 1 })}#fila`} />}>Anterior</Button>}
-          {pagina < paginas && <Button size="sm" variant="outline" nativeButton={false} render={<Link href={`${hrefCentral(visao, filtros, { pagina: pagina + 1 })}#fila`} />}>Próxima</Button>}
-        </span>
-      </nav>
-    </div>
   );
 }

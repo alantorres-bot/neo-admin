@@ -8,8 +8,9 @@ import { MODULO_TAREFAS_GERAIS } from "@/lib/nucleo/gestao/tarefas";
 import { areasComNivel, temAcesso, temAcessoAlgumaArea } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { AreasAtencao, Equipe, Filtros, Fila, Indicadores, Intervencao } from "./componentes";
+import { AreasAtencao, Equipe, Filtros, Indicadores, Intervencao } from "./componentes";
 import { lerCentral } from "./dados";
+import { Fila } from "./fila";
 import { NovaTarefa, type OpcaoModulo, type Pessoa } from "./formularios";
 
 export const metadata: Metadata = { title: "Central de Gestão" };
@@ -58,6 +59,12 @@ export default async function PaginaCentral({ searchParams }: PageProps<"/gestao
     .map((m) => ({ codigo: m.codigo, area: m.area, rotulo: m.codigo === MODULO_TAREFAS_GERAIS ? "Tarefas gerais (Administrativo)" : `${nomeArea.get(m.area) ?? m.area} › ${m.nome}` }))
     .sort((a, b) => (a.codigo === MODULO_TAREFAS_GERAIS ? -1 : b.codigo === MODULO_TAREFAS_GERAIS ? 1 : a.rotulo.localeCompare(b.rotulo, "pt-BR")));
   const opcoesResponsaveis = equipe?.map((l) => ({ valor: l.responsavel_id, rotulo: l.nome })) ?? null;
+  // Atribuição em lote: quem atua nas áreas em que sou gestor (e todos os ativos, se gestor do Administrativo, pelas
+  // Tarefas gerais). Pessoa sem acesso à área de uma pendência marcada é recusada pelo banco só naquela pendência.
+  const candidatosLote = new Map([...candidatosPorArea.flatMap(([, pessoas]) => pessoas), ...todasPessoas].map((p) => [p.id, p]));
+  const atribuicao = ehGestor
+    ? { areasGestor, candidatos: [...candidatosLote.values()].sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR")) }
+    : null;
   const descricaoVisao = visao === "gestao"
     ? areasGestor.length === sessao.areas.length ? "Gestão: todas as áreas" : "Gestão: as áreas em que você é gestor"
     : "Minhas pendências e as sem responsável das áreas em que você atua";
@@ -113,7 +120,7 @@ export default async function PaginaCentral({ searchParams }: PageProps<"/gestao
           modulos={opcoesModulos}
           responsaveis={opcoesResponsaveis}
         />
-        <Fila linhas={fila} total={total} pagina={pagina} porPagina={porPagina} hoje={hoje} visao={visao} filtros={filtros} />
+        <Fila linhas={fila} total={total} pagina={pagina} porPagina={porPagina} hoje={hoje} visao={visao} filtros={filtros} atribuicao={atribuicao} />
       </section>
     </div>
   );
