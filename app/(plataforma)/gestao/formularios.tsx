@@ -157,7 +157,10 @@ export function Bloquear({ id, dependencias }: { id: string; dependencias: { id:
 }
 
 export function Alterar({ id, dados }: {
-  id: string; dados: { titulo: string; descricao: string | null; prazo: string | null; prioridade: string; categoria: string | null; precisaDistribuir: boolean };
+  id: string; dados: {
+    titulo: string; descricao: string | null; prazo: string | null; prioridade: string; categoria: string | null; precisaDistribuir: boolean;
+    impacto: string | null; impactoFundamento: string | null;
+  };
 }) {
   return (
     <DialogoFormulario titulo="Alterar dados da pendência" botao="Alterar dados" tamanho="sm" rotuloSalvar="Salvar" mensagemSucesso="Dados alterados." acao={executarAcao}>
@@ -174,6 +177,18 @@ export function Alterar({ id, dados }: {
         <select id={`alt-cat-${id}`} name="categoria" defaultValue={dados.categoria ?? ""} className={CLASSE_SELECT}><OpcoesCategoria /></select>
       </Campo>
       <Campo id={`alt-dsc-${id}`} rotulo="Descrição"><Textarea id={`alt-dsc-${id}`} name="descricao" defaultValue={dados.descricao ?? ""} maxLength={4000} rows={3} /></Campo>
+      <div className="grid grid-cols-3 gap-3">
+        <Campo id={`alt-imp-${id}`} rotulo="Impacto">
+          <select id={`alt-imp-${id}`} name="impacto" defaultValue={dados.impacto ?? ""} className={CLASSE_SELECT}>
+            <option value="">Nenhum registrado</option><option value="financeiro">Financeiro</option><option value="fiscal">Fiscal</option><option value="operacional">Operacional</option>
+          </select>
+        </Campo>
+        <div className="col-span-2">
+          <Campo id={`alt-fun-${id}`} rotulo="Fundamento do impacto" dica="O que pode acontecer e por quê. Obrigatório quando há impacto.">
+            <Input id={`alt-fun-${id}`} name="impacto_fundamento" defaultValue={dados.impactoFundamento ?? ""} maxLength={1000} />
+          </Campo>
+        </div>
+      </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" name="precisa_distribuir" defaultChecked={dados.precisaDistribuir} /> Precisa distribuir (aparece para o gestor enquanto estiver sem responsável)
       </label>

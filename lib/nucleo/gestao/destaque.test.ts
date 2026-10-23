@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { acaoRecomendada, descreverMotivo, ordenarMotivos, type Motivo } from "./destaque";
+import { acaoRecomendada, descreverMotivo, ordenarMotivos, regrasDoDestaque, type Motivo } from "./destaque";
 
 describe("descreverMotivo", () => {
   it("explica cada regra com os dados usados", () => {
@@ -24,6 +24,8 @@ describe("descreverMotivo", () => {
       .toBe("Sem responsável, prioridade alta, prazo 24/10/2026");
     expect(descreverMotivo({ codigo: "PRECISA_DISTRIBUIR", nivel: "acompanhar", prioridade: "normal", prazo: null })).toBe("Sem responsável");
     expect(descreverMotivo({ codigo: "SEM_MOVIMENTACAO", nivel: "acompanhar", dias: 9, limite: 5 })).toBe("Sem movimentação há 9 dias (limite de 5 dias)");
+    expect(descreverMotivo({ codigo: "IMPACTO_SEM_PRAZO", nivel: "avaliar", impacto: "financeiro", fundamento: "Juros de 2% ao mês" }))
+      .toBe("Impacto financeiro registrado sem prazo: avaliar a urgência: Juros de 2% ao mês");
     expect(descreverMotivo({ codigo: "SEM_PRAZO_IMPORTANTE", nivel: "avaliar", prioridade: "critica" })).toBe("Prioridade crítica sem prazo definido");
   });
 
@@ -52,5 +54,17 @@ describe("ordenarMotivos", () => {
     const lista: Motivo[] = [{ codigo: "AJUSTE_MANUAL", nivel: "intervir" }, { codigo: "VENCE_HOJE", nivel: "acompanhar" }, { codigo: "AGUARDA_GESTOR", nivel: "intervir" }];
     expect(ordenarMotivos(lista).map((x) => x.codigo)).toEqual(["AGUARDA_GESTOR", "VENCE_HOJE", "AJUSTE_MANUAL"]);
     expect(lista[0].codigo).toBe("AJUSTE_MANUAL");
+  });
+});
+
+describe("regrasDoDestaque", () => {
+  it("mostra os limites vigentes no texto de cada regra", () => {
+    const r = regrasDoDestaque({ dias_prazo_proximo: 1, dias_atraso_relevante: 10, dias_bloqueio_relevante: 0, dias_sem_movimentacao: 7 });
+    const porCodigo = (c: string) => r.filter((x) => x.codigo === c).map((x) => x.quando).join(" | ");
+    expect(porCodigo("ATRASO_RELEVANTE")).toContain("mais de 10 dias");
+    expect(porCodigo("PRAZO_PROXIMO")).toContain("próximos 1 dia");
+    expect(porCodigo("BLOQUEIO_RELEVANTE")).toContain("mais de 0 dias");
+    expect(porCodigo("SEM_MOVIMENTACAO")).toContain("mais de 7 dias");
+    expect(r.filter((x) => x.nivel === "intervir")).toHaveLength(6);
   });
 });

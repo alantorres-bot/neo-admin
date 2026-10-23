@@ -85,8 +85,8 @@ test.describe("operador do Fiscal", () => {
 const sufixo = Date.now().toString().slice(-6);
 const dialogo = (page: Page) => page.getByRole("dialog");
 
-async function abrirPorBusca(page: Page, titulo: string) {
-  await page.goto(`/gestao?visao=minhas&busca=${encodeURIComponent(titulo)}`);
+async function abrirPorBusca(page: Page, titulo: string, visao: "minhas" | "gestao" = "minhas") {
+  await page.goto(`/gestao?visao=${visao}&busca=${encodeURIComponent(titulo)}`);
   await page.goto((await fila(page).getByRole("link", { name: titulo }).getAttribute("href"))!);
   await expect(page.getByRole("heading", { name: titulo })).toBeVisible();
 }
@@ -251,5 +251,52 @@ test.describe.serial("atividades da equipe (Fase 3B)", () => {
     expect(r.status()).toBe(200);
     expect(r.headers()["content-type"]).toContain("spreadsheetml");
     expect((await r.body()).length).toBeGreaterThan(1000);
+  });
+});
+
+// --- Fase 4: criticidade e priorização ---------------------------------------------------------------------------------
+
+test.describe.serial("criticidade (Fase 4)", () => {
+  test("todos veem as regras; só o admin aprova os limites", async ({ page }) => {
+    await entrar(page, "operador.fiscal.teste");
+    await page.goto("/gestao/regras");
+    await expect(page.getByRole("heading", { name: "Como a Central classifica" })).toBeVisible();
+    await expect(page.getByText(/Atrasada há mais de \d+ dias, ou atrasada com prioridade crítica/)).toBeVisible();
+    await expect(page.getByRole("button", { name: /limites/ })).toHaveCount(0);
+
+    await entrar(page, "admin.teste");
+    await page.goto("/gestao/regras");
+    await page.getByRole("button", { name: /limites/ }).click();
+    await page.getByRole("dialog").getByLabel("Atraso relevante (dias)").fill("5");
+    await page.getByRole("dialog").getByRole("button", { name: "Salvar e aprovar" }).click();
+    await expect(page.getByText("Limites salvos e aprovados.")).toBeVisible();
+    await expect(page.getByText(/Aprovados por Admin Teste em/)).toBeVisible();
+  });
+
+  test("gestor registra impacto com fundamento e a pendência passa a exigir intervenção, com o motivo", async ({ page }) => {
+    const titulo = `[DEMO] Guia de ICMS ${sufixo}`;
+    await entrar(page, "gestor.teste");
+    await page.goto("/gestao");
+    await page.getByRole("button", { name: "Nova tarefa" }).click();
+    await dialogo(page).getByLabel("Título").fill(titulo);
+    await dialogo(page).getByLabel("Módulo").selectOption("fiscal.creditos");
+    await dialogo(page).getByLabel("Responsável").selectOption({ label: "Operador Fiscal Teste" });
+    const amanha = new Date(Date.now() + 86_400_000).toLocaleDateString("en-CA", { timeZone: "America/Cuiaba" });
+    await dialogo(page).getByLabel("Prazo").fill(amanha);
+    await dialogo(page).getByRole("button", { name: "Criar tarefa" }).click();
+    await expect(page.getByText("Tarefa criada.")).toBeVisible();
+
+    await abrirPorBusca(page, titulo, "gestao");
+    await page.getByRole("button", { name: "Alterar dados" }).click();
+    await dialogo(page).getByLabel("Impacto", { exact: true }).selectOption("fiscal");
+    await dialogo(page).getByLabel("Fundamento do impacto").fill("Multa e juros se a guia não for paga no vencimento");
+    await dialogo(page).getByRole("button", { name: "Salvar" }).click();
+    await expect(page.getByText("Dados alterados.")).toBeVisible();
+    await expect(page.getByText("Impacto fiscal registrado: Multa e juros se a guia não for paga no vencimento")).toBeVisible();
+    await expect(page.getByText("Intervir").first()).toBeVisible();
+
+    await page.goto("/gestao");
+    await expect(page.getByText("Áreas e módulos que precisam de atenção")).toBeVisible();
+    await expect(page.locator("table").getByRole("link", { name: "Créditos tributários" }).first()).toBeVisible();
   });
 });

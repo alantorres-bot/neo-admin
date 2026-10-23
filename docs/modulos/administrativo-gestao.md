@@ -104,6 +104,7 @@ motivos (Intervir > Avaliar > Acompanhar > Normal). A tela mostra **todos** os m
 | `BLOQUEADA` | Bloqueada há menos tempo que o limite | Acompanhar | "Bloqueada desde ontem: <motivo>" |
 | `SEM_MOVIMENTACAO` | Aberta e sem movimentação humana há mais de `dias_sem_movimentacao` | Acompanhar | "Sem movimentação há 9 dias" |
 | `SEM_PRAZO_IMPORTANTE` | Tarefa manual sem prazo e com prioridade alta/crítica | Avaliar | "Prioridade alta sem prazo definido" |
+| `IMPACTO_SEM_PRAZO` | Impacto registrado com fundamento, mas sem prazo (Fase 4) | Avaliar | "Impacto fiscal registrado sem prazo: avaliar a urgência" |
 | `IMPACTO_SEM_FUNDAMENTO` | (não acontece: o banco exige fundamento para registrar impacto) | — | — |
 
 **Ajuste manual.** O gestor pode **subir** um item para Intervir ou **baixar** para Acompanhar/Normal.
@@ -500,7 +501,8 @@ A Fila do dia atual continua no Recebíveis, sem mudanças.
 ## 8. Dados
 
 Migrations do núcleo: `0092_nucleo_central_gestao.sql` (Fase 2), `0093_nucleo_central_acoes.sql` (Fase 3),
-`0094_nucleo_atividades.sql` (Fase 3B), `0095_nucleo_sugestoes.sql` (Fase 5) e `0096_nucleo_notificacoes.sql` (Fase 7). O Fiscal ganha uma migration na faixa 0200 (Fase 6).
+`0094_nucleo_atividades.sql` (Fase 3B), `0095_nucleo_central_criticidade.sql` (Fase 4), `0096_nucleo_sugestoes.sql`
+(Fase 5) e `0097_nucleo_notificacoes.sql` (Fase 7). O Fiscal ganha uma migration na faixa 0200 (Fase 6).
 
 **`pendencias`: colunas novas (nada é removido nem renomeado)**
 
@@ -738,4 +740,21 @@ ajustar destaque (gestor, com motivo), cobrar andamento (gestor; fica no histór
 4. Marcar "Acompanha a equipe" para o Rodrigo em Configurações > Usuários.
 5. **Só depois de comunicar a equipe**, ligar o registro de acessos na própria tela de atividades (botão do
    administrador).
+
+### Fase 4 (23/10/2026): criticidade e priorização
+| Item | Onde |
+| --- | --- |
+| Regra `IMPACTO_SEM_PRAZO` (avaliar); impacto com fundamento em "alterar" (gestor); `central_salvar_parametros` (admin, faixas validadas, aprovação registrada); `central_por_area` | `supabase/migrations/0095_nucleo_central_criticidade.sql` |
+| Página "Como a Central classifica": regras, níveis e limites em vigor; o admin revisa e aprova | `app/(plataforma)/gestao/regras/` |
+| Bloco "Áreas e módulos que precisam de atenção" na Central (visão Gestão) | `app/(plataforma)/gestao/componentes.tsx` |
+| Campo de impacto e fundamento em "Alterar dados" | `app/(plataforma)/gestao/formularios.tsx` |
+| Testes | `tests/db/central-criticidade.test.ts` (4), `lib/nucleo/gestao/destaque.test.ts`, `e2e/central-gestao.spec.ts` (2 fluxos) |
+
+**Limites:**
+- **Faixas aceitas:** prazo próximo 0–30, atraso relevante 1–90, bloqueio relevante 0–30, sem movimentação 1–90 dias.
+- **Aprovação:** fica gravada em `administrativo.gestao.limites_aprovados` (quem, quando e os valores) e aparece na página.
+  Enquanto não houver aprovação, a página informa que os valores são os propostos.
+
+**Publicação (só Alan):** aplicar a `0095` depois da `0094` e registrá-la em `schema_migrations`. Depois, revisar e
+aprovar os limites em Central de Gestão > "Como a Central classifica".
 

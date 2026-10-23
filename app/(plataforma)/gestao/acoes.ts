@@ -38,6 +38,8 @@ const esquemaAcao = z.object({
   prazo: dataOuVazia.optional(),
   prioridade: z.enum(["critica", "alta", "normal"]).optional(),
   categoria: z.union([z.literal(""), z.enum(CATEGORIAS)]).optional(),
+  impacto: z.union([z.literal(""), z.enum(["financeiro", "fiscal", "operacional"])]).optional(),
+  impacto_fundamento: texto(1000, "Fundamento do impacto").optional(),
 });
 
 const campo = (dados: FormData, nome: string) => (dados.has(nome) ? String(dados.get(nome) ?? "") : undefined);
@@ -66,6 +68,7 @@ export async function executarAcao(_anterior: EstadoForm, dados: FormData): Prom
     responsavel_id: campo(dados, "responsavel_id"), dependencia_id: campo(dados, "dependencia_id"), nivel: campo(dados, "nivel"),
     titulo: campo(dados, "titulo"), descricao: campo(dados, "descricao"), prazo: campo(dados, "prazo"),
     prioridade: campo(dados, "prioridade"), categoria: campo(dados, "categoria"),
+    impacto: campo(dados, "impacto"), impacto_fundamento: campo(dados, "impacto_fundamento"),
   });
   if (!entrada.success) return { erro: entrada.error.issues[0].message };
   const { id, acao, ...resto } = entrada.data;

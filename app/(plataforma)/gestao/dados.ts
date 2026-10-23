@@ -26,13 +26,21 @@ export type LinhaEquipe = {
   bloqueadas: number; aguarda_gestor: number; ultima_movimentacao: string | null;
 };
 
+export type LinhaArea = {
+  area: string; area_nome: string; modulo: string; modulo_nome: string; abertas: number; atrasadas: number; intervir: number;
+  avaliar: number; bloqueadas: number; aguarda_gestor: number; distribuir: number;
+};
+
 const ITENS_POR_PAGINA_PADRAO = 50;
 const LIMITE_INTERVENCAO = 50;
 
 
 export async function lerCentral(
   supabase: SupabaseClient, visao: Visao, filtros: FiltrosCentral, pagina: number,
-): Promise<{ resumo: Resumo; intervencao: LinhaCentral[]; fila: LinhaCentral[]; total: number; porPagina: number; equipe: LinhaEquipe[] | null }> {
+): Promise<{
+  resumo: Resumo; intervencao: LinhaCentral[]; fila: LinhaCentral[]; total: number; porPagina: number; equipe: LinhaEquipe[] | null;
+  areas: LinhaArea[] | null;
+}> {
   const banco = filtrosParaBanco(filtros);
   const semRecorte = { ...banco };
   delete semRecorte.recorte; delete semRecorte.destaque; delete semRecorte.situacao;
@@ -42,7 +50,7 @@ export async function lerCentral(
   const porPagina = Number((parametros.data as Record<string, unknown> | null)?.itens_por_pagina) || ITENS_POR_PAGINA_PADRAO;
   const inicio = (pagina - 1) * porPagina;
 
-  const [resumo, intervencao, fila, equipe] = await Promise.all([
+  const [resumo, intervencao, fila, equipe, areas] = await Promise.all([
     supabase.rpc("central_resumo", { p_visao: visao, p_filtros: banco }).single(),
     // Ordem da Central: maior destaque primeiro, depois o prazo (sem prazo por último) e a criação mais antiga.
     supabase.rpc("central_pendencias", { p_visao: visao, p_filtros: { ...semRecorte, recorte: "intervir" } })
@@ -52,8 +60,9 @@ export async function lerCentral(
       .order("peso", { ascending: false }).order("prazo", { ascending: true, nullsFirst: false }).order("criado_em")
       .range(inicio, inicio + porPagina - 1),
     visao === "gestao" ? supabase.rpc("central_equipe", { p_filtros: banco }) : Promise.resolve(null),
+    visao === "gestao" ? supabase.rpc("central_por_area", { p_visao: visao, p_filtros: banco }) : Promise.resolve(null),
   ]);
-  for (const r of [resumo, intervencao, fila, equipe]) {
+  for (const r of [resumo, intervencao, fila, equipe, areas]) {
     if (r?.error) throw new Error(`Falha ao ler a Central de Gestão: ${r.error.message}`);
   }
 
@@ -64,6 +73,7 @@ export async function lerCentral(
     total: fila.count ?? 0,
     porPagina,
     equipe: equipe ? ((equipe.data ?? []) as LinhaEquipe[]) : null,
+    areas: areas ? ((areas.data ?? []) as LinhaArea[]) : null,
   };
 }
 

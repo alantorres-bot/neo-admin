@@ -118,7 +118,7 @@ export default async function PaginaPendencia({ params }: PageProps<"/gestao/[id
         )}
         {aberta && gestor && <Atribuir id={id} atual={p.responsavel_id} candidatos={pessoas} />}
         {aberta && gestor && (
-          <Alterar id={id} dados={{ titulo: p.titulo, descricao: p.descricao, prazo: p.prazo, prioridade: p.prioridade, categoria: p.categoria, precisaDistribuir: Boolean(extras.data?.precisa_distribuir) }} />
+          <Alterar id={id} dados={{ titulo: p.titulo, descricao: p.descricao, prazo: p.prazo, prioridade: p.prioridade, categoria: p.categoria, precisaDistribuir: Boolean(extras.data?.precisa_distribuir), impacto: p.impacto, impactoFundamento: p.impacto_fundamento }} />
         )}
         {aberta && gestor && <AjustarDestaque id={id} atual={destaqueManual} />}
         {aberta && gestor && p.responsavel_id && (
@@ -134,7 +134,10 @@ export default async function PaginaPendencia({ params }: PageProps<"/gestao/[id
         <Card>
           <CardHeader className={p.destaque === "intervir" ? "border-l-4 border-l-marca" : undefined}>
             <CardTitle>Por que está em destaque</CardTitle>
-            <CardDescription>Calculado em {formatarDataHora(p.calculado_em)} pelas regras da Central (prazo, situação, bloqueio, distribuição e movimentação).</CardDescription>
+            <CardDescription>
+              Calculado em {formatarDataHora(p.calculado_em)} pelas regras da Central (prazo, situação, bloqueio, distribuição, impacto e
+              movimentação). <Link href="/gestao/regras" className="text-elo hover:underline">Como a Central classifica</Link>
+            </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {motivos.length === 0 ? (

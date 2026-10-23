@@ -8,7 +8,7 @@ import { MODULO_TAREFAS_GERAIS } from "@/lib/nucleo/gestao/tarefas";
 import { areasComNivel, temAcesso, temAcessoAlgumaArea } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { Equipe, Filtros, Fila, Indicadores, Intervencao } from "./componentes";
+import { AreasAtencao, Equipe, Filtros, Fila, Indicadores, Intervencao } from "./componentes";
 import { lerCentral } from "./dados";
 import { NovaTarefa, type OpcaoModulo, type Pessoa } from "./formularios";
 
@@ -32,7 +32,7 @@ export default async function PaginaCentral({ searchParams }: PageProps<"/gestao
   const supabase = await criarClienteServidor();
   // Nova tarefa: módulos ativos das áreas em que sou operador ou acima, mais "Tarefas gerais" (inativo no menu).
   const areasOperador = new Set(areasComNivel(sessao.acesso, sessao.areas, "operador"));
-  const [{ resumo, intervencao, fila, total, porPagina, equipe }, candidatosPorArea, todasPessoas] = await Promise.all([
+  const [{ resumo, intervencao, fila, total, porPagina, equipe, areas }, candidatosPorArea, todasPessoas] = await Promise.all([
     lerCentral(supabase, visao, filtros, pagina),
     Promise.all(areasGestor.map(async (area) => {
       const r = await supabase.rpc("usuarios_da_area", { p_area: area });
@@ -89,6 +89,8 @@ export default async function PaginaCentral({ searchParams }: PageProps<"/gestao
       <Indicadores resumo={resumo} visao={visao} filtros={filtros} />
 
       <Intervencao itens={intervencao} total={resumo.intervir} hoje={hoje} visao={visao} filtros={filtros} />
+
+      {areas && <AreasAtencao linhas={areas} visao={visao} filtros={filtros} />}
 
       {equipe && <Equipe linhas={equipe} visao={visao} filtros={filtros} />}
 

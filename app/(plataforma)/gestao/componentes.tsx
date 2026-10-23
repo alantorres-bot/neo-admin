@@ -12,7 +12,7 @@ import {
   ROTULO_DESTAQUE, ROTULO_PRIORIDADE, acaoRecomendada, descreverMotivo, ordenarMotivos, type NivelDestaque,
 } from "@/lib/nucleo/gestao/destaque";
 import { hrefCentral, type FiltrosCentral, type Recorte, type Visao } from "@/lib/nucleo/gestao/filtros";
-import type { LinhaCentral, LinhaEquipe, Resumo } from "./dados";
+import type { LinhaArea, LinhaCentral, LinhaEquipe, Resumo } from "./dados";
 
 const ROTULO_STATUS: Record<LinhaCentral["status"], string> = {
   aberta: "Aberta", em_andamento: "Em andamento", concluida: "Concluída", cancelada: "Cancelada",
@@ -81,7 +81,8 @@ export function Indicadores({ resumo, visao, filtros }: { resumo: Resumo; visao:
       </div>
       <p className="text-[11px] text-muted-foreground">
         &quot;Em aberto&quot; é o total. Os demais são recortes dele e podem se sobrepor (uma pendência atrasada e bloqueada aparece
-        nos dois): não some os números. Clique num indicador para ver as pendências que o compõem.
+        nos dois): não some os números. Clique num indicador para ver as pendências que o compõem.{" "}
+        <Link href="/gestao/regras" className="text-elo hover:underline">Como a Central classifica</Link>
       </p>
     </section>
   );
@@ -143,6 +144,60 @@ export function Intervencao({ itens, total, hoje, visao, filtros }: { itens: Lin
             <Link href={`${hrefCentral(visao, filtros, { recorte: "intervir", pagina: 1 })}#fila`} className="text-elo hover:underline">Ver todas na fila</Link>
           </p>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// --- Áreas e módulos que precisam de atenção --------------------------------------------------------------------------
+
+/** Módulos com algo a olhar (intervenção, avaliação, atraso, bloqueio, decisão ou distribuição), o mais urgente primeiro. */
+export function AreasAtencao({ linhas, visao, filtros }: { linhas: LinhaArea[]; visao: Visao; filtros: FiltrosCentral }) {
+  const comAtencao = linhas.filter((l) => l.intervir + l.avaliar + l.atrasadas + l.bloqueadas + l.aguarda_gestor + l.distribuir > 0);
+  const tranquilos = linhas.length - comAtencao.length;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Áreas e módulos que precisam de atenção</CardTitle>
+        <CardDescription>
+          Por módulo, com as mesmas regras dos indicadores. Os números de uma linha se sobrepõem (uma pendência atrasada e bloqueada conta
+          nas duas colunas). Clique no módulo para filtrar a fila.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {comAtencao.length === 0 ? (
+          <p className="rounded-[3px] border border-dashed p-6 text-center text-sm text-muted-foreground">Nenhum módulo com pontos de atenção.</p>
+        ) : (
+          <Table className="cartoes">
+            <TableHeader>
+              <TableRow>
+                <TableHead>Área</TableHead><TableHead>Módulo</TableHead><TableHead>Abertas</TableHead><TableHead>Exigem intervenção</TableHead>
+                <TableHead>Avaliar</TableHead><TableHead>Atrasadas</TableHead><TableHead>Bloqueadas</TableHead><TableHead>Aguardando gestor</TableHead>
+                <TableHead>Precisam distribuir</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {comAtencao.map((l) => (
+                <TableRow key={l.modulo}>
+                  <TableCell>{l.area_nome}</TableCell>
+                  <TableCell>
+                    <Link href={`${hrefCentral(visao, filtros, { area: l.area, modulo: l.modulo, recorte: undefined, pagina: 1 })}#fila`} className="text-elo hover:underline">
+                      {l.modulo_nome}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{l.abertas}</TableCell>
+                  <TableCell className={l.intervir > 0 ? "font-medium text-marca" : undefined}>{l.intervir}</TableCell>
+                  <TableCell>{l.avaliar}</TableCell>
+                  <TableCell>{l.atrasadas}</TableCell>
+                  <TableCell>{l.bloqueadas}</TableCell>
+                  <TableCell>{l.aguarda_gestor}</TableCell>
+                  <TableCell>{l.distribuir}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {tranquilos > 0 && <p className="text-[12px] text-muted-foreground">{tranquilos} {tranquilos === 1 ? "módulo" : "módulos"} com pendências abertas e sem pontos de atenção.</p>}
       </CardContent>
     </Card>
   );
