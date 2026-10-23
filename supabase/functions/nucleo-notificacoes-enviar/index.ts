@@ -45,16 +45,17 @@ Deno.serve(async (req) => {
   }
 
   const banco = createClient(url, chaveServico, { auth: { autoRefreshToken: false, persistSession: false } });
-  const { data: cfg } = await banco.from("configuracoes").select("chave, valor")
+  const { data: cfg, error: erroCfg } = await banco.from("configuracoes").select("chave, valor")
     .in("chave", ["administrativo.gestao.notificacoes_ligadas", "administrativo.gestao.slack_canal_gestao", "administrativo.gestao.url_base"]);
+  if (erroCfg) return responder({ erro: `Falha ao ler a configuração: ${erroCfg.message}` }, 500);
   const valor = (c: string) => cfg?.find((x) => x.chave === c)?.valor;
   if (valor("administrativo.gestao.notificacoes_ligadas") !== true) return responder({ ok: true, enviados: 0, motivo: "Envio de avisos desligado." });
   if (!tokenSlack.startsWith("xoxb-")) return responder({ erro: "nao_configurado", detalhe: "Falta o segredo SLACK_BOT_TOKEN." }, 409);
   const canal = typeof valor("administrativo.gestao.slack_canal_gestao") === "string" ? (valor("administrativo.gestao.slack_canal_gestao") as string) : null;
   const urlBase = typeof valor("administrativo.gestao.url_base") === "string" ? (valor("administrativo.gestao.url_base") as string) : "";
 
-  const { data: fila, error } = await banco.from("notificacoes").select("id, evento, destinatario_id, texto, link, tentativas")
-    .eq("status", "pendente").lt("tentativas", MAX_TENTATIVAS).order("criado_em").limit(LOTE);
+  // Reserva o lote (status "enviando"): o agendamento e o "Enviar agora" ao mesmo tempo não mandam o mesmo aviso.
+  const { data: fila, error } = await banco.rpc("central_reservar_avisos", { p_limite: LOTE, p_max_tentativas: MAX_TENTATIVAS });
   if (error) return responder({ erro: `Falha ao ler a fila: ${error.message}` }, 500);
 
   const ids = [...new Set((fila ?? []).map((n) => n.destinatario_id).filter(Boolean))] as string[];

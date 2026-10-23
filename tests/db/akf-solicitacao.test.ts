@@ -14,7 +14,7 @@ async function titulo(valor = 1000, opcoes: { dias?: number; estagio?: string; p
   const n = ++contador;
   return (await q(
     `insert into rec_titulos (empresa_id, contraparte_id, documento, parcela, emissao, vencimento, valor, estagio, cod_portador, cedido, contestado)
-     values ($1, $2, $3, $4, current_date - 30, current_date + $5::int, $6, $7::rec_estagio, $8, $9, $10) returning id`,
+     values ($1, $2, $3, $4, (now() at time zone 'America/Cuiaba')::date - 30, (now() at time zone 'America/Cuiaba')::date + $5::int, $6, $7::rec_estagio, $8, $9, $10) returning id`,
     [empresa, opcoes.cliente ?? cliente, `SOL${n}`, opcoes.parcela ?? "1", opcoes.dias ?? 20, valor, opcoes.estagio ?? "boleto_enviado", opcoes.portador === undefined ? "91" : opcoes.portador, opcoes.cedido ?? false, opcoes.contestado ?? false],
   )).rows[0].id as string;
 }
@@ -85,7 +85,7 @@ describe("akf_criar_solicitacao", () => {
     expect((await operacao(r.id)).parciais).toBe(1);
 
     const b = await titulo(1000);
-    await como(db, finOperador, () => q(`select akf_desdobrar_titulo($1::uuid, 400, current_date + 10)`, [b]));
+    await como(db, finOperador, () => q(`select akf_desdobrar_titulo($1::uuid, 400, (now() at time zone 'America/Cuiaba')::date + 10)`, [b]));
     const r2 = (await criar(finOperador, [{ titulo_id: b }])).rows[0].r;
     expect((await itensDe(r2.id))[0]).toMatchObject({ valor_titulo: 1000, valor_restante: 600, valor_solicitado: 600, parcial: false });
     await expect(criar(finOperador, [{ titulo_id: await titulo(2000), valor: 1000.5 }])).resolves.toBeTruthy();

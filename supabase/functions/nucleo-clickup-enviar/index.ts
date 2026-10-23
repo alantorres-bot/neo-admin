@@ -64,7 +64,12 @@ Deno.serve(async (req) => {
       });
       const json = (await r.json()) as { id?: string; err?: string };
       if (!r.ok || !json.id) throw new Error(json.err ?? `HTTP ${r.status}`);
-      await banco.from("pendencias").update({ clickup_task_id: json.id }).eq("id", p.id);
+      // Sem o vínculo gravado, o próximo envio criaria a tarefa de novo: para o lote e avisa.
+      const { error: erroVinculo } = await banco.from("pendencias").update({ clickup_task_id: json.id }).eq("id", p.id);
+      if (erroVinculo) {
+        falhas.push(`${p.titulo}: tarefa ${json.id} criada no ClickUp, mas o vínculo não foi gravado (${erroVinculo.message}). Grave o ID à mão antes de enviar de novo.`.slice(0, 400));
+        break;
+      }
       criadas++;
     } catch (e) {
       falhas.push(`${p.titulo}: ${(e as Error).message}`.slice(0, 300));

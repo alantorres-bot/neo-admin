@@ -8,4 +8,4 @@ export const EVENTOS_AVISO = [
   { codigo: "resumo_diario", nome: "Resumo diário", quando: "Uma vez por dia, a partir do horário configurado (canal da gestão)." },
 ] as const;
 
-export const ROTULO_STATUS_AVISO: Record<string, string> = { pendente: "Na fila", enviada: "Enviado", falhou: "Falhou", ignorada: "Ignorado" };
+export const ROTULO_STATUS_AVISO: Record<string, string> = { pendente: "Na fila", enviando: "Enviando", enviada: "Enviado", falhou: "Falhou", ignorada: "Ignorado" };

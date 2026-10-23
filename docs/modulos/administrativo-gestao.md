@@ -1,6 +1,7 @@
 # Módulo: Administrativo geral / Central de Gestão (`administrativo.gestao`)
 
-Status: em construção (Fases 2 a 7 entregues; a 7 depende de credenciais para enviar de verdade; falta a 8). Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
+Status: construído (Fases 2 a 8 entregues em 22 e 23/10/2026), **não publicado em produção**. O envio real pelo Slack e
+pelo ClickUp depende de credenciais (seção 14, Fase 7). Para publicar, siga o roteiro único da seção 14, Fase 8. Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
 0093: tela `/gestao`, criação e distribuição de tarefas, ações, comentários e histórico), aguardando avaliação. O que foi construído e como testar estão na seção 14.
 
 Decisões já tomadas por Alan (22/10/2026):
@@ -502,7 +503,8 @@ A Fila do dia atual continua no Recebíveis, sem mudanças.
 
 Migrations do núcleo: `0092_nucleo_central_gestao.sql` (Fase 2), `0093_nucleo_central_acoes.sql` (Fase 3),
 `0094_nucleo_atividades.sql` (Fase 3B), `0095_nucleo_central_criticidade.sql` (Fase 4), `0096_nucleo_sugestoes.sql`
-(Fase 5), `0097_nucleo_central_publicacao.sql` (Fase 6) e `0098_nucleo_notificacoes.sql` (Fase 7).
+(Fase 5), `0097_nucleo_central_publicacao.sql` (Fase 6), `0098_nucleo_notificacoes.sql` (Fase 7) e
+`0099_nucleo_central_revisao.sql` (Fase 8, correções da revisão de segurança).
 Na Fase 6, `0180_fin_pendencias_cobranca.sql` (Financeiro) e `0206_fis_pendencias.sql` (Fiscal). O Fiscal ganha uma migration na faixa 0200 (Fase 6).
 
 **`pendencias`: colunas novas (nada é removido nem renomeado)**
@@ -522,9 +524,9 @@ Na Fase 6, `0180_fin_pendencias_cobranca.sql` (Financeiro) e `0206_fis_pendencia
 
 **Funções do núcleo**
 - `pendencia_destaque()`: o cálculo da seção 5.3.
-- `central_resumo(filtros)` e `central_lista(filtros, pagina)`: `security invoker`, sujeitas à RLS.
+- `central_pendencias(visao, filtros)`, `central_resumo`, `central_equipe` e `central_por_area`: leitura da Central, sujeita à RLS.
 - `pendencia_comentar()`, `pendencia_historico()`.
-- `publicar_pendencia()`, `encerrar_pendencias()`.
+- `publicar_pendencia()`, `encerrar_pendencia()` e `encerrar_pendencias_exceto()` (só rotinas do sistema).
 
 **Outras tabelas**
 - Módulo `administrativo.gestao` ("Tarefas gerais"), cadastrado como inativo para não criar um item vazio no menu.
@@ -553,6 +555,11 @@ sincronização são omitidas.
 | Comentar | operador da área, o responsável ou quem criou (nível consulta só lê) | função `pendencia_comentar` (`security definer`, confere antes) |
 | Iniciar, concluir, bloquear, pedir decisão sendo responsável **fora da área** | o responsável | política `pendencias_alterar_proprias` + gatilho |
 | Ver o histórico | quem vê a pendência | função `security definer` |
+| Mudar a pendência de módulo | gestor nos dois módulos | gatilho `fn_pendencias_guarda` (0099) |
+| Ser escolhido como responsável de pendência de módulo | quem tem a área como operador ou acima (Tarefas gerais: qualquer pessoa ativa); rotinas de serviço (ex.: líder no ponto) ficam livres | gatilho `fn_pendencias_guarda` |
+| Gravar `chave_origem` | só as rotinas do módulo (`publicar_pendencia`); a da pessoa é descartada | gatilho `fn_pendencias_guarda` |
+| Marcar "Enviar ao ClickUp" e escolher onde a pendência aparece (`modulo_exibicao`) | gestor da área | gatilhos (0098 e 0099) |
+| Tratar a pendência "Avaliar sugestão" | avaliadores | gatilho `fn_pendencias_guarda` |
 | Anexos | regra do módulo (atual) | RLS + Storage |
 | Enviar sugestão | qualquer usuário ativo com alguma área | RLS |
 | Ver sugestão completa | autor e avaliadores | RLS |
@@ -622,7 +629,9 @@ será informado.
   - os acessos só existem a partir do dia em que o registro for ligado.
 
 ## 12. Pontos em aberto
-1. **Aprovar os limites** da seção 5.6 (3 / 5 / 2 / 5 dias) e o alerta fiscal de 10 dias.
+Resolvidos: o alerta fiscal de 10 dias (aprovado em 23/10/2026) e o campo do usuário do Slack no perfil (Fase 7).
+
+1. **Aprovar os limites** da seção 5.6 (3 / 5 / 2 / 5 dias), na página `/gestao/regras`.
 2. **Rodrigo:** confirmar o e-mail dele (`@neoformas.com.br`) e se o perfil já existe. As permissões são dadas por você
    em Configurações > Usuários. Nenhum dado real é alterado por mim.
 3. **Fechamentos sem pendência** (Comissões, Competência fiscal): publicar na Central? Com que prazo? Recomendo deixar
@@ -863,4 +872,74 @@ cobrança bloqueada no Recebíveis (não existem como dado).
 5. Em Configurações > Usuários, preencher o usuário do Slack de cada pessoa.
 6. Em Central de Gestão > Avisos, informar o canal e a lista, ligar os eventos desejados e, por último, o envio.
    Validar com "Gerar lembretes e enviar agora".
+
+### Fase 8 (23/10/2026): revisão final, testes e roteiro de publicação
+**Revisão de segurança.** Uma revisão independente das migrations 0092 a 0098, das telas e das Edge Functions encontrou
+10 pontos. Cada correção tem um teste que falha sem ela (`tests/db/central-revisao.test.ts`, 12 testes; 10 falham sem a 0099).
+
+| # | Problema | Correção |
+| --- | --- | --- |
+| 1 | O responsável que é gestor de outra área mudava a pendência para o módulo dele e passava a alterar tudo | Mudar de módulo exige ser gestor nos dois (0099) |
+| 2 | Operador gravava `chave_origem` numa pendência manual e travava a publicação do módulo (ex.: alerta de obrigação fiscal) | A chave da pessoa é descartada; só `publicar_pendencia` grava (0099) |
+| 3 | A pendência "Avaliar sugestão" copiava o texto da sugestão, visível a quem lê o Administrativo | Sem o texto; só os avaliadores tratam a pendência (0099; as já criadas foram limpas) |
+| 4 | O autor gravava "avaliada por" na própria sugestão | Campo mantido pelo banco (0099) |
+| 5 | Gestor atribuía, por chamada direta, pendência de módulo a quem não tem a área (inclusive RH e Jurídico) | O responsável precisa ter a área, como operador ou acima (0099) |
+| 6 | Operador marcava "Enviar ao ClickUp" na inclusão e mudava onde a pendência aparece | Só o gestor (0099) |
+| 7 | Texto digitado ia cru ao Slack (menção `<!channel>`, link falso); pedido de decisão de RH/Jurídico mostrava título e motivo no canal | Texto escapado; área sensível vai ao canal só com a área e o link (0099 e `_shared/notificacoes.ts`) |
+| 8 | Envio agendado e "Enviar agora" ao mesmo tempo mandavam o mesmo aviso; falha ao gravar o vínculo do ClickUp gerava tarefa duplicada | Reserva do lote (`central_reservar_avisos`, situação "enviando", volta à fila após 10 min); o ClickUp para o lote e avisa |
+| 9 | Publicar de novo apagava impacto, categoria e "precisa distribuir" registrados pelo gestor | Só mudam quando o módulo informa o campo (0099) |
+| 10 | O registro de acessos guardava a busca da tela (podia ter nome, CPF ou CNPJ) e aceitava chamadas sem limite | Só o caminho da tela; até 60 registros por minuto por pessoa (0099 e `proxy.ts`) |
+
+Conferido e correto: funções `security definer` com `search_path` fixo; funções do sistema sem permissão para usuário
+logado; RLS em todas as tabelas novas; nada para `anon`; sem SQL dinâmico; registros de prova sem exclusão; as Edge
+Functions conferem o segredo (comparação de tempo constante) ou o admin logado; a exportação respeita a RLS.
+
+**Também corrigido:** dois testes antigos (`akf-solicitacao` e `entrada-esteira`) falhavam entre 20h e 24h de Cuiabá porque
+usavam a data UTC. Passaram a usar a data de Cuiabá, como as regras do sistema. O código do sistema não mudou.
+
+**Resultado dos testes (23/10/2026)**
+| Bateria | Resultado |
+| --- | --- |
+| `npm run verificar` (tipos, lint, 1702 testes) | 1701 passaram, 1 pulado, nenhuma falha |
+| Banco da Central (`tests/db/central-*.test.ts`, 8 arquivos) | 111 passaram |
+| Interface da Central (`playwright.central.config.ts`, banco local) | 20 passaram |
+| Interface, rotas sem login (`playwright.config.ts`) | 15 passaram |
+
+**Não validado de verdade:** o envio pelo Slack e pelo ClickUp (faltam as credenciais). O teste de interface do Fiscal
+Control não rodou neste ambiente: os usuários de teste do Fiscal não estavam no banco local.
+
+**Roteiro único de publicação (só Alan; nada disto foi feito por mim)**
+Pré-requisito: as migrations do Fiscal Control (`0200` a `0204`) já aplicadas e registradas, porque a `0206` depende delas.
+
+1. **Cópia de segurança antes:** `node scripts/banco-copia.mjs exportar --ref chdszjpbtfpstjrqnmmm`.
+2. **Migrations, nesta ordem**, cada uma seguida do registro em `schema_migrations` (`docs/PUBLICACAO.md`, seção 2). Em
+   PowerShell, parando no primeiro erro:
+   ```powershell
+   $ref = "chdszjpbtfpstjrqnmmm"
+   $lista = "0092_nucleo_central_gestao","0093_nucleo_central_acoes","0094_nucleo_atividades","0179_fin_atividades",
+            "0205_fis_atividades","0522_rh_atividades","0704_com_atividades","0095_nucleo_central_criticidade",
+            "0096_nucleo_sugestoes","0097_nucleo_central_publicacao","0180_fin_pendencias_cobranca","0206_fis_pendencias",
+            "0098_nucleo_notificacoes","0099_nucleo_central_revisao"
+   foreach ($m in $lista) {
+     $v, $n = $m -split "_", 2
+     npx supabase db query --linked --project-ref $ref --agent no -f "supabase/migrations/$m.sql"
+     if ($LASTEXITCODE -ne 0) { Write-Host "ERRO em $m. Pare aqui e envie a mensagem completa."; break }
+     npx supabase db query --linked --project-ref $ref --agent no "insert into supabase_migrations.schema_migrations (version, name) values ('$v','$n') on conflict do nothing"
+   }
+   ```
+3. **Histórico de atividades:** uma vez, `select atividades_reprocessar();`.
+4. **Publicar o código** (só depois das migrations: as telas leem as colunas novas).
+5. **Na aplicação:**
+   - aprovar os limites em `/gestao/regras`;
+   - marcar Rodrigo como gestor em todas as áreas e "Acompanha a equipe" (Configurações › Usuários).
+6. **Registro de acessos:** comunicar a equipe (texto a validar com o jurídico ou o RH) e só então ligar
+   `administrativo.gestao.registrar_acessos`.
+7. **Slack e ClickUp (opcional):** seguir a lista "Configuração pendente" da Fase 7. Ligar primeiro um evento só, com o
+   próprio usuário, e conferir antes de ligar os demais.
+
+**Conferência depois de publicar**
+- `/gestao` abre para Alan e Rodrigo com todas as áreas, e para um operador só com a área dele.
+- Uma tarefa de teste em "Tarefas gerais": criar, atribuir, concluir e ver o histórico.
+- `select count(*) from pendencias where chave_origem like 'obrigacao%';` mostra as obrigações fiscais na janela de 10 dias.
+- `select status, count(*) from notificacoes group by 1;` fica vazio enquanto os avisos estiverem desligados.
 

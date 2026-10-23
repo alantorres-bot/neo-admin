@@ -152,11 +152,24 @@ describe("acessos", () => {
     const linhas = (await q(`select rota, area, modulo, referencia_id, vezes from acessos where usuario_id = $1 order by id`, [karina])).rows;
     expect(linhas).toEqual([
       { rota: `/financeiro/recebiveis/${id}`, area: "financeiro", modulo: MOD, referencia_id: id, vezes: 2 },
-      { rota: "/gestao?visao=minhas", area: "administrativo", modulo: "administrativo.gestao", referencia_id: null, vezes: 1 },
+      // só o caminho: a busca (que pode ter nome, CPF ou CNPJ) não é guardada (0099)
+      { rota: "/gestao", area: "administrativo", modulo: "administrativo.gestao", referencia_id: null, vezes: 1 },
     ]);
     await q(`update acessos set ultimo_em = now() - interval '31 minutes' where usuario_id = $1`, [karina]);
     await acessar(karina, "/gestao?visao=minhas");
     expect((await q(`select count(*)::int n from acessos where usuario_id = $1`, [karina])).rows[0].n).toBe(3);
+  });
+
+  it("no máximo 60 registros por minuto por pessoa (chamada direta não infla os acessos)", async () => {
+    const banco = await criarBanco();
+    await novoUsuario(banco, "adm@neo.com");
+    const u = await novoUsuario(banco, "u@neo.com", { financeiro: "operador" });
+    await banco.query(`update configuracoes set valor = 'true' where chave = 'administrativo.gestao.registrar_acessos'`);
+    await como(banco, u, async () => {
+      for (let i = 0; i < 70; i++) await banco.query(`select registrar_acesso($1)`, [`/financeiro/recebiveis/tela-${i}`]);
+    });
+    expect((await banco.query<Linha>(`select count(*)::int n from acessos`)).rows[0].n).toBe(60);
+    await banco.close();
   });
 
   it("visibilidade igual à das atividades; anon não registra nem lê", async () => {

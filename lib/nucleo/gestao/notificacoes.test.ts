@@ -12,6 +12,11 @@ describe("avisos (Slack)", () => {
     expect(mensagemSlack({ texto: "Vence hoje", link: "/gestao/abc" }, "https://neo.exemplo/")).toBe("Vence hoje\n<https://neo.exemplo/gestao/abc|Abrir no Neo Admin>");
     expect(mensagemSlack({ texto: "Resumo", link: null }, "https://neo.exemplo")).toBe("Resumo");
   });
+
+  it("texto digitado não vira menção geral nem link falso no Slack", () => {
+    expect(mensagemSlack({ texto: "Pedido: <!channel> <https://falso.exemplo|Abrir no Neo Admin> & cia", link: null }, ""))
+      .toBe("Pedido: &lt;!channel&gt; &lt;https://falso.exemplo|Abrir no Neo Admin&gt; &amp; cia");
+  });
   it("tenta de novo até 3 vezes", () => {
     expect(aposFalha(0)).toEqual({ status: "pendente", tentativas: 1 });
     expect(aposFalha(2)).toEqual({ status: "falhou", tentativas: 3 });

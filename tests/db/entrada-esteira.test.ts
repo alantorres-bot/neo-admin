@@ -74,7 +74,7 @@ describe("rec_vw_titulos recriada", () => {
   it("títulos antigos (sem os campos novos) continuam funcionando, e o valor atualizado ainda calcula encargos", async () => {
     await q(
       `insert into rec_titulos (empresa_id, contraparte_id, documento, parcela, vencimento, valor)
-       values ($1, $2, 'ANTIGO', '1', current_date - 30, 1000)`, [empresa, cliente]);
+       values ($1, $2, 'ANTIGO', '1', (now() at time zone 'America/Cuiaba')::date - 30, 1000)`, [empresa, cliente]);
     const r = await q(`select nota_fiscal, nota_saida_id, entrou_esteira_em, estagio, faixa, valor_atualizado from rec_vw_titulos where documento = 'ANTIGO'`);
     expect(r.rows[0]).toMatchObject({ nota_fiscal: null, nota_saida_id: null, entrou_esteira_em: null, estagio: "importado", faixa: "16_30" });
     // 1000 + multa 2% (20) + juros 2% a.m. pro rata por 30 dias (20) = 1040

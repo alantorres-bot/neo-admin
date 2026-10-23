@@ -17,11 +17,17 @@ export function destinoDoAviso(
   return canalGestao ? { destino: canalGestao } : { ignorar: "Canal da gestão não configurado (Central de Gestão > Avisos)." };
 }
 
+/** Escapa o texto para o Slack: sem isso, `<!channel>` ou `<https://…|…>` digitados viram menção geral ou link falso. */
+export function escaparSlack(texto: string): string {
+  return texto.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
 /** Texto da mensagem: o aviso e o link para a Central (endereço absoluto; o link relativo vira URL do Neo Admin). */
 export function mensagemSlack(n: Pick<Notificacao, "texto" | "link">, urlBase: string): string {
   const base = urlBase.replace(/\/+$/, "");
   const link = n.link ? (n.link.startsWith("http") ? n.link : `${base}${n.link.startsWith("/") ? "" : "/"}${n.link}`) : null;
-  return link ? `${n.texto}\n<${link}|Abrir no Neo Admin>` : n.texto;
+  const texto = escaparSlack(n.texto);
+  return link ? `${texto}\n<${link}|Abrir no Neo Admin>` : texto;
 }
 
 /** Depois de uma falha: tenta de novo até o limite; depois disso, fica "falhou" sem nova tentativa. */

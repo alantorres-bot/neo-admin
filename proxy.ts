@@ -48,7 +48,7 @@ export async function proxy(request: NextRequest, evento: NextFetchEvent) {
   if (logado && !rotaPublica && ehNavegacao(request)) {
     // Depois da resposta (não atrasa a tela); falha no registro não afeta o usuário.
     evento.waitUntil(
-      Promise.resolve(supabase.rpc("registrar_acesso", { p_rota: pathname + search })).then(() => undefined, () => undefined),
+      Promise.resolve(supabase.rpc("registrar_acesso", { p_rota: pathname })).then(() => undefined, () => undefined),
     );
   }
 
