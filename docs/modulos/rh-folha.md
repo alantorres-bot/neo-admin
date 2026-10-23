@@ -167,6 +167,7 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
         - FOPAG → portador de salários FOPAG.
       - Em novembro/2026 todos os funcionários passam para a Neo Formas: basta mudar a empregadora no cadastro.
     - Os códigos podem ser copiados de um título já lançado. Tipo, categoria ou portador faltando travam o botão e a reserva.
+    - Desde 23/10/2026 o operador escolhe quais títulos (pessoa × tipo) lançar; todos começam marcados. O painel é o mesmo do VT.
     - Todos os títulos vão para a empresa **1 (Neo Formas)** do Consistem.
     - **Por guia** (DARF, FGTS mensal e FGTS consignado, contra o fornecedor do órgão): fica para depois, junto com a F3.
 

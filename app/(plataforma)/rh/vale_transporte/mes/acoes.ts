@@ -135,16 +135,19 @@ async function mensagemDaFuncao(error: unknown, padrao: string): Promise<string>
  * Lança no Consistem os títulos do mês aprovado (um por pessoa com valor e ainda sem título). Monta tudo de novo aqui (não confia
  * na tela), confere com o que a pessoa viu (quantidade e total), reserva (rh_vt_reservar_lancamentos) e chama a Edge Function.
  */
-export async function lancarNoConsistem(id: string, esperado: { quantidade: number; totalCentavos: number }): Promise<Resultado> {
+export async function lancarNoConsistem(id: string, esperado: { quantidade: number; totalCentavos: number; chaves: string[] }): Promise<Resultado> {
   const negado = await exigir("operador");
   if (negado) return { ok: false, erro: negado };
   if (!uuid.safeParse(id).success) return { ok: false, erro: "Mês inválido." };
+  const chaves = z.array(uuid).max(1000).safeParse(esperado.chaves);
+  if (!chaves.success) return { ok: false, erro: "Seleção inválida; recarregue a página." };
+  const escolhidos = new Set(chaves.data);
   const supabase = await criarClienteServidor();
   const [mes, itens, lancamentos, parametros] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id), lerLancamentos(supabase, id), lerParametrosRh(supabase)]);
   if (!mes) return { ok: false, erro: "Mês não encontrado." };
   if (!parametros.vtLigado) return { ok: false, erro: "O lançamento no Consistem está desligado (aba Parâmetros)." };
   const ativos = new Set(lancamentos.filter((l) => l.situacao !== "erro").map((l) => l.item_id));
-  const alvo = itensALancar(itens, ativos);
+  const alvo = itensALancar(itens, ativos).filter((i) => escolhidos.has(i.id));
   const total = alvo.reduce((s, i) => s + Math.round(i.valor * 100), 0);
   if (alvo.length !== esperado.quantidade || total !== esperado.totalCentavos) return { ok: false, erro: "Os títulos mudaram desde que a página abriu; recarregue e confira de novo." };
   if (!alvo.length) return { ok: false, erro: "Nenhum título a lançar." };

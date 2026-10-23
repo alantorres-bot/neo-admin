@@ -25,7 +25,7 @@ export type LinhaConsistem = {
  */
 export function PainelConsistem({ id, linhas, ligado, parametrosHref, descricao, lancar, resolver, podeLancar }: {
   id: string; linhas: LinhaConsistem[]; ligado: boolean; parametrosHref: string; descricao: string; podeLancar: boolean;
-  lancar: (id: string, esperado: { quantidade: number; totalCentavos: number }) => Promise<Resultado>;
+  lancar: (id: string, esperado: { quantidade: number; totalCentavos: number; chaves: string[] }) => Promise<Resultado>;
   resolver: (idLancamento: string, cod: string, motivo: string) => Promise<Resultado>;
 }) {
   const router = useRouter();
@@ -34,6 +34,8 @@ export function PainelConsistem({ id, linhas, ligado, parametrosHref, descricao,
   const [resolvendo, setResolvendo] = useState<string | null>(null);
   const [cod, setCod] = useState("");
   const [motivo, setMotivo] = useState("");
+  // Desmarcadas (e não marcadas): o que volta a "erro" depois de um envio já entra marcado.
+  const [fora, setFora] = useState<ReadonlySet<string>>(new Set());
   const rodar = (acao: () => Promise<Resultado>, sucesso: string, depois?: () => void) => iniciar(async () => {
     const r = await acao();
     if (!r.ok) { toast.error(r.erro); return; }
@@ -41,10 +43,14 @@ export function PainelConsistem({ id, linhas, ligado, parametrosHref, descricao,
     depois?.();
     router.refresh();
   });
-  const aLancar = linhas.filter((l) => l.valor > 0 && (!l.lancamento || l.lancamento.situacao === "erro"));
+  const lancavel = (l: LinhaConsistem) => l.valor > 0 && (!l.lancamento || l.lancamento.situacao === "erro");
+  const aLancar = linhas.filter((l) => lancavel(l) && !fora.has(l.chave));
+  const totalLancavel = linhas.filter(lancavel).length;
   const semCodigos = aLancar.filter((l) => l.portador === null);
   const totalCentavos = aLancar.reduce((s, l) => s + Math.round(l.valor * 100), 0);
   const comTipo = linhas.some((l) => l.tipo);
+  const escolhe = ligado && podeLancar && totalLancavel > 0;
+  const marcar = (chave: string, sim: boolean) => setFora((s) => { const n = new Set(s); if (sim) n.delete(chave); else n.add(chave); return n; });
   return (
     <div className="space-y-3">
       {!ligado ? (
@@ -53,11 +59,11 @@ export function PainelConsistem({ id, linhas, ligado, parametrosHref, descricao,
         </p>
       ) : semCodigos.length > 0 ? (
         <p className="rounded-[3px] border border-grade bg-cabecalho p-3 text-sm text-muted-foreground">
-          {semCodigos.length} título(s) sem códigos ou portador nos <a href={parametrosHref} className="text-elo hover:underline">Parâmetros</a> (marcados abaixo). Complete antes de lançar.
+          {semCodigos.length} título(s) marcado(s) sem códigos ou portador nos <a href={parametrosHref} className="text-elo hover:underline">Parâmetros</a>. Complete ou desmarque antes de lançar.
         </p>
       ) : podeLancar && aLancar.length > 0 && (
         <Dialog open={confirmando} onOpenChange={setConfirmando}>
-          <DialogTrigger render={<Button size="sm" />}><Upload /> Lançar {aLancar.length} título(s) no Consistem</DialogTrigger>
+          <DialogTrigger render={<Button size="sm" />}><Upload /> Lançar {aLancar.length}{aLancar.length < totalLancavel ? ` de ${totalLancavel}` : ""} título(s) no Consistem</DialogTrigger>
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Lançar no Consistem</DialogTitle>
@@ -65,16 +71,24 @@ export function PainelConsistem({ id, linhas, ligado, parametrosHref, descricao,
             </DialogHeader>
             <p className="text-sm">{aLancar.length} título(s) · total <strong>{reais(totalCentavos / 100)}</strong></p>
             <div className="flex justify-end">
-              <Button disabled={pendente} onClick={() => rodar(() => lancar(id, { quantidade: aLancar.length, totalCentavos }), "Títulos lançados.", () => setConfirmando(false))}>
+              <Button disabled={pendente} onClick={() => rodar(() => lancar(id, { quantidade: aLancar.length, totalCentavos, chaves: aLancar.map((l) => l.chave) }), "Títulos lançados.", () => setConfirmando(false))}>
                 {pendente ? "Lançando…" : "Confirmar e lançar"}
               </Button>
             </div>
           </DialogContent>
         </Dialog>
       )}
+      {escolhe && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          {aLancar.length} de {totalLancavel} marcado(s) para lançar.
+          <Button variant="ghost" size="sm" onClick={() => setFora(new Set())}>Marcar todos</Button>
+          <Button variant="ghost" size="sm" onClick={() => setFora(new Set(linhas.filter(lancavel).map((l) => l.chave)))}>Desmarcar todos</Button>
+        </div>
+      )}
       <Table>
         <TableHeader>
           <TableRow>
+            {escolhe && <TableHead>Lançar</TableHead>}
             <TableHead>Nº</TableHead><TableHead>Funcionário</TableHead>{comTipo && <TableHead>Tipo</TableHead>}<TableHead>Portador</TableHead>
             <TableHead className="text-right">Valor</TableHead><TableHead>Situação</TableHead><TableHead>Código no Consistem</TableHead><TableHead />
           </TableRow>
@@ -82,6 +96,11 @@ export function PainelConsistem({ id, linhas, ligado, parametrosHref, descricao,
         <TableBody>
           {linhas.filter((l) => l.valor > 0 || l.lancamento).map((l) => (
             <TableRow key={l.chave}>
+              {escolhe && (
+                <TableCell>
+                  {lancavel(l) && <input type="checkbox" checked={!fora.has(l.chave)} onChange={(e) => marcar(l.chave, e.target.checked)} aria-label={`Lançar ${l.nome}${l.tipo ? ` (${l.tipo})` : ""}`} className="size-4" />}
+                </TableCell>
+              )}
               <TableCell className="tabular-nums">{l.cod_fornecedor}</TableCell>
               <TableCell>{l.nome}</TableCell>
               {comTipo && <TableCell className="text-xs">{l.tipo}</TableCell>}
