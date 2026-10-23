@@ -356,3 +356,25 @@ test.describe.serial("sugestões de melhoria (Fase 5)", () => {
     await expect(page.getByRole("row", { name: new RegExp(titulo.replace(/[[\]]/g, "\\$&")) }).getByText("Economiza tempo da conciliação")).toBeVisible();
   });
 });
+
+// --- Fase 6: integração com os módulos ---------------------------------------------------------------------------------
+
+test.describe("integração com os módulos (Fase 6)", () => {
+  test("cobranças do Recebíveis aparecem no módulo Cobrança da Central", async ({ page }) => {
+    await entrar(page, "gestor.teste");
+    await page.goto("/gestao?visao=gestao&modulo=financeiro.cobranca");
+    await expect(fila(page).getByText("Cobrar D+5: [DEMO] Cliente Exemplo C")).toBeVisible();
+    await expect(fila(page).getByText("Cobrança", { exact: true }).first()).toBeVisible();
+    await expect(fila(page).getByText(/Anexar boleto/)).toHaveCount(0);
+  });
+
+  test("obrigação fiscal a vencer chega à Central do responsável, com o vencimento como prazo e o link do módulo", async ({ page }) => {
+    await entrar(page, "operador.fiscal.teste");
+    await page.goto("/gestao?visao=minhas&busca=Entregar");
+    const link = fila(page).getByRole("link", { name: /Entregar \[DEMO\] DCTF/ });
+    await expect(link).toBeVisible();
+    await page.goto((await link.getAttribute("href"))!);
+    await expect(page.getByText(/Vence em 4 dias/).first()).toBeVisible();
+    await expect(page.locator("a", { hasText: "Abrir no módulo" })).toHaveAttribute("href", /^\/fiscal\/creditos\/obrigacoes\//);
+  });
+});

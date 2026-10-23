@@ -35,3 +35,33 @@ update pendencias set bloqueio_motivo = 'Aguardando o extrato do banco', bloquea
  where titulo = '[DEMO] Anexar boleto: NF 1234 — Cliente Exemplo B' and bloqueio_motivo is null;
 update pendencias set aguarda_gestor_motivo = 'Autorizar desconto de 5% pedido pelo cliente'
  where titulo = '[DEMO] Confirmar pagamento: Cliente Exemplo A' and aguarda_gestor_motivo is null;
+
+-- Fase 6: uma cobrança (aparece no módulo Cobrança da Central) e uma obrigação fiscal a vencer (publicada pelo Fiscal).
+insert into pendencias (modulo, titulo, prazo)
+select 'financeiro.recebiveis', 'Cobrar D+5: [DEMO] Cliente Exemplo C', (now() at time zone 'America/Cuiaba')::date
+ where not exists (select 1 from pendencias where titulo = 'Cobrar D+5: [DEMO] Cliente Exemplo C' and status in ('aberta', 'em_andamento'));
+
+do $$
+declare
+  v_empresa uuid;
+  v_estab uuid;
+  v_tipo uuid;
+begin
+  if to_regclass('public.fis_obrigacoes') is null then return; end if;
+  select id into v_empresa from empresas where nome_curto = '[DEMO]';
+  if v_empresa is null then
+    insert into empresas (razao_social, nome_curto) values ('[DEMO] Empresa Exemplo Ltda', '[DEMO]') returning id into v_empresa;
+  end if;
+  select id into v_estab from fis_estabelecimentos where cnpj = '11222333000181';
+  if v_estab is null then
+    insert into fis_estabelecimentos (empresa_id, nome, cnpj, uf) values (v_empresa, '[DEMO] Matriz', '11222333000181', 'MT') returning id into v_estab;
+  end if;
+  select id into v_tipo from fis_tipos_obrigacao where codigo = 'DEMO_DCTF';
+  if v_tipo is null then
+    insert into fis_tipos_obrigacao (codigo, nome, esfera, periodicidade, dia_vencimento) values ('DEMO_DCTF', '[DEMO] DCTF', 'federal', 'mensal', 15) returning id into v_tipo;
+  end if;
+  insert into fis_obrigacoes (tipo_id, empresa_id, estabelecimento_id, competencia, vencimento, responsavel_id)
+  select v_tipo, v_empresa, v_estab, date_trunc('month', now())::date, (now() at time zone 'America/Cuiaba')::date + 4,
+         (select id from perfis where email = 'operador.fiscal.teste@neoformas.com.br')
+  on conflict do nothing;
+end $$;

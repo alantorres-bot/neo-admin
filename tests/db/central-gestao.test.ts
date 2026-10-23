@@ -222,7 +222,8 @@ describe("destaque gerencial", () => {
 
   it("prioridade alta ou crítica, sozinha, não vira intervenção", async () => {
     expect((await destaque(await nova({ responsavel: finOperador, prazoDias: 10, criticidade: "critica" }))).nivel).toBe("normal");
-    expect((await destaque(await nova({ responsavel: finOperador, criticidade: "alta" }))).nivel).toBe("normal");
+    // sem prazo, pede avaliação (desde a 0097 também nas de módulo) — mas nunca intervenção
+    expect((await destaque(await nova({ responsavel: finOperador, criticidade: "alta" }))).nivel).toBe("avaliar");
   });
 
   it("precisa distribuir: tarefa manual sem dono ou marcada; automática sem dono é fila da área", async () => {

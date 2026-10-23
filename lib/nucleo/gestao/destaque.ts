@@ -127,7 +127,7 @@ export function regrasDoDestaque(l: LimitesDestaque): { codigo: CodigoMotivo; ni
     { codigo: "IMPEDE_OUTRA", nivel: "intervir", quando: "Outra pendência aberta está bloqueada esperando esta." },
     { codigo: "PRECISA_DISTRIBUIR", nivel: "intervir", quando: `Sem responsável (tarefa manual ou marcada "precisa distribuir"), com prioridade alta/crítica ou prazo em até ${d(l.dias_prazo_proximo)}.` },
     { codigo: "IMPACTO_SEM_PRAZO", nivel: "avaliar", quando: "Impacto registrado, mas sem prazo: não há como dizer se é urgente." },
-    { codigo: "SEM_PRAZO_IMPORTANTE", nivel: "avaliar", quando: "Tarefa manual com prioridade alta ou crítica e sem prazo." },
+    { codigo: "SEM_PRAZO_IMPORTANTE", nivel: "avaliar", quando: "Prioridade alta ou crítica e sem prazo (tarefa manual ou de módulo, como um vencimento fiscal a confirmar)." },
     { codigo: "PRECISA_DISTRIBUIR", nivel: "acompanhar", quando: "Sem responsável, nos demais casos." },
     { codigo: "ATRASO_SIMPLES", nivel: "acompanhar", quando: `Atrasada há até ${d(l.dias_atraso_relevante)}, sem prioridade crítica.` },
     { codigo: "VENCE_HOJE", nivel: "acompanhar", quando: "O prazo é hoje." },

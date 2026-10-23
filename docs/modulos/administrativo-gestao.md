@@ -1,6 +1,6 @@
 # Módulo: Administrativo geral / Central de Gestão (`administrativo.gestao`)
 
-Status: em construção (Fases 2, 3, 3B, 4 e 5 entregues; faltam 6, 7 e 8). Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
+Status: em construção (Fases 2, 3, 3B, 4, 5 e 6 entregues; faltam 7 e 8). Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
 0093: tela `/gestao`, criação e distribuição de tarefas, ações, comentários e histórico), aguardando avaliação. O que foi construído e como testar estão na seção 14.
 
 Decisões já tomadas por Alan (22/10/2026):
@@ -103,7 +103,7 @@ motivos (Intervir > Avaliar > Acompanhar > Normal). A tela mostra **todos** os m
 | `PRAZO_PROXIMO` | Prazo próximo | Acompanhar | "Vence em 3 dias (25/10/2026)" |
 | `BLOQUEADA` | Bloqueada há menos tempo que o limite | Acompanhar | "Bloqueada desde ontem: <motivo>" |
 | `SEM_MOVIMENTACAO` | Aberta e sem movimentação humana há mais de `dias_sem_movimentacao` | Acompanhar | "Sem movimentação há 9 dias" |
-| `SEM_PRAZO_IMPORTANTE` | Tarefa manual sem prazo e com prioridade alta/crítica | Avaliar | "Prioridade alta sem prazo definido" |
+| `SEM_PRAZO_IMPORTANTE` | Prioridade alta/crítica e sem prazo (manual ou, desde a Fase 6, de módulo) | Avaliar | "Prioridade alta sem prazo definido" |
 | `IMPACTO_SEM_PRAZO` | Impacto registrado com fundamento, mas sem prazo (Fase 4) | Avaliar | "Impacto fiscal registrado sem prazo: avaliar a urgência" |
 | `IMPACTO_SEM_FUNDAMENTO` | (não acontece: o banco exige fundamento para registrar impacto) | — | — |
 
@@ -502,7 +502,8 @@ A Fila do dia atual continua no Recebíveis, sem mudanças.
 
 Migrations do núcleo: `0092_nucleo_central_gestao.sql` (Fase 2), `0093_nucleo_central_acoes.sql` (Fase 3),
 `0094_nucleo_atividades.sql` (Fase 3B), `0095_nucleo_central_criticidade.sql` (Fase 4), `0096_nucleo_sugestoes.sql`
-(Fase 5) e `0097_nucleo_notificacoes.sql` (Fase 7). O Fiscal ganha uma migration na faixa 0200 (Fase 6).
+(Fase 5), `0097_nucleo_central_publicacao.sql` (Fase 6) e `0098_nucleo_notificacoes.sql` (Fase 7).
+Na Fase 6, `0180_fin_pendencias_cobranca.sql` (Financeiro) e `0206_fis_pendencias.sql` (Fiscal). O Fiscal ganha uma migration na faixa 0200 (Fase 6).
 
 **`pendencias`: colunas novas (nada é removido nem renomeado)**
 
@@ -780,4 +781,42 @@ aprovar os limites em Central de Gestão > "Como a Central classifica".
 - **Fora da v1:** anexos em sugestões (ponto em aberto 4).
 
 **Publicação (só Alan):** aplicar a `0096` depois da `0095` e registrá-la em `schema_migrations`.
+
+### Fase 6 (23/10/2026): integração com os módulos prioritários
+| Item | Onde |
+| --- | --- |
+| Contrato: `publicar_pendencia`, `encerrar_pendencia`, `encerrar_pendencias_exceto`; coluna `modulo_exibicao`; prioridade alta sem prazo pede avaliação também nas pendências de módulo | `supabase/migrations/0097_nucleo_central_publicacao.sql` |
+| Fiscal: obrigações a vencer (janela `fiscal.creditos.dias_alerta_obrigacao` = 10 dias, aprovado em 23/10/2026), vencimento a confirmar, divergências sem tarefa; rotina diária e carga inicial | `supabase/migrations/0206_fis_pendencias.sql` |
+| Financeiro: pendências de cobrança do Recebíveis exibidas no módulo Cobrança | `supabase/migrations/0180_fin_pendencias_cobranca.sql` |
+| Testes | `tests/db/central-publicacao.test.ts` (12), `e2e/central-gestao.spec.ts` (2 fluxos) |
+
+**Contrato de publicação (como um módulo adota)**
+- **Publicar:** a função SQL do módulo, `security definer`, chama `publicar_pendencia` com `modulo`, `chave_origem` estável
+  (ex.: `obrigacao:<id>`), `titulo` e os campos opcionais.
+  - Publicar de novo atualiza a pendência aberta, sem duplicar.
+  - O responsável escolhido por uma pessoa é mantido.
+- **Encerrar:** `encerrar_pendencia` com `concluida` quando a ação foi feita e `cancelada` quando deixou de valer.
+  `encerrar_pendencias_exceto` serve para rotinas que recalculam a lista inteira.
+- **Age como o sistema:** a publicação não conta como ação da pessoa que disparou a rotina. Por isso só a service role
+  e as funções dos módulos executam essas funções; usuário logado não executa.
+- **Falha isolada:** uma falha na publicação vira aviso no log do banco e não derruba a gravação do módulo. Por isso cada
+  publicador precisa de teste de banco: foi o teste que revelou um erro de tipo que o aviso teria escondido.
+
+**Fechamentos e encerramentos (levantamento, sem rotina nova)**
+
+| Processo | Na Central |
+| --- | --- |
+| Fatura do cartão | Já publica ("Importar", "Conciliar", "Fechar") |
+| Folha | Já publica |
+| Vale-transporte | Já publica |
+| Banco de horas | Já publica |
+| Competência fiscal | Não publica (decisão pendente, ponto em aberto 3) |
+| Comissões | Não publica (decisão pendente, ponto em aberto 3) |
+
+**Ficam como limitação:** notas fiscais a conferir ou lançar (não há módulo de entradas), divergência de pagamento e
+cobrança bloqueada no Recebíveis (não existem como dado).
+
+**Publicação (só Alan):**
+1. Aplicar `0097`, `0180` e `0206`, nesta ordem e depois da `0096`, e registrar em `schema_migrations`.
+2. A `0206` depende das migrations do Fiscal Control (`0200` a `0205`) e roda a carga inicial das pendências fiscais.
 
