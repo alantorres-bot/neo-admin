@@ -86,6 +86,20 @@ export function DialogoPermissoes({
           <input type="checkbox" name="ativo" defaultChecked={perfil.ativo} disabled={ehOProprio} className="size-4" />
           Usuário ativo
         </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="acompanha_equipe" defaultChecked={Boolean(perfil.acompanha_equipe)} className="mt-0.5 size-4" />
+          <span>
+            Acompanha a equipe{" "}
+            <span className="text-xs text-muted-foreground">(vê, na Central de Gestão, o que cada pessoa fez e acessou no Neo Admin; o administrador geral sempre vê)</span>
+          </span>
+        </label>
+        <label className="grid gap-1 text-sm">
+          <span>
+            Usuário do Slack{" "}
+            <span className="text-xs text-muted-foreground">(ID, ex.: U01ABCDEF; no Slack: perfil da pessoa &gt; ⋮ &gt; Copiar ID do membro. Recebe os avisos da Central)</span>
+          </span>
+          <input name="slack_usuario_id" defaultValue={perfil.slack_usuario_id ?? ""} className="h-8 w-56 rounded-lg border bg-background px-2 text-sm" />
+        </label>
         <label className="grid gap-1 text-sm">
           <span>
             Restrito à unidade{" "}

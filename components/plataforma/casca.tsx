@@ -7,12 +7,13 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronRight, House, LogOut, Settings, UserRound, type LucideIcon } from "lucide-react";
+import { ChevronRight, Gauge, House, LogOut, Settings, UserRound, type LucideIcon } from "lucide-react";
 import { sair } from "@/app/(auth)/login/acoes";
 import { cn } from "@/lib/utils";
 import type { MenuArea } from "@/lib/nucleo/permissoes";
 import { iconeDoItem } from "./icones";
 import { AreasDoTrilho } from "./submenu-area";
+import { SugerirMelhoria } from "./sugerir-melhoria";
 
 type Usuario = { nome: string; email: string; adminGeral: boolean };
 
@@ -39,6 +40,7 @@ function descobrirAtual(caminho: string, menu: MenuArea[]): Atual {
     const m = modulos.find((x) => caminho === x.rota || caminho.startsWith(x.rota + "/"));
     if (m) return { icone: iconeDoItem(area.codigo, m.codigo, m.icone), rotulo: m.nome, trilha: [area.nome, m.nome] };
   }
+  if (caminho === "/gestao" || caminho.startsWith("/gestao/")) return { icone: Gauge, rotulo: "Central de Gestão", trilha: ["Central de Gestão"] };
   if (caminho.startsWith("/configuracoes")) return { icone: Settings, rotulo: "Configurações", trilha: ["Configurações"] };
   if (caminho.startsWith("/conta")) return { icone: UserRound, rotulo: "Minha conta", trilha: ["Minha conta"] };
   return { icone: House, rotulo: "Início", trilha: ["Início"] };
@@ -72,8 +74,8 @@ function TabelasEmCartoes() {
 }
 
 export function Casca({
-  menu, usuario, mostrarConfiguracoes, children,
-}: { menu: MenuArea[]; usuario: Usuario; mostrarConfiguracoes: boolean; children: React.ReactNode }) {
+  menu, usuario, mostrarConfiguracoes, mostrarCentral, children,
+}: { menu: MenuArea[]; usuario: Usuario; mostrarConfiguracoes: boolean; mostrarCentral: boolean; children: React.ReactNode }) {
   const caminho = usePathname();
   const ativo = (rota: string) => caminho === rota || caminho.startsWith(rota + "/");
   const atual = descobrirAtual(caminho, menu);
@@ -89,6 +91,7 @@ export function Casca({
         </Link>
         <nav aria-label="Principal" className="flex flex-1 flex-row overflow-x-auto [scrollbar-width:none] md:flex-col md:overflow-y-auto md:py-1 [&::-webkit-scrollbar]:hidden">
           <ItemTrilho href="/inicio" icone={House} rotulo="Início" ativo={ativo("/inicio")} />
+          {mostrarCentral && <ItemTrilho href="/gestao" icone={Gauge} rotulo="Central" titulo="Central de Gestão" ativo={ativo("/gestao")} />}
           <div className="flex border-l border-white/10 md:mt-1 md:block md:border-l-0 md:border-t md:pt-1">
             <AreasDoTrilho menu={menu} caminho={caminho} />
           </div>
@@ -135,6 +138,11 @@ export function Casca({
               </span>
             );
           })}
+          {mostrarCentral && (
+            <span className="ml-auto shrink-0">
+              <SugerirMelhoria menu={menu.filter((m) => m.modulos.length > 0 || m.area.codigo === "administrativo")} caminho={caminho} />
+            </span>
+          )}
         </div>
 
         <main className="min-w-0 flex-1 bg-white p-3 pb-20 text-texto sm:p-4 sm:pb-20 md:p-5 md:pb-5">{children}</main>

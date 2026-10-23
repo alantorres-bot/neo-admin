@@ -24,12 +24,15 @@ export default async function LayoutPlataforma({ children }: LayoutProps<"/">) {
 
   const menu = montarMenu(sessao.areas, sessao.modulos, sessao.acesso, sessao.aplicativos, { incluirVazias: true });
   const mostrarConfiguracoes = temAcessoAlgumaArea(sessao.acesso, sessao.areas);
+  // Central de Gestão: para todos com alguma área; o restrito à unidade só usa o Faturamento Filial.
+  const mostrarCentral = mostrarConfiguracoes && !sessao.acesso.restrito;
 
   return (
     <Casca
       menu={menu}
       usuario={{ nome: sessao.perfil.nome, email: sessao.perfil.email, adminGeral: sessao.acesso.adminGeral }}
       mostrarConfiguracoes={mostrarConfiguracoes}
+      mostrarCentral={mostrarCentral}
     >
       {children}
     </Casca>

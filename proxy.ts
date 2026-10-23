@@ -1,11 +1,18 @@
 // Next 16: `proxy.ts` substitui o antigo `middleware.ts`.
-// Aqui só renovamos a sessão do Supabase e fazemos o redirecionamento otimista para o login.
+// Aqui só renovamos a sessão do Supabase, fazemos o redirecionamento otimista para o login e registramos o acesso
+// (Central de Gestão > Atividades; o banco só grava com `administrativo.gestao.registrar_acessos` ligado).
 // A verificação de verdade (getUser + permissões) acontece em lib/nucleo/sessao.ts, perto dos dados.
 import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { ambienteSupabase } from "@/lib/supabase/ambiente";
 
-export async function proxy(request: NextRequest) {
+/** Navegação de verdade: GET de página (não é pré-carregamento do link nem chamada de ação de servidor). */
+function ehNavegacao(request: NextRequest): boolean {
+  return request.method === "GET" && !request.headers.has("next-router-prefetch") && request.headers.get("purpose") !== "prefetch"
+    && !request.nextUrl.pathname.startsWith("/api/");
+}
+
+export async function proxy(request: NextRequest, evento: NextFetchEvent) {
   const { url, chave } = ambienteSupabase();
   let resposta = NextResponse.next({ request });
 
@@ -36,6 +43,13 @@ export async function proxy(request: NextRequest) {
     const redirecionamento = NextResponse.redirect(destino);
     for (const c of resposta.cookies.getAll()) redirecionamento.cookies.set(c);
     return redirecionamento;
+  }
+
+  if (logado && !rotaPublica && ehNavegacao(request)) {
+    // Depois da resposta (não atrasa a tela); falha no registro não afeta o usuário.
+    evento.waitUntil(
+      Promise.resolve(supabase.rpc("registrar_acesso", { p_rota: pathname })).then(() => undefined, () => undefined),
+    );
   }
 
   if (logado && naTelaDeLogin) {

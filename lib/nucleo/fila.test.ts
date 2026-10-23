@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { descreverPrazo, diferencaDias, estaAtrasada, formatarData, hojeEmCuiaba, ordenarFila } from "./fila";
+import { descreverPrazo, diferencaDias, estaAtrasada, formatarData, formatarDataHora, hojeEmCuiaba, ordenarFila } from "./fila";
 import type { Criticidade } from "./tipos";
 
 describe("hojeEmCuiaba", () => {
@@ -75,5 +75,13 @@ describe("ordenarFila", () => {
     const original = [item("2", "2026-10-05"), item("1", "2026-10-01")];
     ordenarFila(original, hoje);
     expect(original.map((i) => i.id)).toEqual(["2", "1"]);
+  });
+});
+
+describe("formatarDataHora", () => {
+  it("mostra o momento no fuso de Cuiabá (UTC-4)", () => {
+    expect(formatarDataHora("2026-10-22T15:30:00Z")).toBe("22/10/2026 11:30");
+    expect(formatarDataHora("2026-10-23T02:10:00Z")).toBe("22/10/2026 22:10");
+    expect(formatarDataHora(null)).toBe("");
   });
 });

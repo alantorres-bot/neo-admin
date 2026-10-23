@@ -1,7 +1,7 @@
 import { expect, test } from "@playwright/test";
 
 test.describe("proteção de rotas (sem login)", () => {
-  for (const rota of ["/", "/inicio", "/configuracoes/usuarios", "/financeiro/recebiveis", "/financeiro/recebiveis/fila", "/financeiro/cobranca", "/conta"]) {
+  for (const rota of ["/", "/inicio", "/configuracoes/usuarios", "/financeiro/recebiveis", "/financeiro/recebiveis/fila", "/financeiro/cobranca", "/gestao", "/gestao/00000000-0000-4000-8000-000000000000", "/conta"]) {
     test(`${rota} leva ao login`, async ({ page }) => {
       await page.goto(rota);
       await expect(page).toHaveURL(/\/login/);

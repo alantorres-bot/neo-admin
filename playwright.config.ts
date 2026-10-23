@@ -7,6 +7,8 @@ const PORTA = 3112;
 
 export default defineConfig({
   testDir: "./e2e",
+  // Os fluxos com banco têm configuração própria (playwright.fiscal.config.ts e playwright.central.config.ts).
+  testIgnore: [/fiscal-creditos\.spec\.ts/, /central-gestao\.spec\.ts/],
   fullyParallel: true,
   reporter: "list",
   use: { baseURL: `http://127.0.0.1:${PORTA}`, locale: "pt-BR", timezoneId: "America/Cuiaba" },

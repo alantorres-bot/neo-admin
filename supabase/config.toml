@@ -450,3 +450,9 @@ verify_jwt = false
 
 [functions.nucleo-gmail-conectar]
 verify_jwt = false
+
+[functions.nucleo-notificacoes-enviar]
+verify_jwt = false
+
+[functions.nucleo-clickup-enviar]
+verify_jwt = false
