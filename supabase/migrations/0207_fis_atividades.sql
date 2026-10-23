@@ -1,5 +1,5 @@
 -- =========================================================
--- Neo Admin — 0205 FISCAL: CATÁLOGO DE ATIVIDADES (Central de Gestão, Fase 3B)
+-- Neo Admin — 0207 FISCAL: CATÁLOGO DE ATIVIDADES (Central de Gestão, Fase 3B)
 -- Créditos tributários (Fiscal Control): o que a auditoria já grava, em ações de gestão.
 -- Mecanismo: 0094_nucleo_atividades.sql. A conclusão de tarefa fiscal já aparece como "Concluiu pendência" (a tarefa
 -- espelha a pendência), então não há regra própria para ela.

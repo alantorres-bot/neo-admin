@@ -391,7 +391,7 @@ revoke insert, update, delete on atividades, acessos from authenticated, anon;
 
 -- 9) CATÁLOGO INICIAL (seção 5.9) ---------------------------------------------------------------------------------------
 -- Núcleo: pendências e tarefas da Central. Cada área registra as regras das próprias tabelas na sua faixa de migrations
--- (financeiro 0179, fiscal 0205, RH 0522): o núcleo não conhece as tabelas internas dos módulos.
+-- (financeiro 0179, fiscal 0207, RH 0522): o núcleo não conhece as tabelas internas dos módulos.
 insert into atividade_regras (codigo, nome, area, modulo, fonte, tabela, gatilho, campo, valor, condicao, autor_coluna, descricao, link) values
   ('nucleo.tarefa.criou', 'Criou tarefa', null, null, 'auditoria', 'pendencias', 'insert', null, null, '{"origem":"manual"}', 'criado_por',
    'Criou a tarefa "{titulo}"', '/gestao/{id}'),

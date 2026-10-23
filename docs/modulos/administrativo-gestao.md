@@ -302,7 +302,7 @@ Objetivo: o gestor saber o que cada pessoa **fez** e **viu** no Neo Admin. Exemp
   | --- | --- |
   | Núcleo | `0094` |
   | Financeiro | `0179` |
-  | Fiscal | `0205` |
+  | Fiscal | `0207` |
   | RH | `0522` |
   | Comercial | `0704` |
 
@@ -730,7 +730,7 @@ ajustar destaque (gestor, com motivo), cobrar andamento (gestor; fica no histór
 | Item | Onde |
 | --- | --- |
 | Tabelas `atividade_regras`, `atividades`, `acessos`; `perfis.acompanha_equipe`; classificação, reprocessamento, registro e retenção de acessos; relatórios | `supabase/migrations/0094_nucleo_atividades.sql` |
-| Catálogo: 27 regras do Financeiro (Recebíveis, Cobrança, Filial, Contas a pagar, Cartão, AKF), 12 do Fiscal, 23 do RH (folha, VT, ponto, banco de horas), 2 do Comercial e 8 do núcleo (pendências e tarefas) | `0179_fin_atividades.sql`, `0205_fis_atividades.sql`, `0522_rh_atividades.sql`, `0704_com_atividades.sql` |
+| Catálogo: 27 regras do Financeiro (Recebíveis, Cobrança, Filial, Contas a pagar, Cartão, AKF), 12 do Fiscal, 23 do RH (folha, VT, ponto, banco de horas), 2 do Comercial e 8 do núcleo (pendências e tarefas) | `0179_fin_atividades.sql`, `0207_fis_atividades.sql`, `0522_rh_atividades.sql`, `0704_com_atividades.sql` |
 | Registro de acessos a cada navegação (no servidor, depois da resposta) | `proxy.ts` |
 | Tela `/gestao/atividades` (resumo por pessoa, linha do tempo, "quem mais atuou" num registro, exportação Excel) | `app/(plataforma)/gestao/atividades/` |
 | Marca "Acompanha a equipe" | Configurações > Usuários > Permissões |
@@ -742,7 +742,7 @@ ajustar destaque (gestor, com motivo), cobrar andamento (gestor; fica no histór
 - Gravações anteriores a esta fase feitas por Edge Function que não gravava a coluna `_por`.
 
 **Publicação (só Alan), nesta ordem**
-1. Aplicar `0094`, `0179`, `0205`, `0522` e `0704` e registrá-las em `schema_migrations` (`docs/PUBLICACAO.md`).
+1. Aplicar `0094`, `0179`, `0207`, `0522` e `0704` e registrá-las em `schema_migrations` (`docs/PUBLICACAO.md`).
 2. Rodar uma vez `select atividades_reprocessar();`, que monta o histórico a partir da auditoria. Pode demorar alguns
    minutos, conforme o tamanho da auditoria.
 3. Publicar o código. Ele lê `perfis.acompanha_equipe`: publicar antes da migration quebra a tela de usuários e a de
@@ -909,7 +909,7 @@ usavam a data UTC. Passaram a usar a data de Cuiabá, como as regras do sistema.
 Control não rodou neste ambiente: os usuários de teste do Fiscal não estavam no banco local.
 
 **Roteiro único de publicação (só Alan; nada disto foi feito por mim)**
-Pré-requisito: as migrations do Fiscal Control (`0200` a `0204`) já aplicadas e registradas, porque a `0206` depende delas.
+Pré-requisito: as migrations do Fiscal Control (`0200` a `0205`) já aplicadas e registradas, porque a `0206` depende delas.
 
 1. **Cópia de segurança antes:** `node scripts/banco-copia.mjs exportar --ref chdszjpbtfpstjrqnmmm`.
 2. **Migrations, nesta ordem**, cada uma seguida do registro em `schema_migrations` (`docs/PUBLICACAO.md`, seção 2). Em
@@ -917,7 +917,7 @@ Pré-requisito: as migrations do Fiscal Control (`0200` a `0204`) já aplicadas 
    ```powershell
    $ref = "chdszjpbtfpstjrqnmmm"
    $lista = "0092_nucleo_central_gestao","0093_nucleo_central_acoes","0094_nucleo_atividades","0179_fin_atividades",
-            "0205_fis_atividades","0522_rh_atividades","0704_com_atividades","0095_nucleo_central_criticidade",
+            "0207_fis_atividades","0522_rh_atividades","0704_com_atividades","0095_nucleo_central_criticidade",
             "0096_nucleo_sugestoes","0097_nucleo_central_publicacao","0180_fin_pendencias_cobranca","0206_fis_pendencias",
             "0098_nucleo_notificacoes","0099_nucleo_central_revisao"
    foreach ($m in $lista) {
