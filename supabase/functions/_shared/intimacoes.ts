@@ -373,38 +373,65 @@ export function janelaVencimento(vencimento: string, dias = 120): { ini: string;
   return { ini: somar(-dias), fim: somar(dias) };
 }
 
-// ---------------------------------------------------------------- vencimento no Consistem
+// ---------------------------------------------------------------- alterações no Consistem (vencimento e protestado)
 
 export type ResultadoVencimento =
   | { ok: true; jaEstava: boolean; antes: Record<string, unknown>; depois: Record<string, unknown>; resposta: unknown }
   | { ok: false; mensagem: string; antes: Record<string, unknown> | null; depois: Record<string, unknown> | null; resposta: unknown };
 
+/** As únicas alterações do agente no título: o vencimento (intimação) ou o complemento "PROTESTADO" (título protestado). */
+export type AlteracaoTitulo = { dataVencimento: string } | { complementoHistorico: string };
+
 /**
- * O Consistem visto pela alteração de vencimento. Em produção (fin-intimacoes-consistem) e nos testes é ligado às rotinas
+ * O Consistem visto pelas alterações do agente. Em produção (fin-intimacoes-consistem) e nos testes é ligado às rotinas
  * das correções do Cartão: lerDetalhe = GET lancamentoContasPagar/{id} (buscarObjeto); alterar = PUT lancamentoContasPagar/{id}
  * só com o corpo dado (alterarTitulo); jaAlterado, complementoLongo (complementoCabeNaAlteracao) e conferir (conferirAlteracao).
  * Não há porta de inclusão: o agente não cria lançamento.
  */
 export type PortaConsistem = {
   lerDetalhe: (codLancamento: string) => Promise<Record<string, unknown>>;
-  alterar: (codLancamento: string, corpo: { dataVencimento: string }) => Promise<
+  alterar: (codLancamento: string, corpo: AlteracaoTitulo) => Promise<
     { tipo: "ok"; resposta: unknown } | { tipo: "erro"; mensagem: string; resposta: unknown } | { tipo: "incerto"; mensagem: string; resposta: unknown }>;
   jaAlterado: (d: Record<string, unknown>, esperado: Record<string, unknown>) => boolean;
   complementoLongo: (d: Record<string, unknown>) => string | null;
   conferir: (antes: Record<string, unknown>, depois: Record<string, unknown>, esperado: Record<string, unknown>) => { ok: true } | { ok: false; mensagem: string };
 };
 
+/** Complemento do título protestado: "PROTESTADO - VENC ORIG dd/mm/aaaa" (formato pedido pelo Alan em 23/10/2026). */
+export const PREFIXO_PROTESTADO = "PROTESTADO - VENC ORIG ";
+export const FORMATO_PROTESTADO = /^PROTESTADO - VENC ORIG \d{2}\/\d{2}\/\d{4}$/;
+
 /**
- * Altera SÓ a data de vencimento do título (a mesma rotina das correções do Cartão, migration 0176, já usada em produção):
- * lê o título (antes) → recusa o que não for título em aberto → altera com { dataVencimento } → lê de novo (depois) → confere
- * que o vencimento mudou e que TODO o resto (valor inclusive) ficou igual. Uma escrita, sem repetir sozinho: erro ou dúvida
- * vira revisão, com o antes e o depois guardados.
+ * Vencimento ORIGINAL do título lido no Consistem: `dataVencimentoOriginal` (gravado na primeira alteração de vencimento, como
+ * nos títulos "CARTORIO - VENC ORIGINAL …") ou, se vazio, o vencimento atual.
  */
-export async function alterarVencimentoNoConsistem(c: PortaConsistem, codLancamento: string, novaData: string): Promise<ResultadoVencimento> {
+export function vencimentoOriginal(d: Record<string, unknown>): string | null {
+  const iso = (v: unknown) => /^\d{4}-\d{2}-\d{2}/.exec(String(v ?? ""))?.[0] ?? null;
+  return iso(d.dataVencimentoOriginal) ?? iso(d.dataVencimento);
+}
+
+/** O complemento novo do título protestado, a partir do detalhe lido; null sem vencimento. */
+export function complementoProtestado(d: Record<string, unknown>): string | null {
+  const v = vencimentoOriginal(d);
+  if (!v) return null;
+  const [a, m, dia] = v.split("-");
+  return `${PREFIXO_PROTESTADO}${dia}/${m}/${a}`;
+}
+
+/**
+ * Altera no título SÓ o campo pedido (a mesma rotina das correções do Cartão, migration 0176, já usada em produção): lê o título
+ * (antes) → recusa o que não for título em aberto → altera com { dataVencimento } ou { complementoHistorico } → lê de novo
+ * (depois) → confere que o campo mudou e que TODO o resto (valor inclusive) ficou igual. Uma escrita, sem repetir sozinho:
+ * erro ou dúvida vira revisão, com o antes e o depois guardados.
+ */
+export async function alterarNoConsistem(c: PortaConsistem, codLancamento: string, alteracao: AlteracaoTitulo): Promise<ResultadoVencimento> {
   if (!/^\d{1,12}$/.test(codLancamento)) return { ok: false, mensagem: `Código de lançamento inválido: ${codLancamento}.`, antes: null, depois: null, resposta: null };
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(novaData)) return { ok: false, mensagem: `Data inválida: ${novaData}.`, antes: null, depois: null, resposta: null };
+  const chaves = Object.keys(alteracao);
+  const valida = chaves.length === 1 && (
+    ("dataVencimento" in alteracao && /^\d{4}-\d{2}-\d{2}$/.test(alteracao.dataVencimento)) ||
+    ("complementoHistorico" in alteracao && FORMATO_PROTESTADO.test(alteracao.complementoHistorico)));
+  if (!valida) return { ok: false, mensagem: `Alteração inválida: ${JSON.stringify(alteracao)}.`, antes: null, depois: null, resposta: null };
   const detalhe = () => c.lerDetalhe(codLancamento);
-  const alteracao = { dataVencimento: novaData };
 
   let antes: Record<string, unknown>;
   try {
@@ -419,7 +446,8 @@ export async function alterarVencimentoNoConsistem(c: PortaConsistem, codLancame
     return { ok: false, mensagem: `O título ${codLancamento} já tem data de pagamento (${String(antes.dataPagamento)}). Nada foi alterado.`, antes, depois: null, resposta: null };
   }
   if (c.jaAlterado(antes, alteracao)) return { ok: true, jaEstava: true, antes, depois: antes, resposta: null };
-  const longo = c.complementoLongo(antes);
+  // Trocar o vencimento regrava o complemento: acima de 60 caracteres o Consistem cortaria. Na troca do complemento o texto novo cabe.
+  const longo = "dataVencimento" in alteracao ? c.complementoLongo(antes) : null;
   if (longo) return { ok: false, mensagem: longo, antes, depois: null, resposta: null };
 
   const r = await c.alterar(codLancamento, alteracao);
@@ -434,3 +462,7 @@ export async function alterarVencimentoNoConsistem(c: PortaConsistem, codLancame
   if (!conf.ok) return { ok: false, mensagem: conf.mensagem, antes, depois, resposta: r.resposta ?? null };
   return { ok: true, jaEstava: false, antes, depois, resposta: r.resposta ?? null };
 }
+
+/** A alteração de vencimento (aprovação da intimação). */
+export const alterarVencimentoNoConsistem = (c: PortaConsistem, codLancamento: string, novaData: string) =>
+  alterarNoConsistem(c, codLancamento, { dataVencimento: novaData });

@@ -5,9 +5,11 @@
 //   { "acao": "consultar", "id": "<intimação>" }  — operador ou acima. SÓ LEITURA: acha o credor pelo CNPJ
 //       (cap_fornecedores_por_documento) e lista os títulos dele (GET contasPagar, filtro por fornecedor e janela de vencimento),
 //       com a sugestão de casarTitulos. Nada é gravado.
-//   { "acao": "alterar_vencimento", "id": "<alteração>" }  — gestor, o MESMO que aprovou (fin_int_aprovar_vencimento reservou):
-//       lê o título, altera SÓ a data de vencimento, lê de novo e confere (alterarVencimentoNoConsistem). Uma tentativa; erro
-//       ou dúvida = revisão. Nunca repete sozinho.
+//   { "acao": "previa_protestado", "id": "<intimação>" }  — gestor. SÓ LEITURA: complemento atual do título e o novo
+//       "PROTESTADO - VENC ORIG dd/mm/aaaa" (vencimento original no Consistem), para a aprovação (0185).
+//   { "acao": "alterar" | "alterar_vencimento", "id": "<alteração>" }  — gestor, o MESMO que aprovou (fin_int_aprovar_vencimento
+//       ou fin_int_aprovar_protestado reservou): lê o título, altera SÓ o campo reservado (vencimento ou complemento), lê de
+//       novo e confere (alterarNoConsistem). Uma tentativa; erro ou dúvida = revisão. Nunca repete sozinho.
 // NÃO existe ação de adiantamento: ele é lançado à mão na tela do Consistem (a inclusão pela API não fica igual; seção 9).
 // Segredos: CONSISTEM_API_KEY (token do CSMEN050) e CONSISTEM_BASE_URL (opcional).
 //
@@ -16,7 +18,7 @@ import { createClient } from "jsr:@supabase/supabase-js@2";
 import { BASE_URL_PADRAO, buscarObjeto, buscarTodasPaginas, limparToken, PAGINACAO, type ConfigConsistem } from "../_shared/consistem-receber.ts";
 import { alterarTitulo, complementoCabeNaAlteracao, conferirAlteracao, jaAlterado, ROTA_INCLUSAO_LANCAMENTO } from "../_shared/consistem-inclusao.ts";
 import { normalizarLancamentoPagar, ROTA_CONTAS_PAGAR } from "../_shared/consistem-pagar.ts";
-import { alterarVencimentoNoConsistem, casarTitulos, janelaVencimento, type PortaConsistem, type TituloPagar } from "../_shared/intimacoes.ts";
+import { alterarNoConsistem, complementoProtestado, casarTitulos, janelaVencimento, type AlteracaoTitulo, type PortaConsistem, type TituloPagar } from "../_shared/intimacoes.ts";
 
 /** A mesma ligação das correções do Cartão (crt-corrigir-no-consistem): GET e PUT em lancamentoContasPagar/{id}, nada mais. */
 const portaConsistem = (cfg: ConfigConsistem): PortaConsistem => ({
@@ -92,8 +94,30 @@ Deno.serve(async (req) => {
     }
   }
 
-  if (corpo.acao === "alterar_vencimento") {
-    const { data: v } = await banco.from("fin_intimacao_vencimentos").select("id, empresa_id, cod_lancamento, alteracao, situacao, aprovado_por").eq("id", id).maybeSingle();
+  if (corpo.acao === "previa_protestado") {
+    // SÓ LEITURA: o complemento atual do título e o novo ("PROTESTADO - VENC ORIG dd/mm/aaaa"), para o gestor conferir.
+    const { data: permitido } = await comoUsuario.rpc("tem_acesso_area", { p_area: "financeiro", p_minimo: "gestor" });
+    if (permitido !== true) return responder({ erro: "Somente gestor do Financeiro (ou acima) marca título como protestado." }, 403);
+    const { data: i } = await banco.from("fin_intimacoes").select("empresa_id, cod_lancamento, situacao_cartorio, status").eq("id", id).maybeSingle();
+    if (!i) return responder({ erro: "Intimação não encontrada." }, 404);
+    if (i.status !== "revisao" || i.situacao_cartorio !== "protestado") return responder({ erro: "Só para título que o cartório informa como protestado." }, 409);
+    if (!i.cod_lancamento) return responder({ erro: "Localize o título no Consistem antes." }, 400);
+    const cfg = i.empresa_id ? await configDaEmpresa(i.empresa_id) : null;
+    if (!cfg) return responder({ erro: "A empresa não tem o código do Consistem (empresas.codigo_erp)." }, 400);
+    try {
+      const d = await portaConsistem(cfg).lerDetalhe(i.cod_lancamento);
+      const novo = complementoProtestado(d);
+      if (!novo) return responder({ erro: `O título ${i.cod_lancamento} não tem vencimento no Consistem.` }, 422);
+      return responder({ ok: true, codLancamento: i.cod_lancamento, complementoAtual: String(d.complementoHistorico ?? ""), complementoNovo: novo,
+        dataPagamento: String(d.dataPagamento ?? "") || null, tipoLancamento: String(d.tipoLancamento ?? "") });
+    } catch (e) {
+      return responder({ erro: `Não foi possível ler o título no Consistem: ${(e as Error).message}` }, 502);
+    }
+  }
+
+  // "alterar_vencimento" (nome antigo) e "alterar": executa a alteração reservada (vencimento ou complemento PROTESTADO).
+  if (corpo.acao === "alterar_vencimento" || corpo.acao === "alterar") {
+    const { data: v } = await banco.from("fin_intimacao_vencimentos").select("id, empresa_id, cod_lancamento, tipo, alteracao, situacao, aprovado_por").eq("id", id).maybeSingle();
     if (!v || v.situacao !== "reservado") return responder({ erro: "Nada a enviar: esta alteração já foi feita ou não existe." }, 409);
     if (v.aprovado_por !== quem.user.id) return responder({ erro: "Só o gestor que aprovou envia a alteração." }, 403);
     const concluir = (ok: boolean, jaEstava: boolean, antes: unknown, depois: unknown, resposta: unknown, erro: string | null) =>
@@ -106,15 +130,15 @@ Deno.serve(async (req) => {
     }
     const { error: erroInicio } = await banco.rpc("fin_int_iniciar_vencimento", { p_id: id });
     if (erroInicio) return responder({ erro: erroInicio.message }, 409);
-    const novaData = String((v.alteracao as { dataVencimento?: string }).dataVencimento ?? "");
-    const r = await alterarVencimentoNoConsistem(portaConsistem(cfg), v.cod_lancamento, novaData);
+    const r = await alterarNoConsistem(portaConsistem(cfg), v.cod_lancamento, v.alteracao as AlteracaoTitulo);
     if (!r.ok) {
       await concluir(false, false, r.antes, r.depois, r.resposta ?? null, r.mensagem);
       return responder({ erro: r.mensagem }, 422);
     }
     const { error } = await concluir(true, r.jaEstava, r.antes, r.depois, r.resposta ?? null, null);
     if (error) return responder({ erro: `O vencimento foi alterado e conferido no Consistem, mas não foi possível registrar: ${error.message}` }, 500);
-    return responder({ ok: true, aviso: r.jaEstava ? `O título ${v.cod_lancamento} já estava com esse vencimento: registrado.` : `Vencimento do título ${v.cod_lancamento} alterado e conferido no Consistem.` });
+    const oque = v.tipo === "protestado" ? "complemento PROTESTADO" : "vencimento";
+    return responder({ ok: true, aviso: r.jaEstava ? `O título ${v.cod_lancamento} já estava com esse ${oque}: registrado.` : `Título ${v.cod_lancamento}: ${oque} alterado e conferido no Consistem.` });
   }
 
   return responder({ erro: "Ação desconhecida." }, 400);

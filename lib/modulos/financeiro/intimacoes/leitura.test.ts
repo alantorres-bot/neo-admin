@@ -5,7 +5,7 @@ import { buscarObjeto } from "../../../../supabase/functions/_shared/consistem-r
 import { alterarTitulo, complementoCabeNaAlteracao, conferirAlteracao, jaAlterado, ROTA_INCLUSAO_LANCAMENTO, type Enviar } from "../../../../supabase/functions/_shared/consistem-inclusao";
 import { normalizarLancamentoPagar } from "../../../../supabase/functions/_shared/consistem-pagar";
 import {
-  alterarVencimentoNoConsistem, casarTitulos, centavosDe, classificarEmail, CONSULTA_GMAIL, dataBrParaIso, documentoConfereMascara, intimacoesDoPortal,
+  alterarNoConsistem, alterarVencimentoNoConsistem, casarTitulos, complementoProtestado, centavosDe, classificarEmail, CONSULTA_GMAIL, dataBrParaIso, documentoConfereMascara, intimacoesDoPortal,
   janelaVencimento, lerAvisoCenprot, lerEmail, lerIntimacaoCartorio, lerMensagemGmail, lerPortal4Oficio, listarMensagensGmail, numeroComparavel,
   type PortaConsistem, type TituloPagar,
 } from "../../../../supabase/functions/_shared/intimacoes";
@@ -250,6 +250,26 @@ describe("vencimento no Consistem: só GET e PUT em lancamentoContasPagar/{id}",
     expect(r2).toMatchObject({ ok: false, mensagem: expect.stringMatching(/valorDocumento/) });
     expect(r2.depois).not.toBeNull();
     expect(rotasPermitidas([...recusa.chamadas, ...mexeu.chamadas])).toBe(true);
+  });
+
+  it("protestado: complemento 'PROTESTADO - VENC ORIG dd/mm/aaaa' pelo vencimento original; só o complemento é enviado", async () => {
+    // Título já prorrogado para o cartório: vale o vencimento ORIGINAL.
+    const prorrogado = { ...titulo, dataVencimento: "2026-10-23", dataVencimentoOriginal: "2026-10-13", complementoHistorico: "CARTORIO - VENC ORIGINAL 13/10ESCORAS" };
+    expect(complementoProtestado(prorrogado)).toBe("PROTESTADO - VENC ORIG 13/10/2026");
+    expect(complementoProtestado(titulo)).toBe("PROTESTADO - VENC ORIG 11/02/2026");
+    expect(complementoProtestado({ ...titulo, dataVencimento: "", dataVencimentoOriginal: "" })).toBeNull();
+    const antes = { ...prorrogado, complementoHistorico: "X".repeat(70) };
+    const f = falso({ antes, depois: { ...antes, complementoHistorico: "PROTESTADO - VENC ORIG 13/10/2026" } });
+    const r = await alterarNoConsistem(f.porta, "5001", { complementoHistorico: "PROTESTADO - VENC ORIG 13/10/2026" });
+    // Complemento longo não trava a troca do complemento (o texto novo cabe).
+    expect(r).toMatchObject({ ok: true, jaEstava: false });
+    expect(JSON.parse(f.chamadas[1].corpo!)).toEqual({ complementoHistorico: "PROTESTADO - VENC ORIG 13/10/2026" });
+    expect(rotasPermitidas(f.chamadas)).toBe(true);
+    for (const invalida of [{ complementoHistorico: "QUALQUER COISA" }, { complementoHistorico: "PROTESTADO - VENC ORIG 13/10/2026", dataVencimento: "2026-10-28" }]) {
+      const g = falso();
+      expect((await alterarNoConsistem(g.porta, "5001", invalida as never)).ok).toBe(false);
+      expect(g.chamadas).toEqual([]);
+    }
   });
 });
 
