@@ -1,5 +1,5 @@
 -- =========================================================
--- Neo Admin — 0183 Recebíveis como espelho do Consistem: baixa só do que saiu do ERP, reabertura só do que voltou
+-- Neo Admin — 0184 Recebíveis como espelho do Consistem: baixa só do que saiu do ERP, reabertura só do que voltou
 -- Decisão do Alan (23/10/2026): o controle é um espelho do Consistem. Se o título está em aberto no Consistem, pode ser
 -- reaberto (estorno); se não está, tem que estar baixado aqui.
 --   1) Baixa (rec_registrar_baixa): só de título que saiu da lista de abertos (pendência "Possível baixa" aberta). Trava a

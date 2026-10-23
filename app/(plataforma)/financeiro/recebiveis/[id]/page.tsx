@@ -157,7 +157,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
                         ? <Button variant="outline" size="sm" render={<Link href={`/financeiro/cobranca/cobrar/${p.contraparte_id}`} />}>Cobrar ({nomeDoMarco(marco)})</Button>
                         : <Button variant="outline" size="sm" disabled title={`Vencimento anterior à data de corte da régua${f.corteRegua ? ` (${formatarData(f.corteRegua)})` : ""}`}>Cobrar (fora da régua)</Button>
                     )}
-                    {/* Espelho do Consistem (0183): só se baixa aqui o que o Consistem já tirou da lista de abertos. */}
+                    {/* Espelho do Consistem (0184): só se baixa aqui o que o Consistem já tirou da lista de abertos. */}
                     {podeOperar && (f.possivelBaixa.has(p.id)
                       ? (
                         <ul className="min-w-60 flex-1">

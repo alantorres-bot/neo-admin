@@ -58,7 +58,7 @@ export type Ficha = {
   totalCentavos: number;
   /** Data de corte da régua de cobrança (aaaa-mm-dd) e o dia de hoje em Cuiabá. */
   corteRegua: string | null;
-  /** Espelho do Consistem (0183): parcelas que saíram da lista de abertos (só elas aceitam baixa) e as encerradas aqui que o
+  /** Espelho do Consistem (0184): parcelas que saíram da lista de abertos (só elas aceitam baixa) e as encerradas aqui que o
    *  Consistem lista em aberto (só elas podem ser reabertas). */
   possivelBaixa: Set<string>;
   abertoNoConsistem: Set<string>;

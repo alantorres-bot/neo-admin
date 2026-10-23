@@ -101,7 +101,7 @@ import { lerParametrosRegra, TODAS_AS_CHAVES_REGRA } from "../_shared/parametros
 
 const MODULO = "financeiro.recebiveis";
 const PREFIXO_BAIXA = "Possível baixa: ";
-/** Título encerrado aqui que o Consistem lista em aberto (0183): o mesmo prefixo que rec_reabrir_titulo procura. */
+/** Título encerrado aqui que o Consistem lista em aberto (0184): o mesmo prefixo que rec_reabrir_titulo procura. */
 const PREFIXO_REABRIR = "Baixado aqui, aberto no Consistem: ";
 const LOTE = 200;
 
@@ -713,7 +713,7 @@ async function sincronizarEmpresa(
   }
   resumo.pendenciasCanceladas = canceladas;
 
-  // 7a) Espelho do Consistem (0183): título pago/cancelado aqui que o Consistem lista em aberto. A pendência avisa e é ela que
+  // 7a) Espelho do Consistem (0184): título pago/cancelado aqui que o Consistem lista em aberto. A pendência avisa e é ela que
   // libera "Reabrir título" na ficha (rec_reabrir_titulo exige a pendência aberta); se o título sair de novo da lista, é cancelada.
   const reabriveis = plano.divergentes.filter((t) => t.estagio === "pago" || t.estagio === "cancelado");
   const abertasReabrir = await lerTudo<{ id: string; referencia_id: string }>((de, ate) =>

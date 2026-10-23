@@ -661,7 +661,7 @@ Aba **Painel** em Financeiro > Recebíveis (`/financeiro/recebiveis/painel`), en
 Decisão do usuário: o título vencido **cedido à AKF** entra na régua de cobrança como qualquer outro, com boleto da AKF ou boleto próprio (cliente que não paga à AKF). Antes, `cobravel` (`supabase/functions/_shared/cobranca.ts`) tirava todo cedido da fila "Cobrar" e das pendências de cobrança da sincronização; em Contagem, isso deixava de fora QRTZ 39 e Caparaó, que pagam à Neo. Os títulos antigos (antes do início da régua) também passam a listar o cedido na ficha de cobrança do cliente. O valor cobrado continua o mesmo de antes: o restante com a Neo quando há antecipação parcial (`akf_vw_valor_restante`); sem parte, o valor do título. Vale na tela na hora e, nas pendências, depois de publicar a Edge Function `rec-sincronizar-consistem`.
 
 
-## 41. Espelho do Consistem: baixa, reabertura e trava (migration 0183, 23/10/2026)
+## 41. Espelho do Consistem: baixa, reabertura e trava (migration 0184, 23/10/2026)
 
 Decisão do Alan: o controle é um **espelho do Consistem**. Se o título está em aberto no Consistem, pode ser reaberto (estorno);
 se não está, tem que estar baixado aqui. Origem: auditoria de 23/10/2026 (`docs/auditoria/AUDITORIA_FINANCEIRO_2026-10-23.md`, F1, F8,
@@ -677,7 +677,7 @@ F9, G2, H5).
   quando ele sai da lista de novo. Antes isso só virava um número em `importacoes.linhas_divergentes`.
 - **Reabrir título** (ficha do título, caixa amarela "Em aberto no Consistem"): operador do Financeiro, motivo obrigatório, pela
   função `rec_reabrir_titulo`, que só aceita enquanto a pendência acima está aberta. O título volta ao estágio de antes da baixa
-  (baixas anteriores à 0183: vencido se já venceu, senão importado); data e valor da baixa saem do título e ficam no histórico
+  (baixas anteriores à 0184: vencido se já venceu, senão importado); data e valor da baixa saem do título e ficam no histórico
   (interação `reabertura`); as antecipações parciais da AKF que a baixa encerrou sozinha voltam a valer (as encerradas por uma pessoa
   ficam); a pendência é concluída. Na sincronização seguinte o título segue o fluxo normal (evidência de pagamento antiga é apagada).
 - **Trava no banco** (`fn_rec_titulos_integridade`, para quem usa o app): o estágio só vira pago/cancelado pela baixa e só sai de

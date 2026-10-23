@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import { como, criarBanco, novoUsuario, type Linha } from "./harness";
 
-// 0183: Recebíveis é espelho do Consistem. Baixa só do que saiu da lista de abertos; reabertura só do que o Consistem lista em
+// 0184: Recebíveis é espelho do Consistem. Baixa só do que saiu da lista de abertos; reabertura só do que o Consistem lista em
 // aberto; ninguém grava estágio de baixa, valor ou vencimento direto na tabela.
 let db: PGlite;
 let operador: string;
@@ -118,7 +118,7 @@ describe("rec_reabrir_titulo", () => {
     expect((await statusPendencias(id))["Baixado aqui, aberto no Consistem: E1"]).toBe("concluida");
   });
 
-  it("baixa anterior à 0183 (sem estágio guardado) volta pela data", async () => {
+  it("baixa anterior à 0184 (sem estágio guardado) volta pela data", async () => {
     const id = await novoTitulo();
     await q(`update rec_titulos set estagio = 'cancelado' where id = $1`, [id]); // como as baixas antigas: sem estagio_antes_baixa
     await pendencia(id, "Baixado aqui, aberto no Consistem: E2");

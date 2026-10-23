@@ -121,7 +121,7 @@ export async function definirUnidade(tituloId: string, unidade: "matriz" | "cont
 }
 
 /**
- * Reabre o título baixado/cancelado que o Consistem lista em aberto (estorno da baixa). `rec_reabrir_titulo` (0183) confere que a
+ * Reabre o título baixado/cancelado que o Consistem lista em aberto (estorno da baixa). `rec_reabrir_titulo` (0184) confere que a
  * sincronização o viu em aberto, volta ao estágio de antes da baixa e registra no histórico.
  */
 export async function reabrirTitulo(tituloId: string, motivo: string): Promise<Resultado> {
