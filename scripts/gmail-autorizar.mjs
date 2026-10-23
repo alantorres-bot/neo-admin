@@ -9,6 +9,10 @@
 // troca por um token de renovação e grava no Supabase, com `supabase secrets set`:
 //   GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, GMAIL_REMETENTE
 // Nada é impresso nem salvo em arquivo permanente: o arquivo temporário usado para o `supabase secrets set` é apagado.
+//
+// Com `--leitura` (Intimações de cartório, docs/modulos/financeiro-intimacoes-cartorio.md): pede SÓ o escopo gmail.readonly
+// (lê; não cria, não envia, não apaga) e grava GMAIL_LEITURA_CLIENT_ID, GMAIL_LEITURA_CLIENT_SECRET, GMAIL_LEITURA_REFRESH_TOKEN
+// e GMAIL_LEITURA_CAIXA. Os segredos dos rascunhos não mudam.
 import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
@@ -17,7 +21,10 @@ import os from "node:os";
 import path from "node:path";
 import readline from "node:readline";
 
-const ESCOPO = "https://www.googleapis.com/auth/gmail.compose";
+const LEITURA = process.argv.includes("--leitura");
+const ESCOPO = LEITURA ? "https://www.googleapis.com/auth/gmail.readonly" : "https://www.googleapis.com/auth/gmail.compose";
+const PERMISSAO = LEITURA ? "gmail.readonly" : "gmail.compose";
+const PREFIXO = LEITURA ? "GMAIL_LEITURA_" : "GMAIL_";
 const URL_AUTORIZACAO = "https://accounts.google.com/o/oauth2/v2/auth";
 const URL_TOKEN = "https://oauth2.googleapis.com/token";
 const EMAIL = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/;
@@ -159,10 +166,12 @@ function esperarCodigo(estado) {
 }
 
 async function main() {
-  console.log("Autorização do Gmail do Neo Admin (só cria rascunhos; não envia nem lê e-mails).\n");
+  console.log(LEITURA
+    ? "Autorização do Gmail do Neo Admin para LER as intimações de cartório (só leitura; não cria, não envia, não apaga).\n"
+    : "Autorização do Gmail do Neo Admin (só cria rascunhos; não envia nem lê e-mails).\n");
   const clientId = semRepeticao(await perguntar("ID do cliente OAuth: "));
   const clientSecret = semRepeticao(await perguntarOculto("Segredo do cliente OAuth (aparece só como *): "));
-  const remetente = await perguntar("E-mail da caixa que vai fazer login (onde os rascunhos aparecerão): ");
+  const remetente = await perguntar(LEITURA ? "E-mail da caixa que recebe as intimações: " : "E-mail da caixa que vai fazer login (onde os rascunhos aparecerão): ");
   const problema = validarCliente(clientId, clientSecret);
   if (problema) throw new Error(problema);
   if (!EMAIL.test(remetente)) throw new Error("E-mail da caixa inválido.");
@@ -194,11 +203,12 @@ async function main() {
   if (!corpo.refresh_token) {
     throw new Error("O Google não devolveu o token de renovação. Remova o acesso do app em https://myaccount.google.com/permissions e rode o script de novo.");
   }
-  if (!String(corpo.scope ?? "").includes("gmail.compose")) throw new Error("A permissão gmail.compose não foi concedida. Rode de novo e marque a permissão.");
+  if (!String(corpo.scope ?? "").includes(PERMISSAO)) throw new Error(`A permissão ${PERMISSAO} não foi concedida. Rode de novo e marque a permissão.`);
 
   // Grava nos segredos do Supabase por arquivo temporário (nada na linha de comando, nada no histórico).
   const arquivo = path.join(os.tmpdir(), `neo-admin-gmail-${crypto.randomBytes(6).toString("hex")}.env`);
-  fs.writeFileSync(arquivo, `GMAIL_CLIENT_ID=${clientId}\nGMAIL_CLIENT_SECRET=${clientSecret}\nGMAIL_REFRESH_TOKEN=${corpo.refresh_token}\nGMAIL_REMETENTE=${remetente}\n`, { mode: 0o600 });
+  const caixa = LEITURA ? "CAIXA" : "REMETENTE";
+  fs.writeFileSync(arquivo, `${PREFIXO}CLIENT_ID=${clientId}\n${PREFIXO}CLIENT_SECRET=${clientSecret}\n${PREFIXO}REFRESH_TOKEN=${corpo.refresh_token}\n${PREFIXO}${caixa}=${remetente}\n`, { mode: 0o600 });
   try {
     console.log("Autorizado. Gravando os segredos no Supabase...");
     // `--ref <ref>` grava no projeto indicado (ex.: o banco novo em São Paulo); sem ele, vale o projeto ligado por `supabase link`.
@@ -209,7 +219,7 @@ async function main() {
   } finally {
     fs.rmSync(arquivo, { force: true });
   }
-  console.log(`\nPronto. Os rascunhos do Neo Admin vão aparecer na caixa ${remetente}.`);
+  console.log(LEITURA ? `\nPronto. O Neo Admin vai ler as intimações de cartório da caixa ${remetente}.` : `\nPronto. Os rascunhos do Neo Admin vão aparecer na caixa ${remetente}.`);
   console.log("Para trocar de caixa ou revogar: rode este script de novo, ou remova o acesso em https://myaccount.google.com/permissions");
 }
 
