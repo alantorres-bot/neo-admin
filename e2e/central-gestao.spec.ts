@@ -213,7 +213,7 @@ test.describe.serial("atividades da equipe (Fase 3B)", () => {
     await expect(page.getByRole("heading", { name: "Atividades da equipe" })).toBeVisible();
     const resumo = page.locator("table").first();
     await expect(resumo.getByRole("link", { name: "Operador Fiscal Teste" })).toBeVisible();
-    await resumo.getByRole("link", { name: "Operador Fiscal Teste" }).click();
+    await page.goto((await resumo.getByRole("link", { name: "Operador Fiscal Teste" }).getAttribute("href"))!);
     await expect(page.getByText("Linha do tempo de Operador Fiscal Teste")).toBeVisible();
 
     // Desfaz a marca (o teste pode rodar de novo no mesmo banco).
@@ -298,5 +298,61 @@ test.describe.serial("criticidade (Fase 4)", () => {
     await page.goto("/gestao");
     await expect(page.getByText("Áreas e módulos que precisam de atenção")).toBeVisible();
     await expect(page.locator("table").getByRole("link", { name: "Créditos tributários" }).first()).toBeVisible();
+  });
+});
+
+// --- Fase 5: sugestões de melhoria -------------------------------------------------------------------------------------
+
+test.describe.serial("sugestões de melhoria (Fase 5)", () => {
+  const titulo = `[DEMO] Importar o extrato OFX ${sufixo}`;
+
+  test("dentro do módulo, 'Sugerir melhoria' já vem com área e módulo; a sugestão aparece como minha", async ({ page }) => {
+    await entrar(page, "operador.financeiro.teste");
+    await page.goto("/financeiro/recebiveis");
+    await page.getByRole("button", { name: "Sugerir melhoria" }).click();
+    await expect(dialogo(page).getByLabel("Área")).toHaveValue("financeiro");
+    await expect(dialogo(page).getByLabel("Módulo (opcional)")).toHaveValue("financeiro.recebiveis");
+    await dialogo(page).getByLabel("Título").fill(titulo);
+    await dialogo(page).getByLabel("Melhoria sugerida").fill("Ler o OFX do banco em vez de digitar o extrato");
+    await dialogo(page).getByLabel("Problema observado (opcional)").fill("Digitação manual com erros");
+    await dialogo(page).getByRole("button", { name: "Enviar sugestão" }).click();
+    await expect(page.getByText(/Sugestão enviada/)).toBeVisible();
+
+    await page.goto("/gestao/sugestoes");
+    const linha = page.getByRole("row", { name: new RegExp(titulo.replace(/[[\]]/g, "\\$&")) });
+    await expect(linha.getByText("(minha)")).toBeVisible();
+    await expect(linha.getByText("Nova", { exact: true })).toBeVisible();
+  });
+
+  test("outra pessoa vê título e situação, sem abrir o conteúdo", async ({ page }) => {
+    await entrar(page, "operador.fiscal.teste");
+    await page.goto("/gestao/sugestoes");
+    const linha = page.getByRole("row", { name: new RegExp(titulo.replace(/[[\]]/g, "\\$&")) });
+    await expect(linha).toBeVisible();
+    await expect(linha.getByRole("link")).toHaveCount(0);
+  });
+
+  test("o avaliador aprova com justificativa e cria a tarefa de implementação", async ({ page }) => {
+    await entrar(page, "admin.teste");
+    await page.goto("/gestao/sugestoes");
+    const href = await page.getByRole("row", { name: new RegExp(titulo.replace(/[[\]]/g, "\\$&")) }).getByRole("link").getAttribute("href");
+    await page.goto(href!);
+    await expect(page.getByText("Digitação manual com erros")).toBeVisible();
+    await page.getByRole("button", { name: "Avaliar / mudar situação" }).click();
+    await dialogo(page).getByLabel("Nova situação").selectOption("aprovada");
+    await dialogo(page).getByLabel("Prioridade").selectOption("alta");
+    await dialogo(page).getByLabel("Justificativa da decisão").fill("Economiza tempo da conciliação");
+    await dialogo(page).getByRole("button", { name: "Salvar" }).click();
+    await expect(page.getByText("Sugestão atualizada.")).toBeVisible();
+    await expect(page.locator("ol").getByText("Situação: Nova → Aprovada. Justificativa: Economiza tempo da conciliação")).toBeVisible();
+
+    await page.getByRole("button", { name: "Criar tarefa de implementação" }).click();
+    await dialogo(page).getByRole("button", { name: "Criar tarefa" }).click();
+    await expect(page.getByText("Tarefa criada.")).toBeVisible();
+    await expect(page.getByRole("link", { name: /Implementar sugestão nº \d+/ })).toBeVisible();
+
+    await entrar(page, "operador.fiscal.teste");
+    await page.goto("/gestao/sugestoes?situacao=aprovada");
+    await expect(page.getByRole("row", { name: new RegExp(titulo.replace(/[[\]]/g, "\\$&")) }).getByText("Economiza tempo da conciliação")).toBeVisible();
   });
 });

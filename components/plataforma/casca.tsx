@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 import type { MenuArea } from "@/lib/nucleo/permissoes";
 import { iconeDoItem } from "./icones";
 import { AreasDoTrilho } from "./submenu-area";
+import { SugerirMelhoria } from "./sugerir-melhoria";
 
 type Usuario = { nome: string; email: string; adminGeral: boolean };
 
@@ -137,6 +138,11 @@ export function Casca({
               </span>
             );
           })}
+          {mostrarCentral && (
+            <span className="ml-auto shrink-0">
+              <SugerirMelhoria menu={menu.filter((m) => m.modulos.length > 0 || m.area.codigo === "administrativo")} caminho={caminho} />
+            </span>
+          )}
         </div>
 
         <main className="min-w-0 flex-1 bg-white p-3 pb-20 text-texto sm:p-4 sm:pb-20 md:p-5 md:pb-5">{children}</main>

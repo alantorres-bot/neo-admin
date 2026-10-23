@@ -1,6 +1,6 @@
 # Módulo: Administrativo geral / Central de Gestão (`administrativo.gestao`)
 
-Status: em construção. Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
+Status: em construção (Fases 2, 3, 3B, 4 e 5 entregues; faltam 6, 7 e 8). Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
 0093: tela `/gestao`, criação e distribuição de tarefas, ações, comentários e histórico), aguardando avaliação. O que foi construído e como testar estão na seção 14.
 
 Decisões já tomadas por Alan (22/10/2026):
@@ -757,4 +757,27 @@ ajustar destaque (gestor, com motivo), cobrar andamento (gestor; fica no histór
 
 **Publicação (só Alan):** aplicar a `0095` depois da `0094` e registrá-la em `schema_migrations`. Depois, revisar e
 aprovar os limites em Central de Gestão > "Como a Central classifica".
+
+### Fase 5 (23/10/2026): sugestões de melhoria
+| Item | Onde |
+| --- | --- |
+| Tabelas `sugestoes` e `sugestoes_comentarios`; regras de situação e de conteúdo; RLS; lista pública; histórico; tarefa de implementação; pendência "Avaliar sugestão"; regras de atividade | `supabase/migrations/0096_nucleo_sugestoes.sql` |
+| Botão "Sugerir melhoria" na barra de navegação de todas as telas (área e módulo da tela já preenchidos) | `components/plataforma/sugerir-melhoria.tsx`, `components/plataforma/casca.tsx` |
+| Lista `/gestao/sugestoes` (filtros por situação e "só as minhas") e detalhe `/gestao/sugestoes/<id>` (avaliar, comentar, criar tarefa) | `app/(plataforma)/gestao/sugestoes/` |
+| Testes | `tests/db/central-sugestoes.test.ts` (11), `lib/nucleo/gestao/sugestoes.test.ts`, `e2e/central-gestao.spec.ts` (3 fluxos) |
+
+**Decisões tomadas na construção**
+- **Avaliadores:** `pode_avaliar_sugestoes()`, ou seja, admin geral ou gestor da área Administrativo (Alan e Rodrigo).
+- **Comentários em tabela própria:** a leitura de `interacoes` depende do módulo, e o autor pode não ter acesso ao
+  módulo da sugestão.
+- **Autor carimbado pelo banco:** um autor informado por outra pessoa é trocado por quem está logado.
+- **Correção pelo autor:** ele corrige o conteúdo só enquanto a sugestão está "nova"; depois, só por comentário.
+- **Justificativa:** obrigatória para aprovar e para não aprovar. Fica pública, na lista, depois da decisão.
+- **Na Central:** a sugestão nova abre "Avaliar sugestão nº N" em Tarefas gerais (`chave_origem = sugestao:<id>`). Fica
+  em andamento durante a avaliação e é concluída com a decisão.
+- **Tarefa de implementação:** pendência manual em Tarefas gerais, ligada à sugestão, uma aberta por vez. Aprovar não
+  muda o sistema: a melhoria segue o fluxo de especificação.
+- **Fora da v1:** anexos em sugestões (ponto em aberto 4).
+
+**Publicação (só Alan):** aplicar a `0096` depois da `0095` e registrá-la em `schema_migrations`.
 

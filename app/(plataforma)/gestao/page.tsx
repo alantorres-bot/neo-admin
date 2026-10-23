@@ -71,6 +71,7 @@ export default async function PaginaCentral({ searchParams }: PageProps<"/gestao
         </div>
         <div className="flex flex-wrap items-center gap-2">
         <Button size="sm" variant="outline" nativeButton={false} render={<Link href="/gestao/atividades" />}>Atividades</Button>
+        <Button size="sm" variant="outline" nativeButton={false} render={<Link href="/gestao/sugestoes" />}>Sugestões</Button>
         {modulosTarefa.length > 0 && (
           <NovaTarefa
             modulos={modulosTarefa} areasGestor={areasGestor} pessoasPorArea={Object.fromEntries(candidatosPorArea)}
