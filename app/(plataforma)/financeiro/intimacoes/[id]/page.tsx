@@ -49,6 +49,7 @@ export default async function PaginaIntimacao({ params }: PageProps<"/financeiro
         <span className="text-sm text-muted-foreground">
           {i.origem === "cenprot" ? `CENPROT · protocolo ${i.protocolo} de ${formatarData(i.data_protocolo)}` : "4º Ofício"} · {i.cartorio} · recebida em {dataHora(i.criado_em)}
         </span>
+        {i.situacao_cartorio && <Badge variant={i.situacao_cartorio === "protestado" ? "destructive" : "outline"}>No cartório: {i.situacao_cartorio}</Badge>}
       </div>
 
       {i.motivo && <p className={`rounded-md border p-3 text-sm ${i.status === "revisao" ? "border-destructive text-destructive" : ""}`}>{i.status === "revisao" ? "Revisão: " : "Observação: "}{i.motivo}</p>}

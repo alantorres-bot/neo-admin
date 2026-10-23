@@ -9,7 +9,7 @@ export type Intimacao = {
   credor_documento: string | null; credor_nome: string | null; devedor_documento: string | null; especie: string | null;
   numero_titulo: string | null; valor_titulo: string | number | null; vencimento_titulo: string | null;
   data_limite: string | null; valor_custas: string | number | null; valor_total_cartorio: string | number | null; dados_portal_em: string | null;
-  dados_informados_em: string | null; cod_lancamento: string | null;
+  dados_informados_em: string | null; situacao_cartorio: string | null; cod_lancamento: string | null;
   titulo: { codLancamento: string; numDocumento: string; vencimento: string | null; valorCentavos: number; saldoCentavos: number } | null;
   nova_data_vencimento: string | null; proposto_por_nome: string | null; proposto_em: string | null; aprovado_por_nome: string | null; aprovado_em: string | null;
   vencimento_alterado_em: string | null; adiantamento_confirmado_por_nome: string | null; adiantamento_confirmado_em: string | null;
