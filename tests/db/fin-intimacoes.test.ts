@@ -115,6 +115,34 @@ describe("leitura e duplicidade", () => {
     await rpc(operador, `select fin_int_descartar($1, 'teste de junção')`, [outra.id]);
   });
 
+  it("CENPROT repete apontamento antigo: o portal diz pago (sai da fila) ou protestado (revisão); em tratamento só registra", async () => {
+    const loc = "bbbbbbbb-1171-4f37-a37b-810984416e05";
+    // CENPROT primeiro: os três entram como identificada.
+    await ler([email("q1", "cenprot", [apontamento("3099101"), apontamento("3099102"), apontamento("3099103")])]);
+    const id = async (p: string) => (await q(`select id from fin_intimacoes where protocolo = $1`, [p])).rows[0].id;
+    const emTratamento = await id("3099103");
+    await informar(operador, emTratamento);
+    await escolher(operador, emTratamento, "7777");
+    // Depois o portal: 3099101 pago, 3099102 protestado, 3099103 pago (já em tratamento).
+    const r = (await ler([email("q2", "cartorio", [
+      { ...doPortal("3099101", loc), situacaoCartorio: "pago", dataLimite: null, valorCustas: null, valorTotalCartorio: null },
+      { ...doPortal("3099102", loc), situacaoCartorio: "protestado", dataLimite: null, valorCustas: null, valorTotalCartorio: null },
+      { ...doPortal("3099103", loc), situacaoCartorio: "pago", dataLimite: null, valorCustas: null, valorTotalCartorio: null },
+    ])])).rows[0].r;
+    expect(r).toMatchObject({ novas: 0, repetidas: 3, encerradas: 2 });
+    expect(await intimacao(await id("3099101"))).toMatchObject({ status: "descartada", situacao_cartorio: "pago", motivo: expect.stringMatching(/PAGO/) });
+    expect(await pendencias(await id("3099101"))).toEqual([]);
+    expect(await intimacao(await id("3099102"))).toMatchObject({ status: "revisao", situacao_cartorio: "protestado" });
+    expect(await pendencias(await id("3099102"))).toEqual(["Título protestado: MT CORTE E DOBRA LTDA · título 24827-2"]);
+    expect(await intimacao(emTratamento)).toMatchObject({ status: "titulo_localizado", situacao_cartorio: "pago" });
+    // Portal antes da CENPROT: o pago já nasce fora da fila e a CENPROT não o recria.
+    await ler([email("q3", "cartorio", [{ ...doPortal("3099104", loc), situacaoCartorio: "pago", dataLimite: null, valorCustas: null, valorTotalCartorio: null }])]);
+    await ler([email("q4", "cenprot", [apontamento("3099104")])]);
+    expect(await intimacao(await id("3099104"))).toMatchObject({ status: "descartada", situacao_cartorio: "pago" });
+    await rpc(operador, `select fin_int_descartar($1, 'teste')`, [emTratamento]);
+    await rpc(operador, `select fin_int_descartar($1, 'teste')`, [await id("3099102")]);
+  });
+
   it("nada é apagado", async () => {
     await expect(q(`delete from fin_intimacoes`)).rejects.toThrow();
     await expect(q(`delete from fin_intimacao_emails`)).rejects.toThrow();

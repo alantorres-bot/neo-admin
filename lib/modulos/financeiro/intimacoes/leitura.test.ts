@@ -88,12 +88,15 @@ describe("portal do 4º Ofício (entra no link)", () => {
     expect(documentoConfereMascara("123.456.789-01", "17.***.***/****-28")).toBe(false);
   });
 
-  it("um protocolo por título intimado, com prazo, total e custas (total − saldo); pago e protestado só contam", () => {
+  it("um protocolo por título, com a situação; prazo, total e custas (total − saldo) só no intimado", () => {
     const r = intimacoesDoPortal(LOC, "17.209.767/0001-28", PEDIDOS_PORTAL);
     expect(r.situacoes).toEqual({ intimado: 2, pago: 1, protestado: 1 });
-    expect(r.intimacoes.map((i) => [i.chave, i.dataLimite, i.valorTotalCartorio, i.valorCustas, i.valorTitulo])).toEqual([
-      ["protocolo:CUIABÁ 04:3091854", "2026-10-23", 14700.24, 450.6, 14249.64],
-      ["protocolo:CUIABÁ 04:3090983", "2026-10-23", 12855.94, 488.94, 10520.33],
+    expect(r.intimacoes.map((i) => [i.chave, i.situacaoCartorio, i.dataLimite, i.valorTotalCartorio, i.valorCustas, i.valorTitulo])).toEqual([
+      ["protocolo:CUIABÁ 04:3091854", "intimado", "2026-10-23", 14700.24, 450.6, 14249.64],
+      ["protocolo:CUIABÁ 04:3090983", "intimado", "2026-10-23", 12855.94, 488.94, 10520.33],
+      ["protocolo:CUIABÁ 04:3090930", "pago", null, null, null, 2297.44],
+      // Protestado: o "total" do portal não é o da intimação (é outro valor); não vira custas.
+      ["protocolo:CUIABÁ 04:3084955", "protestado", null, null, null, 39265.35],
     ]);
     expect(r.intimacoes[1]).toMatchObject({ origem: "cartorio", localizador: LOC, link: `https://app.protestocuiaba.com.br/#/directMail/items/${LOC}/payments`,
       credorDocumento: "39.***.***/****-08", credorNome: "MT CORTE E DOBRA LTDA", vencimentoTitulo: "2026-02-11", dataProtocolo: "2026-10-21", especie: "DMI" });
@@ -110,7 +113,7 @@ describe("portal do 4º Ofício (entra no link)", () => {
     };
     const r = await lerPortal4Oficio(buscar, LOC.toUpperCase(), ["03.070.443/0001-47", "17.209.767/0001-28"]);
     expect(r.documento).toBe("17.209.767/0001-28");
-    expect(r.intimacoes).toHaveLength(2);
+    expect(r.intimacoes.filter((i) => i.situacaoCartorio === "intimado")).toHaveLength(2);
     expect(chamadas).toEqual([
       { url: `https://api.protestocuiaba.com.br/public/directMail/items/${LOC.toUpperCase()}`, method: "GET" },
       { url: `https://api.protestocuiaba.com.br/public/directMail/items/${LOC.toUpperCase()}/payments?naoIntimar=&cpfCnpj=17209767000128`, method: "GET" },

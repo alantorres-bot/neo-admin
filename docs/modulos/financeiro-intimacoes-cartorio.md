@@ -66,7 +66,10 @@ Ao acontecer cada um desses fatos, a intimação passa para a etapa seguinte. A 
 1. **Leitura:** a busca é `from:(protesto.intimacao@4oficio.com OR aviso@pesquisaprotesto.com.br) newer_than:30d` e lê até 60 mensagens novas por rodada.
    - Cada mensagem é classificada pelo remetente e pelo assunto.
    - **4º Ofício:** do e-mail sai o localizador. O agente entra no portal (uma vez por localizador por rodada) e acha a empresa intimada entre as empresas ativas pela máscara do CNPJ.
-   - **Uma intimação por protocolo `intimado`:** os protocolos `pago` e `protestado` só são contados no resumo da leitura.
+   - **Uma intimação por protocolo `intimado`.** Os protocolos `pago` e `protestado` também são gravados, com a situação em `situacao_cartorio` (migration 0183), porque o aviso da CENPROT repete apontamentos antigos por dias:
+     - **pago:** a intimação ainda só identificada sai da fila (`descartada`, com o motivo), e a CENPROT não a recria;
+     - **protestado:** a intimação identificada ou com o título já escolhido vai para **Revisão necessária**, com a pendência crítica "Título protestado". O cancelamento do protesto fica fora deste fluxo;
+     - **em tratamento** (proposta em diante): só a situação fica registrada, porque pagar no cartório é o caminho normal.
    - **Portal falhou:** fica uma intimação "só localizador" para a pessoa abrir o link.
    - **CENPROT:** sai uma intimação por linha **"Apontamento"**; as outras ocorrências são contadas e ignoradas.
 2. **Duplicidade, em três camadas:**

@@ -74,6 +74,11 @@ export type IntimacaoLida = {
   valorTotalCartorio: number | null;
   /** CALCULADO: total no cartório − saldo do título (o portal não mostra a composição). */
   valorCustas: number | null;
+  /**
+   * Situação no portal do cartório: "intimado" (a tratar), "pago" ou "protestado" (o aviso da CENPROT repete apontamentos
+   * antigos por dias; o portal diz que já não estão em aberto). Null = não lido no portal (CENPROT).
+   */
+  situacaoCartorio?: string | null;
 };
 
 const VAZIA: Omit<IntimacaoLida, "chave" | "origem" | "cartorio"> = {
@@ -194,8 +199,9 @@ export type PedidoPortal = {
 const dataIso = (v: unknown) => /^\d{4}-\d{2}-\d{2}/.exec(String(v ?? ""))?.[0] ?? null;
 
 /**
- * Títulos do portal → intimações. Só "intimado" (com pagamento disponível) é intimação a tratar; "pago", "protestado" e o
- * resto são contados. Custas = total no cartório − saldo do título (só quando o total é maior).
+ * Títulos do portal → intimações. "intimado" é intimação a tratar; "pago" e "protestado" também voltam (com
+ * `situacaoCartorio`), para o banco tirar da fila o apontamento repetido pela CENPROT (pago) ou mandá-lo à revisão
+ * (protestado). Outras situações só são contadas. Custas = total no cartório − saldo do título (só quando o total é maior).
  */
 export function intimacoesDoPortal(localizador: string, devedorDocumento: string, pedidos: readonly PedidoPortal[]): { intimacoes: IntimacaoLida[]; situacoes: Record<string, number> } {
   const intimacoes: IntimacaoLida[] = [];
@@ -204,8 +210,9 @@ export function intimacoesDoPortal(localizador: string, devedorDocumento: string
     const t = p.titulo ?? {};
     const situacao = String(t.status ?? "desconhecida").toLowerCase();
     situacoes[situacao] = (situacoes[situacao] ?? 0) + 1;
-    if (situacao !== "intimado" || !t.protocolo) continue;
-    const total = centavosDe(p.valorTotal);
+    if (!["intimado", "pago", "protestado"].includes(situacao) || !t.protocolo) continue;
+    const aberto = situacao === "intimado";
+    const total = aberto ? centavosDe(p.valorTotal) : null;
     const saldo = centavosDe(t.valorSaldo);
     const custas = total !== null && saldo !== null && total > saldo ? total - saldo : null;
     const valor = centavosDe(t.valorTitulo);
@@ -225,9 +232,10 @@ export function intimacoesDoPortal(localizador: string, devedorDocumento: string
       numeroTitulo: t.numeroTitulo?.trim() || null,
       valorTitulo: valor === null ? null : valor / 100,
       vencimentoTitulo: dataIso(t.dataVencimento),
-      dataLimite: dataIso(t.dataLimitePagamento),
+      dataLimite: aberto ? dataIso(t.dataLimitePagamento) : null,
       valorTotalCartorio: total === null ? null : total / 100,
       valorCustas: custas === null ? null : custas / 100,
+      situacaoCartorio: situacao,
     });
   }
   return { intimacoes, situacoes };
