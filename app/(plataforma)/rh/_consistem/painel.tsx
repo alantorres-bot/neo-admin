@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 
 type Resultado = { ok: true; aviso?: string } | { ok: false; erro: string };
 const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-const SITUACAO: Record<string, string> = { reservado: "Reservado", enviando: "Sem resposta — conferir no Consistem", lancado: "Lançado", erro: "Erro" };
+const SITUACAO: Record<string, string> = { reservado: "Reservado", enviando: "Sem resposta — conferir no Consistem", lancado: "Lançado", erro: "Erro", cancelado: "Cancelado (excluído no Consistem)" };
 
 export type LinhaConsistem = {
   chave: string; cod_fornecedor: string; nome: string; tipo?: string; portador: number | null; valor: number;
@@ -23,10 +23,12 @@ export type LinhaConsistem = {
  * Títulos do mês no Consistem (folha e VT): o que falta lançar, o que já foi (código), erros e respostas incertas a resolver.
  * Uma linha sem portador/códigos nos Parâmetros trava o botão (a reserva no banco recusaria o lote inteiro).
  */
-export function PainelConsistem({ id, linhas, ligado, parametrosHref, descricao, lancar, resolver, podeLancar }: {
+export function PainelConsistem({ id, linhas, ligado, parametrosHref, descricao, lancar, resolver, cancelar, podeLancar }: {
   id: string; linhas: LinhaConsistem[]; ligado: boolean; parametrosHref: string; descricao: string; podeLancar: boolean;
   lancar: (id: string, esperado: { quantidade: number; totalCentavos: number; chaves: string[] }) => Promise<Resultado>;
   resolver: (idLancamento: string, cod: string, motivo: string) => Promise<Resultado>;
+  /** Só gestor (e só onde o livro aceita "cancelado"): título excluído no Consistem. */
+  cancelar?: (idLancamento: string, motivo: string) => Promise<Resultado>;
 }) {
   const router = useRouter();
   const [pendente, iniciar] = useTransition();
@@ -36,6 +38,7 @@ export function PainelConsistem({ id, linhas, ligado, parametrosHref, descricao,
   const [motivo, setMotivo] = useState("");
   // Desmarcadas (e não marcadas): o que volta a "erro" depois de um envio já entra marcado.
   const [fora, setFora] = useState<ReadonlySet<string>>(new Set());
+  const [cancelando, setCancelando] = useState<LinhaConsistem | null>(null);
   const rodar = (acao: () => Promise<Resultado>, sucesso: string, depois?: () => void) => iniciar(async () => {
     const r = await acao();
     if (!r.ok) { toast.error(r.erro); return; }
@@ -43,7 +46,7 @@ export function PainelConsistem({ id, linhas, ligado, parametrosHref, descricao,
     depois?.();
     router.refresh();
   });
-  const lancavel = (l: LinhaConsistem) => l.valor > 0 && (!l.lancamento || l.lancamento.situacao === "erro");
+  const lancavel = (l: LinhaConsistem) => l.valor > 0 && (!l.lancamento || l.lancamento.situacao === "erro" || l.lancamento.situacao === "cancelado");
   const aLancar = linhas.filter((l) => lancavel(l) && !fora.has(l.chave));
   const totalLancavel = linhas.filter(lancavel).length;
   const semCodigos = aLancar.filter((l) => l.portador === null);
@@ -114,6 +117,9 @@ export function PainelConsistem({ id, linhas, ligado, parametrosHref, descricao,
                 {podeLancar && l.lancamento && (l.lancamento.situacao === "enviando" || l.lancamento.situacao === "reservado") && (
                   <Button variant="ghost" size="sm" onClick={() => { setResolvendo(l.lancamento!.id); setCod(""); setMotivo(""); }}>Resolver</Button>
                 )}
+                {cancelar && l.lancamento?.situacao === "lancado" && (
+                  <Button variant="ghost" size="sm" onClick={() => { setCancelando(l); setMotivo(""); }}>Cancelar</Button>
+                )}
               </TableCell>
             </TableRow>
           ))}
@@ -132,6 +138,23 @@ export function PainelConsistem({ id, linhas, ligado, parametrosHref, descricao,
           </div>
         </DialogContent>
       </Dialog>
+      {cancelar && (
+        <Dialog open={!!cancelando} onOpenChange={(v) => { if (!v) setCancelando(null); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Cancelar título {cancelando?.lancamento?.cod}</DialogTitle>
+              <DialogDescription>
+                Use só depois de <strong>excluir o título no Consistem</strong>: aqui ele fica como cancelado (nada é apagado) e {cancelando?.nome} volta a poder ser lançado(a).
+              </DialogDescription>
+            </DialogHeader>
+            <Textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={2} placeholder="Motivo (ex.: teste; excluído no Consistem em 23/10)" />
+            <div className="flex justify-end">
+              <Button variant="destructive" disabled={pendente || motivo.trim().length < 3}
+                onClick={() => rodar(() => cancelar(cancelando!.lancamento!.id, motivo), "Título cancelado.", () => setCancelando(null))}>Cancelar título</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }

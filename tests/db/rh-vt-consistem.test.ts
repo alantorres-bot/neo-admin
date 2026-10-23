@@ -86,4 +86,24 @@ describe("contas a pagar no Consistem (0503)", () => {
     await rpc(rhOperador, `select rh_vt_resolver_lancamento($1, '40002', 'achei no Consistem')`, [id]);
     expect((await q(`select situacao::text, cod_lancamento_erp, resolvido_por from rh_vt_lancamentos_erp where id = $1`, [id])).rows[0]).toEqual({ situacao: "lancado", cod_lancamento_erp: "40002", resolvido_por: rhOperador });
   });
+
+  it("cancelar (0523): só gestor, com motivo, só de lançado; libera reabrir e lançar de novo; preserva a resolução", async () => {
+    const lancados = (await q(`select id, cod_lancamento_erp from rh_vt_lancamentos_erp where situacao = 'lancado' order by cod_lancamento_erp`)).rows;
+    expect(lancados.map((l) => l.cod_lancamento_erp)).toEqual(["40001", "40002"]);
+    const [a, b] = lancados.map((l) => l.id as string);
+    const erro = (await q(`select id from rh_vt_lancamentos_erp where situacao = 'erro' limit 1`)).rows[0].id;
+    await expect(rpc(rhOperador, `select rh_vt_cancelar_lancamento($1, 'excluído no Consistem')`, [a])).rejects.toThrow(/gestor/);
+    await expect(rpc(rhGestor, `select rh_vt_cancelar_lancamento($1, 'x')`, [a])).rejects.toThrow(/motivo/);
+    await expect(rpc(rhGestor, `select rh_vt_cancelar_lancamento($1, 'excluído no Consistem')`, [erro])).rejects.toThrow(/Só um título lançado/);
+    await expect(q(`update rh_vt_lancamentos_erp set situacao = 'cancelado' where id = $1`, [a])).rejects.toThrow(/data e motivo/);
+    await rpc(rhGestor, `select rh_vt_cancelar_lancamento($1, 'excluído no Consistem em 23/10')`, [a]);
+    await expect(rpc(rhGestor, `select rh_vt_reabrir($1, 'teste')`, [comp])).rejects.toThrow(/1 título/);
+    await rpc(rhGestor, `select rh_vt_cancelar_lancamento($1, 'excluído no Consistem em 23/10')`, [b]);
+    expect((await q(`select situacao::text, cancelado_por, motivo_cancelamento, resolvido_por from rh_vt_lancamentos_erp where id = $1`, [b])).rows[0])
+      .toEqual({ situacao: "cancelado", cancelado_por: rhGestor, motivo_cancelamento: "excluído no Consistem em 23/10", resolvido_por: rhOperador });
+    await expect(rpc(rhGestor, `select rh_vt_cancelar_lancamento($1, 'de novo')`, [a])).rejects.toThrow(/Só um título lançado/);
+    await expect(q(`update rh_vt_lancamentos_erp set situacao = 'lancado' where id = $1`, [a])).rejects.toThrow(/inválida/);
+    await rpc(rhGestor, `select rh_vt_reabrir($1, 'título excluído no Consistem')`, [comp]);
+    expect((await q(`select status from rh_vt_competencias where id = $1`, [comp])).rows[0].status).toBe("aberta");
+  });
 });

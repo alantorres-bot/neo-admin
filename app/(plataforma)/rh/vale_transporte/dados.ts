@@ -92,7 +92,7 @@ export async function lerResumoAno(supabase: Cliente, ano: number): Promise<{ me
 
 // ---------------------------------------------------------------- Consistem
 
-export type LancamentoVtLinha = { id: string; item_id: string; lote: string; situacao: "reservado" | "enviando" | "lancado" | "erro"; cod_lancamento_erp: string | null; erro: string | null; valor: number; criado_em: string };
+export type LancamentoVtLinha = { id: string; item_id: string; lote: string; situacao: "reservado" | "enviando" | "lancado" | "erro" | "cancelado"; cod_lancamento_erp: string | null; erro: string | null; valor: number; criado_em: string };
 
 export async function lerLancamentos(supabase: Cliente, competenciaId: string): Promise<LancamentoVtLinha[]> {
   const { data } = await supabase.from("rh_vt_lancamentos_erp").select("id, item_id, lote, situacao, cod_lancamento_erp, erro, valor, criado_em").eq("competencia_id", competenciaId).order("criado_em");
