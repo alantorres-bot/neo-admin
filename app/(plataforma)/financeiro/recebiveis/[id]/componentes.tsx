@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { enviarAnexo } from "@/lib/nucleo/anexos";
 import { MODULO_RECEBIVEIS, TIPO_ANEXO_BOLETO } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { criarClienteNavegador } from "@/lib/supabase/navegador";
-import { criarRascunhoDados, criarRascunhoGmail, definirFormaPagamento, marcarBoletoEnviado, marcarDadosEnviados, salvarLinhaDigitavel } from "./acoes";
+import { criarRascunhoDados, criarRascunhoGmail, definirFormaPagamento, definirUnidade, marcarBoletoEnviado, marcarDadosEnviados, salvarLinhaDigitavel } from "./acoes";
 
 /** Envia o PDF (ou imagem) do boleto da parcela para o bucket de anexos. O registro fica em `anexos` (tipo boleto). */
 export function AnexarBoleto({ tituloId, temBoleto }: { tituloId: string; temBoleto: boolean }) {
@@ -235,6 +235,42 @@ export function FormaPagamento({ tituloId, forma }: { tituloId: string; forma: "
         <button type="button" disabled={pendente} aria-pressed={forma === "boleto"} className={classe(forma === "boleto")} onClick={() => trocar("boleto")}>Boleto</button>
         <button type="button" disabled={pendente} aria-pressed={forma === "transferencia"} className={classe(forma === "transferencia")} onClick={() => trocar("transferencia")}>Transferência</button>
       </span>
+    </div>
+  );
+}
+
+/** Gestor: corrige a unidade da parcela quando a regra do documento (400 = Filial) erra. Motivo obrigatório, fica no histórico. */
+export function CorrigirUnidade({ tituloId, unidade }: { tituloId: string; unidade: "matriz" | "contagem" }) {
+  const router = useRouter();
+  const [aberto, setAberto] = useState(false);
+  const [motivo, setMotivo] = useState("");
+  const [pendente, iniciar] = useTransition();
+  const destino = unidade === "contagem" ? "matriz" : "contagem";
+  const rotulo = destino === "matriz" ? "Matriz" : "Filial Contagem";
+
+  function salvar() {
+    iniciar(async () => {
+      const r = await definirUnidade(tituloId, destino, motivo);
+      if (r.ok) {
+        toast.success(r.aviso ?? "Unidade corrigida.");
+        setAberto(false);
+        setMotivo("");
+        router.refresh();
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
+
+  if (!aberto) {
+    return <button type="button" className="text-xs text-marca underline" onClick={() => setAberto(true)}>Corrigir unidade</button>;
+  }
+  return (
+    <div className="flex w-full flex-wrap items-center gap-2 text-xs">
+      <span>Mudar para <strong>{rotulo}</strong>. Motivo:</span>
+      <Input aria-label="Motivo da correção da unidade" className="h-7 max-w-xs text-xs" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: NF da Matriz na série 2" maxLength={500} />
+      <Button size="sm" disabled={pendente || motivo.trim().length < 5} onClick={salvar}>{pendente ? "Salvando..." : "Salvar"}</Button>
+      <Button size="sm" variant="outline" disabled={pendente} onClick={() => setAberto(false)}>Cancelar</Button>
     </div>
   );
 }
