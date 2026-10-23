@@ -10,6 +10,7 @@ uma rotina que hoje é feita em planilha, e-mail, ERP ou skill avulsa.
 | **Financeiro** | Recebíveis | Carteira, envio de boletos, confirmações, régua de cobrança, renegociações | 1 |
 | Financeiro | Contas a pagar | Lista unificada de títulos e antecipações a fornecedor em aberto (API do Consistem), autorização de pagamento pela diretoria, histórico e relatório (ver `modulos/financeiro-contas-pagar.md`) | em construção |
 | Financeiro | Cartão de crédito | Conciliação da fatura do cartão (PDF) x títulos do espelho do Contas a pagar, sugestão de lançamentos, planilha (ver `modulos/financeiro-cartao.md`; Fase 1 entregue) | em construção |
+| Financeiro | Intimações de cartório | Agente 01: intimações de protesto lidas do Gmail, título localizado no Consistem, vencimento alterado pela API com aprovação do gestor, adiantamento das custas lançado à mão e acompanhado até NF e consignação (ver `modulos/financeiro-intimacoes-cartorio.md`) | em construção |
 | Financeiro | Conciliação bancária | Extrato x lançamentos do ERP, pendências de baixa | 4 |
 | Financeiro | Fluxo de caixa | Previsão a partir de recebíveis, pagáveis e parcelamentos | 5 |
 | **Fiscal/Tributário** | Parcelamentos | Acordos (Receita, PGFN, SEFAZ/MT, PGE/MT), parcelas, risco de rescisão | 2 |

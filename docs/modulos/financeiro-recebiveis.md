@@ -294,6 +294,16 @@ O Consistem lista os títulos das duas unidades juntos (mesma empresa na API). C
 - **Pendências por unidade:** "Cobrar D+n", "Confirmar pagamento" e "Ligar para confirmar pagamento" são abertas por **cliente e unidade**; as da Filial Contagem levam "(Filial Contagem)" no título e uma linha "Unidade: Filial Contagem" na descrição (as da Matriz não mudam). As telas de cobrança e de confirmação mostram a unidade (a confirmação da Filial abre com `?unidade=contagem`), o rascunho de e-mail e o registro do resultado valem para uma unidade por vez, e `rec_registrar_cobranca` e `rec_registrar_confirmacao` recusam parcelas de unidades misturadas e só concluem as pendências da unidade registrada. A ficha do título mostra a unidade de cada parcela.
 - **Ainda igual nas duas:** os textos de mensagem e os marcos da régua (D+1, D+5, D+10). O que muda na cobrança da Filial (textos, prazos, contatos) será definido e entra aqui. O faturamento da Filial (kit NF + demonstrativo + boleto) está na seção 34.
 - **Hoje:** 36 títulos da Filial (R$ 528 mil) e 106 da Matriz (R$ 21,7 mi). O documento `453` (NF 45, Canopus) fica na Matriz.
+- **Correção da unidade pelo gestor (migration 0182, 23/10/2026).** A Matriz também emite NFs na série 2 do Consistem com o mesmo
+  formato de documento da filial: o `4000482U` (NF 482, Canopus, R$ 350 mil) caiu na Filial e sumiu da Carteira da Matriz, da
+  confirmação de pagamento (em Contagem só se confirma cliente marcado) e das filas de Cuiabá. Pelo documento não dá para separar
+  (mesma série, mesmo formato), então a regra continua e a exceção é corrigida à mão:
+  - `rec_titulos.unidade_manual` guarda a correção (vazia = vale a regra); `unidade` continua calculada, agora
+    `coalesce(unidade_manual, regra do 400)`. A sincronização não toca na correção.
+  - Ficha do título, ao lado do selo da unidade: **Corrigir unidade** (gestor do Financeiro, título em aberto, motivo obrigatório),
+    pela função `rec_definir_unidade`. Grava a interação `unidade_alterada` no histórico; voltar para a unidade da regra apaga a
+    correção. Título ligado a kit da filial é recusado (cancelar o kit antes). A usuária restrita à unidade não altera.
+  - As pendências (confirmação, cobrança) acompanham na sincronização seguinte. Testes em `tests/db/unidade-manual.test.ts`.
 
 ## 23. Ocultar vencidos há mais de 90 dias (06/10/2026)
 

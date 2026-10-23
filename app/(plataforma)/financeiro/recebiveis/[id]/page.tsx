@@ -18,7 +18,7 @@ import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { BaixaManual } from "@/app/(plataforma)/financeiro/cobranca/baixas/componentes";
-import { AnexarBoleto, BotaoCopiar, CriarRascunhoDados, CriarRascunhoGmail, FormaPagamento, LinhaDigitavel, MarcarDadosEnviados, MarcarEnviado } from "./componentes";
+import { AnexarBoleto, BotaoCopiar, CorrigirUnidade, CriarRascunhoDados, CriarRascunhoGmail, FormaPagamento, LinhaDigitavel, MarcarDadosEnviados, MarcarEnviado } from "./componentes";
 import { carregarFicha, centavos, ENCERRADOS } from "./dados";
 
 export const metadata: Metadata = { title: "Ficha do título" };
@@ -43,6 +43,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
   const modulo = sessao.modulos.find((m) => m.codigo === MODULO_RECEBIVEIS);
   if (!modulo || !modulo.ativo || !temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.recebiveis")) notFound();
   const podeOperar = temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.recebiveis", "operador");
+  const podeGerir = temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.recebiveis", "gestor");
   const parametros = await searchParams;
 
   const supabase = await criarClienteServidor();
@@ -110,6 +111,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
                   <span className="text-xs text-muted-foreground">vence {formatarData(p.vencimento)} · {formatarMoeda(centavos(p.valor))}</span>
                   <Badge variant="secondary">{ROTULO_ESTAGIO[p.estagio] ?? p.estagio}</Badge>
                   <Badge variant={p.unidade === "contagem" ? "default" : "outline"}>{ROTULO_UNIDADE[p.unidade === "contagem" ? "contagem" : "matriz"]}</Badge>
+                  {aberta && podeGerir && <CorrigirUnidade tituloId={p.id} unidade={p.unidade === "contagem" ? "contagem" : "matriz"} />}
                   {p.cedido && <Badge variant="outline">Cedido</Badge>}
                   {partesAkf.get(p.id) && (
                     <Badge className="bg-sky-100 text-sky-900" title="Antecipação parcial na AKF">

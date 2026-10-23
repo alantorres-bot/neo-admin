@@ -121,6 +121,7 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
 | `cap_autorizacao_extras` | Pagamentos extras (fora do Consistem) da autorização: descrição, favorecido, valor; só em rascunho — prova |
 | `cap_vw_pendentes` | View: abertos C/A com fornecedor, autorização ativa, tratada, fora do corte (a tela lê daqui) |
 | Funções | `cap_conferir` (4e), `cap_criar_autorizacao`, `cap_adicionar_itens`, `cap_montar_rascunho`, `cap_autorizar`, `cap_cancelar`, `cap_remover_item`, `cap_incluir_extra`, `cap_remover_extra`, `cap_marcar_antecipacao_tratada`, `cap_desfazer_antecipacao_tratada`, `cap_salvar_parametros` |
+| Função pública | `cap_fornecedores_por_documento(empresa, documento)` (0181): fornecedores do espelho pelo CPF/CNPJ, com ou sem máscara, para outros módulos (Intimações de cartório) não lerem `cap_fornecedores` direto |
 | Configuração | `financeiro.contas-pagar.antecipacoes_a_partir_de` |
 Migrations: `0121_cap_base.sql` (Fase 1), `0122_cap_autorizacoes.sql` (Fase 2), `0123_cap_fornecedores_contrapartes.sql` (Fase 4).
 Edge Function: `cap-sincronizar-consistem` (ações `medir`, `simular`, `sincronizar`; `detalhar` na Fase 3).

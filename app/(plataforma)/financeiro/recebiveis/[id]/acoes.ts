@@ -103,6 +103,23 @@ export async function definirFormaPagamento(tituloIds: string[], forma: "boleto"
   return { ok: true, aviso: forma === "transferencia" ? "Forma de pagamento: transferência. A parcela sai das tarefas de boleto." : "Forma de pagamento: boleto." };
 }
 
+/**
+ * Corrige a unidade do título (Matriz ou Filial Contagem) quando a regra do documento erra, como a NF da Matriz na série 400
+ * (`rec_definir_unidade`, 0182: gestor do Financeiro, motivo obrigatório, fica no histórico).
+ */
+export async function definirUnidade(tituloId: string, unidade: "matriz" | "contagem", motivo: string): Promise<Resultado> {
+  if (!uuid.safeParse(tituloId).success) return { ok: false, erro: "Título inválido." };
+  const sessao = await exigirSessao();
+  if (!temAcessoModulo(sessao.acesso, sessao.modulos, "financeiro.recebiveis", "gestor")) return { ok: false, erro: "Somente o gestor do Financeiro pode corrigir a unidade do título." };
+  if (motivo.trim().length < 5) return { ok: false, erro: "Informe o motivo da correção." };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("rec_definir_unidade", { p_titulo: tituloId, p_unidade: unidade, p_motivo: motivo.trim().slice(0, 500) });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
+  return { ok: true, aviso: `Unidade corrigida para ${unidade === "contagem" ? "Filial Contagem" : "Matriz"}. As pendências acompanham na próxima sincronização.` };
+}
+
 /** Registra o envio dos dados de pagamento (transferência): a parcela passa para "enviado" e o envio fica no histórico. */
 export async function marcarDadosEnviados(entrada: z.input<typeof esquemaEnvio>): Promise<Resultado> {
   const permissao = await exigirOperador();
