@@ -660,3 +660,28 @@ Aba **Painel** em Financeiro > Recebíveis (`/financeiro/recebiveis/painel`), en
 
 Decisão do usuário: o título vencido **cedido à AKF** entra na régua de cobrança como qualquer outro, com boleto da AKF ou boleto próprio (cliente que não paga à AKF). Antes, `cobravel` (`supabase/functions/_shared/cobranca.ts`) tirava todo cedido da fila "Cobrar" e das pendências de cobrança da sincronização; em Contagem, isso deixava de fora QRTZ 39 e Caparaó, que pagam à Neo. Os títulos antigos (antes do início da régua) também passam a listar o cedido na ficha de cobrança do cliente. O valor cobrado continua o mesmo de antes: o restante com a Neo quando há antecipação parcial (`akf_vw_valor_restante`); sem parte, o valor do título. Vale na tela na hora e, nas pendências, depois de publicar a Edge Function `rec-sincronizar-consistem`.
 
+
+## 41. Espelho do Consistem: baixa, reabertura e trava (migration 0183, 23/10/2026)
+
+Decisão do Alan: o controle é um **espelho do Consistem**. Se o título está em aberto no Consistem, pode ser reaberto (estorno);
+se não está, tem que estar baixado aqui. Origem: auditoria de 23/10/2026 (`docs/auditoria/AUDITORIA_FINANCEIRO_2026-10-23.md`, F1, F8,
+F9, G2, H5).
+
+- **Baixa só do que saiu do Consistem.** `rec_registrar_baixa` (e o lote `rec_baixar_titulos`) só aceita título com a pendência
+  "Possível baixa" aberta, ou seja, que a sincronização já não encontrou na lista de abertos. Título ainda aberto no ERP é recusado
+  ("dê a baixa primeiro no Consistem"); na ficha, o botão **Registrar baixa** fica desabilitado com esse motivo. Título lançado à mão
+  (`origem` manual/acordo) não depende disso. A função trava a linha (`for update`): duas baixas simultâneas não passam as duas.
+  Guarda o estágio de antes em `rec_titulos.estagio_antes_baixa`.
+- **Aviso de título encerrado que voltou a abrir.** A sincronização (passo 7a) abre a pendência **"Baixado aqui, aberto no Consistem:
+  <título>"** (alta, link para a ficha) para todo título pago/cancelado no Neo Admin que o Consistem lista em aberto, e a cancela
+  quando ele sai da lista de novo. Antes isso só virava um número em `importacoes.linhas_divergentes`.
+- **Reabrir título** (ficha do título, caixa amarela "Em aberto no Consistem"): operador do Financeiro, motivo obrigatório, pela
+  função `rec_reabrir_titulo`, que só aceita enquanto a pendência acima está aberta. O título volta ao estágio de antes da baixa
+  (baixas anteriores à 0183: vencido se já venceu, senão importado); data e valor da baixa saem do título e ficam no histórico
+  (interação `reabertura`); as antecipações parciais da AKF que a baixa encerrou sozinha voltam a valer (as encerradas por uma pessoa
+  ficam); a pendência é concluída. Na sincronização seguinte o título segue o fluxo normal (evidência de pagamento antiga é apagada).
+- **Trava no banco** (`fn_rec_titulos_integridade`, para quem usa o app): o estágio só vira pago/cancelado pela baixa e só sai de
+  encerrado pela reabertura; data e valor da baixa só por essas duas funções; valor, vencimento, documento, emissão, cliente,
+  portador e demais dados do Consistem só pela sincronização (service role); a unidade só pela `rec_definir_unidade`. As funções de
+  boleto, confirmação, cobrança, AKF e kit não mudam (só tocam campos da cobrança).
+- **Testes:** `tests/db/espelho-consistem.test.ts` (11) e ajustes em `filial-cobranca-restrito` e `unidade-manual`.

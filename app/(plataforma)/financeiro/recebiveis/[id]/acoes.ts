@@ -120,6 +120,23 @@ export async function definirUnidade(tituloId: string, unidade: "matriz" | "cont
   return { ok: true, aviso: `Unidade corrigida para ${unidade === "contagem" ? "Filial Contagem" : "Matriz"}. As pendências acompanham na próxima sincronização.` };
 }
 
+/**
+ * Reabre o título baixado/cancelado que o Consistem lista em aberto (estorno da baixa). `rec_reabrir_titulo` (0183) confere que a
+ * sincronização o viu em aberto, volta ao estágio de antes da baixa e registra no histórico.
+ */
+export async function reabrirTitulo(tituloId: string, motivo: string): Promise<Resultado> {
+  if (!uuid.safeParse(tituloId).success) return { ok: false, erro: "Título inválido." };
+  const permissao = await exigirOperador();
+  if (!permissao.ok) return permissao;
+  if (motivo.trim().length < 5) return { ok: false, erro: "Informe o motivo da reabertura." };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("rec_reabrir_titulo", { p_titulo: tituloId, p_motivo: motivo.trim().slice(0, 500) });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  revalidatePath("/financeiro/recebiveis", "layout");
+  revalidatePath("/financeiro/cobranca", "layout");
+  return { ok: true, aviso: "Título reaberto: voltou para a carteira e para a cobrança." };
+}
+
 /** Registra o envio dos dados de pagamento (transferência): a parcela passa para "enviado" e o envio fica no histórico. */
 export async function marcarDadosEnviados(entrada: z.input<typeof esquemaEnvio>): Promise<Resultado> {
   const permissao = await exigirOperador();

@@ -18,7 +18,7 @@ import { temAcessoModulo } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { BaixaManual } from "@/app/(plataforma)/financeiro/cobranca/baixas/componentes";
-import { AnexarBoleto, BotaoCopiar, CorrigirUnidade, CriarRascunhoDados, CriarRascunhoGmail, FormaPagamento, LinhaDigitavel, MarcarDadosEnviados, MarcarEnviado } from "./componentes";
+import { AnexarBoleto, BotaoCopiar, CorrigirUnidade, CriarRascunhoDados, ReabrirTitulo, CriarRascunhoGmail, FormaPagamento, LinhaDigitavel, MarcarDadosEnviados, MarcarEnviado } from "./componentes";
 import { carregarFicha, centavos, ENCERRADOS } from "./dados";
 
 export const metadata: Metadata = { title: "Ficha do título" };
@@ -157,15 +157,27 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
                         ? <Button variant="outline" size="sm" render={<Link href={`/financeiro/cobranca/cobrar/${p.contraparte_id}`} />}>Cobrar ({nomeDoMarco(marco)})</Button>
                         : <Button variant="outline" size="sm" disabled title={`Vencimento anterior à data de corte da régua${f.corteRegua ? ` (${formatarData(f.corteRegua)})` : ""}`}>Cobrar (fora da régua)</Button>
                     )}
-                    {podeOperar && (
-                      <ul className="min-w-60 flex-1">
-                        <BaixaManual
-                          linha={{ id: p.id, rotulo: "Registrar pagamento ou cancelamento", detalhe: "", valorTitulo: Number(p.valor), emissao: p.emissao }}
-                          hoje={f.hoje}
-                          rotuloBotao="Registrar baixa"
-                        />
-                      </ul>
-                    )}
+                    {/* Espelho do Consistem (0183): só se baixa aqui o que o Consistem já tirou da lista de abertos. */}
+                    {podeOperar && (f.possivelBaixa.has(p.id)
+                      ? (
+                        <ul className="min-w-60 flex-1">
+                          <BaixaManual
+                            linha={{ id: p.id, rotulo: "Registrar pagamento ou cancelamento", detalhe: "", valorTitulo: Number(p.valor), emissao: p.emissao }}
+                            hoje={f.hoje}
+                            rotuloBotao="Registrar baixa"
+                          />
+                        </ul>
+                      )
+                      : <Button variant="outline" size="sm" disabled title="O título ainda está em aberto no Consistem: dê a baixa lá; depois da sincronização ela aparece aqui e em Baixas a conferir.">Registrar baixa</Button>)}
+                  </div>
+                )}
+                {!aberta && f.abertoNoConsistem.has(p.id) && (
+                  <div className="rounded-[3px] border border-amber-300 bg-amber-50 p-2 text-xs">
+                    <p className="mb-1.5">
+                      <strong>Em aberto no Consistem.</strong> Este título está {p.estagio === "pago" ? "baixado" : "cancelado"} aqui, mas o Consistem o lista em aberto.
+                      Se a baixa foi estornada lá, reabra; se o Consistem está errado, acerte lá.
+                    </p>
+                    {podeOperar && <ReabrirTitulo tituloId={p.id} />}
                   </div>
                 )}
               </div>

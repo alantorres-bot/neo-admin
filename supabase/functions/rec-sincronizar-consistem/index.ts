@@ -101,6 +101,8 @@ import { lerParametrosRegra, TODAS_AS_CHAVES_REGRA } from "../_shared/parametros
 
 const MODULO = "financeiro.recebiveis";
 const PREFIXO_BAIXA = "Possível baixa: ";
+/** Título encerrado aqui que o Consistem lista em aberto (0183): o mesmo prefixo que rec_reabrir_titulo procura. */
+const PREFIXO_REABRIR = "Baixado aqui, aberto no Consistem: ";
 const LOTE = 200;
 
 /** Data de hoje no fuso de Cuiabá, 'aaaa-mm-dd'. */
@@ -710,6 +712,42 @@ async function sincronizarEmpresa(
     canceladas += data?.length ?? 0;
   }
   resumo.pendenciasCanceladas = canceladas;
+
+  // 7a) Espelho do Consistem (0183): título pago/cancelado aqui que o Consistem lista em aberto. A pendência avisa e é ela que
+  // libera "Reabrir título" na ficha (rec_reabrir_titulo exige a pendência aberta); se o título sair de novo da lista, é cancelada.
+  const reabriveis = plano.divergentes.filter((t) => t.estagio === "pago" || t.estagio === "cancelado");
+  const abertasReabrir = await lerTudo<{ id: string; referencia_id: string }>((de, ate) =>
+    banco.from("pendencias").select("id, referencia_id").eq("modulo", MODULO).eq("empresa_id", empresa.id).eq("referencia_tabela", "rec_titulos")
+      .like("titulo", `${PREFIXO_REABRIR}%`).in("status", ["aberta", "em_andamento"]).order("id").range(de, ate));
+  const jaAvisados = new Set(abertasReabrir.map((p) => p.referencia_id));
+  const brl = (centavos: number) => (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const avisosReabrir = reabriveis.filter((t) => !jaAvisados.has(t.id)).map((t) => ({
+    modulo: MODULO,
+    empresa_id: empresa.id,
+    contraparte_id: contraparteDoTitulo.get(t.id) ?? null,
+    titulo: `${PREFIXO_REABRIR}${t.documento}${t.parcela !== "1" ? `/${t.parcela}` : ""}`,
+    descricao: `O título está ${t.estagio === "pago" ? "baixado (pago)" : "cancelado"} no Neo Admin, mas o Consistem o lista em aberto `
+      + `(${brl(t.valorCentavos)}, vencimento ${t.vencimento.split("-").reverse().join("/")}). Se a baixa foi estornada no Consistem, `
+      + `reabra o título na ficha; se o Consistem está errado, acerte lá (o aviso some quando o título sair da lista de abertos).`,
+    prazo: hoje,
+    criticidade: "alta",
+    referencia_tabela: "rec_titulos",
+    referencia_id: t.id,
+    link: `/financeiro/recebiveis/${t.id}`,
+  }));
+  for (const lote of lotes(avisosReabrir)) {
+    const { error } = await banco.from("pendencias").insert(lote);
+    if (error) throw new Error(`Falha ao criar os avisos de título aberto no Consistem: ${error.message}`);
+  }
+  const idsReabriveis = new Set(reabriveis.map((t) => t.id));
+  const avisosObsoletos = abertasReabrir.filter((p) => !idsReabriveis.has(p.referencia_id)).map((p) => p.id);
+  for (const lote of lotes(avisosObsoletos)) {
+    const { error } = await banco.from("pendencias").update({ status: "cancelada" }).in("id", lote);
+    if (error) throw new Error(`Falha ao encerrar os avisos de título aberto no Consistem: ${error.message}`);
+  }
+  resumo.encerradosAbertosNoConsistem = reabriveis.length;
+  resumo.avisosReabrirNovos = avisosReabrir.length;
+  resumo.avisosReabrirCancelados = avisosObsoletos.length;
 
   // 7b) Régua de cobrança (D+1, D+5, D+10): só vencimentos a partir da data de corte; nunca envia, só abre a pendência
   // "Cobrar D+n" com o texto pronto. Antes, o que passou do vencimento sem pagamento vira `vencido`.

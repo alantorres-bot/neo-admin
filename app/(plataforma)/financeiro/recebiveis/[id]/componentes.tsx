@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { enviarAnexo } from "@/lib/nucleo/anexos";
 import { MODULO_RECEBIVEIS, TIPO_ANEXO_BOLETO } from "@/lib/modulos/financeiro/recebiveis/boleto";
 import { criarClienteNavegador } from "@/lib/supabase/navegador";
-import { criarRascunhoDados, criarRascunhoGmail, definirFormaPagamento, definirUnidade, marcarBoletoEnviado, marcarDadosEnviados, salvarLinhaDigitavel } from "./acoes";
+import { criarRascunhoDados, criarRascunhoGmail, definirFormaPagamento, definirUnidade, marcarBoletoEnviado, reabrirTitulo, marcarDadosEnviados, salvarLinhaDigitavel } from "./acoes";
 
 /** Envia o PDF (ou imagem) do boleto da parcela para o bucket de anexos. O registro fica em `anexos` (tipo boleto). */
 export function AnexarBoleto({ tituloId, temBoleto }: { tituloId: string; temBoleto: boolean }) {
@@ -271,6 +271,33 @@ export function CorrigirUnidade({ tituloId, unidade }: { tituloId: string; unida
       <Input aria-label="Motivo da correção da unidade" className="h-7 max-w-xs text-xs" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: NF da Matriz na série 2" maxLength={500} />
       <Button size="sm" disabled={pendente || motivo.trim().length < 5} onClick={salvar}>{pendente ? "Salvando..." : "Salvar"}</Button>
       <Button size="sm" variant="outline" disabled={pendente} onClick={() => setAberto(false)}>Cancelar</Button>
+    </div>
+  );
+}
+
+/** Reabre o título que o Consistem lista em aberto (estorno da baixa). Motivo obrigatório; fica no histórico. */
+export function ReabrirTitulo({ tituloId }: { tituloId: string }) {
+  const router = useRouter();
+  const [motivo, setMotivo] = useState("");
+  const [pendente, iniciar] = useTransition();
+
+  function salvar() {
+    iniciar(async () => {
+      const r = await reabrirTitulo(tituloId, motivo);
+      if (r.ok) {
+        toast.success(r.aviso ?? "Título reaberto.");
+        setMotivo("");
+        router.refresh();
+      } else {
+        toast.error(r.erro);
+      }
+    });
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Input aria-label="Motivo da reabertura" className="h-7 max-w-xs text-xs" value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: baixa estornada no Consistem" maxLength={500} />
+      <Button size="sm" disabled={pendente || motivo.trim().length < 5} onClick={salvar}>{pendente ? "Reabrindo..." : "Reabrir título"}</Button>
     </div>
   );
 }

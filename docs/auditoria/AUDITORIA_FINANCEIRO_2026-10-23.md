@@ -219,7 +219,7 @@ que seja o vencimento (`0167:248-251`), mesmo que a pessoa tenha marcado só par
 
 ## 5. Constatações — Recebíveis e Cobrança (por severidade)
 
-**F1 · [FALHA] Título encerrado no Neo Admin nunca é reaberto, mesmo voltando em aberto no Consistem.**
+**F1 · [FALHA → corrigida na 0183] Título encerrado no Neo Admin nunca é reaberto, mesmo voltando em aberto no Consistem.**
 `planejarSincronizacao` manda o encerrado presente na API para `divergentes` e segue (`consistem-receber.ts:289-291`); o número só vai
 para `importacoes.linhas_divergentes` (`index.ts:900`). Sem pendência, sem aviso na tela.
 *Cenário:* operador baixa por engano um título em "Baixas a conferir" (ou o Consistem estorna a baixa) → o título continua aberto no
@@ -266,11 +266,11 @@ rascunho não registra a cobrança: a fila continua mostrando o cliente até alg
 - Lista **parcial** da API (página faltando, registros recusados por valor zero) não é barrada: só a lista totalmente vazia é
   (`index.ts:298`). Os títulos faltantes viram "Possível baixa" e **saem da cobrança** até voltarem.
 
-**F8 · [RISCO] Concorrência na baixa.** `rec_registrar_baixa` lê o estágio sem `FOR UPDATE` (`0107:58`) e atualiza sem condição de
+**F8 · [RISCO → corrigido na 0183] Concorrência na baixa.** `rec_registrar_baixa` lê o estágio sem `FOR UPDATE` (`0107:58`) e atualiza sem condição de
 estágio (`0107:83`). Duas baixas simultâneas do mesmo título passam as duas: a última sobrescreve data e valor, e ficam duas
 interações "baixa".
 
-**F9 · [RISCO] Atualização direta de `rec_titulos` pela RLS.** A política `rec_titulos_alterar` libera UPDATE de qualquer coluna para
+**F9 · [RISCO → corrigido na 0183] Atualização direta de `rec_titulos` pela RLS.** A política `rec_titulos_alterar` libera UPDATE de qualquer coluna para
 operador do Financeiro (`0100:162-163`). Valor, vencimento ou estágio podem ser mudados fora das funções (só fica a auditoria
 genérica); as validações de `rec_registrar_baixa` podem ser contornadas. O gatilho de campos existe só para o usuário restrito à
 unidade (spec §35).
@@ -352,7 +352,7 @@ retorna sem fazer nada (`0146:191`; `0167:38-40`).
 *Cenário:* kit da NF 002400 cancelado por dados errados e registrado de novo → kit novo fica "A implantar" para sempre; Cuiabá pode
 implantar de novo no Consistem e criar título duplicado no ERP.
 
-**G2 · [FALHA] A usuária da filial pode mudar o estágio do título para qualquer valor.** O gatilho `fn_rec_titulos_campos_unidade` libera
+**G2 · [FALHA → corrigida na 0183] A usuária da filial pode mudar o estágio do título para qualquer valor.** O gatilho `fn_rec_titulos_campos_unidade` libera
 o campo `estagio` sem restringir os valores (`0158:45-58`) e a política permite UPDATE direto (`0158:41-43`).
 *Cenário:* PATCH em `rec_titulos` com `estagio = 'pago'` ou `'cancelado'` → o título sai da carteira e da cobrança de Contagem sem
 baixa, sem data/valor e sem "Possível baixa" (só a auditoria registra). Para os operadores de Cuiabá vale o mesmo, por F9.
@@ -447,7 +447,7 @@ sem cedido e sem partes: volta a "Disponível" e à cobrança pelo valor cheio, 
 só olha `cedido` e aceita lançar parte. "Na AKF" soma o título inteiro (portador `998`) **e** a parte (`akf/page.tsx:110,122-128`).
 *Cenário:* título de R$ 1.000 + parte de R$ 400 → "Na AKF" mostra R$ 1.400.
 
-**H5 · [FALHA] Reabertura não restaura as partes.** As partes encerradas na baixa não voltam se o título for reaberto. Hoje não existe
+**H5 · [FALHA → corrigida na 0183] Reabertura não restaura as partes.** As partes encerradas na baixa não voltam se o título for reaberto. Hoje não existe
 reabertura (F1); passa a valer quando ela for criada.
 
 **H6 · [RISCO] Rascunho duplicado à AKF.** Se o rascunho é criado no Gmail mas a gravação de "solicitada" falha, a tela responde ok

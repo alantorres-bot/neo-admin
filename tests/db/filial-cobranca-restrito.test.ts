@@ -61,10 +61,10 @@ describe("cobrança da filial pelo usuário restrito", () => {
   it("muda só os campos da cobrança do título; valor e vencimento não", async () => {
     const mg = await titulo(clienteMg, "4", "aguardando_boleto", "current_date + 10");
     await comoMelina(() => q(`update rec_titulos set linha_digitavel = '1' where id = $1`, [mg]));
-    await expect(comoMelina(() => q(`update rec_titulos set valor = 1 where id = $1`, [mg]))).rejects.toThrow(/só se alteram os dados da cobrança/);
-    await expect(comoMelina(() => q(`update rec_titulos set vencimento = current_date where id = $1`, [mg]))).rejects.toThrow(/só se alteram/);
-    // Cuiabá continua podendo tudo.
-    await como(db, cuiaba, () => q(`update rec_titulos set valor = 900 where id = $1`, [mg]));
+    await expect(comoMelina(() => q(`update rec_titulos set valor = 1 where id = $1`, [mg]))).rejects.toThrow(/só se alteram os dados da cobrança|só mudam pela sincronização/);
+    await expect(comoMelina(() => q(`update rec_titulos set vencimento = current_date where id = $1`, [mg]))).rejects.toThrow(/só se alteram|só mudam pela sincronização/);
+    // Desde a 0183, nem Cuiabá muda valor e vencimento à mão: são dados do Consistem (só a sincronização altera).
+    await expect(como(db, cuiaba, () => q(`update rec_titulos set valor = 900 where id = $1`, [mg]))).rejects.toThrow(/só mudam pela sincronização/);
   });
 
   it("marca boleto enviado e registra confirmação de título da unidade", async () => {

@@ -82,7 +82,7 @@ describe("rec_definir_unidade", () => {
   it("a usuária restrita à Filial não muda a unidade (nem pela função, nem direto na tabela)", async () => {
     const id = await titulo("4000485U");
     await expect(definir(filial, id, "matriz")).rejects.toThrow(/Somente o gestor/);
-    await expect(como(db, filial, () => q(`update rec_titulos set unidade_manual = 'matriz' where id = $1`, [id]))).rejects.toThrow(/só se alteram os dados da cobrança/);
+    await expect(como(db, filial, () => q(`update rec_titulos set unidade_manual = 'matriz' where id = $1`, [id]))).rejects.toThrow(/só se alteram os dados da cobrança|só se corrige pela ficha/);
     expect(await unidade(id)).toBe("contagem");
   });
 

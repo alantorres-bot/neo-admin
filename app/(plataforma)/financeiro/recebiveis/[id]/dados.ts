@@ -58,6 +58,10 @@ export type Ficha = {
   totalCentavos: number;
   /** Data de corte da régua de cobrança (aaaa-mm-dd) e o dia de hoje em Cuiabá. */
   corteRegua: string | null;
+  /** Espelho do Consistem (0183): parcelas que saíram da lista de abertos (só elas aceitam baixa) e as encerradas aqui que o
+   *  Consistem lista em aberto (só elas podem ser reabertas). */
+  possivelBaixa: Set<string>;
+  abertoNoConsistem: Set<string>;
   /** Parâmetros da regra de cobrança (janelas de confirmação e de contato). */
   regra: ParametrosRegra & { marcos: MarcoRegua[] };
   hoje: string;
@@ -77,7 +81,7 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
   const parcelas = (grupoBruto ?? []) as Parcela[];
   const ids = parcelas.map((p) => p.id);
 
-  const [{ data: cliente }, { data: nota }, { data: contatosBrutos }, { data: anexosBrutos }, { data: interacoesBrutas }, { data: modelosBrutos }, { parametros: regra, marcos }] = await Promise.all([
+  const [{ data: cliente }, { data: nota }, { data: contatosBrutos }, { data: anexosBrutos }, { data: interacoesBrutas }, { data: modelosBrutos }, { parametros: regra, marcos }, { data: avisosBrutos }] = await Promise.all([
     supabase.from("contrapartes").select("nome, codigo_erp").eq("id", base.contraparte_id).maybeSingle(),
     base.nota_saida_id ? supabase.from("rec_notas_saida").select("nota, pedidos").eq("id", base.nota_saida_id).maybeSingle() : Promise.resolve({ data: null }),
     supabase.from("contatos").select("id, nome, funcao, email, whatsapp, telefone, finalidades, canal_preferido, ativo").eq("contraparte_id", base.contraparte_id).eq("ativo", true).order("nome"),
@@ -87,7 +91,10 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
       .in("referencia_id", ids).order("criado_em", { ascending: false }).limit(60),
     supabase.from("modelos_mensagem").select("id, nome, canal, assunto, corpo").eq("modulo", MODULO_RECEBIVEIS).eq("ativo", true).in("nome", [MODELO_BOLETO_EMAIL, MODELO_BOLETO_WHATSAPP, MODELO_DADOS_EMAIL, MODELO_DADOS_WHATSAPP]),
     carregarRegra(supabase),
+    supabase.from("pendencias").select("referencia_id, titulo").eq("modulo", MODULO_RECEBIVEIS).eq("referencia_tabela", "rec_titulos")
+      .in("referencia_id", ids).in("status", ["aberta", "em_andamento"]),
   ]);
+  const avisos = (prefixo: string) => new Set((avisosBrutos ?? []).filter((a) => (a.titulo as string).startsWith(prefixo)).map((a) => a.referencia_id as string));
 
   // Boleto mais recente de cada parcela; o link assinado (bucket privado) só é gerado quando a tela vai mostrá-lo.
   const boletoDaParcela = new Map<string, { nome: string; url: string | null }>();
@@ -153,6 +160,8 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
     modeloEmailId: (modeloEmail?.id as string | undefined) ?? null, email, whatsapp,
     totalCentavos: parcelas.reduce((s, p) => s + centavos(p.valor), 0),
     corteRegua: regra.reguaAPartirDe,
+    possivelBaixa: avisos("Possível baixa:"),
+    abertoNoConsistem: avisos("Baixado aqui, aberto no Consistem:"),
     regra: { ...regra, marcos },
     hoje: hojeEmCuiaba(),
   };
