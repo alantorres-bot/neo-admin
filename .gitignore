@@ -42,3 +42,14 @@ extrato-comissoes-*.json
 
 # ambiente local sem Docker (scripts/local-sem-docker)
 /.local-supabase/
+
+# Claude Code: arquivos locais de sessão
+.claude/settings.local.json
+.claude/*.lock
+
+# lock do Deno gerado ao rodar as funções localmente
+/deno.lock
+
+# limpezas únicas de testes (apagam dados com os gatilhos de prova desligados): ficam só na máquina
+scripts/limpeza-testes*
+scripts/limpar-autorizacoes-teste.sql
