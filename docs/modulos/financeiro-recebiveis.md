@@ -685,3 +685,21 @@ F9, G2, H5).
   portador e demais dados do Consistem só pela sincronização (service role); a unidade só pela `rec_definir_unidade`. As funções de
   boleto, confirmação, cobrança, AKF e kit não mudam (só tocam campos da cobrança).
 - **Testes:** `tests/db/espelho-consistem.test.ts` (11) e ajustes em `filial-cobranca-restrito` e `unidade-manual`.
+
+## 42. Contenção da Fase 1 da reestruturação (migration 0186, 23/10/2026)
+
+Completa o que a 0184 deixou da Fase 1 do plano (`docs/auditoria/plano-reestruturacao-receber.md`; auditoria F7, F8, H1).
+
+- **Antecipação parcial com trava.** `akf_desdobrar_titulo` trava o título (`for update`) antes de somar as partes: dois cliques
+  ao mesmo tempo não antecipam mais que o valor do título.
+- **Restante nunca negativo.** `akf_vw_valor_restante.valor_restante` fica em 0 quando o Consistem reduz o valor do título abaixo
+  das partes ativas, e a coluna nova `excedido` acusa o caso. A confirmação e a cobrança (que leem o restante) não mandam mais valor
+  negativo. A correção da parte em si fica para a Fase 6 (AKF como movimento).
+- **Uma sincronização por vez.** A Edge Function toma a trava `rec_sincronizacao_iniciar()` (tabela `rec_sincronizacao_trava`, só
+  service role) antes da rodada real e solta em `rec_sincronizacao_terminar()` ao fim, com ou sem erro. A segunda rodada simultânea
+  termina com 409 "Outra sincronização com o Consistem está em andamento", sem gravar nada e sem aviso de falha. Rodada que morrer no
+  meio solta a trava sozinha em 15 minutos. A simulação não trava.
+- **Falha parcial vira pendência.** Se a evidência de pagamento, a régua de cobrança ou o cadastro de contatos falharem (títulos e
+  baixas já gravados), a rodada abre **"Sincronização parcial com o Consistem"** (alta, uma só enquanto aberta), com a etapa e o erro.
+  A primeira rodada completa a encerra. Antes a falha ficava só no resumo (`avisoEvidencia`, `avisoRegua`, `avisoCadastro`).
+- **Testes:** `tests/db/contencao-fase1.test.ts`.

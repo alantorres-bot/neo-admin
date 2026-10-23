@@ -959,9 +959,33 @@ async function registrarFalha(banco: Banco, mensagem: string, agendado: boolean)
   });
 }
 
-/** Sincronização que deu certo encerra o aviso de falha anterior. */
-async function encerrarFalhas(banco: Banco): Promise<void> {
-  await banco.from("pendencias").update({ status: "cancelada" }).eq("modulo", MODULO).eq("titulo", TITULO_FALHA).in("status", ["aberta", "em_andamento"]);
+/** Sincronização que deu certo encerra o aviso anterior (falha geral ou parcial). */
+async function encerrarFalhas(banco: Banco, titulo: string): Promise<void> {
+  await banco.from("pendencias").update({ status: "cancelada" }).eq("modulo", MODULO).eq("titulo", titulo).in("status", ["aberta", "em_andamento"]);
+}
+
+const TITULO_PARCIAL = "Sincronização parcial com o Consistem";
+const ETAPAS_AUXILIARES: [string, string][] = [["avisoEvidencia", "evidência de pagamento"], ["avisoRegua", "régua de cobrança"], ["avisoCadastro", "cadastro de contatos"]];
+
+/**
+ * Títulos e baixas gravaram, mas uma etapa auxiliar falhou (a falha ficava só no resumo, sem ninguém ver): abre a pendência
+ * "Sincronização parcial" (alta), uma só enquanto aberta. Rodada completa encerra a pendência.
+ */
+async function avisarEtapasFalhas(banco: Banco, resultados: ResumoEmpresa[]): Promise<void> {
+  const falhas = resultados.flatMap((r) => ETAPAS_AUXILIARES.filter(([campo]) => r[campo]).map(([campo, etapa]) => `${r.empresa ?? ""} ${etapa}: ${String(r[campo])}`.trim()));
+  if (falhas.length === 0) return encerrarFalhas(banco, TITULO_PARCIAL);
+  const { data: abertas } = await banco.from("pendencias").select("id").eq("modulo", MODULO).eq("titulo", TITULO_PARCIAL)
+    .in("status", ["aberta", "em_andamento"]).limit(1);
+  if (abertas && abertas.length > 0) return;
+  const { error } = await banco.from("pendencias").insert({
+    modulo: MODULO,
+    titulo: TITULO_PARCIAL,
+    descricao: `Os títulos e as baixas foram sincronizados, mas estas etapas falharam: ${falhas.join("; ").slice(0, 600)}. As pendências dessas etapas podem estar desatualizadas até a próxima rodada completa.`,
+    prazo: hojeCuiaba(),
+    criticidade: "alta",
+    link: "/financeiro/recebiveis",
+  });
+  if (error) throw new Error(`Sincronizou, mas falhou ao avisar a falha parcial: ${error.message}`);
 }
 
 /** Nomes e tipos dos campos que a API devolve (sem valores): para conferir o mapeamento com segurança. */
@@ -1098,12 +1122,26 @@ Deno.serve(async (req) => {
         return responder({ ok: true, empresa: e.nome_curto, dias, ...relatorio, camposItemNota: undefined, pedidoNosItens, tiposNota: { ...tiposNota, campos: undefined }, pedido: { itens: (pedido as { itens?: unknown }).itens ?? null, erro: (pedido as { erro?: unknown }).erro } });
       }
       case "sincronizar": {
-        const resultados: ResumoEmpresa[] = [];
-        for (const e of empresas) {
-          resultados.push(await sincronizarEmpresa(banco, e as { id: string; nome_curto: string; codigo_erp: string }, cfgBase, corpo.simular === true, usuarioId));
+        const real = corpo.simular !== true;
+        // Uma rodada por vez (0186): a segunda termina aqui, sem gravar nada e sem aviso de falha.
+        if (real) {
+          const { data: livre, error: erroTrava } = await banco.rpc("rec_sincronizacao_iniciar");
+          if (erroTrava) throw new Error(`Falha ao travar a sincronização: ${erroTrava.message}`);
+          if (livre !== true) return responder({ erro: "Outra sincronização com o Consistem está em andamento. Aguarde alguns minutos." }, 409);
         }
-        if (corpo.simular !== true) await encerrarFalhas(banco);
-        return responder({ ok: true, agendado, resultados });
+        try {
+          const resultados: ResumoEmpresa[] = [];
+          for (const e of empresas) {
+            resultados.push(await sincronizarEmpresa(banco, e as { id: string; nome_curto: string; codigo_erp: string }, cfgBase, !real, usuarioId));
+          }
+          if (real) {
+            await encerrarFalhas(banco, TITULO_FALHA);
+            await avisarEtapasFalhas(banco, resultados);
+          }
+          return responder({ ok: true, agendado, resultados });
+        } finally {
+          if (real) await banco.rpc("rec_sincronizacao_terminar");
+        }
       }
       default:
         return responder({ erro: "Ação desconhecida." }, 400);
