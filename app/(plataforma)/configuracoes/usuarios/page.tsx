@@ -14,7 +14,7 @@ export default async function PaginaUsuarios() {
   const supabase = await criarClienteServidor();
 
   const [perfis, permissoes] = await Promise.all([
-    supabase.from("perfis").select("id, nome, email, admin_geral, ativo, deve_trocar_senha, unidade_restrita, acompanha_equipe").order("ativo", { ascending: false }).order("nome"),
+    supabase.from("perfis").select("id, nome, email, admin_geral, ativo, deve_trocar_senha, unidade_restrita, acompanha_equipe, slack_usuario_id").order("ativo", { ascending: false }).order("nome"),
     supabase.from("permissoes").select("perfil_id, area, nivel"),
   ]);
   if (perfis.error) throw new Error(`Falha ao ler os usuários: ${perfis.error.message}`);

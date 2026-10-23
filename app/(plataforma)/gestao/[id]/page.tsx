@@ -15,6 +15,7 @@ import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { ROTULO_ORIGEM, SeloDestaque, linkInterno, textoSituacao } from "../componentes";
 import { lerPendencia } from "../dados";
 import { AcaoComTexto, AjustarDestaque, Alterar, Atribuir, Bloquear, BotaoAcao, type Pessoa } from "../formularios";
+import { AlternarClickup } from "../notificacoes/formularios";
 
 export const metadata: Metadata = { title: "Pendência — Central de Gestão" };
 
@@ -61,7 +62,7 @@ export default async function PaginaPendencia({ params }: PageProps<"/gestao/[id
   const responsavel = p.responsavel_id === sessao.userId;
 
   const [extras, historico, candidatos, dependencias] = await Promise.all([
-    supabase.from("pendencias").select("criado_por, destaque_manual, precisa_distribuir").eq("id", id).maybeSingle(),
+    supabase.from("pendencias").select("criado_por, destaque_manual, precisa_distribuir, clickup_enviar, clickup_task_id").eq("id", id).maybeSingle(),
     supabase.rpc("pendencia_historico", { p_id: id }),
     // Gestor distribui: nas "Tarefas gerais", para qualquer pessoa ativa; nos módulos, para quem atua na área.
     gestor && aberta
@@ -126,6 +127,9 @@ export default async function PaginaPendencia({ params }: PageProps<"/gestao/[id
         )}
         {aberta && p.origem === "manual" && (gestor || criador) && (
           <AcaoComTexto id={id} acao="cancelar" rotulo="Cancelar tarefa" titulo="Cancelar tarefa" descricao="A tarefa não é apagada: fica cancelada, com o motivo no histórico." campo="Motivo do cancelamento" sucesso="Tarefa cancelada." />
+        )}
+        {aberta && gestor && (
+          <AlternarClickup id={id} marcado={Boolean(extras.data?.clickup_enviar)} tarefa={(extras.data?.clickup_task_id as string | null) ?? null} />
         )}
         {!aberta && gestor && <BotaoAcao id={id} acao="reabrir" rotulo="Reabrir" sucesso="Pendência reaberta." confirmar="Reabrir esta pendência?" />}
       </section>

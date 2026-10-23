@@ -1,6 +1,6 @@
 # Módulo: Administrativo geral / Central de Gestão (`administrativo.gestao`)
 
-Status: em construção (Fases 2, 3, 3B, 4, 5 e 6 entregues; faltam 7 e 8). Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
+Status: em construção (Fases 2 a 7 entregues; a 7 depende de credenciais para enviar de verdade; falta a 8). Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
 0093: tela `/gestao`, criação e distribuição de tarefas, ações, comentários e histórico), aguardando avaliação. O que foi construído e como testar estão na seção 14.
 
 Decisões já tomadas por Alan (22/10/2026):
@@ -819,4 +819,48 @@ cobrança bloqueada no Recebíveis (não existem como dado).
 **Publicação (só Alan):**
 1. Aplicar `0097`, `0180` e `0206`, nesta ordem e depois da `0096`, e registrar em `schema_migrations`.
 2. A `0206` depende das migrations do Fiscal Control (`0200` a `0205`) e roda a carga inicial das pendências fiscais.
+
+### Fase 7 (23/10/2026): avisos pelo Slack e ClickUp (preparados; envio real depende de configuração)
+| Item | Onde |
+| --- | --- |
+| Fila `notificacoes`, eventos, interruptores (tudo desligado), lembretes de prazo e atraso, resumo diário, `perfis.slack_usuario_id`, `pendencias.clickup_enviar`, rotina a cada 15 min | `supabase/migrations/0098_nucleo_notificacoes.sql` |
+| Envio pelo Slack (`chat.postMessage`, até 3 tentativas, motivo registrado) | `supabase/functions/nucleo-notificacoes-enviar/` |
+| Criação de tarefas no ClickUp (só ida, vínculo em `clickup_task_id`) | `supabase/functions/nucleo-clickup-enviar/` |
+| Regras puras (destino, texto, tentativas, corpo da tarefa) | `supabase/functions/_shared/notificacoes.ts` |
+| Tela "Avisos da Central" (admin), "Enviar ao ClickUp" na pendência (gestor), usuário do Slack em Configurações > Usuários | `app/(plataforma)/gestao/notificacoes/`, `app/(plataforma)/gestao/[id]/page.tsx`, `app/(plataforma)/configuracoes/usuarios/` |
+| Testes | `tests/db/central-notificacoes.test.ts` (10), `lib/nucleo/gestao/notificacoes.test.ts`, `e2e/central-gestao.spec.ts` (2 fluxos) |
+
+**Regras de envio**
+- **Interruptores:** nada sai sem o interruptor geral ligado e sem o evento ligado. Os testes nunca enviam.
+- **Sem repetição:** cada aviso tem uma chave. A atribuição gera um aviso por atribuição; prazo e atraso, um por prazo
+  (mudou o prazo, novo lembrete); o pedido de decisão, um por pedido; o resumo, um por dia.
+- **Cobrança firme:** a cobrança ao responsável só sai pelo clique do gestor em "Cobrar andamento", um aviso por clique.
+- **Sem destino:** pessoa sem usuário do Slack ou canal não configurado fazem o aviso ficar "ignorado", com o motivo.
+  Uma falha é tentada de novo até 3 vezes e registrada.
+- **ClickUp:** vão só as pendências marcadas pelo gestor e as tarefas de implementação de sugestões. Mudança no ClickUp
+  não altera nem encerra a pendência.
+
+**Implementado, mas não testado de verdade:** as duas Edge Functions (Slack e ClickUp). O código foi escrito no padrão de
+`cap-enviar-slack`; as regras delas estão testadas, mas o envio real só pode ser validado com as credenciais.
+
+**Configuração pendente (só Alan)**
+1. Aplicar a `0098` depois da `0206` e registrá-la.
+2. Publicar as funções:
+   ```
+   npx supabase functions deploy nucleo-notificacoes-enviar --project-ref chdszjpbtfpstjrqnmmm
+   npx supabase functions deploy nucleo-clickup-enviar --project-ref chdszjpbtfpstjrqnmmm
+   ```
+3. Gravar os segredos com `node scripts/gravar-segredo.mjs NOME --ref chdszjpbtfpstjrqnmmm`:
+   - `NOTIFICACOES_SEGREDO` (32+ caracteres);
+   - `CLICKUP_TOKEN`, se for usar o ClickUp.
+
+   O `SLACK_BOT_TOKEN` já existe (Contas a pagar). Para mensagens diretas, o aplicativo do Slack precisa do escopo
+   `chat:write` e poder conversar com as pessoas.
+4. No Vault do banco, gravar:
+   - `notificacoes_url` (URL da função `nucleo-notificacoes-enviar`);
+   - `notificacoes_segredo` (o mesmo valor do segredo);
+   - `clickup_url`, se for usar o ClickUp.
+5. Em Configurações > Usuários, preencher o usuário do Slack de cada pessoa.
+6. Em Central de Gestão > Avisos, informar o canal e a lista, ligar os eventos desejados e, por último, o envio.
+   Validar com "Gerar lembretes e enviar agora".
 

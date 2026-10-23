@@ -27,6 +27,8 @@ export type Perfil = {
   unidade_restrita?: string | null;
   /** Vê as atividades e os acessos de toda a equipe na Central de Gestão (migration 0094). Admin geral sempre vê. */
   acompanha_equipe?: boolean;
+  /** ID do usuário no Slack (avisos da Central, migration 0098). */
+  slack_usuario_id?: string | null;
 };
 
 export type Empresa = {

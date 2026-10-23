@@ -378,3 +378,66 @@ test.describe("integração com os módulos (Fase 6)", () => {
     await expect(page.locator("a", { hasText: "Abrir no módulo" })).toHaveAttribute("href", /^\/fiscal\/creditos\/obrigacoes\//);
   });
 });
+
+// --- Fase 7: avisos (Slack) e ClickUp — nada é enviado de verdade -------------------------------------------------------
+
+test.describe.serial("avisos e ClickUp (Fase 7)", () => {
+  test("só o admin abre os avisos; tudo começa desligado; ligar um evento põe o aviso na fila sem enviar", async ({ page }) => {
+    await entrar(page, "gestor.teste");
+    await page.goto("/gestao/notificacoes");
+    await expect(page).toHaveURL(/\/inicio/);   // não é admin: volta ao início
+
+    await entrar(page, "admin.teste");
+    await page.goto("/gestao/notificacoes");
+    await expect(page.getByText(/Envio\s+desligado/)).toBeVisible();
+    await page.getByRole("button", { name: "Configurar" }).click();
+    const d = dialogo(page);
+    await expect(d.getByLabel(/Envio ligado/)).not.toBeChecked();
+    await d.getByLabel(/^Atribuição/).check();
+    await d.getByLabel("Canal da gestão (ID do Slack)").fill("C0123ABCD");
+    await d.getByRole("button", { name: "Salvar" }).click();
+    await expect(page.getByText("Configuração salva.")).toBeVisible();
+    await expect(page.getByText(/eventos ligados: Atribuição/)).toBeVisible();
+
+    const titulo = `[DEMO] Aviso de atribuição ${sufixo}`;
+    await entrar(page, "gestor.teste");
+    await page.goto("/gestao");
+    await page.getByRole("button", { name: "Nova tarefa" }).click();
+    await dialogo(page).getByLabel("Título").fill(titulo);
+    await dialogo(page).getByLabel("Módulo").selectOption("financeiro.recebiveis");
+    await dialogo(page).getByLabel("Responsável").selectOption({ label: "Operador Financeiro Teste" });
+    await dialogo(page).getByRole("button", { name: "Criar tarefa" }).click();
+    await expect(page.getByText("Tarefa criada.")).toBeVisible();
+
+    await entrar(page, "admin.teste");
+    await page.goto("/gestao/notificacoes");
+    const linha = page.getByRole("row", { name: new RegExp(titulo.replace(/[[\]]/g, "\\$&")) });
+    await expect(linha.getByText("Na fila")).toBeVisible();
+    await expect(linha.getByText("Operador Financeiro Teste")).toBeVisible();
+
+    // sem a função publicada (ambiente local), o botão informa e não quebra a tela
+    await page.getByRole("button", { name: "Gerar lembretes e enviar agora" }).click();
+    await expect(page.getByText(/não respondeu|desligado|nao_configurado|SLACK_BOT_TOKEN/).first()).toBeVisible();
+
+    // desliga de novo (o teste pode rodar outra vez no mesmo banco)
+    await page.getByRole("button", { name: "Configurar" }).click();
+    await dialogo(page).getByLabel(/^Atribuição/).uncheck();
+    await dialogo(page).getByRole("button", { name: "Salvar" }).click();
+    await expect(page.getByText("Configuração salva.")).toBeVisible();
+  });
+
+  test("gestor marca uma pendência para o ClickUp; o admin cadastra o usuário do Slack da pessoa", async ({ page }) => {
+    await entrar(page, "gestor.teste");
+    await abrirPorBusca(page, `[DEMO] Aviso de atribuição ${sufixo}`, "gestao");
+    await page.getByRole("button", { name: "Enviar ao ClickUp" }).click();
+    await expect(page.getByText("Será enviada ao ClickUp no próximo envio.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Não enviar ao ClickUp" })).toBeVisible();
+
+    await entrar(page, "admin.teste");
+    await page.goto("/configuracoes/usuarios");
+    await page.getByRole("row", { name: /Operador Financeiro Teste/ }).getByRole("button", { name: "Permissões" }).click();
+    await page.getByRole("dialog").getByLabel(/Usuário do Slack/).fill("u0123abcd");
+    await page.getByRole("dialog").getByRole("button", { name: "Salvar" }).click();
+    await expect(page.getByText("Permissões salvas.")).toBeVisible();
+  });
+});

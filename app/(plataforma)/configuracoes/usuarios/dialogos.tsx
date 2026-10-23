@@ -95,6 +95,13 @@ export function DialogoPermissoes({
         </label>
         <label className="grid gap-1 text-sm">
           <span>
+            Usuário do Slack{" "}
+            <span className="text-xs text-muted-foreground">(ID, ex.: U01ABCDEF; no Slack: perfil da pessoa &gt; ⋮ &gt; Copiar ID do membro. Recebe os avisos da Central)</span>
+          </span>
+          <input name="slack_usuario_id" defaultValue={perfil.slack_usuario_id ?? ""} className="h-8 w-56 rounded-lg border bg-background px-2 text-sm" />
+        </label>
+        <label className="grid gap-1 text-sm">
+          <span>
             Restrito à unidade{" "}
             <span className="text-xs text-muted-foreground">(vê só o Faturamento Filial, com o nível do Financeiro; não vale para administrador geral)</span>
           </span>
