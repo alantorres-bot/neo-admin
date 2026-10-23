@@ -139,8 +139,28 @@ describe("leitura e duplicidade", () => {
     await ler([email("q3", "cartorio", [{ ...doPortal("3099104", loc), situacaoCartorio: "pago", dataLimite: null, valorCustas: null, valorTotalCartorio: null }])]);
     await ler([email("q4", "cenprot", [apontamento("3099104")])]);
     expect(await intimacao(await id("3099104"))).toMatchObject({ status: "descartada", situacao_cartorio: "pago" });
+    // Protestado: localizar o título mantém a revisão; só o gestor marca; sucesso conclui; o vencimento não é aceito aqui.
+    const prot = await id("3099102");
+    await informar(operador, prot);
+    expect((await intimacao(prot)).status).toBe("revisao");
+    await escolher(operador, prot, "8888");
+    expect(await intimacao(prot)).toMatchObject({ status: "revisao", cod_lancamento: "8888" });
+    expect((await q(`select descricao from pendencias where referencia_id = $1 and status = 'aberta'`, [prot])).rows[0].descricao).toMatch(/marque como PROTESTADO/);
+    await expect(rpc(operador, `select fin_int_aprovar_protestado($1, 'PROTESTADO - VENC ORIG 11/02/2026')`, [prot])).rejects.toThrow(/Somente gestor/);
+    await q(`update configuracoes set valor = 'true'::jsonb where chave = 'financeiro.intimacoes.alterar_vencimento_no_erp'`);
+    await expect(rpc(gestor, `select fin_int_aprovar_protestado($1, 'CARTORIO X')`, [prot])).rejects.toThrow(/PROTESTADO - VENC ORIG/);
+    await expect(rpc(gestor, `select fin_int_aprovar_protestado($1, 'PROTESTADO - VENC ORIG 11/02/2026')`, [emTratamento])).rejects.toThrow(/"titulo_localizado"/);
+    const envio = (await rpc(gestor, `select fin_int_aprovar_protestado($1, 'PROTESTADO - VENC ORIG 11/02/2026') as id`, [prot])).rows[0].id;
+    expect((await q(`select tipo, alteracao from fin_intimacao_vencimentos where id = $1`, [envio])).rows[0]).toEqual({ tipo: "protestado", alteracao: { complementoHistorico: "PROTESTADO - VENC ORIG 11/02/2026" } });
+    await expect(q(`insert into fin_intimacao_vencimentos (intimacao_id, empresa_id, cod_lancamento, tipo, alteracao, aprovado_por) values ($1, $2, '1', 'protestado', '{"dataVencimento":"2026-11-01"}', $3)`, [prot, empresa, gestor])).rejects.toThrow();
+    await servico(`select fin_int_iniciar_vencimento($1)`, [envio]);
+    await servico(`select fin_int_concluir_vencimento($1, true, false, '{}'::jsonb, '{"complementoHistorico":"PROTESTADO - VENC ORIG 11/02/2026"}'::jsonb, null, null)`, [envio]);
+    const marcada = await intimacao(prot);
+    expect(marcada).toMatchObject({ status: "concluida", motivo: expect.stringMatching(/PROTESTADO - VENC ORIG 11\/02\/2026/) });
+    expect(marcada.protestado_marcado_em).not.toBeNull();
+    expect(await pendencias(prot)).toEqual([]);
+    await q(`update configuracoes set valor = 'false'::jsonb where chave = 'financeiro.intimacoes.alterar_vencimento_no_erp'`);
     await rpc(operador, `select fin_int_descartar($1, 'teste')`, [emTratamento]);
-    await rpc(operador, `select fin_int_descartar($1, 'teste')`, [await id("3099102")]);
   });
 
   it("nada é apagado", async () => {

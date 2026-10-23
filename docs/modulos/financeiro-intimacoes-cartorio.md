@@ -70,6 +70,13 @@ Ao acontecer cada um desses fatos, a intimação passa para a etapa seguinte. A 
      - **pago:** a intimação ainda só identificada sai da fila (`descartada`, com o motivo), e a CENPROT não a recria;
      - **protestado:** a intimação identificada ou com o título já escolhido vai para **Revisão necessária**, com a pendência crítica "Título protestado". O cancelamento do protesto fica fora deste fluxo;
      - **em tratamento** (proposta em diante): só a situação fica registrada, porque pagar no cartório é o caminho normal.
+   - **Título protestado marcado no Consistem** (migration 0185, pedido do Alan em 23/10/2026):
+     - na revisão do protestado, o operador localiza o título, e informar dados ou escolher o título não o tira da revisão;
+     - o **gestor** vê a prévia lida na hora no Consistem (complemento atual → `PROTESTADO - VENC ORIG dd/mm/aaaa`, com o vencimento **original** do título: `dataVencimentoOriginal`, ou o vencimento atual se nunca foi alterado) e aprova;
+     - o agente troca **só o complemento** (o texto anterior, inclusive o que vinha depois, sai) e confere antes e depois;
+     - **sucesso:** a intimação fica `concluida`, com `protestado_marcado_em`; o cancelamento do protesto é tratado fora do fluxo;
+     - **falha:** continua em revisão, com o erro no motivo;
+     - a chave é a mesma das alterações no ERP, `financeiro.intimacoes.alterar_vencimento_no_erp`; a tabela `fin_intimacao_vencimentos` ganhou `tipo` (`vencimento` ou `protestado`).
    - **Portal falhou:** fica uma intimação "só localizador" para a pessoa abrir o link.
    - **CENPROT:** sai uma intimação por linha **"Apontamento"**; as outras ocorrências são contadas e ignoradas.
 2. **Duplicidade, em três camadas:**

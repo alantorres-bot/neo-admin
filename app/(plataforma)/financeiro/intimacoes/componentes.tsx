@@ -12,7 +12,7 @@ import { parseReais } from "@/lib/modulos/financeiro/contas-pagar/autorizacao";
 import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import {
   aprovarVencimento, confirmarAdiantamento, confirmarConsignacao, consultarTitulos, descartar, devolverProposta, escolherTitulo,
-  informarDados, lerGmailAgora, mesclar, proporVencimento, registrarNf, retomar, type CandidatoTela, type Resultado,
+  informarDados, lerGmailAgora, marcarProtestado, mesclar, previaProtestado, proporVencimento, registrarNf, retomar, type CandidatoTela, type Resultado,
 } from "./acoes";
 
 const SELECT = "h-9 rounded-md border bg-background px-2 text-sm";
@@ -249,6 +249,49 @@ export function AprovarVencimento({ id, codLancamento, vencimentoAtual, novaData
         </Dialog>
       )}
     </>
+  );
+}
+
+/** Título protestado: lê a prévia no Consistem (complemento atual → "PROTESTADO - VENC ORIG …") e o gestor aprova. */
+export function MarcarProtestado({ id }: { id: string }) {
+  const [previa, setPrevia] = useState<{ codLancamento: string; complementoAtual: string; complementoNovo: string } | null>(null);
+  const [erroPrevia, setErroPrevia] = useState<string>();
+  const [lendo, iniciar] = useTransition();
+  const { erro, pendente, executar } = useAcao();
+
+  function abrir() {
+    setErroPrevia(undefined);
+    iniciar(async () => {
+      const r = await previaProtestado(id);
+      if (r.ok) setPrevia(r);
+      else setErroPrevia(r.erro);
+    });
+  }
+
+  return (
+    <div className="space-y-1">
+      <Button variant="destructive" disabled={lendo} onClick={abrir}>{lendo ? "Lendo o título no Consistem…" : "Marcar como PROTESTADO no Consistem"}</Button>
+      {erroPrevia && <p role="alert" className="text-sm text-destructive">{erroPrevia}</p>}
+      {previa && (
+        <Dialog open onOpenChange={(v) => { if (!v && !pendente) setPrevia(null); }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Marcar o título {previa.codLancamento} como protestado</DialogTitle>
+              <DialogDescription>Só o complemento muda; vencimento e valor continuam os mesmos. O Neo Admin lê o título de novo e confere.</DialogDescription>
+            </DialogHeader>
+            <dl className="grid gap-1 text-sm">
+              <dt className="font-medium">Complemento atual</dt><dd className="break-words">{previa.complementoAtual || "(vazio)"}</dd>
+              <dt className="font-medium">Complemento novo</dt><dd className="font-semibold">{previa.complementoNovo}</dd>
+            </dl>
+            {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setPrevia(null)} disabled={pendente}>Voltar</Button>
+              <Button disabled={pendente} onClick={() => executar(() => marcarProtestado(id, previa.complementoNovo), () => setPrevia(null))}>{pendente ? "Alterando…" : "Aprovar"}</Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>
   );
 }
 

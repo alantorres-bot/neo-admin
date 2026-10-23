@@ -132,6 +132,38 @@ export async function aprovarVencimento(id: string): Promise<Resultado> {
   return { ok: true, aviso: (data as { aviso?: string } | null)?.aviso ?? "Vencimento alterado e conferido no Consistem." };
 }
 
+export type ResultadoPrevia = { ok: true; codLancamento: string; complementoAtual: string; complementoNovo: string } | { ok: false; erro: string };
+
+/** Prévia (só leitura) da troca do complemento do título protestado: o atual e o novo, lidos agora no Consistem. */
+export async function previaProtestado(id: string): Promise<ResultadoPrevia> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "gestor")) return { ok: false, erro: "Somente gestor do Financeiro (ou acima) marca título como protestado." };
+  if (!uuid.safeParse(id).success) return { ok: false, erro: "Intimação inválida." };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.functions.invoke("fin-intimacoes-consistem", { body: { acao: "previa_protestado", id } });
+  if (error) return { ok: false, erro: await mensagemDaFuncao(error, "Não foi possível ler o título no Consistem.") };
+  const r = data as { codLancamento: string; complementoAtual: string; complementoNovo: string };
+  return { ok: true, codLancamento: r.codLancamento, complementoAtual: r.complementoAtual, complementoNovo: r.complementoNovo };
+}
+
+/**
+ * Aprovação do gestor (0185): reserva a troca do complemento pelo texto da prévia e chama a Edge Function, que lê o título,
+ * altera SÓ o complemento, lê de novo e confere. Sucesso = intimação concluída.
+ */
+export async function marcarProtestado(id: string, complemento: string): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "financeiro", "gestor")) return { ok: false, erro: "Somente gestor do Financeiro (ou acima) aprova." };
+  if (!uuid.safeParse(id).success) return { ok: false, erro: "Intimação inválida." };
+  const supabase = await criarClienteServidor();
+  const { data: envio, error } = await supabase.rpc("fin_int_aprovar_protestado", { p_id: id, p_complemento: complemento });
+  if (error) return { ok: false, erro: mensagemDeErro(error) };
+  const { data, error: erroFuncao } = await supabase.functions.invoke("fin-intimacoes-consistem", { body: { acao: "alterar", id: envio } });
+  revalidatePath(`${ROTA_INTIMACOES}/${id}`);
+  revalidatePath(ROTA_INTIMACOES);
+  if (erroFuncao) return { ok: false, erro: `${await mensagemDaFuncao(erroFuncao, "Não foi possível falar com a função do Consistem.")} Confira o título no Consistem.` };
+  return { ok: true, aviso: (data as { aviso?: string } | null)?.aviso ?? "Título marcado como PROTESTADO no Consistem." };
+}
+
 export const confirmarAdiantamento = async (id: string, referencia: string) =>
   chamar("operador", "fin_int_confirmar_adiantamento", { p_id: id, p_referencia: referencia.trim().slice(0, 50) }, "Adiantamento confirmado por você. Agora falta a NF do cartório.", id);
 export const registrarNf = async (id: string, numero: string) => chamar("operador", "fin_int_registrar_nf", { p_id: id, p_numero: numero }, "NF registrada.", id);

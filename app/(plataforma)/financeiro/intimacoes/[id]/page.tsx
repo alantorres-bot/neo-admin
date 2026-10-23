@@ -7,7 +7,7 @@ import { formatarData, formatarMoeda } from "@/lib/modulos/financeiro/recebiveis
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { AcaoComTexto, AprovarVencimento, BotaoAcao, ConsultaTitulos, FormDados, JuntarAoApontamento } from "../componentes";
+import { AcaoComTexto, AprovarVencimento, BotaoAcao, ConsultaTitulos, FormDados, JuntarAoApontamento, MarcarProtestado } from "../componentes";
 import { lerIntimacao } from "../dados";
 
 export const metadata: Metadata = { title: "Intimação de cartório" };
@@ -39,6 +39,7 @@ export default async function PaginaIntimacao({ params }: PageProps<"/financeiro
   const custas = centavos(i.valor_custas);
   const totalCartorio = centavos(i.valor_total_cartorio);
   const custasDoPortal = i.dados_portal_em ? custas : null;
+  const protestado = i.status === "revisao" && i.situacao_cartorio === "protestado";
   const tarefa = tarefaAdiantamento({ cartorio: i.cartorio, valorCustas: numero(i.valor_custas), protocolo: i.protocolo, localizador: i.localizador, numeroTitulo: i.numero_titulo, credorNome: i.credor_nome, codLancamento: i.cod_lancamento }, cartorios);
 
   return (
@@ -80,8 +81,21 @@ export default async function PaginaIntimacao({ params }: PageProps<"/financeiro
         ) : (
           <p className="text-sm text-muted-foreground">Nenhum título escolhido.</p>
         )}
-        {operador && ["identificada", "titulo_localizado"].includes(i.status) && <ConsultaTitulos id={i.id} />}
+        {operador && (["identificada", "titulo_localizado"].includes(i.status) || protestado) && <ConsultaTitulos id={i.id} />}
       </Secao>
+
+      {(protestado || i.protestado_marcado_em) && (
+        <Secao titulo="Título protestado">
+          {i.protestado_marcado_em ? (
+            <p className="text-sm text-green-700">Marcado como PROTESTADO no Consistem em {dataHora(i.protestado_marcado_em)}. O cancelamento do protesto é tratado fora deste fluxo.</p>
+          ) : (
+            <p className="text-sm">O cartório informa que o título foi protestado. Com o título localizado, o gestor troca o complemento no Consistem por <strong>PROTESTADO - VENC ORIG dd/mm/aaaa</strong> (vencimento original do título).</p>
+          )}
+          {protestado && gestor && i.cod_lancamento && alterarLigado && <MarcarProtestado id={i.id} />}
+          {protestado && gestor && i.cod_lancamento && !alterarLigado && <p className="text-sm text-amber-700">As alterações no Consistem estão desligadas (financeiro.intimacoes.alterar_vencimento_no_erp).</p>}
+          {protestado && !i.cod_lancamento && <p className="text-sm text-muted-foreground">Localize o título acima primeiro.</p>}
+        </Secao>
+      )}
 
       <Secao titulo="3. Novo vencimento (aprovação do gestor)">
         {i.nova_data_vencimento && <p className="text-sm">Proposto: <strong>{formatarData(i.nova_data_vencimento)}</strong> por {i.proposto_por_nome} em {dataHora(i.proposto_em)}{i.aprovado_por_nome ? ` · aprovado por ${i.aprovado_por_nome} em ${dataHora(i.aprovado_em)}` : ""}</p>}
@@ -134,7 +148,7 @@ export default async function PaginaIntimacao({ params }: PageProps<"/financeiro
 
       {operador && (
         <div className="flex flex-wrap gap-2">
-          {i.status === "revisao" && <BotaoAcao id={i.id} acao="retomar" variante="outline" rotulo="Voltar para a conferência" />}
+          {i.status === "revisao" && !protestado && <BotaoAcao id={i.id} acao="retomar" variante="outline" rotulo="Voltar para a conferência" />}
           {["identificada", "titulo_localizado", "revisao"].includes(i.status) && (
             <AcaoComTexto id={i.id} acao="descartar" variante="outline" rotulo="Descartar" titulo="Descartar a intimação" descricao="Use quando não se aplica (ex.: já pago no cartório). Fica registrado com o motivo; nada é apagado." />
           )}
