@@ -1,6 +1,6 @@
 # Módulo: Fiscal/Tributário / Créditos tributários (Fiscal Control)
 
-Status: publicado em 22/10/2026 (migrations 0200–0204). Saldos de ICMS, PIS e Cofins da matriz implantados; IPI pendente (ver item 11).
+Status: publicado em 22/10/2026 (migrations 0200–0205). Saldos de ICMS, PIS e Cofins da matriz implantados; IPI pendente (ver item 11).
 
 Documentação completa: `docs/fiscal-control/README.md` (uso, instalação, permissões, backup, limitações), `ARCHITECTURE.md`
 (entidades e regras) e `STATUS.md` (progresso e testes).
@@ -28,7 +28,7 @@ Ver `docs/fiscal-control/ARCHITECTURE.md`, seção 3. Resumo:
 1. Saldo = soma do razão efetivo; saldo inicial do mês = saldo final do mês anterior do mesmo crédito.
 2. Registrado ≠ validado ≠ disponível; crédito pendente nunca é disponível; quem lança não valida.
    Exceção (0204): com `fiscal.creditos.permitir_autoaprovacao = true`, o Administrador do módulo valida/aprova o que ele mesmo
-   lançou, com justificativa obrigatória (mín. 10 caracteres) gravada na trilha como "[autoaprovação] …". Começa desligada; foi
+   lançou (e, desde a 0205, confere a obrigação cuja transmissão registrou), com justificativa obrigatória (mín. 10 caracteres) gravada na trilha como "[autoaprovação] …". Começa desligada; foi
    ligada em 22/10/2026 porque só o Alan tem acesso ao Fiscal. Desligar quando houver outro aprovador.
 3. Saídas exigem saldo em todas as competências seguintes, crédito validado, sem bloqueio, no prazo e forma permitida na categoria.
 4. Nada se apaga: estorno, correção ligada ao original, arquivamento lógico, documentos versionados.
@@ -45,7 +45,7 @@ Excel (créditos, movimentações, apuração, consolidado, obrigações, concil
 tarefas, relatorios, configuracoes, importacao. Impressão: `/imprimir/fiscal/consolidado`.
 
 ## 8. Dados (prefixo `fis_`)
-Migrations 0200–0204 (0204: chave da autoaprovação e funções `fis_credito_validar`/`fis_movimento_decidir`): `fis_membros`, `fis_estabelecimentos`, `fis_tributos`, `fis_categorias`, `fis_origens`, `fis_tipos_movimento`,
+Migrations 0200–0205 (0204: chave da autoaprovação e funções `fis_credito_validar`/`fis_movimento_decidir`; 0205: `fis_obrigacao_status`): `fis_membros`, `fis_estabelecimentos`, `fis_tributos`, `fis_categorias`, `fis_origens`, `fis_tipos_movimento`,
 `fis_tipos_documento`, `fis_creditos`, `fis_movimentos`, `fis_periodos`, `fis_periodos_eventos`, `fis_tipos_obrigacao`,
 `fis_obrigacoes_aplicaveis`, `fis_obrigacoes`, `fis_obrigacoes_eventos`, `fis_documentos`, `fis_documentos_vinculos`,
 `fis_divergencias`, `fis_tarefas`, `fis_comentarios`, `fis_decisoes`, `fis_imp_lotes`, `fis_imp_linhas`; view `fis_creditos_saldos`;

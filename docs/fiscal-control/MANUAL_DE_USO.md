@@ -28,7 +28,7 @@ Para o detalhe técnico, ver `README.md` e `ARCHITECTURE.md` nesta pasta. O lan�
 
 **Regra de segregação:** quem lança não aprova; quem registra a transmissão não confere. Enquanto só o Alan tem acesso, a chave
 `fiscal.creditos.permitir_autoaprovacao` está **ligada**, o que permite aprovar e validar o próprio lançamento com justificativa
-("[autoaprovação]"). **A conferência de obrigação não tem essa exceção**: a obrigação fica em "Transmitida" até outra pessoa conferir.
+("[autoaprovação]"). Desde a 0205 a exceção vale também para conferir a obrigação cuja transmissão você mesmo registrou.
 Para dar acesso: Configurações > Usuários (nível na área Fiscal) e, no módulo, Configurações > Usuários e papéis.
 
 ## 3. Calendário de rotinas
@@ -60,7 +60,7 @@ Situações: não iniciada → em preparação → aguardando documentos → em 
 2. "Pronta para transmissão" exige papel de revisão (aprovação registrada).
 3. **Transmitida**: informe a data e o número do recibo/protocolo, e **antes** anexe em Documentos o recibo (tipo "Recibo de
    transmissão") vinculado à obrigação. Arquivo salvo sem recibo não comprova entrega.
-4. **Entregue e conferida**: outra pessoa confere o recibo e marca.
+4. **Entregue e conferida**: outra pessoa confere o recibo e marca (ou o Administrador, com a autoaprovação e justificativa).
 5. Erro depois de transmitida: botão **Retificar** (a original fica "retificada" e nasce a retificadora ligada a ela).
 6. Não se aplica naquele mês: **Dispensada**, com justificativa de pelo menos 15 caracteres.
 
@@ -175,6 +175,6 @@ aproveitamento quando houver.
 ## 8. Pendências em 22/10/2026
 1. IPI da matriz: aguardando o contador (estorno de R$ 153.159,57 no livro de 08/2024; NCM 7610.90.00).
 2. EFD-Contribuições de 01/2026 não baixada (valores deduzidos da EFD de 02/2026).
-3. Dar acesso a um segundo aprovador (revisor/contador) e então desligar a autoaprovação; até lá, as obrigações não chegam a "Entregue e conferida".
+3. Dar acesso a um segundo aprovador (revisor/contador) e então desligar a autoaprovação.
 4. Confirmar com o contador a lista e os vencimentos da seção 6 e cadastrá-los.
 5. Fechar o histórico implantado (seção 4.8, item 4).

@@ -18,7 +18,7 @@ export const metadata: Metadata = { title: "Obrigação" };
 export default async function PaginaObrigacao({ params }: PageProps<"/fiscal/creditos/obrigacoes/[id]">) {
   const { id } = await params;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
-  const { supabase, papel, sessao } = await contexto();
+  const { supabase, papel, sessao, autoaprova } = await contexto();
   const [{ data: o }, cad] = await Promise.all([supabase.from("fis_obrigacoes").select("*").eq("id", id).maybeSingle(), lerCadastros()]);
   if (!o) notFound();
   const [hist, { data: eventos }, { data: retif }] = await Promise.all([
@@ -33,6 +33,7 @@ export default async function PaginaObrigacao({ params }: PageProps<"/fiscal/cre
   const atrasada = !STATUS_OBRIGACAO_FINAIS.includes(status) && !!o.vencimento && o.vencimento < hoje;
   const temRecibo = hist.documentos.some((d) => d.tipo === "recibo_transmissao" || d.tipo === "protocolo");
   const temArquivo = hist.documentos.some((d) => d.tipo === "arquivo_declaracao");
+  const autoconferencia = status === "transmitida" && o.transmitida_por === sessao.userId && autoaprova;
 
   return (
     <div className="space-y-4">
@@ -72,7 +73,7 @@ export default async function PaginaObrigacao({ params }: PageProps<"/fiscal/cre
               <FormularioAcao key={para} titulo={`Mudar para "${ROTULO_STATUS_OBRIGACAO[para]}"`} botao={ROTULO_STATUS_OBRIGACAO[para]} tamanho="xs"
                 variante={para === "transmitida" || para === "entregue_conferida" ? "default" : "outline"} acao={mudarSituacaoObrigacao} ocultos={{ id, para }} rotuloSalvar="Confirmar"
                 descricao={para === "transmitida" ? (temRecibo ? "Informe a data e o número do recibo/protocolo da entrega." : "Antes, anexe e vincule o recibo de transmissão (abaixo).")
-                  : para === "entregue_conferida" ? "Conferência por outra pessoa (revisor/contador/admin), diferente de quem registrou a transmissão."
+                  : para === "entregue_conferida" ? (autoconferencia ? "Autoaprovação: você registrou a transmissão; justifique a conferência (fica gravada como [autoaprovação])." : "Conferência por outra pessoa (revisor/contador/admin), diferente de quem registrou a transmissão.")
                   : para === "pronta_transmissao" ? "Aprovação para transmitir (revisor/contador/admin)." : para === "dispensada" ? "Dispensa exige justificativa e revisor/contador/admin." : undefined}>
                 {para === "transmitida" && (
                   <div className="grid gap-3 sm:grid-cols-2">
@@ -82,7 +83,9 @@ export default async function PaginaObrigacao({ params }: PageProps<"/fiscal/cre
                 )}
                 {para === "dispensada"
                   ? <Campo rotulo="Justificativa *" htmlFor="tx-j"><textarea id="tx-j" name="justificativa" required minLength={15} className={TEXTAREA} /></Campo>
-                  : <Campo rotulo="Observação" htmlFor={`tx-o-${para}`}><textarea id={`tx-o-${para}`} name="observacao" className={TEXTAREA} /></Campo>}
+                  : para === "entregue_conferida" && autoconferencia
+                    ? <Campo rotulo="Justificativa da autoaprovação *" htmlFor="tx-o-auto"><textarea id="tx-o-auto" name="observacao" required minLength={10} className={TEXTAREA} /></Campo>
+                    : <Campo rotulo="Observação" htmlFor={`tx-o-${para}`}><textarea id={`tx-o-${para}`} name="observacao" className={TEXTAREA} /></Campo>}
               </FormularioAcao>
             ))}
             {pode(papel, "lancar") && ["transmitida", "entregue_conferida"].includes(status) && (
@@ -91,7 +94,7 @@ export default async function PaginaObrigacao({ params }: PageProps<"/fiscal/cre
                 <Campo rotulo="Motivo *" htmlFor="rt-m"><textarea id="rt-m" name="motivo" required minLength={10} className={TEXTAREA} /></Campo>
               </FormularioAcao>
             )}
-            {status === "transmitida" && o.transmitida_por === sessao.userId && <span className="text-xs text-muted-foreground">A conferência deve ser feita por outra pessoa.</span>}
+            {status === "transmitida" && o.transmitida_por === sessao.userId && !autoaprova && <span className="text-xs text-muted-foreground">A conferência deve ser feita por outra pessoa.</span>}
             {pode(papel, "lancar") && <FormTarefa cad={cad} empresa={o.empresa_id} alvo="obrigacao" alvoId={id} botao="Atribuir tarefa" tituloPadrao={`${tipo?.nome} ${competencia(o.competencia)}`} />}
           </div>
           <ol className="mt-3 space-y-1 border-t pt-2 text-xs">

@@ -1,4 +1,4 @@
-// Fiscal > Créditos tributários (migrations 0200–0203): regras de negócio no banco, com RLS e papéis.
+// Fiscal > Créditos tributários (migrations 0200–0205): regras de negócio no banco, com RLS e papéis.
 import { beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import { como, criarBanco, novoUsuario, type Linha } from "./harness";
@@ -354,6 +354,25 @@ describe("obrigações: arquivo salvo ≠ transmitida", () => {
     expect(o).toEqual({ status: "entregue_conferida", numero_recibo: "REC-1", transmitida_por: analista, conferida_por: revisor });
     const ev = (await q(`select count(*)::int n from fis_obrigacoes_eventos where obrigacao_id = $1`, [ob])).rows[0].n;
     expect(ev).toBe(5);
+  });
+
+  it("autoaprovação (0205): o Administrador confere a própria transmissão só com a chave ligada e justificativa", async () => {
+    const tipoDctf = (await q(`select id from fis_tipos_obrigacao where codigo = 'DCTFWEB'`)).rows[0].id;
+    const ob2 = await rpc(admin, "fis_obrigacao_salvar", [j({ tipo_id: tipoDctf, estabelecimento_id: estabA, competencia: "2026-08-01" })], ["jsonb"]);
+    const st = (para: string, p: Record<string, unknown> = {}) => rpc(admin, "fis_obrigacao_status", [ob2, para, j(p)], ["uuid", "fis_status_obrigacao", "jsonb"]);
+    await st("pronta_transmissao");
+    await anexar(admin, empA, "recibo_transmissao", "obrigacao", ob2);
+    await st("transmitida", { data_transmissao: "2026-09-15", numero_recibo: "REC-2" });
+    await expect(st("entregue_conferida", { observacao: "Recibo conferido no portal" })).rejects.toThrow(/outra pessoa/);
+    await q(`update configuracoes set valor = 'true' where chave = 'fiscal.creditos.permitir_autoaprovacao'`);
+    try {
+      await expect(st("entregue_conferida")).rejects.toThrow(/Autoaprovação: justifique/);
+      await st("entregue_conferida", { observacao: "Recibo conferido no portal" });
+      const ev = (await q(`select observacao from fis_obrigacoes_eventos where obrigacao_id = $1 and para = 'entregue_conferida'`, [ob2])).rows[0];
+      expect(ev.observacao).toBe("[autoaprovação] Recibo conferido no portal");
+    } finally {
+      await q(`update configuracoes set valor = 'false' where chave = 'fiscal.creditos.permitir_autoaprovacao'`);
+    }
   });
 
   it("retificação gera a retificadora e preserva a original", async () => {
