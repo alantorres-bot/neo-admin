@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { rotaDoAplicativo, validarAplicativo, type EntradaAplicativo } from "./aplicativos";
+import { enderecoDaTela, rotaDoAplicativo, validarAplicativo, type EntradaAplicativo } from "./aplicativos";
 
 const areas = ["financeiro", "fiscal", "rh", "producao"];
 const base: EntradaAplicativo = {
@@ -44,5 +44,14 @@ describe("validarAplicativo", () => {
 
   it("monta a rota do aplicativo", () => {
     expect(rotaDoAplicativo("neocontrol")).toBe("/apps/neocontrol");
+  });
+});
+
+describe("enderecoDaTela", () => {
+  it("abre a tela interna pedida e ignora o que poderia levar a outro site", () => {
+    expect(enderecoDaTela("https://app.exemplo/", "/pendencias")).toBe("https://app.exemplo/pendencias");
+    expect(enderecoDaTela("https://app.exemplo", "/conferencia/transferencia-aco")).toBe("https://app.exemplo/conferencia/transferencia-aco");
+    for (const ruim of [undefined, "", "pendencias", "//mal.com", "/../x", "/a?b=1", "/@mal.com", ["/x"]])
+      expect(enderecoDaTela("https://app.exemplo", ruim as string | undefined)).toBe("https://app.exemplo");
   });
 });

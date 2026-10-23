@@ -2,7 +2,8 @@
 
 Status: **publicado em produção em 23/10/2026** (Fases 2 a 8: banco com as 14 migrations do roteiro da Fase 8, já com a
 `0207_fis_atividades`, e aplicação no Cloud Run). Atribuição em lote na fila acrescentada em 23/10/2026 (seção 5.7). O envio
-real pelo Slack e pelo ClickUp depende de credenciais (seção 14, Fase 7). Faltam os passos 5 a 7 do roteiro da Fase 8. Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
+real pelo Slack e pelo ClickUp depende de credenciais (seção 14, Fase 7). Faltam os passos 5 a 7 do roteiro da Fase 8.
+Pendências dos aplicativos externos (Vigilância Fiscal, NEOControl): `administrativo-gestao-aplicativos.md`. Especificação aprovada em 22/10/2026; **Fases 2 e 3 entregues em 22/10/2026** (migrations 0092 e
 0093: tela `/gestao`, criação e distribuição de tarefas, ações, comentários e histórico), aguardando avaliação. O que foi construído e como testar estão na seção 14.
 
 Decisões já tomadas por Alan (22/10/2026):

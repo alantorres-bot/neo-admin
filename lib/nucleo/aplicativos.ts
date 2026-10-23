@@ -21,6 +21,15 @@ export function rotaDoAplicativo(codigo: string): string {
   return `/apps/${codigo}`;
 }
 
+/**
+ * Endereço do aplicativo já numa tela dele (`?tela=/pendencias` vindo da Central). Só caminho interno simples
+ * (letras, números, - _ /); qualquer outra coisa abre a tela inicial, para o parâmetro não levar a outro site.
+ */
+export function enderecoDaTela(url: string, tela: string | string[] | undefined): string {
+  if (typeof tela !== "string" || !/^\/[a-z0-9_\-/]{0,100}$/i.test(tela) || tela.startsWith("//") || tela.includes("..")) return url;
+  return url.replace(/\/+$/, "") + tela;
+}
+
 export type EntradaAplicativo = {
   codigo: string; nome: string; descricao: string; area: string; url: string; abrir: string; icone: string; ordem: string; ativo: boolean;
 };
