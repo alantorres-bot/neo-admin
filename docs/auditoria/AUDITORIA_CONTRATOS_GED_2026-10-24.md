@@ -57,7 +57,7 @@ Atenção a nomes: o prefixo `crt_` **já é do Cartão de crédito** (0131+). O
 | Kit de documentos da filial (`rec_kits`) | **Implementado** | Exemplo pronto de "estágio calculado por documentos presentes" (NF + boleto + carta de cessão) |
 | Anexos do núcleo | **Implementado** | Storage privado, 25 MB, caminho `<modulo>/<tabela>/<id>/...`, sem exclusão |
 | Documento versionado com vínculos (`fis_documentos`) | **Implementado (só Fiscal)** | `versao`, `raiz_id`, `substitui_id`, `sha256`, imutável, vínculos com remoção lógica. Melhor molde para o GED |
-| Pendências / Fila do dia | **Implementado** | `publicar_pendencia(modulo, chave_origem, …)` idempotente; `encerrar_pendencias`; bloqueio com `bloqueio_dependencia_id` |
+| Pendências / Fila do dia | **Implementado** | `publicar_pendencia(jsonb)` idempotente por `modulo + chave_origem`; `encerrar_pendencia` e `encerrar_pendencias_exceto` (0097); bloqueio com `bloqueio_dependencia_id` |
 | Auditoria | **Implementado** | `fn_auditoria` (antes/depois); só o admin geral lê; `atividades` traduz em ações legíveis |
 | Notificações Slack / ClickUp | **Parcial** | Preparados; dependem de token e configuração (Central de Gestão, pontos 5 e 6) |
 | Gmail rascunho (global e por usuário) | **Implementado** | `gmail.compose`; refresh token no Vault por usuário (0153) |
