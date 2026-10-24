@@ -1,11 +1,41 @@
 # Módulo: Administrativo / GED — Central de Documentos
 
-Status: **rascunho** (Fase 0, 24/10/2026), aguardando aprovação. Nada implementado.
+Status: **aprovada em 24/10/2026** (aprovação documental da revisão 3, pelo responsável). Nada implementado; implementação **não
+autorizada**: cada fase depende dos próprios pré-requisitos e de autorização expressa posterior (seção 13).
 Revisão 2 (24/10/2026), pelo complemento do responsável sobre a finalidade das pastas:
 - duas raízes com finalidade e permissões próprias (elaboração × dossiê de clientes);
 - verificação da estrutura antes de indexar;
 - cautelas de classificação (modelo, PDF, minuta × assinado);
 - revisões do Drive.
+
+Revisão 3 (24/10/2026): incorporação da **R4-P4 — Segurança do GED**, aprovada pelo responsável como **princípio obrigatório**:
+- autorização efetiva no banco, nas APIs, nas funções, na busca, nas sugestões, nas atividades e na Central de Gestão (nova seção 5.11
+  e seção 9 reescrita);
+- limite da Fase 1 (A0) e o bloqueio sobre a persistência do resultado da verificação (5.2.4 e 13).
+
+Os requisitos estão **especificados, não implementados nem testados**. O status continua **rascunho**.
+
+**Correções pós-auditoria (24/10/2026, mesma revisão 3):** tratados os achados da auditoria final do diff que tocam o GED (4 a 9, 11, 13
+e 22; marcas **[AF-n]**):
+- proteção por linha × por coluna × por superfície de acesso;
+- pendências sem expor a raiz `elaboracao`;
+- segurança mínima da A0;
+- reorganização das fases (A1 dividida, A2 básica);
+- checagem de módulo em `ged_tipos_presentes`;
+- logs.
+
+As escolhas que dependem de decisão foram para a seção 14 (itens 15 a 19).
+
+**Aprovação documental (24/10/2026):** a **revisão 3** foi aprovada pelo responsável como especificação. Não houve mudança de conteúdo
+funcional nem de número de revisão.
+- A aprovação **não** transforma propostas em regras vigentes e **não** encerra pendências: os itens 1 a 19 da seção 14 continuam como
+  estavam.
+- **Não autoriza a implementação** de nenhuma fase: os bloqueios da seção 13 continuam valendo.
+
+Referências:
+- revisão técnica: `docs/auditoria/REVISAO_CONTRATOS_REV3_2026-10-24.md` (seção 4, achados G-1 a G-9);
+- especificação de Contratos: `docs/modulos/contratos-operacoes.md`, revisão 5.
+
 Origem: `docs/auditoria/AUDITORIA_CONTRATOS_GED_2026-10-24.md`, seções C, D, E e G.
 
 Código proposto: `administrativo.ged` · rota proposta `/documentos` · migrations no núcleo estendido (0801 em diante;
@@ -14,7 +44,9 @@ a 0800 já é de `nucleo_apps_pendencias`) · prefixo `ged_` · Edge Functions `
 Marcação usada neste documento:
 - **[EXISTE]** verificado no repositório (com o arquivo);
 - **[PROPOSTA]** a construir;
-- **[PENDENTE n]** decisão do responsável, ver a seção 14.
+- **[PENDENTE n]** decisão do responsável, ver a seção 14;
+- **[R4-P4 — Segurança do GED]** requisito obrigatório aprovado como princípio pelo responsável. Os controles estão especificados
+  aqui, ainda não implementados nem validados.
 
 ---
 
@@ -144,9 +176,13 @@ Pode-se usar um cliente OAuth novo ou o "Neo Admin Gmail (rascunhos)" com mais u
    - **área dona** (`area`), que dá a leitura;
    - **áreas adicionais de leitura** (`areas_leitura`), opcional;
    - **área de operação** (`area_operacao`): quem classifica, confirma e vincula.
-   Valores propostos [PENDENTE 2]:
-   - **elaboração:** dona e operação = `contratos`;
-   - **dossiê:** dona = `contratos`, leitura adicional para `comercial` e `financeiro`, operação = `contratos`.
+   Valores:
+   - **elaboração:** dona e operação = `contratos`, **sem `areas_leitura`**.
+     - Decisão preliminar D-6 do responsável (Contratos, seção 0): acesso restrito à área Contratos.
+     - **R4-P4 — Segurança do GED:** a restrição **não pode depender só de configuração administrativa**. Fica travada no banco (5.11.1):
+       uma tela de configuração não consegue ampliá-la.
+     - O nível mínimo dentro da área Contratos continua [PENDENTE 14].
+   - **dossiê:** dona = `contratos`, leitura adicional proposta para `comercial` e `financeiro`, operação = `contratos` [PENDENTE 2].
 2. Ao cadastrar, o sistema lê `files.get` e grava nome, `driveId` (quando é Drive compartilhado) e link.
    Se a conta técnica não enxerga a pasta, o cadastro é recusado.
 3. A raiz pode ser desativada, mas não é excluída. Desativada, os documentos dela somem da busca e continuam no índice com
@@ -160,6 +196,30 @@ Pode-se usar um cliente OAuth novo ou o "Neo Admin Gmail (rascunhos)" com mais u
       - outras raízes cadastradas que estejam dentro desta ou acima dela.
    2. Só depois de uma pessoa (admin geral) **confirmar o ID, a finalidade e a estrutura** a raiz passa a `ativa` e entra na indexação.
    3. Raízes **sobrepostas** (uma dentro da outra) são recusadas. Uma pasta pertence a uma raiz só.
+   4. **Limite da Fase 1 (A0)** [R4-P4 — Segurança do GED]:
+      - o resultado da verificação inclui nomes de subpastas, que **são metadados**;
+      - até os controles de acesso da 5.11 estarem incorporados e validados (testes da 11.5), o resultado:
+        - é **exibido só ao admin geral**;
+        - **não é persistido** em nenhum local acessível a outros usuários;
+      - o campo `ged_pastas_raiz.verificacao` (seção 8) **não pode ser gravado com nomes de pastas** nesse período;
+      - **lacuna em aberto:** o mecanismo seguro de exibir sem persistir não está especificado. Opções a decidir: resposta efêmera da
+        Edge Function só para o admin geral, ou tabela legível só pelo admin geral. **Enquanto não houver decisão, isso bloqueia a
+        implementação da A0** [PENDENTE 13]. Esta especificação não escolhe a solução.
+   5. **[AF-6] Segurança mínima da A0.** A A0 já grava e lê dados. Os controles destes itens precisam estar **definidos e aprovados
+      antes de qualquer execução da A0**, sem depender das tabelas e políticas da A1a:
+
+      | O que a A0 usa | Operação | Controle mínimo exigido antes da A0 |
+      |---|---|---|
+      | `ged_conexao` | gravar a conexão; ler o estado | nenhuma leitura direta por usuários; o admin geral lê por projeção sem `segredo_id`; gravação só por função `security definer` que confere o admin geral |
+      | `ged_conexao_estados` | criar e consumir o `state` do OAuth | sem leitura nem escrita por usuários; só funções `security definer` (padrão de `gmail_conexoes`, 0153) |
+      | Vault (refresh token) | gravar e ler o segredo | só funções `security definer` e a Edge Function; o segredo nunca vai ao navegador |
+      | Cadastro da raiz candidata (`ged_pastas_raiz`) | gravar ID, finalidade e áreas, sem nomes de subpastas | leitura direta só do admin geral; gravação só por função do admin geral; a trava da `elaboracao` (5.11.1) já valendo |
+      | Edge Function de conexão e verificação | conectar; listar a árvore | recusa quem não for admin geral **antes** de qualquer chamada ao Drive; resposta e logs sem metadados para não-admin (5.11.11) |
+
+      - Testes negativos obrigatórios antes da A0: 11.5, itens 13 e 14.
+      - **A A0 não pode começar sem esses controles e sem as decisões dos PENDENTES 13 e 17.** As leituras por projeção desta
+        tabela dependem do mecanismo de proteção por coluna [GED PENDENTE 17, AF-6].
+      - Nenhuma solução de exibição ou armazenamento da árvore foi escolhida.
 5. **As raízes não se deduplicam entre si.** Cada arquivo do Drive é um documento (`drive_id`):
    - dois arquivos com o mesmo nome, ou até o mesmo `md5`, em raízes diferentes são **dois documentos**;
    - o sistema pode exibir a marca "mesmo nome/conteúdo em <outra raiz>" como informação, mas nunca os funde nem esconde um deles.
@@ -187,8 +247,8 @@ Pode-se usar um cliente OAuth novo ou o "Neo Admin Gmail (rascunhos)" com mais u
 6. Limite por rodada (`administrativo.ged.max_itens_rodada`, proposto 5.000): o que passar fica para a rodada seguinte, como o
    `MAX_POR_RODADA` das Intimações.
 7. O agendamento usa pg_cron chamando a Edge Function com `x-sincronizacao-segredo`, no padrão de `com_chamar_sincronizacao()`
-   (0701) [EXISTE o padrão]. Vem **desligado** (`administrativo.ged.indexar = false`). Há também o botão "Atualizar índice agora"
-   para o gestor.
+   (0701) [EXISTE o padrão]. Vem **desligado** (`administrativo.ged.indexar = false`). Há também a ação "Atualizar índice agora";
+   **quem pode executá-la está pendente** [PENDENTE 16, AF-22].
 8. Proposta de frequência: a cada 30 minutos nos dias úteis, das 07h às 19h de Cuiabá.
 
 ### 5.4 Pasta → cliente
@@ -213,7 +273,9 @@ Pode-se usar um cliente OAuth novo ou o "Neo Admin Gmail (rascunhos)" com mais u
    - número de contrato no início do nome (`^\d+ - `), por exemplo "229 - …";
    - nome curto do cliente no fim ("… - <cliente>");
    - o sistema compara com os contratos e as operações já cadastrados no módulo Contratos, pela função pública dele (ver
-     `contratos-operacoes.md`), e propõe o vínculo. A confirmação é sempre humana.
+     `contratos-operacoes.md`), e propõe o vínculo. A confirmação é sempre humana;
+   - a função de Contratos (`ctr_alvos_por_numero`) **verifica a autorização de quem pergunta** e devolve vazio para quem não tem a
+     área Contratos (5.11.3). A sugestão é calculada na hora, com a permissão do usuário, e nunca gravada fora da RLS (5.11.5).
 
 ### 5.5 Tipo documental
 1. Catálogo `ged_tipos` (admin geral edita). Os códigos propostos estão na tabela abaixo. A lista final depende do [PENDENTE 6].
@@ -240,7 +302,7 @@ Exemplos de regras **ilustrativas**, a validar com os nomes reais [PENDENTE 6]:
 | `contrato_social` | Contrato social / alteração | `contrato social\|alteracao contratual\|consolidad` |
 | `procuracao` | Procuração | `procurac` |
 | `autorizacao_bancaria` | Autorização de faturamento (banco) | `autorizac.*faturament` |
-| `nf_venda`, `nf_remessa` | Nota fiscal | **sem regra de nome na v1**: a distinção depende do Fiscal (ver Contratos, PENDENTE) |
+| `nf_venda`, `nf_remessa` | Nota fiscal | **sem regra de nome na v1**: a distinção depende do Fiscal (ver Contratos, item 1) |
 | `boleto`, `comprovante` | Financeiro | `boleto`, `comprovante` |
 | `termo_entrega` | Termo de entrega | `termo de entrega` |
 | `outro` | Outro | — |
@@ -271,7 +333,18 @@ Exemplos de regras **ilustrativas**, a validar com os nomes reais [PENDENTE 6]:
      uma linha em `ged_documento_revisoes` (revisão, data e tamanho; sem o conteúdo).
    - Assim, ao vincular uma versão de minuta, o módulo Contratos registra **qual revisão do Drive** foi a enviada ou a aprovada.
    - O conteúdo dessa revisão continua no histórico do Drive, que o Google pode descartar por idade; para guardar de fato, a evidência
-     é o PDF enviado ao cliente [PENDENTE 10].
+     é o PDF enviado ao cliente.
+     - Decisão preliminar D-4 do responsável (Contratos): registrar **as duas coisas**, a revisão do DOCX e o PDF efetivamente enviado.
+     - O **estado da evidência do PDF** (`pdf_situacao`) pertence ao módulo Contratos e tem o significado definido em
+       `contratos-operacoes.md`, 5.5.3. O GED só guarda o documento e o vínculo.
+     - **O GED não apresenta um PDF como "vinculado" se ele não estiver confirmado** (`tipo_situacao = confirmado`) e com vínculo ativo
+       [PENDENTE 10].
+     - **[AF-11] Fonte de verdade da evidência: decisão pendente** [PENDENTE 18; Contratos, item 30]:
+       - o Contratos guarda `ctr_minutas.pdf_documento_id`, imutável depois do envio; o GED guarda o vínculo, que admite desvínculo
+         lógico (5.7.3);
+       - até a decisão, a proposta é que um documento referenciado como PDF enviado de uma versão **não possa ser desvinculado** no GED,
+         e que, se ele sair do Drive ou do escopo, a versão ganhe a marca "evidência indisponível", em vez de voltar a pendente;
+       - nada disso está aprovado.
 2. A **versão de negócio** é declarada por uma pessoa: "este arquivo substitui aquele" (`substitui_id`, com motivo opcional).
    O substituído passa a `substituido`, mas continua consultável. É o mesmo modelo de `fis_documentos` (0201) [EXISTE o padrão].
 3. O sistema pode **sugerir** a substituição, sem aplicar, quando dois arquivos da mesma pasta têm o mesmo nome-base e diferem só por
@@ -309,10 +382,13 @@ Exemplos de regras **ilustrativas**, a validar com os nomes reais [PENDENTE 6]:
 4. `fis_documentos` (Fiscal, privado) **não entra** na view sem decisão do Fiscal [PENDENTE 8].
 
 ### 5.9 Permissões e acesso aos arquivos
-1. **Leitura no Neo Admin:** quem tem pelo menos `consulta` na **área dona** da pasta-raiz (`ged_pastas_raiz.area`) **ou** numa das
-   `areas_leitura` vê o registro: nome, tipo, cliente, datas e link. **Classificar, confirmar e vincular** exige `operador` na
-   `area_operacao` da raiz. Cada raiz tem as suas regras: a elaboração pode ficar restrita a Contratos, enquanto o dossiê é lido também
-   por Comercial e Financeiro [PENDENTE 2].
+1. **Leitura no Neo Admin:**
+   - quem tem pelo menos `consulta` na **área dona** da pasta-raiz (`ged_pastas_raiz.area`) **ou** numa das `areas_leitura` vê o
+     registro: nome, tipo, cliente, datas e link;
+   - **classificar, confirmar e vincular** exige `operador` na `area_operacao` da raiz;
+   - a raiz `elaboracao` é **restrita à área Contratos, de forma travada** (5.2.1 e 5.11.1). O dossiê segue a configuração dele
+     [PENDENTE 2];
+   - a regra vale em **todas** as camadas, e não só na tela (5.11).
 2. **Abrir o arquivo:** o botão leva ao `webViewLink`, e o Google exige que a pessoa tenha acesso ao arquivo no Drive.
    O Neo Admin **não** baixa nem repassa o arquivo, então **não amplia** o acesso de ninguém.
    Quem vê o registro mas não tem acesso no Drive recebe a tela de "Solicitar acesso" do próprio Google.
@@ -321,30 +397,116 @@ Exemplos de regras **ilustrativas**, a validar com os nomes reais [PENDENTE 6]:
 5. LGPD: guardam-se só metadados (nome, tipo, tamanho, datas, hash e link). Nenhum conteúdo de arquivo é armazenado.
 
 ### 5.10 Funções e interfaces públicas do GED (para outros módulos) [PROPOSTA]
-| Função | Quem chama | O que faz |
-|---|---|---|
-| `ged_documentos_do_alvo(p_modulo, p_tabela, p_id)` | telas dos módulos | documentos vigentes vinculados ao alvo, respeitando a RLS |
-| `ged_documentos_do_cliente(p_contraparte)` | dossiê, ficha do cliente | documentos das pastas do cliente + vínculos ao cliente |
-| `ged_modelos(p_tipo_contrato)` | elaboração de contrato (Contratos) | modelos da raiz `elaboracao` para o tipo, com `modelo_situacao` (aprovados primeiro) |
-| `ged_buscar_trabalho(p_texto, p_tipo_contrato, p_ano)` | elaboração de contrato | arquivos das pastas de trabalho (ex.: pelo número "229") |
-| `ged_vincular(p_documento, p_modulo, p_tabela, p_id, p_papel)` | telas | cria o vínculo (checa 5.7.2) |
-| `ged_desvincular(p_vinculo, p_motivo)` | telas | remoção lógica |
-| `ged_tipos_presentes(p_modulo, p_tabela, p_id)` | motor de obrigações (Contratos) | tipos confirmados vinculados ao alvo, para o "documento exigido" |
+O modo de segurança de cada função é **parte do requisito** [R4-P4 — Segurança do GED]. Função sem modo definido não pode ser
+implementada.
+
+| Função | Quem chama | O que faz | Modo de segurança exigido |
+|---|---|---|---|
+| `ged_documentos_do_alvo(p_modulo, p_tabela, p_id)` | telas dos módulos | documentos vigentes vinculados ao alvo, respeitando a RLS | `security invoker` (vale a RLS de quem chama) |
+| `ged_documentos_do_cliente(p_contraparte)` | dossiê, ficha do cliente | documentos das pastas do cliente + vínculos ao cliente | `security invoker` |
+| `ged_modelos(p_tipo_contrato)` | elaboração de contrato (Contratos) | modelos da raiz `elaboracao` para o tipo, com `modelo_situacao` (aprovados primeiro) | `security invoker`; sem a área Contratos, devolve vazio pela própria RLS |
+| `ged_buscar_trabalho(p_texto, p_tipo_contrato, p_ano)` | elaboração de contrato | arquivos das pastas de trabalho (ex.: pelo número "229") | `security invoker` |
+| `ged_vincular(p_documento, p_modulo, p_tabela, p_id, p_papel)` | telas | cria o vínculo (checa 5.7.2) | `security definer`, **checando antes** a leitura do documento (`ged_pode_ler_raiz`) e `operador` na área de operação da raiz e no módulo do alvo; mensagem de erro única, sem revelar se o documento existe |
+| `ged_desvincular(p_vinculo, p_motivo)` | telas | remoção lógica | `security definer`, com as mesmas checagens |
+| `ged_tipos_presentes(p_modulo, p_tabela, p_id)` | motor de obrigações (Contratos) | tipos confirmados vinculados ao alvo, para o "documento exigido" | `security definer` que devolve **só códigos de tipo ou booleanos**, nunca nome, link ou id de documento. **[AF-13]** Antes de qualquer leitura, confere que quem chama tem acesso de operador **ao módulo do alvo informado** (`p_modulo`), pela função oficial de permissão por módulo (`tem_acesso_modulo`, 0002/0152, que já resolve a área do módulo e a `unidade_restrita`), e que `p_tabela` está registrada para esse módulo em `ged_alvos`. Sem isso, devolve vazio. A redação anterior, "Contratos ou a área do módulo chamador", foi retirada. Nomes e parâmetros exatos: a validar contra o código [PENDENTE 19] |
+| `ged_pode_ler_raiz(p_raiz)` [nova] | políticas de RLS | ver 5.11.2 | `security definer`, `stable`, sem efeitos colaterais |
+
+### 5.11 Segurança efetiva [R4-P4 — Segurança do GED]
+**Princípio obrigatório, aprovado pelo responsável:** a autorização vale no banco, nas APIs, nas funções, na busca, nas sugestões, nas
+atividades e na Central de Gestão. **Esconder um elemento na tela não é controle de segurança.** Todos os itens abaixo são
+**requisitos especificados, ainda não implementados nem testados**.
+
+1. **Proteção da raiz `elaboracao`, travada no banco:**
+   - `finalidade = 'elaboracao'` implica `area = 'contratos'`, `area_operacao = 'contratos'` e `areas_leitura` vazio, garantido por
+     `check` ou gatilho;
+   - a tela de configuração não consegue mudar isso; uma mudança exige migration aprovada;
+   - o nível mínimo dentro da área Contratos (consulta ou operador) continua [PENDENTE 14].
+2. **Uma função de acesso, `ged_pode_ler_raiz(raiz_id)`:**
+   - verdadeira para o admin geral, ou para quem tem `consulta` na área dona ou numa `areas_leitura`;
+   - usada pelas políticas de **todas** as tabelas `ged_*` que carregam `raiz_id`, direta ou indiretamente (seção 9);
+   - o usuário com `unidade_restrita` já fica sem nenhuma área (`nivel_area`, 0152), então não lê nenhuma raiz.
+3. **Funções e endpoints:**
+   - toda função com o modo de segurança declarado (5.10);
+   - funções `security definer` checam a autorização **antes** de qualquer leitura e devolvem o mínimo necessário;
+   - funções de outros módulos chamadas pelo GED (ex.: `ctr_alvos_por_numero`) verificam a autorização de quem pergunta e devolvem
+     vazio sem ela;
+   - as telas do Next usam o cliente do usuário (`lib/supabase/servidor.ts`), **nunca** a service role (CLAUDE.md, Segurança);
+   - as Edge Functions do GED (service role) devolvem a quem chamou **só contagens e mensagens genéricas**, nunca nomes, ids ou links.
+4. **Acesso direto por identificador e enumeração:**
+   - rotas e componentes que recebem `documento_id`, `pasta_id` ou `raiz_id` buscam o registro **pela RLS do usuário**;
+   - sem linha devolvida, a resposta é sempre a mesma: "não encontrado". Não se distingue "não existe" de "sem acesso";
+   - as mensagens de erro das funções (ex.: `ged_vincular`) também não distinguem os dois casos;
+   - o `webViewLink` só é entregue a quem lê o registro. O Drive continua sendo a última barreira (item 8).
+5. **Busca e sugestões:**
+   - calculadas na hora, com o cliente do usuário e a RLS;
+   - contagens, facetas e "N resultados" vêm da mesma consulta com RLS: não há contagem global;
+   - **nenhuma sugestão é gravada** em tabela fora da RLS dos documentos;
+   - a sugestão de vínculo para quem não lê `elaboracao` não traz arquivos dessa raiz.
+6. **Atividades da Central de Gestão, pendências e mensagens externas:**
+   - a tabela `atividades` (0094) é lida por quem tem `acompanha_equipe`, **sem filtro de área**;
+   - por isso, as descrições das regras de `atividade_regras` do GED, os títulos e descrições de pendências e as mensagens do Slack e
+     do ClickUp **não contêm nome de arquivo, nome de pasta nem link** de documentos de raízes restritas;
+   - usar o tipo e o alvo ("Vinculou um documento (minuta) à operação 0042");
+   - as regras previstas na seção 6 com `{nome}` foram ajustadas por este requisito.
+7. **Respostas sem metadados protegidos:**
+   - quem não pode ver uma raiz recebe só o aviso fixo de acesso restrito, igual haja ou não documento;
+   - sem nome, link, quantidade, data, tipo ou id.
+8. **Permissões reais do Drive compartilhado** (validação externa, [PENDENTE 12]):
+   - as duas raízes estão no mesmo Drive compartilhado (2.2);
+   - se os membros desse Drive incluem pessoas de fora da área Contratos, elas abrem os arquivos de elaboração **direto no Drive**, e
+     o Neo Admin não impede isso;
+   - o administrador do Workspace precisa conferir os membros e decidir se a elaboração precisa de permissões próprias no Drive;
+   - **sem essa validação, a restrição da elaboração vale no Neo Admin, mas não no Drive.**
+9. **Pré-condição para indexar:** nenhuma raiz entra na indexação (etapa A1b) antes de os testes de autorização da 11.5 passarem.
+10. **[AF-4] Proteção por linha, por coluna e por superfície de acesso:**
+    - **por linha (RLS):** decide **quais linhas** alguém lê. **Não esconde colunas** da linha liberada. Quem lê a linha pela API
+      (PostgREST) recebe todas as colunas a que a tabela der acesso;
+    - **por coluna:** campos sensíveis de uma linha legível (ex.: `ged_pastas_raiz.verificacao` e `page_token`,
+      `ged_indexacoes.erro`, `ged_conexao.segredo_id`) exigem **leitura direta da tabela restrita** a quem pode ver esses campos (ex.:
+      só o admin geral). Os demais usuários leem por **projeção de campos autorizados** (view ou função que devolve só as colunas
+      liberadas), por **permissão por coluna** do Postgres, ou por mecanismo equivalente. **O mecanismo é decisão técnica a validar**
+      [GED PENDENTE 17];
+    - **por superfície:** o mesmo controle vale para a API direta, as telas do Next, as funções, as Edge Functions, a busca, as
+      sugestões, as pendências, as atividades e as mensagens externas;
+    - **comprovação:** cada campo sensível tem um teste negativo (11.5, itens 9 e 10).
+11. **[AF-22] Logs e mensagens técnicas:**
+    - os logs das Edge Functions do GED (registro do Supabase) e `ged_indexacoes.erro` **não contêm** nomes, ids nem links de arquivos
+      ou pastas de raízes restritas;
+    - para diagnóstico, guardar o código do erro, a etapa, o id da raiz (só para o admin geral), as contagens e o status HTTP do Google;
+    - teste: 11.5, item 11.
 
 ## 6. Saídas e automações
 - **Rodada de indexação**, agendada ou manual, com registro em `ged_indexacoes`.
-- **Pendências** pela função do núcleo `publicar_pendencia(jsonb)` [EXISTE, 0097/0099], módulo `administrativo.ged`:
+- **Pendências** pela função do núcleo `publicar_pendencia(jsonb)` [EXISTE, 0097/0099]. O **módulo** em que cada pendência é publicada
+  (`administrativo.ged` ou o módulo da área dona da raiz) depende do PENDENTE 15 [AF-5]; só a de conexão é, desde já, de
+  `administrativo.ged`:
 
-  | Pendência | Chave de origem | Responsável |
+  **[AF-5]** As duas primeiras linhas abaixo dizem **o que** precisa virar pendência, e **não** o formato. O texto, a chave de origem,
+  a exposição de contagens e o **módulo responsável** dependem do PENDENTE 15. Até a decisão, nenhuma pendência pode revelar raiz
+  restrita nem contagem de documentos dessa raiz.
+
+  | Situação que precisa virar pendência | Texto, chave e módulo | Responsável |
   |---|---|---|
-  | "Confirmar cliente de N pastas" | `ged:pastas_sugeridas` | gestor da área da raiz |
-  | "Classificar N documentos sem tipo" | `ged:sem_tipo:<raiz>` | gestor da área da raiz |
-  | "Reautorizar o acesso ao Drive" | `ged:conexao` | admin geral |
+  | pastas de cliente aguardando confirmação | **a definir** [PENDENTE 15] (forma anterior, fora de vigência: ~~"Confirmar cliente de N pastas" / `ged:pastas_sugeridas`~~) | gestor da área da raiz |
+  | documentos sem tipo aguardando classificação | **a definir** [PENDENTE 15] (forma anterior, fora de vigência: ~~"Classificar N documentos sem tipo" / `ged:sem_tipo:<raiz>`~~) | gestor da área da raiz |
+  | conexão com o Drive inválida | "Reautorizar o acesso ao Drive" / `ged:conexao` (não cita raiz nem documento) | admin geral |
 
-  As pendências de contagem são **agregadas**, uma por fila, e não uma por item.
-  Quando a contagem zera, são encerradas por `encerrar_pendencia(modulo, chave, status)` [EXISTE, 0097].
-- **Atividades:** regras em `atividade_regras` [EXISTE, 0094] para "Confirmou o cliente da pasta {nome}", "Classificou {nome} como
-  {tipo}" e "Vinculou {nome} a …".
+  As pendências dessas filas são **agregadas**, uma por fila, e não uma por item. Se o texto mostra ou não a contagem depende do
+  PENDENTE 15. Quando a fila se esvazia, a pendência é encerrada por `encerrar_pendencia(modulo, chave, status)` [EXISTE, 0097].
+  - **[AF-5] Visibilidade:** a leitura de pendências segue o **módulo** da pendência (`pendencias_ler`, 0002). Publicadas no módulo
+    `administrativo.ged`, elas seriam lidas por quem tem a área **Administrativo**. Isso exporia a existência e a contagem de
+    documentos da raiz `elaboracao` a quem não pode lê-la. Também não basta que o responsável individual a veja
+    (`pendencias_ler_proprias`, 0092).
+  - **Regra:** nenhuma pendência do GED revela a existência, a contagem ou a identificação de uma raiz a quem não pode ler essa raiz.
+  - **Alternativas, sem escolha feita** [PENDENTE 15]:
+    - (a) publicar as pendências de cada raiz no **módulo da área dona da raiz** (ex.: as da `elaboracao` em `contratos.contratos`);
+    - (b) usar, em `administrativo.ged`, pendências que não revelem a raiz nem as contagens (ex.: "Há itens do GED para conferir",
+      com o detalhe só na tela do GED, sob a RLS).
+  - **Testes** (11.5, item 12): usuário só da área Administrativo, usuário de Contratos e usuário com `unidade_restrita`.
+  - A pendência "Reautorizar o acesso ao Drive" não cita raízes nem documentos.
+- **Atividades:** regras em `atividade_regras` [EXISTE, 0094], **sem nome de arquivo nem de pasta** [R4-P4 — Segurança do GED, 5.11.6].
+  Exemplos: "Confirmou o cliente de uma pasta do dossiê", "Classificou um documento como {tipo}", "Vinculou um documento ({tipo}) a
+  {alvo}". Os textos anteriores com `{nome}` foram retirados.
 
 ## 7. Telas [PROPOSTA]
 Todas as grades usam `components/ui/table.tsx` (regra global 10).
@@ -372,7 +534,8 @@ Todas as grades usam `components/ui/table.tsx` (regra global 10).
    - Versões sugeridas.
 5. **Configuração** (`/documentos/configuracao`, só admin geral):
    - pastas-raiz, com a **verificação**: árvore resumida, temporários e sobreposição; botão "Confirmar estrutura e ativar";
-     finalidade e áreas (dona, leitura, operação);
+     finalidade e áreas (dona, leitura, operação). Na raiz `elaboracao`, as áreas aparecem **travadas** (5.11.1). O resultado da
+     verificação segue o limite da 5.2.4.4: só o admin geral vê e nada é persistido de forma acessível a outros;
    - conexão com o Drive (conectar e desconectar, conta, data);
    - tipos e regras, com o botão "testar regra" sobre os nomes já indexados;
    - parâmetros.
@@ -392,7 +555,7 @@ Toda tabela tem:
 |---|---|---|
 | `ged_conexao` | `id` (uma linha), `email`, `segredo_id` (Vault), `escopos text[]`, `conectado_em`, `conectado_por`, `desconectado_em`, `ultimo_erro`, `ultimo_erro_em` | usuários não leem `segredo_id`; só funções `security definer` |
 | `ged_conexao_estados` | `state` (pk), `perfil_id`, `destino`, `criado_em`, `usado_em` | mesmo desenho de `gmail_conexoes` |
-| `ged_pastas_raiz` | `id`, `drive_id` (único), `drive_compartilhado_id`, `nome`, `finalidade` (`elaboracao`/`dossie_cliente`/`tematica`), `area` → `areas`, `areas_leitura text[]`, `area_operacao`, `situacao` (`em_verificacao`/`ativa`/`inativa`), `verificacao jsonb` (resumo da árvore), `verificada_por/em`, `page_token`, `indexada_em`, `reconciliada_em`, `criada_por/em` | raízes sobrepostas são recusadas |
+| `ged_pastas_raiz` | `id`, `drive_id` (único), `drive_compartilhado_id`, `nome`, `finalidade` (`elaboracao`/`dossie_cliente`/`tematica`), `area` → `areas`, `areas_leitura text[]`, `area_operacao`, `situacao` (`em_verificacao`/`ativa`/`inativa`), `verificacao jsonb` (resumo da árvore), `verificada_por/em`, `page_token`, `indexada_em`, `reconciliada_em`, `criada_por/em` | raízes sobrepostas são recusadas; raiz `elaboracao` com áreas travadas (5.11.1); **`verificacao` não guarda nomes de pastas** até a decisão da 5.2.4.4 [PENDENTE 13] |
 | `ged_pastas` | `id`, `raiz_id`, `drive_id` (único), `nome`, `mae_drive_id`, `profundidade`, `funcao` (`modelos`/`trabalho`/nulo; só na raiz `elaboracao`), `funcao_tipo_contrato`, `funcao_definida_por/em`, `situacao` (`ativa`/`removida_no_drive`/`fora_do_escopo`), `web_link`, `visto_em` | estrutura espelhada; uma pasta, uma raiz |
 | `ged_pastas_cliente` | `pasta_id` (pk), `situacao` (`sugerida`/`sem_sugestao`/`confirmada`/`ignorada`/`sem_cliente_cadastrado`), `contraparte_id`, `candidatos jsonb` (até 3: id, nota, motivo), `motivo_ignorada`, `confirmado_por/em`, `atualizado_em` | `contraparte_id` obrigatório quando `confirmada` |
 | `ged_tipos` | `codigo` (pk), `nome`, `area`, `descricao`, `ativo`, `ordem` | — |
@@ -431,16 +594,30 @@ anexos ─(view ged_vw_documentos, Fase B)─ ged_documentos
 |---|---|
 | `consulta` (na área da raiz) | buscar, ver metadados e vínculos, abrir no Drive (sujeito ao Drive) |
 | `operador` | confirmar ou ignorar pasta sugerida, confirmar ou corrigir o tipo, declarar versão, vincular e desvincular (com acesso de operador ao módulo do alvo) |
-| `gestor` | trocar o cliente de pasta já confirmada, reclassificar em lote, rodar "Atualizar índice agora" |
+| `gestor` | trocar o cliente de pasta já confirmada, reclassificar em lote |
+| **a definir** [PENDENTE 16] | **[AF-22]** "Atualizar índice agora": o perfil e a área autorizados ainda **não foram escolhidos**. As alternativas estão no item 16 da seção 14. Qualquer que seja a decisão, a resposta traz só contagens das raízes que a pessoa lê |
 | `admin_geral` | pastas-raiz, conexão com o Drive, catálogo de tipos e regras, parâmetros |
 
-RLS de cada tabela:
+Autorização por tabela e operação [R4-P4 — Segurança do GED]. Toda tabela tem RLS ligada e **nenhuma** política de `delete`.
+"Indexação" = Edge Function com service role. "Funções de decisão" = funções que checam o nível antes de gravar (5.10).
 
-| Tabela | Leitura | Escrita |
+**[AF-4] Atenção:** a RLS controla **linhas**. Onde a tabela abaixo diz "sem a coluna X", a restrição de coluna **não** vem da RLS. Ela
+exige leitura direta restrita mais projeção de campos autorizados, permissão por coluna ou mecanismo equivalente, **a validar**
+(5.11.10, GED PENDENTE 17).
+
+| Tabela | Leitura (`select`) | Inserção / alteração |
 |---|---|---|
-| `ged_documentos` | `tem_acesso_area(raiz.area)` | só a função de indexação (service role) e as funções de decisão |
-| `ged_vinculos` | quem lê o documento **e** tem `tem_acesso_modulo(modulo)` | pelas funções `ged_vincular`/`ged_desvincular` |
-| `ged_conexao` | admin geral | só funções `security definer`; `segredo_id` nunca vai ao navegador |
+| `ged_pastas_raiz` | **leitura direta da tabela: só admin geral.** Demais usuários: só por projeção de campos autorizados (id, nome, finalidade, áreas, situação), apenas das raízes em que `ged_pode_ler_raiz(id)`. `verificacao` e `page_token` nunca chegam a eles [AF-4] | só admin geral, por função; as áreas da `elaboracao` são travadas |
+| `ged_pastas` | `ged_pode_ler_raiz(raiz_id)` | indexação; `funcao` pela função de decisão (operador da área de operação) |
+| `ged_pastas_cliente` | `ged_pode_ler_raiz` da raiz da pasta | funções de decisão (operador; troca de cliente: gestor) |
+| `ged_documentos` | `ged_pode_ler_raiz(raiz_id)` (**corrige a versão anterior, que só olhava `raiz.area` e ignorava `areas_leitura`**) | indexação; tipo, versão e modelo pelas funções de decisão |
+| `ged_documento_revisoes` | `ged_pode_ler_raiz` da raiz do documento | só indexação (só inserção) |
+| `ged_vinculos` | quem lê o documento (`ged_pode_ler_raiz`) **e** tem `tem_acesso_modulo(modulo)` | `ged_vincular` / `ged_desvincular` |
+| `ged_indexacoes` | **leitura direta: só admin geral.** Demais: projeção sem `erro` e sem `resumo` detalhado, só das rodadas de raízes que leem [AF-4] | só indexação |
+| `ged_tipos`, `ged_regras_tipo` | quem tem alguma área (catálogo sem dados de cliente) | só admin geral |
+| `ged_alvos` | quem tem alguma área | só por migration |
+| `ged_conexao`, `ged_conexao_estados` | **nenhuma leitura direta por usuários.** O admin geral lê por projeção (email, datas, escopos, último erro), sem `segredo_id` [AF-4] | só funções `security definer`; `segredo_id` nunca vai ao navegador |
+| `ged_trava` | ninguém (só service role) | só indexação |
 
 ## 10. Tratamento de erros
 | Situação | Comportamento |
@@ -520,10 +697,66 @@ Erros do app usam o padrão de `lib/nucleo/erros.ts` [EXISTE].
 2. Buscar pelo CNPJ sem máscara e ver os documentos do cliente.
 3. Usuário sem a área: a Central aparece vazia ou sem acesso.
 4. Confirmar uma pasta sugerida: os documentos passam a mostrar o cliente.
+5. Usuário sem a área Contratos: o dossiê e a Central mostram só o aviso fixo de acesso restrito para a elaboração; abrir pela URL o
+   id de um documento de elaboração mostra "não encontrado".
+
+### 11.5 Testes de autorização — obrigatórios antes de indexar [R4-P4 — Segurança do GED]
+São planejados e não implementados. Rodam com dados fictícios (PGlite e Playwright), nunca com documentos reais, e precisam passar
+na etapa A1a, antes da indexação (A1b). Os itens 13 e 14 são exigidos já antes da A0 (5.2.4.5):
+1. **Varredura das políticas:** toda tabela `ged_*` tem RLS ligada, política de leitura e nenhuma de `delete`. Teste que falha se surgir
+   tabela `ged_*` sem política.
+2. **Raiz travada:** tentar gravar `areas_leitura` ou mudar `area` da raiz `elaboracao`, inclusive como admin geral pela função de
+   configuração, é recusado.
+3. **Usuário sem a área Contratos:**
+   - nenhuma consulta devolve linha de `ged_documentos`, `ged_pastas`, `ged_documento_revisoes`, `ged_vinculos` ou `ged_indexacoes`
+     da raiz `elaboracao`;
+   - contagens e facetas da busca não mudam com a existência desses documentos.
+4. **Acesso por id:** um id de documento ou pasta da `elaboracao` consultado por um usuário sem acesso devolve "não encontrado", igual
+   a um id inexistente; `ged_vincular` com esse id devolve a mesma mensagem de erro de um id inexistente.
+5. **Funções:**
+   - `ged_tipos_presentes` nunca devolve nome, link ou id;
+   - `ctr_alvos_por_numero` devolve vazio sem a área Contratos;
+   - cada função tem o modo de segurança declarado em 5.10, verificado no catálogo do banco.
+6. **Atividades e pendências:** vincular, classificar e confirmar não gravam nome de arquivo nem de pasta na descrição de `atividades`
+   nem no título de `pendencias`; um usuário com `acompanha_equipe` e sem a área Contratos não vê nomes de arquivos de elaboração.
+7. **Edge Functions:** a resposta de "Atualizar índice agora" e da verificação traz só contagens; `erro` não contém nomes nem tokens.
+8. **Usuário com `unidade_restrita`:** não lê nenhuma raiz.
+9. **[AF-4] Colunas sensíveis, por API direta:** um usuário que não é admin geral, consultando a API direta das tabelas (não só a tela),
+   não obtém `ged_pastas_raiz.verificacao` nem `page_token`, `ged_indexacoes.erro` nem `ged_conexao.segredo_id`. A tentativa de
+   leitura direta da tabela é recusada ou não devolve linhas.
+10. **[AF-4] Projeções:** as views ou funções de projeção devolvem só as colunas autorizadas e respeitam a mesma regra de linha
+    (`ged_pode_ler_raiz`).
+11. **[AF-22] Logs:** numa rodada com documentos de raízes restritas, inclusive com erro forçado, os logs das Edge Functions e
+    `ged_indexacoes.erro` não contêm nomes, ids nem links de arquivos ou pastas.
+12. **[AF-5] Pendências:**
+    - um usuário só da área Administrativo não vê pendência que revele a existência, a contagem ou o nome da raiz `elaboracao`;
+    - um usuário de Contratos com leitura na raiz vê o que lhe cabe;
+    - um usuário com `unidade_restrita` não vê nenhuma.
+    O resultado esperado depende da alternativa escolhida no PENDENTE 15.
+13. **[AF-6] Verificação da A0:** um usuário que não é admin geral, chamando a Edge Function de verificação ou de conexão, ou lendo
+    diretamente as tabelas da A0, recebe recusa, sem nenhum nome, id ou contagem.
+14. **[AF-6] Conexão:** `segredo_id` e o refresh token não aparecem em nenhuma resposta, log ou leitura de usuário.
+15. **[AF-13] `ged_tipos_presentes`:** chamada por um operador de Contratos com `p_modulo` de outro módulo (ex.: RH) a que ele não tem
+    acesso devolve vazio.
+
 
 ## 12. Critérios de aceite
 
-**Fase A (índice e consulta)**
+**Fase A0 (conexão e verificação, somente leitura; corresponde à Fase 1 do plano)**
+1. A conexão com o Drive usa só `drive.readonly`; nenhuma chamada além de `GET`.
+2. A verificação das raízes candidatas é exibida só ao admin geral e não fica persistida em local acessível a outros usuários
+   (5.2.4.4). A forma de fazer isso precisa estar decidida antes [PENDENTE 13].
+2a. **[AF-6]** Os controles mínimos da 5.2.4.5 estão especificados e aprovados antes da execução, e os testes 11.5, itens 13 e 14,
+    passam com dados fictícios.
+3. **Nenhuma indexação:** nenhuma linha em `ged_pastas`, `ged_documentos` ou `ged_documento_revisoes`.
+4. O registro de atividade do Drive mostra nenhuma alteração feita pela conta técnica.
+
+**Fase A1a (tabelas, políticas e testes, sem indexar)**
+1. As tabelas `ged_*` existem com as políticas da seção 9, inclusive as projeções de colunas (5.11.10).
+2. Os testes de autorização da 11.5 passam com dados fictícios. **Nenhum documento real foi indexado.**
+
+**Fase A1b (índice e consulta)**
+00. Os critérios da A1a foram cumpridos e aprovados, e o [PENDENTE 12] (Drive compartilhado) foi tratado pelo administrador do Workspace.
 0. Antes de indexar, as duas raízes (elaboração e dossiê) foram verificadas e ativadas pelo admin geral:
    - os IDs exatos foram confirmados;
    - a árvore resumida foi aceita;
@@ -546,11 +779,34 @@ Erros do app usam o padrão de `lib/nucleo/erros.ts` [EXISTE].
 ## 13. Fases deste módulo
 | Fase | Escopo | Corresponde no plano da auditoria |
 |---|---|---|
-| A0 | Conexão (OAuth da conta técnica, Vault) + **verificação das duas raízes**: lista completa (só metadados) da árvore de cada candidata, apresentada ao responsável para confirmar IDs, finalidade e áreas; nada é gravado no índice | Fase 1 |
-| A1 | Tabelas, raízes verificadas, carga inicial, incremental, reconciliação, função das pastas de elaboração, pastas → cliente, tipos e regras, avaliação de modelos, telas 1 a 5 | Fase 2 |
-| A2 | Vínculos, versões, componente `<DocumentosDoRegistro>`, funções públicas (5.10) | Fase 2 (fim) / Fase 3 |
-| B | View `ged_vw_documentos` com os anexos do Storage | após A2 |
+**Tabela de fases** [AF-7: as tabelas de fases e de bloqueios foram separadas]. A1a/A1b e "A2 básica"/"A2 completa" são
+**subdivisões documentais** desta especificação (AF-8, AF-9). Não existem como etapas implementadas.
+
+| Fase | Escopo | Corresponde no plano da auditoria |
+|---|---|---|
+| A0 | Conexão (OAuth da conta técnica, Vault) + **verificação das duas raízes**, **somente leitura e sem indexação**: lista da árvore de cada candidata, exibida só ao admin geral para confirmar IDs, finalidade e áreas; nada é gravado no índice nem persistido de forma acessível a outros (5.2.4.4). Inclui só as tabelas e os controles mínimos da 5.2.4.5 | Fase 1 |
+| A1a | **Preparação, sem indexar:** tabelas `ged_*`, políticas da seção 9, projeções de colunas (5.11.10), funções com o modo de segurança da 5.10, pendências conforme o PENDENTE 15, e os testes de autorização da 11.5 com dados fictícios | Fase 2 (início) |
+| A1b | **Indexação**, só depois de a A1a ser cumprida e aprovada: raízes verificadas, carga inicial, incremental, reconciliação, função das pastas de elaboração, pastas → cliente, tipos e regras, avaliação de modelos, telas 1 a 5 | Fase 2 |
+| A2 básica | Vínculos, versões, componente `<DocumentosDoRegistro>`, funções públicas da 5.10, **sem** a sugestão de vínculo por número de contrato | Fase 2 (fim) / Fase 3 |
+| A2 completa | Sugestão de vínculo por número de contrato (5.4.8), usando `ctr_alvos_por_numero`, que é entregue pela fase C3 do Contratos | depois da C3 do Contratos |
+| B | View `ged_vw_documentos` com os anexos do Storage | após A2 básica |
 | C | Escrita no Drive (arquivamento de anexos capturados), com especificação e escopo próprios | Fase 4b |
+
+**Bloqueios por fase.** Nenhuma fase está liberada para implementação. A especificação foi aprovada documentalmente em 24/10/2026, mas
+essa aprovação **não libera** fase alguma: cada uma depende dos bloqueios abaixo e de autorização expressa posterior do responsável.
+
+| Fase | Bloqueada por | Critério para liberar |
+|---|---|---|
+| A0 | [PENDENTE 1] IDs exatos; [PENDENTE 3] conta e cliente OAuth; [PENDENTE 13] forma de exibir a verificação sem persistir metadados; controles mínimos da 5.2.4.5 [AF-6]; **[GED PENDENTE 17] mecanismo de proteção por coluna**: a parte da A0 que depende dele (leitura de `ged_conexao` e do cadastro da raiz sem as colunas sensíveis) **não pode ser executada** antes da decisão | IDs e conta decididos; mecanismo do GED PENDENTE 13 decidido e especificado; GED PENDENTE 17 decidido e especificado; controles mínimos aprovados; testes 11.5, itens 13 e 14, passando com dados fictícios. A A0 não fica liberada por partes, e nada disso foi implementado |
+| A1a | A0 concluída; [PENDENTE 15] forma das pendências; [PENDENTE 16] quem roda "Atualizar índice agora"; [GED PENDENTE 17] mecanismo de proteção de colunas; [PENDENTE 19] assinatura da checagem de módulo; [GED PENDENTE 14 = Contratos, item 17] nível mínimo na elaboração; [PENDENTE 2] áreas do dossiê | decisões tomadas e especificadas |
+| A1b | A1a cumprida e aprovada (todos os testes da 11.5 passando); [PENDENTE 12] permissões do Drive compartilhado | aprovação expressa da A1a e validação do Drive pelo administrador do Workspace |
+| A2 básica | A1b concluída; [PENDENTE 18] fonte de verdade da evidência do PDF (afeta o desvínculo) | A1b concluída; PENDENTE 18 decidido |
+| A2 completa | A2 básica; C3 do Contratos (entrega de `ctr_alvos_por_numero` com checagem de autorização) | C3 concluída |
+| B | A2 básica; [PENDENTE 8] | decisão do Fiscal sobre `fis_documentos` |
+| C | especificação própria | especificação aprovada |
+
+**Ordem sem dependência circular** [AF-9]: A0 → A1a → A1b → A2 básica → (Contratos C1 → C3) → A2 completa. A C1 do Contratos depende
+só da A2 básica.
 
 ## 14. Pontos em aberto
 1. **IDs exatos das raízes:** confirmar os candidatos da seção 2.2:
@@ -558,10 +814,10 @@ Erros do app usam o padrão de `lib/nucleo/erros.ts` [EXISTE].
      (`1JOh-QFYw9uwNkxSAdPa6cLzOzIuOiT56`);
    - dossiê = `02 - COMERCIAL / 01 - CLIENTES` (`1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak`).
    As duas estão em Drive compartilhado. A pasta `ALUTEC / 04 - CONTRATOS E CLIENTES` entra ou fica fora?
-2. **Áreas de cada raiz:**
-   - quem lê a elaboração? Proposta: só Contratos;
-   - quem lê o dossiê? Proposta: Contratos, Comercial e Financeiro;
-   - quem classifica e vincula em cada uma? Proposta: Contratos.
+2. **Áreas de cada raiz** (parcialmente decidido):
+   - **elaboração:** só Contratos, pela decisão preliminar D-6 e travada no banco pela R4-P4 — Segurança do GED (5.11.1);
+   - **dossiê:** quem lê? Proposta: Contratos, Comercial e Financeiro (pendente);
+   - quem classifica e vincula em cada uma? Proposta: Contratos (pendente).
 3. **Autenticação:** conta técnica por OAuth (recomendada) ou conta de serviço? Qual conta? Cliente OAuth novo ou o existente?
 4. **Profundidade e frequência:** a profundidade máxima (proposta 4) e a frequência (30 min, dias úteis) servem?
 5. **Clientes sem cadastro:** a pasta `04 - CLIENTES SEM CADASTRO NO SISTEMA` deve gerar uma pendência de cadastro no Consistem ou em
@@ -571,7 +827,27 @@ Erros do app usam o padrão de `lib/nucleo/erros.ts` [EXISTE].
 8. **Fiscal:** os documentos privados do Fiscal (`fis_documentos`) entram na busca geral? Recomendação: não.
 9. **`pg_trgm`:** nenhuma migration usa extensões de texto hoje. A v1 busca com `ilike` sobre o nome normalizado, gravado pela
    indexação. Ligar `pg_trgm` só se o volume exigir, depois de confirmar que a extensão está disponível no `neo-admin-sp`.
-10. **Revisões do Drive:** basta registrar qual revisão do `.docx` foi enviada ou aprovada (o conteúdo fica no histórico do Drive), ou a
-    evidência deve ser sempre o PDF enviado ao cliente? Recomendação: as duas coisas — a revisão como referência e o PDF como prova.
+10. **Revisões do Drive** (decidido preliminarmente, D-4 do Contratos: a revisão do DOCX **e** o PDF efetivamente enviado).
+    - Continua pendente, no módulo Contratos: quem regulariza um PDF pendente, o prazo, quem registra `sem_pdf_justificado` e se o
+      contrato pode chegar a assinado com PDF pendente (Contratos, item 22).
 11. **Pastas de modelos:** quais são os modelos aprovados hoje em `Venda/0-PADRÃO`, `Locação/_Modelos` e `Serviços/Modelos`? Há outros
     lugares com modelos?
+12. **Permissões reais do Drive compartilhado** (validação externa, administrador do Workspace): quem são os membros do Drive
+    compartilhado das duas raízes? A elaboração precisa de permissões próprias no Drive? Sem isso, a restrição da elaboração não vale
+    no Drive (5.11.8). **Bloqueia a A1b** (indexação).
+13. **Resultado da verificação na Fase 1 (A0):** como exibir a árvore verificada só ao admin geral sem persistir metadados de forma
+    acessível a outros? Opções: resposta efêmera da Edge Function ou tabela legível só pelo admin geral. **Bloqueia a A0** até a decisão
+    (5.2.4.4).
+14. **Nível mínimo na raiz `elaboracao`:** consulta ou operador na área Contratos? (mesmo item que Contratos, item 17; não confundir com o GED PENDENTE 17, mecanismo de
+    proteção por coluna)
+    Depende dele a proteção dos ids e revisões de documentos de elaboração guardados em tabelas do Contratos (Contratos 5.12.7, AF-12).
+15. **[AF-5] Pendências do GED sem expor raízes restritas:** (a) publicar no módulo da área dona de cada raiz, ou (b) pendência genérica
+    em `administrativo.ged` sem raiz nem contagens? Decisão de arquitetura pendente. **Bloqueia a A1a.**
+16. **[AF-22] Quem executa "Atualizar índice agora":** gestor da área de operação de cada raiz (só nas raízes que lê) ou só o admin
+    geral? **Bloqueia a A1a.**
+17. **[AF-4] Mecanismo de proteção de colunas:** views ou funções de projeção, permissão por coluna do Postgres ou outro mecanismo
+    equivalente. Decisão técnica a validar. **Bloqueia a A1a** e a parte da A0 que depende dela (5.2.4.5).
+18. **[AF-11] Fonte de verdade da evidência do PDF** (com Contratos, item 30): qual registro é autoritativo, o bloqueio do desvínculo
+    de documento referenciado, o tratamento de documento indisponível e a sincronização dos estados. **Bloqueia a A2 básica.**
+19. **[AF-13] Assinatura técnica da checagem de módulo em `ged_tipos_presentes`:** confirmar contra o código os nomes e parâmetros
+    (`tem_acesso_modulo`, `ged_alvos`). Validação técnica (com Contratos, item 32). **Bloqueia a A1a.**
