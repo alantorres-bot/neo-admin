@@ -673,17 +673,28 @@ export async function cargaInicial(
     maxItens: opcoes.maxItens,
     driveId: raiz.driveIdCompartilhado,
   });
-  const pastas = new Map(indice.pastas);
-  const documentos = new Map(indice.documentos);
-  const estado: EstadoIndice = { pastas, documentos, profundidadeMax: indice.profundidadeMax, padroesIgnorar: indice.padroesIgnorar };
+  const copia = { ...indice, pastas: new Map(indice.pastas), documentos: new Map(indice.documentos) };
+  const resultados = aplicarPaginaNoIndice(mudancasDaArvore(arvore), copia);
+  return { resultados, resumo: resumirRodada(resultados), completa: !arvore.truncada, startPageToken: arvore.truncada ? null : startPageToken };
+}
+
+/**
+ * Aplica uma página do `changes.list` sobre o índice em memória, na ordem recebida (uma mudança pode depender da anterior,
+ * ex.: pasta criada e arquivo dentro dela). Devolve só o que muda, para a gravação; o `indice` passado é atualizado.
+ * Usada no `aplicarPagina` de `percorrerMudancas`: se a gravação falhar, o token não avança e a página é reaplicada depois.
+ */
+export function aplicarPaginaNoIndice(
+  mudancas: readonly MudancaDrive[],
+  indice: { pastas: Map<string, PastaIndice>; documentos: Map<string, DocumentoIndice>; profundidadeMax: number; padroesIgnorar?: readonly string[] },
+): ResultadoMudanca[] {
   const resultados: ResultadoMudanca[] = [];
-  for (const m of mudancasDaArvore(arvore)) {
-    const r = aplicarMudanca(m, estado);
-    if (r.acao === "gravar_pasta") pastas.set(r.pasta.driveId, r.pasta);
-    if (r.acao === "gravar_documento") documentos.set(r.documento.driveId, r.documento);
+  for (const m of mudancas) {
+    const r = aplicarMudanca(m, indice);
+    if (r.acao === "gravar_pasta") indice.pastas.set(r.pasta.driveId, r.pasta);
+    if (r.acao === "gravar_documento") indice.documentos.set(r.documento.driveId, r.documento);
     if (r.acao !== "nenhuma") resultados.push(r);
   }
-  return { resultados, resumo: resumirRodada(resultados), completa: !arvore.truncada, startPageToken: arvore.truncada ? null : startPageToken };
+  return resultados;
 }
 
 // Gravação em três passos, porque os `uuid` só existem depois do insert: pastas → documentos (com o id da pasta) → revisões
