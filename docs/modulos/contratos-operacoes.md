@@ -1,6 +1,8 @@
 # Módulo: Contratos / Operações comerciais e dossiê
 
 Status: **rascunho** (Fase 0, 24/10/2026), aguardando aprovação. Nada implementado.
+Revisão 2 (24/10/2026): documentos de elaboração (raiz `elaboracao`) × arquivo do cliente (raiz `dossie_cliente`); vínculo dos dois à
+mesma operação; distinção entre minuta, minuta aprovada e contrato assinado (5.5, 5.12).
 Origem: `docs/auditoria/AUDITORIA_CONTRATOS_GED_2026-10-24.md`, seções B, D, F e G.
 Depende de: `docs/modulos/administrativo-ged.md` (documentos e vínculos).
 
@@ -49,6 +51,7 @@ como liberada para faturar** sem as validações exigidas pela modalidade.
 | Entra | Fica fora |
 |---|---|
 | Operação comercial (com ou sem contrato) e o dossiê | Emitir NF, boleto ou MDF-e; alterar pedido ou título no Consistem |
+| Consultar modelos e arquivos de trabalho (raiz de elaboração) e definitivos (dossiê do cliente), vinculando os dois à mesma operação | Mover, copiar, renomear ou reorganizar arquivos no Drive; criar a cópia de trabalho a partir do modelo |
 | Solicitação de elaboração de contrato (fila) | Redigir a minuta no Neo Admin na v1 (segue nas skills; integração na fase 8) |
 | Contrato operacional: minutas, versões, aprovação, assinaturas (registro e evidência) | API de plataforma de assinatura (ForSign) na v1 |
 | Autorização bancária: registro, documento, validação humana | Regras específicas de cada banco codificadas no programa |
@@ -235,9 +238,18 @@ O dossiê não contorna a permissão. Alternativa: funções `security definer` 
    - meio de assinatura.
 2. **Número do contrato:** informado pela pessoa na v1. A numeração automática por tipo e ano depende do [PENDENTE 8]. Unicidade:
    `(empresa_id, tipo, numero)`.
-3. **Minutas** (`ctr_minutas`): versão sequencial, documento no GED (`contrato_minuta`), enviada em, retorno do cliente (`ajustes`,
-   `aprovada`), data e observação. A versão nova marca a anterior como substituída. A minuta aprovada conclui
-   `aguardar_aprovacao_cliente`.
+3. **Minutas** (`ctr_minutas`). Cada versão registra:
+   - número da versão (sequencial);
+   - **arquivo de trabalho** no GED: tipo `contrato_minuta`, normalmente na raiz `elaboracao`, com a **revisão do Drive**
+     (`drive_revisao`) do momento do envio;
+   - opcional, o **PDF enviado ao cliente**, que pode estar em qualquer raiz;
+   - o **modelo de origem** (`modelo_documento_id`, um `modelo_contrato` do GED), opcional;
+   - data de envio;
+   - retorno do cliente (`ajustes`, `aprovada`), com data e observação.
+
+   A versão nova marca a anterior como substituída. A minuta aprovada conclui `aguardar_aprovacao_cliente`.
+   Depois de **enviada**, a versão é **imutável**: arquivo, revisão e PDF não mudam; uma correção vira nova versão. Isso preserva o
+   histórico mesmo que o `.docx` continue sendo editado no mesmo arquivo do Drive.
 4. **Partes e assinaturas** (`ctr_assinaturas`):
    - parte (`contratante`, `contratada`, `interveniente`, `testemunha`, `banco`);
    - signatário (nome, e-mail; opcional: `contato_id`);
@@ -246,6 +258,16 @@ O dossiê não contorna a permissão. Alternativa: funções `security definer` 
    - data;
    - documento de evidência no GED.
    O contrato fica `assinado` quando **todas** as partes cadastradas estão `assinada` e há um documento `contrato_assinado` confirmado.
+4a. **Três estados que não se confundem** (exigência do responsável):
+
+   | O quê | Onde está registrado | Como se chega lá | O que não basta |
+   |---|---|---|---|
+   | **Minuta** (qualquer versão) | `ctr_minutas` (situações `em_elaboracao`, `enviada`, `ajustes_solicitados`, `substituida`) + documento `contrato_minuta` | o operador registra a versão | — |
+   | **Minuta aprovada** | `ctr_minutas.situacao = aprovada`, **uma única** versão por contrato | o operador registra o aceite do cliente, com data e evidência opcional (e-mail ou anotação) | arquivo em PDF; nome com "final" |
+   | **Contrato assinado** | `ctr_contratos.situacao = assinado` + documento `contrato_assinado` **confirmado** no GED, normalmente no dossiê do cliente | todas as assinaturas registradas (5.5.4) e o documento confirmado | minuta aprovada; PDF da minuta; arquivo com o mesmo nome do `.docx` |
+
+   A tela mostra os três com selos e cores distintos. A minuta aprovada nunca aparece como "contrato assinado".
+
 5. Comunicação com o cliente: o envio da minuta segue a regra global, **rascunho no Gmail** (`modo_rascunho`) com o padrão de
    `gmail_contas` [EXISTE, 0153], e é registrado em `mensagens`/`interacoes`. Na v1 basta registrar "Enviada em" à mão.
 
@@ -388,6 +410,40 @@ Regras:
    - cancelamento por situação.
 3. Regras em `atividade_regras` para as ações principais ("Abriu a operação {proposta_numero}", "Validou a autorização bancária…").
 
+### 5.12 Documentos de elaboração × arquivo do cliente
+As duas estruturas do Drive têm finalidades diferentes e **não são duplicadas** (ver `administrativo-ged.md`, 2.1 e 5.2):
+
+| Raiz do GED | Finalidade | O que o Contratos busca nela |
+|---|---|---|
+| `elaboracao` (`02 - COMERCIAL / 02 - CONTRATOS`, a confirmar) | arquivos editáveis de trabalho | modelos (por tipo de contrato) e arquivos de trabalho da minuta |
+| `dossie_cliente` (`02 - COMERCIAL / 01 - CLIENTES`, a confirmar) | arquivo documental das operações | proposta original, documentação cadastral, contrato assinado, aditivos, NFs e demais definitivos |
+
+Regras:
+1. **Um dossiê, duas origens.** A operação reúne, por vínculos do GED com papéis distintos, os documentos das duas raízes:
+   - `proposta_original` (dossiê);
+   - `minuta_trabalho` vN (elaboração);
+   - `minuta_enviada_pdf` vN (qualquer raiz);
+   - `contrato_assinado` (dossiê);
+   - `autorizacao_bancaria`, `nf`, `termo_entrega`, `aditivo`.
+   O arquivo **não precisa estar** numa pasta específica para ser vinculado.
+2. **Nada é movido, copiado nem renomeado** para "completar" o dossiê. Se o contrato assinado ainda não está na pasta do cliente, o
+   dossiê mostra "contrato assinado: faltando". Arquivar continua sendo feito pela pessoa, no Drive.
+3. **Apoio à elaboração** (dentro do dossiê, aba Contrato):
+   - **Modelos** do tipo de contrato (`ged_modelos`): os aprovados primeiro; os não avaliados com aviso. Escolher um modelo só registra
+     `modelo_documento_id` na versão e abre o arquivo no Drive. **O Neo Admin não copia o modelo**: a cópia de trabalho é criada pela
+     pessoa, no Drive, como hoje.
+   - **Arquivos de trabalho** (`ged_buscar_trabalho`): busca pelo número do contrato ("229") ou pelo cliente, com **Abrir no Drive**
+     e "Vincular como minuta vN".
+4. **Sugestão de vínculo** (nunca automático): ao informar o número do contrato, o sistema procura nas duas raízes arquivos começando
+   por "<número> - " e no dossiê, propostas com o número da proposta da operação. A pessoa confirma cada sugestão e o papel dela. A sugestão usa a função pública `ctr_alvos_por_numero(p_numero_contrato, p_proposta)` [PROPOSTA], que o GED chama para propor vínculos (GED 5.4.8) sem ler as tabelas `ctr_*`.
+5. **O mesmo nome nas duas raízes** (ex.: `229 - CONTRATO … .docx` na elaboração e na pasta do cliente) são **dois documentos**. A
+   pessoa escolhe qual é o arquivo de trabalho da minuta. O outro pode ser vinculado com outro papel ou ignorado. Nenhum dos dois
+   "vira" o contrato assinado por estar no dossiê.
+6. **Sem presunção pela extensão nem pela pasta:** um `.docx` na pasta de modelos não é um modelo aprovado; um `.pdf` no dossiê não é
+   contrato assinado. Valem o tipo confirmado no GED e o estado registrado neste módulo.
+7. **Permissões:** o dossiê mostra os documentos de cada raiz conforme as permissões dela no GED. Quem não tem leitura na raiz de
+   elaboração vê só os documentos do dossiê do cliente [PENDENTE 17].
+
 ## 6. Saídas e automações
 1. **Pendências** (`publicar_pendencia`, módulo `contratos.contratos`):
 
@@ -422,8 +478,18 @@ Todas as grades usam `components/ui/table.tsx`.
       e a pendência de condição.
    2. **Obrigações:** lista em ordem do modelo, com estado, dependências, responsável, prazo, documento exigido (ok/faltando/aguardando
       conferência) e as ações concluir, dispensar e incluir.
-   3. **Documentos:** `<DocumentosDoRegistro>` do GED, agrupado por tipo e com os faltantes destacados.
-   4. **Contrato:** número, minutas (versões, enviada, retorno), partes e assinaturas, ligação com o contrato financeiro.
+   3. **Documentos:** `<DocumentosDoRegistro>` do GED em dois blocos:
+      - **Arquivo do cliente** (raiz `dossie_cliente`): definitivos;
+      - **Em elaboração** (raiz `elaboracao`): arquivos de trabalho.
+      Os dois são agrupados por papel, com os faltantes destacados, e mostram a raiz de origem de cada arquivo.
+   4. **Contrato:**
+      - número;
+      - modelo usado;
+      - minutas (versões com arquivo de trabalho, revisão, PDF enviado, envio e retorno), com o selo da minuta aprovada;
+      - partes e assinaturas;
+      - contrato assinado (documento confirmado ou "faltando");
+      - ligação com o contrato financeiro;
+      - **Modelos** e **Arquivos de trabalho** para abrir no Drive (5.12.3).
    5. **Banco:** autorizações bancárias (só aparece quando a modalidade ou variante prevê).
    6. **Pedidos e NFs:** pedidos ligados, NFs com papel e confirmação, aviso de NF sem liberação.
    7. **Títulos:** os da `rec_vw_titulos_publico` (ou o aviso de sem acesso).
@@ -460,7 +526,7 @@ Todas as tabelas:
 | `ctr_obrigacao_dependencias` | `obrigacao_id`, `depende_de_id` | — |
 | `ctr_solicitacoes` | ver 5.10; `message_id` único quando `origem = email` | — |
 | `ctr_contratos` | `id`, `operacao_id`, `empresa_id`, `numero`, `tipo`, `situacao` (`em_elaboracao`/`em_negociacao`/`aprovado`/`em_assinatura`/`assinado`/`encerrado`/`cancelado`), `assinado_em`, `rec_contrato_id` (único) | único `(empresa_id, tipo, numero)`; um não cancelado por operação |
-| `ctr_minutas` | `id`, `contrato_id`, `versao`, `documento_id`, `enviada_em`, `retorno` (`ajustes`/`aprovada`), `retorno_em`, `observacao`, `situacao` (`em_elaboracao`/`enviada`/`ajustes_solicitados`/`aprovada`/`substituida`) | único `(contrato_id, versao)` |
+| `ctr_minutas` | `id`, `contrato_id`, `versao`, `documento_id` (arquivo de trabalho), `drive_revisao`, `pdf_documento_id`, `modelo_documento_id`, `enviada_em`, `retorno` (`ajustes`/`aprovada`), `retorno_em`, `observacao`, `situacao` (`em_elaboracao`/`enviada`/`ajustes_solicitados`/`aprovada`/`substituida`) | único `(contrato_id, versao)`; uma `aprovada` por contrato; imutável depois de `enviada` (fora `situacao` e retorno) |
 | `ctr_assinaturas` | `id`, `contrato_id`, `parte`, `nome`, `email`, `contato_id`, `meio`, `plataforma`, `situacao`, `assinado_em`, `documento_id` | — |
 | `ctr_autorizacoes_bancarias` | ver 5.7 | — |
 | `ctr_operacao_pedidos` | `operacao_id`, `empresa_id`, `cod_pedido`, `ligado_por/em`, `removido_por/em/motivo` | único ativo `(empresa_id, cod_pedido)`: um pedido em uma operação só [PENDENTE 14] |
@@ -541,7 +607,18 @@ Contratos [PENDENTE 12].
    - `validada` libera;
    - substituída volta a bloquear;
    - modelo de financiamento sem item de trava não pode ser ativado.
-6. Contrato `assinado`: só com todas as partes assinadas **e** o documento confirmado.
+6. Contrato `assinado`:
+   - só com todas as partes assinadas **e** o documento `contrato_assinado` confirmado;
+   - minuta aprovada não basta;
+   - PDF da minuta não basta.
+6a. Minutas:
+   - uma única `aprovada` por contrato;
+   - a versão enviada não aceita troca de arquivo nem de revisão;
+   - a versão nova substitui a anterior sem apagá-la.
+6b. Elaboração × dossiê:
+   - a mesma operação aceita vínculos de documentos das duas raízes;
+   - arquivos com o mesmo nome nas duas raízes ficam como vínculos distintos;
+   - a sugestão pelo número "229" encontra os arquivos das duas raízes, mas nada é vinculado sem confirmação.
 7. Chave de operação: Rev02 e Rev03 do mesmo número caem na mesma operação; números diferentes, em operações diferentes.
 8. Papel da NF: sem `ctr_papel_por_tipo_nota`, sempre "a confirmar".
 
@@ -577,8 +654,12 @@ Contratos [PENDENTE 12].
    - nenhum cliente ou contrato financeiro duplicado;
    - os pedidos, as NFs e os títulos aparecem para quem tem acesso às áreas.
 2. **Solicitações (Fase 5):** uma solicitação manual vira operação em um passo e aparece como pendência até ser aceita.
-3. **Versões e assinatura (Fase 6):** histórico V1 → V2 → aprovada → assinada visível. O contrato só fica `assinado` com o documento
-   confirmado.
+3. **Versões e assinatura (Fase 6):**
+   - histórico V1 → V2 → aprovada → assinada visível;
+   - o contrato só fica `assinado` com o documento confirmado;
+   - numa operação real, a proposta original (dossiê), as versões da minuta (elaboração) e o contrato assinado (dossiê) aparecem juntos
+     no dossiê, sem nenhum arquivo movido, copiado ou renomeado no Drive;
+   - a minuta aprovada e o contrato assinado têm selos diferentes.
 4. **Obrigações e trava (Fase 7):**
    - os modelos aprovados pelo responsável estão ativos;
    - para cada modalidade, a simulação gera exatamente as obrigações combinadas com ele;
@@ -622,3 +703,8 @@ Contratos [PENDENTE 12].
     nenhum pedido em duas operações.
 15. **Responsáveis e prazos padrão** de cada etapa (administrativo, comercial, fiscal, financeiro).
 16. **Nome do módulo** no menu: "Operações e contratos"?
+17. **Acesso à elaboração:** quem não é de Contratos (ex.: Comercial) deve ver os arquivos de trabalho e as minutas no dossiê, ou só os
+    documentos do arquivo do cliente?
+18. **Evidência da versão enviada:** a versão da minuta deve sempre ter o PDF enviado ao cliente vinculado, ou basta a revisão do `.docx`?
+    (ver GED, ponto 10)
+19. **Modelos aprovados:** quem aprova um modelo de contrato e com que periodicidade a lista é revista? (ver GED, ponto 11)
