@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classificarTipo, ErroRegraTipo, prepararRegras, type DocumentoClassificavel } from "./tipos";
+import { classificarTipo, ErroRegraTipo, prepararRegras, type DocumentoClassificavel } from "../../../supabase/functions/_shared/ged";
 
 // Regras ILUSTRATIVAS da 5.5, só para teste; as reais vêm do catálogo [PENDENTE 6].
 const regras = prepararRegras([

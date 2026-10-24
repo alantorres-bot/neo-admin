@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cnpjsNoTexto, normalizarNomeCliente, sugerirCliente } from "./clientes";
+import { cnpjsNoTexto, normalizarNomeCliente, sugerirCliente } from "../../../supabase/functions/_shared/ged";
 
 // Dados fictícios. 11.222.333/0001-81 é um CNPJ de exemplo com dígitos válidos.
 const CNPJ = "11.222.333/0001-81";

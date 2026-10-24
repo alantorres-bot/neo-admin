@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ehArquivoTemporario, separarVersao, sugerirSubstituicoes } from "./arquivos";
+import { ehArquivoTemporario, separarVersao, sugerirSubstituicoes } from "../../../supabase/functions/_shared/ged";
 
 describe("ehArquivoTemporario", () => {
   it("~WRL, ~$ e .tmp ficam ignorados", () => {

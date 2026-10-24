@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { podeIndexar, raizSobreposta } from "./raizes";
+import { podeIndexar, raizSobreposta } from "../../../supabase/functions/_shared/ged";
 
 describe("raizSobreposta", () => {
   const cadastrada = { driveId: "A", ancestrais: ["RAIZ"] };
