@@ -24,6 +24,10 @@ Histórico de revisões:
   - encargos financeiros.
 
   A especificação continua em rascunho.
+- **Revisão 4, 24/10/2026:** revisão técnica de consistência (`docs/auditoria/REVISAO_CONTRATOS_REV3_2026-10-24.md`).
+  - Registra bloqueadores e **propostas pendentes de aprovação** (seção 15; marcas **[R4]** no texto).
+  - Nenhuma proposta foi tratada como decisão.
+  - Status: **rascunho**.
 
 Origem: `docs/auditoria/AUDITORIA_CONTRATOS_GED_2026-10-24.md`, seções B, D, F e G.
 Depende de: `docs/modulos/administrativo-ged.md` (documentos e vínculos).
@@ -36,7 +40,8 @@ Marcação:
 - **[EXISTE]** verificado no repositório;
 - **[PROPOSTA]** a construir;
 - **[D-n]** decisão preliminar do responsável (seção 0), sujeita à validação interna;
-- **[PENDENTE n]** decisão ainda em aberto (seção 13).
+- **[PENDENTE n]** decisão ainda em aberto (seção 13);
+- **[R4-Pn]** proposta da revisão técnica (seção 15), **pendente de aprovação interna**.
 
 > Regra deste módulo: **nenhuma condição comercial, regra fiscal, prazo ou gatilho de faturamento é presumido.** Tudo o que decide
 > uma obrigação vem de um modelo configurado e aprovado ou de um campo informado por uma pessoa. Os exemplos deste documento são
@@ -155,7 +160,7 @@ dele, e documentada na especificação dele.
 | `com_vw_notas_publico` | Comercial, 07xx | empresa, `cod_pedido`, nota, série, `chave_acesso`, situação, `cod_tipo_nota`, emissão, saída, valor | idem |
 | `rec_vw_titulos_publico` | Financeiro, 01xx | empresa, cliente, documento, parcela, vencimento, valor, estágio, `nota_fiscal`, `chave_nfe`, boleto enviado em, data e valor pagos | `security_invoker`: exige o Financeiro |
 | `rec_registrar_contrato(...)` / `rec_vincular_titulos_contrato(...)` | Financeiro, 01xx | ver 5.6 | `security definer`, checa o nível no Financeiro |
-| `ctr_vw_contratos_sem_encargos` (sentido inverso: o Contratos publica, o Financeiro lê) | Contratos, 03xx | contratos `assinado` sem `rec_contrato_id`: empresa, cliente, número, tipo, assinado em, link do dossiê | leitura liberada a quem tem `financeiro` (5.6.3) [PROPOSTA] |
+| `ctr_vw_contratos_sem_encargos` (sentido inverso: o Contratos publica, o Financeiro lê) | Contratos, 03xx | contratos `assinado` sem `rec_contrato_id`: empresa, cliente, número, tipo, assinado em, link do dossiê | leitura liberada a quem tem `financeiro` (5.6.3) [PROPOSTA]. **[R4] Bloqueador E-2:** se for `security_invoker`, exige ler `ctr_contratos` inteira. Proposta: função `ctr_contratos_sem_encargos()` com campos mínimos (R4-P7) |
 
 **Quem não tem a área de origem** vê no dossiê o bloco "Pedidos e NFs" ou "Títulos" com o aviso "Sem acesso ao Comercial/Financeiro".
 O dossiê **não contorna** a permissão. Funções `security definer` de resumo **não serão criadas** sem aprovação específica
@@ -288,6 +293,8 @@ O dossiê **não contorna** a permissão. Funções `security definer` de resumo
        `obter_assinaturas`.
    - Se o contrato também deve **travar o faturamento** no financiamento continua pendente: a decisão D-2 diz que o contrato é
      obrigatório, não quando ele trava [PENDENTE 4].
+   - **[R4] Bloqueador F-1/F-2:** como está, uma operação de financiamento pode aparecer liberada sem contrato assinado. Há também a
+     dúvida se o modelo da variante substitui ou complementa o da modalidade. Proposta: **R4-P1** (seção 15.1).
 4. **Criação das obrigações**, ao abrir a operação ou ao mudar uma condição, a modalidade ou a variante. Para cada item do modelo vigente:
    - a condição dá **verdadeiro**: a obrigação é criada (ou mantida);
    - dá **falso**: não é criada; se já existia aberta, é cancelada com o motivo "deixou de se aplicar: <condição>";
@@ -297,6 +304,8 @@ O dossiê **não contorna** a permissão. Funções `security definer` de resumo
    por ação explícita do gestor ("aplicar a versão nova"), com antes/depois.
 6. **Dependências:** a obrigação com dependência não concluída fica `bloqueada`. Quando todas as dependências se resolvem
    (concluída ou dispensada), ela passa a `aberta`, ganha prazo (se relativo) e é publicada como pendência.
+   - **[R4] Bloqueador O-1 a O-4:** uma dependência cancelada nunca se resolve, e faltam as regras de reaplicação, troca de modelo e
+     reabertura. Proposta: **R4-P5** (seção 15.5).
 7. **Obrigação manual extra:** o operador pode acrescentar uma obrigação de qualquer tipo a uma operação (exceção da negociação),
    com motivo. Ela fica marcada como "fora do modelo".
 8. **Dispensa:** só o gestor dispensa, com motivo, e só se o tipo permitir. A dispensa entra na linha do tempo e conta como resolvida
@@ -323,7 +332,9 @@ O dossiê **não contorna** a permissão. Funções `security definer` de resumo
    - o sistema **não sugere nem gera** número e **não presume** padrão por tipo, ano ou modalidade;
    - **unicidade:** `(empresa_id, tipo, numero)`, como definido. Há uma divergência com a chave de `rec_contratos`
      (`(empresa_id, numero)`, sem o tipo), registrada na seção 14 e no [PENDENTE 8];
-   - número repetido é recusado com mensagem clara, sem corrigir sozinho.
+   - número repetido é recusado com mensagem clara, sem corrigir sozinho;
+   - **[R4] Bloqueador N-1 (para a fase C3):** com a chave atual, a pendência de encargos pode ficar sem solução. Proposta: **R4-P6**
+     (seção 15.6), com a chave mais restritiva e o número normalizado.
 3. **Minutas** (`ctr_minutas`) [D-4]. Cada versão registra:
    - número da versão (sequencial);
    - **arquivo de trabalho** no GED: tipo `contrato_minuta`, normalmente na raiz `elaboracao`, com a **revisão do Drive**
@@ -333,6 +344,8 @@ O dossiê **não contorna** a permissão. Funções `security definer` de resumo
      - `ausente`: o PDF ainda não está disponível no registro. **Nunca se associa outro arquivo para preencher.** Ficam registrados o
        motivo e quem marcou, e o sistema cria a obrigação `regularizar_pdf_minuta` (pendência "Vincular o PDF enviado da minuta vN").
        O fluxo de regularização ainda vai ser validado [PENDENTE 18];
+     - **[R4] Bloqueador P-1/P-2:** os dois estados não bastam, e a obrigação de sistema não tem regra de origem. Proposta: estados
+       `vinculado_no_envio`, `pendente`, `regularizado` e `sem_pdf_justificado` (**R4-P2**, seção 15.2);
    - o **modelo de origem** (`modelo_documento_id`, um `modelo_contrato` do GED), opcional;
    - data de envio;
    - retorno do cliente (`ajustes`, `aprovada`), com data e observação.
@@ -374,7 +387,9 @@ O dossiê **não contorna** a permissão. Funções `security definer` de resumo
      Mudanças decorrentes (uma condição nova, uma remessa a mais) são lançadas por uma pessoa, citando o aditivo como documento de
      origem (`ctr_operacao_condicoes.documento_id`). Criar obrigações a partir de aditivos por modelo próprio continua pendente
      [PENDENTE 7];
-   - transformar um aditivo em contrato independente exige gestor e motivo; é uma exceção, não o padrão.
+   - transformar um aditivo em contrato independente exige gestor e motivo; é uma exceção, não o padrão;
+   - **[R4] Bloqueadores A-1 a A-4:** as unicidades com `aditivo_id` nulo não funcionam, falta FK composta, e as regras "do contrato"
+     não excluem as minutas e assinaturas de aditivo. Proposta: **R4-P3** (seção 15.3).
 7. Comunicação com o cliente: o envio da minuta segue a regra global, **rascunho no Gmail** (`modo_rascunho`) com o padrão de
    `gmail_contas` [EXISTE, 0153], e é registrado em `mensagens`/`interacoes`. Na v1 basta registrar "Enviada em" à mão.
 
@@ -406,6 +421,8 @@ Regras:
      - o **Financeiro** publica a pendência no módulo dele, a partir da view pública `ctr_vw_contratos_sem_encargos` (4.2);
      - ou o Contratos a publica com `responsavel_id` de uma pessoa do Financeiro (visível pela `pendencias_ler_proprias`).
      Ver a seção 14;
+   - **[R4] Bloqueador E-1/E-2:** uma view `security_invoker` daria ao Financeiro acesso a `ctr_contratos` inteira. Proposta: a
+     alternativa A de **R4-P7** (seção 15.7);
    - o prazo para informar os encargos e eventuais controles adicionais continuam **pendentes** [PENDENTE 10].
 4. A regra atual da `rec_vw_titulos` (o `coalesce` com 2% quando o título não tem contrato) **não é alterada** por esta especificação.
    O dossiê mostra os títulos como o Financeiro os mostra, sem apresentar os 2% como condição contratada.
@@ -463,7 +480,9 @@ Regras:
    - **nada é desfeito nem alterado no Consistem;**
    - a pendência e o evento na linha do tempo ficam para **análise humana**;
    - concluir a pendência exige uma observação (o que foi apurado), e nada apaga o registro do fato;
-   - **não há notificação imediata própria** nesta versão. Vale só o que a Central de Gestão já faz, conforme a configuração dela (4.1).
+   - **não há notificação imediata própria** nesta versão. Vale só o que a Central de Gestão já faz, conforme a configuração dela (4.1);
+   - **[R4] Bloqueador F-3:** a regra dispara alarme falso quando a liberação é revertida depois da NF ou quando a operação é
+     cadastrada depois do fato; a comparação mistura data e instante. Proposta: **R4-P1**, itens 4 e 5 (seção 15.1).
 5. O Neo Admin **não impede a emissão no Consistem**. O que ele faz é deixar a situação visível e abrir a pendência crítica.
 
 ### 5.9 Pedidos, NFs, títulos e remessas
@@ -600,7 +619,14 @@ Regras:
      Contratos" (ou o equivalente da outra raiz). O aviso **não revela** nomes, links, quantidades, datas nem tipos, e é o mesmo haja ou
      não documento;
    - o mesmo vale para as minutas na aba Contrato: quem não lê a raiz `elaboracao` vê a versão e o estado (enviada, aprovada), mas
-     **não** o nome nem o link do arquivo de trabalho. O PDF enviado e o contrato assinado aparecem conforme a raiz em que estão.
+     **não** o nome nem o link do arquivo de trabalho. O PDF enviado e o contrato assinado aparecem conforme a raiz em que estão;
+   - **[R4] Bloqueadores G-1 a G-5:** esconder na tela não é controle. A restrição precisa valer:
+     - nas políticas de **todas** as tabelas `ged_*`;
+     - nas funções (modo de segurança definido);
+     - na `ctr_alvos_por_numero`;
+     - nas descrições de atividades, pendências e Slack (sem nome de arquivo);
+     - no acesso por id.
+     Proposta: **R4-P4** (seção 15.4). Dependência externa: os membros do Drive compartilhado (PENDENTE 24).
 
 ## 6. Saídas e automações
 1. **Pendências** (`publicar_pendencia`, módulo `contratos.contratos`, salvo indicação):
@@ -697,13 +723,13 @@ Todas as tabelas:
 | `ctr_modelo_dependencias` | `item_id`, `depende_de_item_id` | sem ciclos (checado ao ativar) |
 | `ctr_operacoes` | `id`, `numero` (sequencial interno da operação, não é o número do contrato), `empresa_id`, `contraparte_id`, `modalidade`, `variante_id`, `proposta_numero`, `proposta_revisao`, `descricao`/`obra`, `valor_referencia numeric(14,2)` (informativo), `remessas_previstas int` (nulo = não informado) [D-5], `responsavel_id`, `origem`, `solicitacao_id`, `situacao_base` (`ativa`/`encerrada`/`cancelada`), `encerrada_por/em`, `cancelada_por/em`, `motivo_cancelamento`, `criado_por/em`, `atualizado_em` | único `(empresa_id, proposta_numero)`; `contraparte_id` obrigatório; `remessas_previstas >= 0` |
 | `ctr_operacao_condicoes` | `operacao_id`, `campo`, `valor jsonb`, `informado_por/em`, `documento_id` (ex.: o aditivo de origem) | pk `(operacao_id, campo)`; histórico pela auditoria e por `ctr_eventos` |
-| `ctr_obrigacoes` | `id`, `operacao_id`, `obrigacao_tipo`, `modelo_item_id`, `modelo_versao`, `fora_do_modelo`, `ordem`, `estado` (`bloqueada`/`aberta`/`concluida`/`dispensada`/`cancelada`), `responsavel_id`, `prazo`, `trava_faturamento`, `campo_condicao` (para `informar_condicao`), `minuta_id` (para `regularizar_pdf_minuta`), `concluida_por/em`, `conclusao_obs`, `dispensada_por/em`, `dispensa_motivo`, `cancelada_motivo`, `pendencia_chave` | — |
+| `ctr_obrigacoes` | `id`, `operacao_id`, `obrigacao_tipo`, `modelo_item_id`, `modelo_versao`, `fora_do_modelo`, `ordem`, `estado` (`bloqueada`/`aberta`/`concluida`/`dispensada`/`cancelada`), `responsavel_id`, `prazo`, `trava_faturamento`, `campo_condicao` (para `informar_condicao`), `minuta_id` (para `regularizar_pdf_minuta`), `concluida_por/em`, `conclusao_obs`, `dispensada_por/em`, `dispensa_motivo`, `cancelada_motivo`, `pendencia_chave` | **[R4-P5]:** `origem` (`modelo`/`sistema`/`manual`), `substitui_obrigacao_id`, `aproveitada_de_id`, `dependencia_reaberta_em`; índices únicos parciais `(operacao_id, modelo_item_id) where estado in ('bloqueada','aberta')` e `(operacao_id, campo_condicao) where obrigacao_tipo='informar_condicao' and estado in ('bloqueada','aberta')` |
 | `ctr_obrigacao_dependencias` | `obrigacao_id`, `depende_de_id` | — |
 | `ctr_solicitacoes` | ver 5.10; `message_id` único quando `origem = email` | — |
-| `ctr_contratos` | `id`, `operacao_id`, `empresa_id`, `numero` (**informado manualmente** [D-8]), `tipo`, `situacao` (`em_elaboracao`/`em_negociacao`/`aprovado`/`em_assinatura`/`assinado`/`encerrado`/`cancelado`), `assinado_em`, `rec_contrato_id` (único), `encargos_situacao` (`aguardando_financeiro`/`informados`; calculado pela ligação) | único `(empresa_id, tipo, numero)` (ver a seção 14); um não cancelado por operação; sem sequência nem valor padrão para `numero` |
-| `ctr_aditivos` [D-3] | `id`, `contrato_id` (obrigatório), `identificacao` (informada à mão), `objeto`, `data`, `situacao` (`em_elaboracao`/`enviado`/`aprovado`/`em_assinatura`/`assinado`/`cancelado`), `assinado_em`, `observacao`, `criado_por/em` | único `(contrato_id, identificacao)`; sem `delete`; não altera o contrato nem as obrigações sozinho |
-| `ctr_minutas` | `id`, `contrato_id`, `aditivo_id` (nulo = minuta do contrato) [D-3], `versao`, `documento_id` (arquivo de trabalho), `drive_revisao`, `pdf_documento_id`, `pdf_situacao` (`vinculado`/`ausente`) [D-4], `pdf_ausente_motivo`, `pdf_ausente_por/em`, `pdf_regularizado_por/em`, `modelo_documento_id`, `enviada_em`, `retorno` (`ajustes`/`aprovada`), `retorno_em`, `observacao`, `situacao` (`em_elaboracao`/`enviada`/`ajustes_solicitados`/`aprovada`/`substituida`) | único `(contrato_id, aditivo_id, versao)`; uma `aprovada` por contrato ou aditivo; ao ir para `enviada`: `documento_id`, `drive_revisao` e `pdf_situacao` obrigatórios; depois de `enviada`, imutável, salvo `situacao`, retorno e a regularização única do PDF ausente |
-| `ctr_assinaturas` | `id`, `contrato_id`, `aditivo_id` (nulo = do contrato), `parte`, `nome`, `email`, `contato_id`, `meio`, `plataforma`, `situacao`, `assinado_em`, `documento_id` | — |
+| `ctr_contratos` | `id`, `operacao_id`, `empresa_id`, `numero` (**informado manualmente** [D-8]), `numero_normalizado` [R4-P6], `tipo`, `situacao` (`em_elaboracao`/`em_negociacao`/`aprovado`/`em_assinatura`/`assinado`/`encerrado`/`cancelado`), `assinado_em`, `rec_contrato_id` (único), `encargos_situacao` (`aguardando_financeiro`/`informados`; calculado pela ligação) | único `(empresa_id, tipo, numero)` (ver a seção 14) — **[R4-P6] proposta:** único `(empresa_id, numero_normalizado)` até a decisão do PENDENTE 8; **[R4-P3]** índice único parcial `(operacao_id) where situacao <> 'cancelado'`; sem sequência nem valor padrão para `numero` |
+| `ctr_aditivos` [D-3] | `id`, `contrato_id` (obrigatório), `identificacao` (informada à mão), `objeto`, `data`, `situacao` (`em_elaboracao`/`enviado`/`aprovado`/`em_assinatura`/`assinado`/`cancelado`), `assinado_em`, `observacao`, `criado_por/em` | único `(contrato_id, identificacao)`; sem `delete`; não altera o contrato nem as obrigações sozinho — **[R4-P3]:** `unique (id, contrato_id)` (alvo da FK composta); único `(contrato_id, identificacao_normalizada)`; `identificacao` e `objeto` imutáveis depois de `enviado` |
+| `ctr_minutas` | `id`, `contrato_id`, `aditivo_id` (nulo = minuta do contrato) [D-3], `versao`, `documento_id` (arquivo de trabalho), `drive_revisao`, `pdf_documento_id`, `pdf_situacao` (`vinculado`/`ausente`) [D-4], `pdf_ausente_motivo`, `pdf_ausente_por/em`, `pdf_regularizado_por/em`, `modelo_documento_id`, `enviada_em`, `retorno` (`ajustes`/`aprovada`), `retorno_em`, `observacao`, `situacao` (`em_elaboracao`/`enviada`/`ajustes_solicitados`/`aprovada`/`substituida`) | único `(contrato_id, aditivo_id, versao)` — **[R4] não funciona com `aditivo_id` nulo (A-1)**. **[R4-P3] proposta:** FK `(aditivo_id, contrato_id) → ctr_aditivos (id, contrato_id)`; índices únicos parciais `(contrato_id, versao) where aditivo_id is null`, `(aditivo_id, versao) where aditivo_id is not null`, `(contrato_id) where aditivo_id is null and situacao='aprovada'` e `(aditivo_id) where aditivo_id is not null and situacao='aprovada'`; `pdf_situacao` com os estados do R4-P2, garantidos por gatilho; uma `aprovada` por contrato ou aditivo; ao ir para `enviada`: `documento_id`, `drive_revisao` e `pdf_situacao` obrigatórios; depois de `enviada`, imutável, salvo `situacao`, retorno e a regularização única do PDF ausente |
+| `ctr_assinaturas` | `id`, `contrato_id`, `aditivo_id` (nulo = do contrato), `parte`, `nome`, `email`, `contato_id`, `meio`, `plataforma`, `situacao`, `assinado_em`, `documento_id` | **[R4-P3]:** FK `(aditivo_id, contrato_id) → ctr_aditivos (id, contrato_id)`; as regras do contrato filtram `aditivo_id is null` |
 | `ctr_autorizacoes_bancarias` | ver 5.7 | — |
 | `ctr_operacao_pedidos` | `operacao_id`, `empresa_id`, `cod_pedido`, `ligado_por/em`, `removido_por/em/motivo` | único ativo `(empresa_id, cod_pedido)`: um pedido em uma operação só [PENDENTE 14] |
 | `ctr_operacao_notas` | ver 5.9.2 | único ativo `(empresa_id, nota, serie)` |
@@ -979,6 +1005,28 @@ para produção.
       - atualizar o ponto 10 do GED (seção 14).
 19. **Modelos aprovados** (pendente): quem aprova um modelo de contrato e com que periodicidade a lista é revista? (ver GED, ponto 11)
 
+20. **[R4] Modelo da variante** (pendente; técnica e negócio): ele **substitui** o modelo da modalidade (proposta) ou **herda** dele
+    e acrescenta itens? (F-2)
+21. **[R4] Operações cadastradas depois do fato** (pendente): existirá uma **data de início do controle** por operação, para que NFs
+    anteriores não gerem o alarme "NF sem liberação"? Quem a informa? (F-3)
+22. **[R4] PDF da minuta pendente** (pendente):
+    - a minuta pode ser marcada aprovada antes da regularização? Recomendação: alternativa (b), "aprovada — evidência pendente", sem
+      concluir `aguardar_aprovacao_cliente` e sem passar a `em_assinatura`;
+    - quem pode registrar `sem_pdf_justificado`? Proposta: gestor;
+    - versão substituída com PDF pendente: a pendência continua? (P-4, P-5)
+23. **[R4] Aditivo e situação do contrato** (pendente): o aditivo exige o contrato `assinado`? O que acontece com os aditivos em
+    andamento quando o contrato é cancelado ou encerrado? (A-5)
+24. **[R4] Drive compartilhado** (dependência externa, administrador do Workspace): quem é membro do Drive compartilhado onde estão as
+    duas raízes? A elaboração precisa de permissões próprias no Drive para que a D-6 valha fora do Neo Admin? (G-8)
+25. **[R4] Aproveitamento de conclusões** na troca de modalidade, variante ou versão do modelo (pendente): o gestor decide item a item
+    (proposta) ou nunca se aproveita? (O-3)
+26. **[R4] Encargos** (pendente; complementa o 10):
+    - escolha da alternativa de publicação (R4-P7);
+    - o módulo do Financeiro que recebe a pendência;
+    - o tratamento quando o contrato assinado não estiver no dossiê do cliente. (E-1 a E-3)
+27. **[R4] Ordem contrato × autorização e assinatura do banco** (dependência externa, bancos): a autorização pode ser validada antes do
+    contrato assinado? O banco é parte que assina o contrato de compra e venda? (F-4, F-7)
+
 ## 14. Inconsistências e dependências encontradas (revisão 3)
 Registradas para decisão. **Nenhum outro documento foi alterado** por esta revisão.
 
@@ -1004,3 +1052,138 @@ Registradas para decisão. **Nenhum outro documento foi alterado** por esta revi
   - relação com o Faturamento Filial (I-5).
 - **Comercial:** views públicas `com_vw_pedidos_publico` e `com_vw_notas_publico` (4.2).
 - **Responsável pelo processo:** PENDENTES 3, 4, 9, 14, 15, 16, 17, 18 e 19.
+
+## 15. Revisão técnica de consistência — propostas da revisão 4 (pendentes de aprovação)
+Detalhes, análise e classificação em `docs/auditoria/REVISAO_CONTRATOS_REV3_2026-10-24.md`. **Nada aqui é decisão aprovada.**
+Cada proposta precisa da aprovação interna indicada antes de entrar no texto normativo da especificação.
+
+| Proposta | Resolve | Resumo | Aprovação necessária |
+|---|---|---|---|
+| **R4-P1** Financiamento | F-1 a F-3, F-5 | ver 15.1 | responsável pelo processo (ampliação da D-2); bancos (PENDENTE 27) |
+| **R4-P2** PDF da minuta | P-1 a P-6 | ver 15.2 | responsável (PENDENTE 22) |
+| **R4-P3** Aditivos e unicidades | A-1 a A-7 | ver 15.3 | técnica (A-1 a A-4); responsável (PENDENTE 23) |
+| **R4-P4** Segurança da elaboração | G-1 a G-9 | ver 15.4 | técnica; ajuste na especificação do GED; admin do Workspace (PENDENTE 24) |
+| **R4-P5** Integridade das obrigações | O-1 a O-8 | ver 15.5 | técnica; responsável (PENDENTE 25) |
+| **R4-P6** Numeração | N-1 a N-5 | ver 15.6 | responsável e Financeiro (PENDENTE 8) |
+| **R4-P7** Encargos no Financeiro | E-1 a E-5 | ver 15.7 | Financeiro e responsável (PENDENTE 26) |
+| **R4-P8** Locação | L-1 a L-4 | ver 15.8 | responsável e Financeiro (PENDENTE 2) |
+
+### 15.1 R4-P1 — Financiamento
+1. Na modalidade `financiamento`, `ctr_faturamento_liberado` só devolve `liberada` com as duas condições:
+   - contrato do tipo `venda` em situação `assinado`, com o documento confirmado;
+   - autorização bancária `validada`.
+
+   A verificação é **fixa na função, para essa modalidade**, além do que o modelo disser.
+2. A validação de ativação do modelo de financiamento exige:
+   - `obter_assinaturas` e `aguardar_autorizacao_bancaria`, os dois sem condição e com trava;
+   - `obter_assinaturas` não dispensável;
+   - a dispensa da autorização só pelo nível do PENDENTE 9, que começa como "ninguém".
+3. O modelo da variante é **completo** (substitui o da modalidade), e a validação roda em cada um (PENDENTE 20).
+4. O alarme de NF compara a **data local** da emissão com o histórico de liberações (`ctr_eventos`):
+   - NF de dia sem liberação vigente: alarme;
+   - NF do mesmo dia da liberação: marcada "conferir";
+   - NF anterior à data de início do controle: sem alarme (PENDENTE 21).
+5. Contrato cancelado depois da liberação: volta a `bloqueada`, com evento. NFs já emitidas não geram alarme retroativo.
+
+### 15.2 R4-P2 — PDF da minuta
+1. **Estados de `pdf_situacao`:**
+   - `vinculado_no_envio`;
+   - `pendente` (motivo obrigatório; abre `regularizar_pdf_minuta`);
+   - `regularizado` (vinculação única, depois);
+   - `sem_pdf_justificado` (gestor, justificativa e outra evidência).
+2. **Conclusão de `regularizar_pdf_minuta`:** só por `regularizado` ou `sem_pdf_justificado`. Para `regularizado`, o PDF tem de:
+   - estar confirmado no GED (`contrato_minuta` ou `aditamento`, `mime` PDF, `vigente`);
+   - não estar vinculado como PDF enviado de outra versão.
+   A obrigação tem origem `sistema`.
+3. **Aprovação antes da regularização** (recomendada, a aprovar): permitida com o selo "evidência pendente". Enquanto isso:
+   - `aguardar_aprovacao_cliente` não conclui;
+   - o contrato não passa a `em_assinatura`.
+4. **Versão substituída com PDF pendente:** a obrigação continua até `regularizado` ou `sem_pdf_justificado`.
+5. **Gatilho de imutabilidade** depois de `enviada`. Só aceita:
+   - `situacao` e o retorno;
+   - a transição `pendente` → `regularizado` | `sem_pdf_justificado`, uma vez.
+
+### 15.3 R4-P3 — Aditivos e unicidades
+1. **FK composta** `(aditivo_id, contrato_id) → ctr_aditivos (id, contrato_id)` em `ctr_minutas` e `ctr_assinaturas`, com
+   `unique (id, contrato_id)` em `ctr_aditivos`.
+2. **Índices únicos parciais** (seção 8), no lugar das unicidades com NULL:
+   - versões e aprovada, separados entre contrato e aditivo;
+   - um contrato não cancelado por operação. O termo "vigente" sai: o encerrado continua contando;
+   - identificação normalizada do aditivo.
+3. **Toda regra "do contrato" filtra `aditivo_id is null`:** situação do contrato, `obter_assinaturas` e `aguardar_aprovacao_cliente`.
+4. **Ciclo do aditivo:** só com o contrato `assinado`. O contrato cancelado ou encerrado não aceita aditivo novo, e os aditivos em
+   andamento vão para a conferência do gestor (PENDENTE 23).
+5. **Imutabilidade:** `identificacao` e `objeto` imutáveis depois de `enviado`; sem `delete`; auditoria e `ctr_eventos`.
+
+### 15.4 R4-P4 — Segurança da raiz `elaboracao` (afeta o GED; ajuste a fazer na especificação dele)
+1. **Restrição fixa:**
+   - a raiz `elaboracao` tem `area = area_operacao = 'contratos'` e `areas_leitura` vazio, garantido por `check`/gatilho;
+   - mudar isso exige uma migration, e não uma tela de configuração.
+2. **`ged_pode_ler_raiz(raiz_id)` nas políticas de todas as tabelas `ged_*`:** documentos, pastas, pastas de cliente, revisões, vínculos,
+   indexações e raízes.
+3. **Modo de segurança das funções do GED:**
+   - as de leitura são `security invoker`;
+   - `ged_tipos_presentes` é `security definer`, devolve só tipos ou booleanos (nunca nome, link ou id) e checa
+     `tem_acesso_area('contratos','operador')`;
+   - `ctr_alvos_por_numero` é `security definer`, checa `tem_acesso_area('contratos','consulta')` e devolve vazio para os demais.
+4. **Busca e sugestões** calculadas na hora, com o cliente do usuário, sem gravar sugestões fora da RLS.
+5. **Sem nome de arquivo** nas descrições de `atividade_regras`, nos títulos de pendência e nas mensagens do Slack, porque `atividades`
+   é lida por `acompanha_equipe` sem filtro de área (0094).
+6. **Next e Edge Functions:**
+   - as telas usam o cliente do usuário (`lib/supabase/servidor.ts`);
+   - as Edge Functions devolvem só contagens ou mensagens genéricas;
+   - o acesso por id responde "não encontrado" sem distinguir de "sem acesso".
+7. **Drive:** os membros do Drive compartilhado precisam ser conferidos (PENDENTE 24). Sem isso, a D-6 vale no Neo Admin e não no Drive.
+
+### 15.5 R4-P5 — Integridade das obrigações
+1. **Origem** `modelo` / `sistema` / `manual`. Só as de origem `modelo` reagem a condição, modalidade, variante ou versão.
+2. **Uma obrigação ativa por item do modelo e por campo de condição** (índices da seção 8).
+3. **"Deixou de se aplicar"** vai para `cancelada`, com motivo `nao_aplicavel`, e **conta como resolvida** para as dependentes. As
+   concluídas e dispensadas não mudam.
+4. **"Voltou a se aplicar"** cria uma obrigação nova (`substitui_obrigacao_id`); a cancelada não é reaberta.
+5. **Troca de modalidade, variante ou versão** (gestor, motivo, uma transação):
+   - cancela as `modelo` abertas e bloqueadas;
+   - mantém as concluídas, as dispensadas e as de origem `sistema`/`manual`;
+   - cria as novas;
+   - o aproveitamento de conclusões do mesmo tipo é escolhido pelo gestor, item a item (PENDENTE 25).
+6. **Reabertura:**
+   - as dependentes não concluídas voltam a `bloqueada`;
+   - as concluídas ganham a marca "dependência reaberta";
+   - a liberação é recalculada, com evento.
+7. **Responsável:**
+   - a fonte é `ctr_obrigacoes.responsavel_id`;
+   - a troca feita na Central volta por gatilho.
+8. **Concorrência e pendências:**
+   - toda mudança de plano trava a operação (`for update`);
+   - cada obrigação nova tem chave nova;
+   - estado final: `encerrar_pendencia`.
+
+### 15.6 R4-P6 — Numeração
+1. Gravar `numero` (como digitado) e `numero_normalizado`. A regra de normalização ainda precisa ser validada.
+2. Enquanto o PENDENTE 8 não for decidido, a chave é a **mais restritiva**, `(empresa_id, numero_normalizado)`, alinhada a
+   `rec_contratos`, cuja regra **não é alterada**.
+3. Se se confirmar que tipos diferentes podem repetir número, a chave passa a incluir o tipo **e** o Financeiro decide como fica
+   `rec_contratos`. Até lá, a pendência de encargos pode ficar sem solução (N-1).
+
+### 15.7 R4-P7 — Encargos no Financeiro (alternativa A recomendada)
+1. **Função** `ctr_contratos_sem_encargos()` [PROPOSTA, no lugar da view `ctr_vw_contratos_sem_encargos` da 4.2]:
+   - `security definer`, checa `tem_acesso_area('financeiro','operador')`, o que já exclui a `unidade_restrita` (0152);
+   - devolve só empresa, cliente, número, tipo, data de assinatura e o id do `contrato_assinado` **quando ele está no dossiê do
+     cliente**.
+2. **O Financeiro publica e resolve:** publica a pendência no módulo dele e a resolve numa tela dele, com `rec_registrar_contrato`. Sem
+   acesso ao Contratos.
+3. **Exposição:** os dados expostos não ampliam o que o Financeiro já vê dos clientes (`rec_titulos`). Nenhum dado de minuta,
+   elaboração ou obrigação é exposto.
+4. **Alternativas descartadas** (detalhes no relatório):
+   - B: responsável nominal;
+   - C: consulta em Contratos;
+   - D: o Contratos publica no módulo de outro.
+   Decisão no PENDENTE 26.
+
+### 15.8 R4-P8 — Locação
+1. **Confirmado:** o escopo não duplica o Faturamento Filial (`rec_kits`, `financeiro.filial`), porque o `fatura_locacao` só liga e
+   consulta.
+2. **Proposta:** a validação do modelo de `locacao` recusa os tipos `emitir_nf_*`; `acompanhar_titulos` só com aprovação.
+3. **Documentar** a diferença entre `rec_remessas` (kits da filial) e `ctr_remessas` (mercadoria).
+4. **Dependência externa:** saber se o faturamento de locação da Matriz usa o mesmo fluxo da filial (I-5).
+
