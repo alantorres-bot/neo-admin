@@ -312,6 +312,7 @@ export type ArquivoDrive = {
   parents?: string[];
   trashed?: boolean;
   headRevisionId?: string;
+  createdTime?: string;
   modifiedTime?: string;
   size?: string;
   md5Checksum?: string;
@@ -327,8 +328,12 @@ export type DocumentoIndice = {
   driveId: string;
   pastaDriveId: string;
   nome: string;
+  /** Para a busca por `ilike` (seção 8): minúsculo, sem acento. */
+  nomeNormalizado: string;
+  extensao: string;
   mime: string;
   driveRevisao: string | null;
+  criadoNoDriveEm: string | null;
   alteradoNoDriveEm: string | null;
   tamanhoBytes: number | null;
   md5: string | null;
@@ -387,6 +392,8 @@ export function aplicarMudanca(m: MudancaDrive, indice: EstadoIndice): Resultado
   // A raiz (profundidade 0) é governada pelo cadastro (`ged_pastas_raiz`, 5.2.3), não pela indexação.
   if (pasta?.profundidade === 0) return { acao: "nenhuma" };
   const doc = indice.documentos.get(m.fileId);
+  // Sem `file` e sem `removed`: a conta técnica deixou de enxergar o item. Sem leitura não há o que indexar, então conta como
+  // removido (nunca como inserção). Mudanças do próprio Drive compartilhado vêm sem `fileId` e não acham nada no índice.
   const removido = m.removed === true || m.file?.trashed === true || !m.file;
 
   if (removido) return pasta ? moverPasta(pasta, "removida_no_drive") : moverDocumento(doc, "removido_no_drive");
@@ -407,8 +414,11 @@ export function aplicarMudanca(m: MudancaDrive, indice: EstadoIndice): Resultado
     driveId: f.id,
     pastaDriveId: mae.driveId,
     nome: f.name,
+    nomeNormalizado: normalizarTexto(f.name),
+    extensao: separarVersao(f.name).extensao,
     mime: f.mimeType,
     driveRevisao: f.headRevisionId ?? null,
+    criadoNoDriveEm: f.createdTime ?? null,
     alteradoNoDriveEm: f.modifiedTime ?? null,
     tamanhoBytes: f.size !== undefined ? Number(f.size) : null,
     md5: f.md5Checksum ?? null,
@@ -462,6 +472,125 @@ export async function percorrerMudancas(
     if (!pagina.nextPageToken) throw new ErroDrive("Resposta do Drive sem token de continuação.");
     token = pagina.nextPageToken;
     if (itens >= opcoes.maxItens) return { proximoToken: token, completa: false, itens };
+  }
+}
+
+/** Contagens da rodada para `ged_indexacoes.resumo` (seção 8): novos, alterados, removidos e ignorados. */
+export function resumirRodada(resultados: readonly ResultadoMudanca[]) {
+  const resumo = { novos: 0, alterados: 0, removidos: 0, ignorados: 0, pastas: 0 };
+  for (const r of resultados) {
+    if (r.acao === "gravar_pasta") resumo.pastas++;
+    if (r.acao !== "gravar_documento") continue;
+    const s = r.documento.situacao;
+    if (s === "removido_no_drive" || s === "fora_do_escopo") resumo.removidos++;
+    else if (s === "ignorado") resumo.ignorados++;
+    else if (r.novo) resumo.novos++;
+    else resumo.alterados++;
+  }
+  return resumo;
+}
+
+// ───────────────────────── Carga inicial, verificação e reconciliação (5.2.4.1, 5.3.1, 5.3.4) ─────────────────────────
+
+export type ArvoreLida = {
+  /** Pastas encontradas (sem a raiz), com a profundidade (filha direta da raiz = 1). */
+  pastas: { arquivo: ArquivoDrive; profundidade: number }[];
+  /** Arquivos (não pastas), com a profundidade da pasta-mãe. */
+  arquivos: { arquivo: ArquivoDrive; profundidadeMae: number }[];
+  /** Parou pelo limite de itens: a árvore está incompleta. */
+  truncada: boolean;
+};
+
+/**
+ * Percorre a raiz em largura, só com `files.list` (GET), até `profundidadeMax` (5.3.1). Pastas além do limite não são abertas.
+ * Para em `maxItens` e marca `truncada`. Não grava nada: serve à carga inicial, à verificação e à reconciliação.
+ */
+export async function percorrerArvore(
+  cliente: ClienteDrive,
+  raizId: string,
+  opcoes: { profundidadeMax: number; maxItens: number; driveId?: string },
+): Promise<ArvoreLida> {
+  const arvore: ArvoreLida = { pastas: [], arquivos: [], truncada: false };
+  const fila: { id: string; profundidade: number }[] = [{ id: raizId, profundidade: 0 }];
+  let itens = 0;
+  while (fila.length > 0) {
+    const atual = fila.shift() as { id: string; profundidade: number };
+    for (const a of await listarPasta(cliente, atual.id, opcoes.driveId)) {
+      if (itens >= opcoes.maxItens) return { ...arvore, truncada: true };
+      itens++;
+      if (a.mimeType === MIME_PASTA) {
+        const profundidade = atual.profundidade + 1;
+        if (profundidade > opcoes.profundidadeMax) continue;
+        arvore.pastas.push({ arquivo: a, profundidade });
+        fila.push({ id: a.id, profundidade });
+      } else {
+        arvore.arquivos.push({ arquivo: a, profundidadeMae: atual.profundidade });
+      }
+    }
+  }
+  return arvore;
+}
+
+/** A árvore lida como mudanças do Drive, pastas antes dos arquivos e em ordem de profundidade, prontas para `aplicarMudanca`. */
+export function mudancasDaArvore(arvore: ArvoreLida): MudancaDrive[] {
+  const pastas = [...arvore.pastas].sort((a, b) => a.profundidade - b.profundidade);
+  return [...pastas.map((p) => p.arquivo), ...arvore.arquivos.map((a) => a.arquivo)].map((f) => ({ fileId: f.id, file: f }));
+}
+
+/**
+ * Resumo da verificação da raiz (5.2.4.1): quantidades por nível, subpastas de 1º e 2º nível, extensões mais comuns e temporários.
+ * Contém NOMES de pastas e arquivos: só pode ir ao admin geral, e a persistência segue a 5.2.4.4 [PENDENTE 13].
+ */
+export function resumirArvore(arvore: ArvoreLida, padroesIgnorar?: readonly string[]) {
+  const niveis = new Map<number, { pastas: number; arquivos: number }>();
+  const nivel = (n: number) => {
+    let c = niveis.get(n);
+    if (!c) niveis.set(n, (c = { pastas: 0, arquivos: 0 }));
+    return c;
+  };
+  for (const p of arvore.pastas) nivel(p.profundidade).pastas++;
+  for (const a of arvore.arquivos) nivel(a.profundidadeMae).arquivos++;
+
+  const extensoes = new Map<string, number>();
+  for (const { arquivo } of arvore.arquivos) {
+    const ext = separarVersao(arquivo.name).extensao || "(sem extensão)";
+    extensoes.set(ext, (extensoes.get(ext) ?? 0) + 1);
+  }
+  return {
+    porNivel: [...niveis].sort((a, b) => a[0] - b[0]).map(([profundidade, c]) => ({ profundidade, ...c })),
+    subpastasNivel1: arvore.pastas.filter((p) => p.profundidade === 1).map((p) => p.arquivo.name),
+    subpastasNivel2: arvore.pastas.filter((p) => p.profundidade === 2).map((p) => p.arquivo.name),
+    extensoes: [...extensoes].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([extensao, quantidade]) => ({ extensao, quantidade })),
+    temporarios: arvore.arquivos.map((a) => a.arquivo.name).filter((n) => ehArquivoTemporario(n, padroesIgnorar)),
+    truncada: arvore.truncada,
+  };
+}
+
+/**
+ * Reconciliação (5.3.4): itens indexados que não apareceram na listagem completa. Não há regra que diga, só pela ausência, se o
+ * item foi apagado ou movido; por isso cada ausente é consultado no Drive (`files.get`, GET) e vira uma mudança comum, que
+ * `aplicarMudanca` trata como qualquer outra (404 = removido). A raiz (profundidade 0) não entra.
+ */
+export function ausentesNaListagem(arvore: ArvoreLida, indice: EstadoIndice): string[] {
+  // Árvore truncada não serve: o que não foi lido pareceria sumido.
+  if (arvore.truncada) throw new ErroDrive("Listagem incompleta (limite de itens): a reconciliação não pode marcar ausentes.");
+  const vistos = new Set([...arvore.pastas.map((p) => p.arquivo.id), ...arvore.arquivos.map((a) => a.arquivo.id)]);
+  const pastas = [...indice.pastas.values()].filter((p) => p.profundidade > 0 && p.situacao === "ativa").map((p) => p.driveId);
+  const docs = [...indice.documentos.values()]
+    .filter((d) => d.situacao === "vigente" || d.situacao === "ignorado")
+    .map((d) => d.driveId);
+  return [...pastas, ...docs].filter((id) => !vistos.has(id));
+}
+
+/** Consulta um item ausente e o devolve como mudança: 404 vira `removed`; senão, o arquivo como está hoje. */
+export async function consultarAusente(cliente: ClienteDrive, driveId: string): Promise<MudancaDrive> {
+  if (!/^[A-Za-z0-9_-]+$/.test(driveId)) throw new ErroDrive("ID de arquivo inválido.");
+  try {
+    const file = (await cliente.get(`files/${driveId}`, { fields: CAMPOS_ARQUIVO, supportsAllDrives: "true" })) as ArquivoDrive;
+    return { fileId: driveId, file };
+  } catch (e) {
+    if (e instanceof ErroDrive && e.status === 404) return { fileId: driveId, removed: true };
+    throw e;
   }
 }
 

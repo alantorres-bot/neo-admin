@@ -33,9 +33,21 @@ function gravar(indice: ReturnType<typeof novoIndice>, r: ResultadoMudanca) {
 }
 
 describe("aplicarMudanca", () => {
-  it("inserção de arquivo numa pasta indexada", () => {
-    const r = aplicarMudanca(arquivo("d1", "Contrato.pdf"), novoIndice());
-    expect(r).toMatchObject({ acao: "gravar_documento", novo: true, novaRevisao: true, documento: { situacao: "vigente", pastaDriveId: "P" } });
+  it("inserção de arquivo numa pasta indexada, com os campos do modelo de dados (seção 8)", () => {
+    const r = aplicarMudanca(arquivo("d1", "Contrato Março.PDF", "P", { createdTime: "2026-10-01T12:00:00Z", size: "2048" }), novoIndice());
+    expect(r).toMatchObject({
+      acao: "gravar_documento",
+      novo: true,
+      novaRevisao: true,
+      documento: {
+        situacao: "vigente",
+        pastaDriveId: "P",
+        nomeNormalizado: "contrato marco.pdf",
+        extensao: "pdf",
+        criadoNoDriveEm: "2026-10-01T12:00:00Z",
+        tamanhoBytes: 2048,
+      },
+    });
   });
 
   it("alteração: nova revisão é sinalizada; mesmo conteúdo não muda nada", () => {
@@ -139,6 +151,62 @@ describe("percorrerMudancas", () => {
     const r = await percorrerMudancas(criarClienteDrive(async () => "t", { fazerFetch: f }), "t1", async () => {}, { maxItens: 2 });
     expect(r).toEqual({ proximoToken: "t2", completa: false, itens: 2 });
     expect(f).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("aplicarMudanca — casos adicionais", () => {
+  it("temporário renomeado para nome normal passa a vigente", () => {
+    const indice = novoIndice();
+    gravar(indice, aplicarMudanca(arquivo("t1", "~$Contrato.docx"), indice));
+    expect(indice.documentos.get("t1")?.situacao).toBe("ignorado");
+    expect(aplicarMudanca(arquivo("t1", "Contrato.docx"), indice)).toMatchObject({ documento: { situacao: "vigente" } });
+  });
+
+  it("várias pastas-mãe: basta uma indexada", () => {
+    const m: MudancaDrive = { fileId: "d1", file: { id: "d1", name: "A.pdf", mimeType: "application/pdf", parents: ["OUTRA", "P"] } };
+    expect(aplicarMudanca(m, novoIndice())).toMatchObject({ documento: { pastaDriveId: "P", situacao: "vigente" } });
+  });
+
+  it("atalho guarda o destino", () => {
+    const m = arquivo("a1", "Atalho", "P", { mimeType: "application/vnd.google-apps.shortcut", shortcutDetails: { targetId: "alvo" } });
+    expect(aplicarMudanca(m, novoIndice())).toMatchObject({ documento: { atalhoPara: "alvo" } });
+  });
+
+  it("pasta já indexada e sem mudança: nenhuma; pasta-mãe removida tira a filha do escopo", () => {
+    const indice = novoIndice();
+    const sub: MudancaDrive = { fileId: "S", file: { id: "S", name: "S", mimeType: MIME_PASTA, parents: ["P"] } };
+    gravar(indice, aplicarMudanca(sub, indice));
+    expect(aplicarMudanca(sub, indice)).toEqual({ acao: "nenhuma" });
+    gravar(indice, aplicarMudanca({ fileId: "P", removed: true }, indice));
+    expect(aplicarMudanca(sub, indice)).toMatchObject({ pasta: { situacao: "fora_do_escopo" } });
+  });
+
+  it("mudança sem arquivo e sem removed é tratada como remoção, nunca como inserção", () => {
+    const indice = novoIndice();
+    gravar(indice, aplicarMudanca(arquivo("d1", "A.pdf"), indice));
+    expect(aplicarMudanca({ fileId: "d1" }, indice)).toMatchObject({ documento: { situacao: "removido_no_drive" } });
+  });
+});
+
+describe("percorrerMudancas — repetição e parâmetros", () => {
+  it("429 numa página do meio é repetido e a rodada termina normalmente", async () => {
+    const respostas = [
+      new Response(JSON.stringify({ changes: [{ fileId: "a" }], nextPageToken: "t2" }), { status: 200 }),
+      new Response("{}", { status: 429 }),
+      new Response(JSON.stringify({ changes: [{ fileId: "b" }], newStartPageToken: "novo" }), { status: 200 }),
+    ];
+    const f = vi.fn(async () => respostas.shift() as Response);
+    const cliente = criarClienteDrive(async () => "t", { fazerFetch: f, esperar: async () => {} });
+    const r = await percorrerMudancas(cliente, "t1", async () => {}, { maxItens: 5000, driveId: "DRV" });
+    expect(r).toEqual({ proximoToken: "novo", completa: true, itens: 2 });
+    expect(f).toHaveBeenCalledTimes(3);
+    expect(String((f.mock.calls[0] as unknown[])[0])).toContain("driveId=DRV");
+  });
+
+  it("resposta sem token de continuação é erro, e o token não avança", async () => {
+    const f = vi.fn(async () => new Response(JSON.stringify({ changes: [] }), { status: 200 }));
+    const cliente = criarClienteDrive(async () => "t", { fazerFetch: f });
+    await expect(percorrerMudancas(cliente, "t1", async () => {}, { maxItens: 10 })).rejects.toThrow("sem token de continuação");
   });
 });
 
