@@ -224,6 +224,22 @@ export function sugerirSubstituicoes(arquivos: readonly ArquivoVersionavel[]): S
   return sugestoes;
 }
 
+// ───────────────────────── Pistas do arquivo de trabalho (5.4.8) ─────────────────────────
+
+/**
+ * Pistas para SUGERIR o vínculo de um arquivo da raiz `elaboracao` (5.4.8): o número de contrato no início do nome (`^\d+ - `)
+ * e o nome curto do cliente no último trecho "… - <cliente>", sem extensão e sem marca de versão. Só sugestão: quem compara com
+ * os contratos é `ctr_alvos_por_numero` (com a autorização de quem pergunta), e a confirmação é sempre humana.
+ */
+export function pistasArquivoTrabalho(nome: string): { numeroContrato: string | null; clienteCurto: string | null } {
+  const numero = /^\s*(\d+)\s+-\s+/.exec(nome)?.[1] ?? null;
+  const ponto = nome.lastIndexOf(".");
+  const semExtensao = ponto > 0 ? nome.slice(0, ponto) : nome;
+  const trechos = semExtensao.replace(MARCA_VERSAO, "").split(/\s+-\s+/);
+  const ultimo = trechos.length >= 2 ? trechos[trechos.length - 1].trim() : "";
+  return { numeroContrato: numero, clienteCurto: ultimo !== "" && !/^\d+$/.test(ultimo) ? ultimo : null };
+}
+
 // ───────────────────────── Pastas-raiz (5.2.4, 5.3.0) ─────────────────────────
 
 export type SituacaoRaiz = "em_verificacao" | "ativa" | "inativa";
@@ -473,6 +489,41 @@ export async function percorrerMudancas(
     token = pagina.nextPageToken;
     if (itens >= opcoes.maxItens) return { proximoToken: token, completa: false, itens };
   }
+}
+
+// ───────────────────────── Linhas para o banco (seção 8, modelo PROPOSTO) ─────────────────────────
+// Só as colunas que a indexação grava. Tipo, cliente, versão e modelo são decisões de pessoas (funções de decisão, 5.10) e não
+// entram aqui. Os `uuid` internos (raiz e pasta) vêm de quem grava. O modelo de dados ainda é [PROPOSTA]; se mudar, muda aqui.
+
+export function linhaDocumento(d: DocumentoIndice, ids: { raizId: string; pastaId: string }) {
+  return {
+    origem: "drive",
+    drive_id: d.driveId,
+    raiz_id: ids.raizId,
+    pasta_id: ids.pastaId,
+    nome: d.nome,
+    nome_normalizado: d.nomeNormalizado,
+    mime: d.mime,
+    extensao: d.extensao,
+    tamanho_bytes: d.tamanhoBytes,
+    md5: d.md5,
+    drive_revisao: d.driveRevisao,
+    criado_no_drive_em: d.criadoNoDriveEm,
+    alterado_no_drive_em: d.alteradoNoDriveEm,
+    web_link: d.webLink,
+    atalho_para: d.atalhoPara,
+    situacao: d.situacao,
+  };
+}
+
+export function linhaPasta(p: PastaIndice, ids: { raizId: string }) {
+  return { raiz_id: ids.raizId, drive_id: p.driveId, nome: p.nome, mae_drive_id: p.maeDriveId, profundidade: p.profundidade, situacao: p.situacao };
+}
+
+/** Linha de `ged_documento_revisoes` (só inserção), quando `aplicarMudanca` sinaliza `novaRevisao`. */
+export function linhaRevisao(d: DocumentoIndice, documentoId: string) {
+  if (d.driveRevisao === null) throw new Error("Documento sem revisão do Drive.");
+  return { documento_id: documentoId, drive_revisao: d.driveRevisao, alterado_no_drive_em: d.alteradoNoDriveEm, tamanho_bytes: d.tamanhoBytes, md5: d.md5 };
 }
 
 /** Contagens da rodada para `ged_indexacoes.resumo` (seção 8): novos, alterados, removidos e ignorados. */
