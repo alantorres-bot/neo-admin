@@ -645,6 +645,71 @@ export async function consultarAusente(cliente: ClienteDrive, driveId: string): 
   }
 }
 
+// ───────────────────────── Carga inicial integrada (5.3.1) ─────────────────────────
+
+/**
+ * Carga inicial de uma raiz: pega o `startPageToken` ANTES de listar (para não perder mudanças feitas durante a leitura), percorre
+ * a árvore e aplica tudo pelo mesmo caminho do incremental (`aplicarMudanca`), sobre uma cópia do índice atual. Não grava nada.
+ * - Listagem completa: devolve o token, que só então pode ser gravado (5.3.1 e 5.3.3).
+ * - Listagem truncada pelo limite: devolve o que foi lido (só inserções e atualizações; a listagem não traz itens na lixeira, então
+ *   nada é marcado como removido) e token nulo. A próxima rodada refaz a carga, que é idempotente.
+ * - Falha no meio (Drive ou gravação): a exceção sobe e nada é devolvido.
+ * Sugestões de vínculo (5.4.8) NÃO são calculadas aqui: são feitas na hora, com a permissão do usuário (5.11.5).
+ */
+export async function cargaInicial(
+  cliente: ClienteDrive,
+  raiz: { driveId: string; driveIdCompartilhado?: string },
+  indice: EstadoIndice,
+  opcoes: { maxItens: number },
+): Promise<{ resultados: ResultadoMudanca[]; resumo: ReturnType<typeof resumirRodada>; completa: boolean; startPageToken: string | null }> {
+  if (indice.pastas.get(raiz.driveId)?.profundidade !== 0) throw new ErroDrive("A raiz precisa estar no índice com profundidade 0.");
+  const paramsToken: Record<string, string> = { supportsAllDrives: "true" };
+  if (raiz.driveIdCompartilhado) paramsToken.driveId = raiz.driveIdCompartilhado;
+  const { startPageToken } = (await cliente.get("changes/startPageToken", paramsToken)) as { startPageToken?: string };
+  if (!startPageToken) throw new ErroDrive("Resposta do Drive sem startPageToken.");
+
+  const arvore = await percorrerArvore(cliente, raiz.driveId, {
+    profundidadeMax: indice.profundidadeMax,
+    maxItens: opcoes.maxItens,
+    driveId: raiz.driveIdCompartilhado,
+  });
+  const pastas = new Map(indice.pastas);
+  const documentos = new Map(indice.documentos);
+  const estado: EstadoIndice = { pastas, documentos, profundidadeMax: indice.profundidadeMax, padroesIgnorar: indice.padroesIgnorar };
+  const resultados: ResultadoMudanca[] = [];
+  for (const m of mudancasDaArvore(arvore)) {
+    const r = aplicarMudanca(m, estado);
+    if (r.acao === "gravar_pasta") pastas.set(r.pasta.driveId, r.pasta);
+    if (r.acao === "gravar_documento") documentos.set(r.documento.driveId, r.documento);
+    if (r.acao !== "nenhuma") resultados.push(r);
+  }
+  return { resultados, resumo: resumirRodada(resultados), completa: !arvore.truncada, startPageToken: arvore.truncada ? null : startPageToken };
+}
+
+// Gravação em três passos, porque os `uuid` só existem depois do insert: pastas → documentos (com o id da pasta) → revisões
+// (com o id do documento). Sem o id correspondente, para em vez de gravar uma linha órfã. A mensagem não cita IDs (5.11.11).
+const exigirId = (id: string | undefined, oQue: string): string => {
+  if (!id) throw new Error(`Sem o id interno de ${oQue}: a gravação foi interrompida para não deixar linha órfã.`);
+  return id;
+};
+
+export const pastasParaGravar = (resultados: readonly ResultadoMudanca[], raizId: string) =>
+  resultados.flatMap((r) => (r.acao === "gravar_pasta" ? [linhaPasta(r.pasta, { raizId })] : []));
+
+export const documentosParaGravar = (resultados: readonly ResultadoMudanca[], raizId: string, idDaPasta: (driveId: string) => string | undefined) =>
+  resultados.flatMap((r) =>
+    r.acao === "gravar_documento"
+      ? [linhaDocumento(r.documento, { raizId, pastaId: exigirId(idDaPasta(r.documento.pastaDriveId), "uma pasta") })]
+      : [],
+  );
+
+export const revisoesParaGravar = (resultados: readonly ResultadoMudanca[], idDoDocumento: (driveId: string) => string | undefined) =>
+  resultados.flatMap((r) =>
+    r.acao === "gravar_documento" && r.novaRevisao
+      ? [linhaRevisao(r.documento, exigirId(idDoDocumento(r.documento.driveId), "um documento"))]
+      : [],
+  );
+
 /** Lista todo o conteúdo de uma pasta (`files.list`), página por página (carga inicial e reconciliação, 5.3.1). */
 export async function listarPasta(cliente: ClienteDrive, pastaId: string, driveId?: string): Promise<ArquivoDrive[]> {
   if (!/^[A-Za-z0-9_-]+$/.test(pastaId)) throw new ErroDrive("ID de pasta inválido.");
