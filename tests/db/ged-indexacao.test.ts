@@ -27,6 +27,7 @@ const POR_PAGINA = 2;
 const arquivos = new Map<string, ArquivoDrive>();
 const mudancas: string[] = [];                                           // ids alterados, em ordem; o token é o índice
 let falharEm: ((u: URL) => boolean) | null = null;
+let relogio = 0;                                                         // agoraMs: 0 = "antes" de tudo (nunca reconcilia)
 const chamadas = { drive: 0, token: 0 };
 
 const pasta = (id: string, mae: string): ArquivoDrive => ({ id, name: `Pasta ficticia ${id}`, mimeType: MIME_PASTA, parents: [mae] });
@@ -49,6 +50,11 @@ async function driveSimulado(url: string): Promise<Response> {
   // Só metadados: qualquer pedido de conteúdo (download/exportação) reprova o teste.
   if (u.searchParams.has("alt") || u.pathname.includes("/export")) throw new Error("pedido de conteúdo do arquivo");
   if (falharEm?.(u)) return new Response("{}", { status: 500 });
+  const umArquivo = /\/files\/([A-Za-z0-9_-]+)$/.exec(u.pathname)?.[1];
+  if (umArquivo) {                                                       // files.get da reconciliação: 404 se sumiu
+    const f = arquivos.get(umArquivo);
+    return f ? new Response(JSON.stringify(f), { status: 200 }) : new Response(JSON.stringify({ error: { status: "NOT_FOUND" } }), { status: 404 });
+  }
   if (u.pathname.endsWith("/changes/startPageToken")) return new Response(JSON.stringify({ startPageToken: String(mudancas.length) }), { status: 200 });
   if (u.pathname.endsWith("/changes")) {
     const desde = Number(u.searchParams.get("pageToken"));
@@ -82,10 +88,13 @@ function deps(): DepsIndexacao {
     }) as unknown as DepsIndexacao["fetch"],
     fetchDrive: (url) => driveSimulado(url),
     esperar: async () => {},
-    agoraMs: () => 0,
+    agoraMs: () => relogio,
     raizesAtivas: async () =>
-      (await q(`select id, drive_id, drive_compartilhado_id, page_token from ged_pastas_raiz where situacao = 'ativa' order by finalidade`)).rows
-        .map((r) => ({ id: r.id, driveId: r.drive_id, driveIdCompartilhado: r.drive_compartilhado_id, pageToken: r.page_token })),
+      (await q(`select id, drive_id, drive_compartilhado_id, page_token, indexada_em, reconciliada_em from ged_pastas_raiz where situacao = 'ativa' order by finalidade`)).rows
+        .map((r) => ({
+          id: r.id, driveId: r.drive_id, driveIdCompartilhado: r.drive_compartilhado_id, pageToken: r.page_token,
+          indexadaEm: r.indexada_em?.toISOString() ?? null, reconciliadaEm: r.reconciliada_em?.toISOString() ?? null,
+        })),
   };
 }
 const indexar = (segredo: string | null = SEGREDO) => tratarIndexacao({ method: "POST", segredo }, deps()).then((r) => ({ status: r.status, corpo: JSON.parse(r.corpo ?? "null") }));
@@ -187,9 +196,24 @@ describe("indexação de ponta a ponta (5.3)", () => {
     await como(db, "service", () => q(`select ged_concluir_indexacao($1, '{}', null, 'teste')`, [aberta]));
   });
 
+  it("reconciliação semanal (5.3.4): acha o que o incremental perdeu, marca o sumido e não mexe no ponto de continuação", async () => {
+    arquivos.delete("c2");                                               // apagado sem aparecer no changes.list
+    arquivos.set("c3", arq("c3", "C2"));                                 // criado sem aparecer no changes.list
+    relogio = Date.now() + 8 * 86_400_000;
+    const r = await indexar();
+    expect(r.corpo.raizes.map((x: Linha) => [x.tipo, x.resultado])).toEqual([["reconciliacao", "ok"], ["reconciliacao", "ok"]]);
+    const d = await docs();
+    expect(d.c2.situacao).toBe("removido_no_drive");
+    expect(d.c3).toEqual({ situacao: "vigente", raiz: "dossie" });
+    expect(await tokens()).toEqual({ dossie_cliente: "10", elaboracao: "10" });
+    expect((await q(`select count(*)::int n from ged_pastas_raiz where reconciliada_em is not null`)).rows[0].n).toBe(2);
+    relogio = Date.now() + 3_600_000;                                    // logo depois: volta ao incremental
+    expect((await indexar()).corpo.raizes.map((x: Linha) => x.tipo)).toEqual(["incremental", "incremental"]);
+  });
+
   it("autorização por raiz no resultado: o comercial só vê o dossiê; o operador de Contratos vê as duas", async () => {
     const ver = (quem: string) => como(db, quem, () => q(`select drive_id from ged_documentos order by drive_id`)).then((r) => r.rows.map((x) => x.drive_id));
-    expect(await ver(comercial)).toEqual(["c1", "c2"]);
+    expect(await ver(comercial)).toEqual(["c1", "c2", "c3"]);
     expect((await ver(ctrOperador)).length).toBe((await q(`select count(*)::int n from ged_documentos`)).rows[0].n);
   });
 });

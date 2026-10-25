@@ -1258,12 +1258,27 @@ export async function tratarCadastroRaiz(
 // Resposta e log só com contagens e códigos (5.11.3, 5.11.11): nada de nome, id ou link.
 
 /** max_itens_rodada proposto (5.3.6) e profundidade proposta (5.3.1); prazo abaixo do tempo máximo da Edge Function. */
-export const LIMITE_INDEXACAO = { profundidadeMax: 4, maxItens: 5000, paralelas: 5, prazoMs: 100_000, documentosPorLote: 500 } as const;
+// shortcut: reconciliação a cada 7 dias fixos (proposta da 5.3.4); virar o parâmetro administrativo.ged.reconciliar_dias quando a
+// frequência for decidida (seção 14, item 4).
+export const LIMITE_INDEXACAO = {
+  profundidadeMax: 4, maxItens: 5000, paralelas: 5, prazoMs: 100_000, documentosPorLote: 500, reconciliarDias: 7,
+} as const;
 
-export type RaizIndexavel = { id: string; driveId: string; driveIdCompartilhado: string | null; pageToken: string | null };
-export type DepsIndexacao = DepsMetadados & { raizesAtivas: () => Promise<RaizIndexavel[]> };
+export type RaizIndexavel = {
+  id: string; driveId: string; driveIdCompartilhado: string | null; pageToken: string | null; reconciliadaEm: string | null;
+};
+type TipoRodada = "inicial" | "incremental" | "reconciliacao";
+
+/** Sem ponto de continuação: carga inicial. Com ele: reconciliação se a última (ou a carga) tiver mais de N dias; senão, incremental. */
+export function tipoDaRodada(raiz: RaizIndexavel, agoraMs: number, indexadaEm?: string | null): TipoRodada {
+  if (!raiz.pageToken) return "inicial";
+  const desde = raiz.reconciliadaEm ?? indexadaEm ?? null;
+  if (!desde) return "incremental";
+  return agoraMs - Date.parse(desde) >= LIMITE_INDEXACAO.reconciliarDias * 86_400_000 ? "reconciliacao" : "incremental";
+}
+export type DepsIndexacao = DepsMetadados & { raizesAtivas: () => Promise<(RaizIndexavel & { indexadaEm?: string | null })[]> };
 type ResumoRodada = ReturnType<typeof resumirRodada>;
-type ResumoRaiz = { tipo: "inicial" | "incremental"; resultado: string; completa: boolean } & Partial<ResumoRodada>;
+type ResumoRaiz = { tipo: TipoRodada; resultado: string; completa: boolean } & Partial<ResumoRodada>;
 
 const iguaisSeguro = (a: string, b: string) => {
   if (a.length !== b.length) return false;
@@ -1286,7 +1301,7 @@ export async function tratarIndexacao(req: { method: string; segredo: string | n
   const resumo: ResumoRaiz[] = [];
   let cliente: ClienteDrive | null = null;
   for (const raiz of await d.raizesAtivas()) {
-    const tipo = raiz.pageToken ? "incremental" : "inicial";
+    const tipo = tipoDaRodada(raiz, (d.agoraMs ?? Date.now)(), raiz.indexadaEm);
     const aberta = await d.rpc("ged_iniciar_indexacao", { p_raiz: raiz.id, p_tipo: tipo, p_agendada: true, p_usuario: null });
     if (aberta.error) {
       const codigo = codigoDoErro(aberta.error);
@@ -1344,9 +1359,26 @@ async function gravarLotes(rodada: string, resultados: readonly ResultadoMudanca
   }
 }
 
-async function indexarRaiz(cliente: ClienteDrive, raiz: RaizIndexavel, tipo: "inicial" | "incremental", rodada: string, d: DepsIndexacao) {
+async function indexarRaiz(cliente: ClienteDrive, raiz: RaizIndexavel, tipo: TipoRodada, rodada: string, d: DepsIndexacao) {
   const { indice, raizNova } = await indiceDaRaiz(raiz, d);
   const driveId = raiz.driveIdCompartilhado ?? undefined;
+  if (tipo === "reconciliacao") {
+    // 5.3.4: listagem completa; o que mudou entra pelo caminho comum e cada ausente é consultado no Drive (404 = removido).
+    // Listagem incompleta não marca ausentes (ausentesNaListagem lança): a rodada falha e o token fica onde estava.
+    const arvore = await percorrerArvore(cliente, raiz.driveId, {
+      profundidadeMax: LIMITE_INDEXACAO.profundidadeMax, maxItens: LIMITE_INDEXACAO.maxItens, driveId,
+      paralelas: LIMITE_INDEXACAO.paralelas, prazo: { limiteMs: LIMITE_INDEXACAO.prazoMs, agora: d.agoraMs ?? Date.now },
+    });
+    if (arvore.truncada) throw new Error("ged:listagem_incompleta");
+    const resultados = aplicarPaginaNoIndice(mudancasDaArvore(arvore), indice);
+    const ausentes = ausentesNaListagem(arvore, indice);
+    const consultados: MudancaDrive[] = [];
+    for (const id of ausentes) consultados.push(await consultarAusente(cliente, id));
+    resultados.push(...aplicarPaginaNoIndice(consultados, indice));
+    await gravarLotes(rodada, resultados, d);
+    // O ponto de continuação não muda; reenviá-lo faz o banco registrar reconciliada_em (0806).
+    return { resumo: resumirRodada(resultados), token: raiz.pageToken, completa: true };
+  }
   if (tipo === "inicial") {
     const r = await cargaInicial(cliente, { driveId: raiz.driveId, driveIdCompartilhado: driveId }, indice, {
       maxItens: LIMITE_INDEXACAO.maxItens, paralelas: LIMITE_INDEXACAO.paralelas,

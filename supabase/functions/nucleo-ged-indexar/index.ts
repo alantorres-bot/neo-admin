@@ -7,7 +7,7 @@
 //  chamada ao Google). Resposta e log só com contagens e códigos.
 // Segredos: os da nucleo-ged-conectar (GED_DRIVE_*), NEO_ADMIN_URL e SINCRONIZACAO_SEGREDO.
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { tratarIndexacao, type RaizIndexavel, type RespostaGed } from "../_shared/ged.ts";
+import { tratarIndexacao, type DepsIndexacao, type RespostaGed } from "../_shared/ged.ts";
 
 const responder = (r: RespostaGed) =>
   new Response(r.corpo ?? null, { status: r.status, headers: { "Content-Type": "application/json", "Cache-Control": "no-store" } });
@@ -28,11 +28,14 @@ Deno.serve(async (req) => {
       fetch: (u: string, init: RequestInit) => fetch(u, init),
       agoraSeg: () => Math.floor(Date.now() / 1000),
       perfilAdmin: async () => null, // não há chamada por usuário nesta função
-      raizesAtivas: async (): Promise<RaizIndexavel[]> => {
+      raizesAtivas: async (): ReturnType<DepsIndexacao["raizesAtivas"]> => {
         const { data, error } = await banco.from("ged_pastas_raiz")
-          .select("id, drive_id, drive_compartilhado_id, page_token").eq("situacao", "ativa").order("finalidade");
+          .select("id, drive_id, drive_compartilhado_id, page_token, indexada_em, reconciliada_em").eq("situacao", "ativa").order("finalidade");
         if (error) throw new Error("ged:banco");
-        return (data ?? []).map((r) => ({ id: r.id, driveId: r.drive_id, driveIdCompartilhado: r.drive_compartilhado_id, pageToken: r.page_token }));
+        return (data ?? []).map((r) => ({
+          id: r.id, driveId: r.drive_id, driveIdCompartilhado: r.drive_compartilhado_id, pageToken: r.page_token,
+          indexadaEm: r.indexada_em, reconciliadaEm: r.reconciliada_em,
+        }));
       },
       log: (m) => console.log(m),
     }),
