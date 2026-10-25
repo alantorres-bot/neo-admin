@@ -480,7 +480,9 @@ export async function percorrerMudancas(
     };
     if (opcoes.driveId) Object.assign(params, { driveId: opcoes.driveId });
     const pagina = (await cliente.get("changes", params)) as PaginaMudancas;
-    const mudancas = pagina.changes ?? [];
+    // A API sempre devolve a lista, mesmo vazia: sem ela, é resposta inválida, não "nenhuma mudança".
+    if (!Array.isArray(pagina.changes)) throw new ErroDrive("Resposta do Drive sem a lista de mudanças.");
+    const mudancas = pagina.changes;
     await aplicarPagina(mudancas);
     itens += mudancas.length;
 
@@ -737,8 +739,240 @@ export async function listarPasta(cliente: ClienteDrive, pastaId: string, driveI
     if (driveId) Object.assign(params, { corpora: "drive", driveId });
     if (pageToken) params.pageToken = pageToken;
     const pagina = (await cliente.get("files", params)) as { files?: ArquivoDrive[]; nextPageToken?: string };
-    arquivos.push(...(pagina.files ?? []));
+    // Sem a lista, é resposta inválida, não pasta vazia (senão a reconciliação veria tudo como sumido).
+    if (!Array.isArray(pagina.files)) throw new ErroDrive("Resposta do Drive sem a lista de arquivos.");
+    arquivos.push(...pagina.files);
     pageToken = pagina.nextPageToken;
   } while (pageToken);
   return arquivos;
+}
+
+// ───────────────────────── Conexão OAuth da conta dedicada (A0-conexão) ─────────────────────────
+// Plano: docs/auditoria/PLANO_FASE_A0_GED_2026-10-24.md (versão consolidada). Migration: 0801_ged_conexao.sql.
+// PKCE S256; state consumido no banco ANTES da troca do código; identidade e escopos conferidos; só códigos fixos na URL de
+// volta. Os únicos POST do GED são ao OAuth do Google (token e revoke); a Drive API continua só GET. Nada aqui registra log.
+
+export const ESCOPO_DRIVE_LEITURA = "https://www.googleapis.com/auth/drive.readonly";
+const ESCOPOS_ACEITOS = new Set(["openid", "email", "https://www.googleapis.com/auth/userinfo.email", ESCOPO_DRIVE_LEITURA]);
+const ESCOPOS_PEDIDOS = `openid email ${ESCOPO_DRIVE_LEITURA}`;
+const DOMINIO_GED = "neoformas.com.br";
+const EMISSORES_GOOGLE = new Set(["accounts.google.com", "https://accounts.google.com"]);
+const URL_AUTORIZACAO = "https://accounts.google.com/o/oauth2/v2/auth";
+const URL_TOKEN = "https://oauth2.googleapis.com/token";
+const URL_REVOGAR = "https://oauth2.googleapis.com/revoke";
+const STATE_GED = /^[0-9a-f]{64}$/;
+export const DESTINO_GED = /^\/(?!\/)[a-z0-9_-]+(\/[a-z0-9_-]+)*$/;
+const TEMPO_LIMITE_MS = 10_000;
+
+export type CodigoErroConexao =
+  | "invalid_grant" | "escopo_divergente" | "conta_divergente" | "identidade_invalida" | "token_ausente" | "http" | "recusado";
+
+/** Configuração obrigatória, sem fallback. Faltando ou inválido qualquer item: null (a função responde 500 genérico). */
+export function configConexao(env: (k: string) => string | undefined) {
+  const clientId = env("GED_DRIVE_CLIENT_ID")?.trim();
+  const clientSecret = env("GED_DRIVE_CLIENT_SECRET")?.trim();
+  const redirectUri = env("GED_DRIVE_REDIRECT_URI")?.trim();
+  const neoAdminUrl = env("NEO_ADMIN_URL")?.trim();
+  if (!clientId || !clientSecret || !redirectUri || !neoAdminUrl) return null;
+  try {
+    const r = new URL(redirectUri);
+    const n = new URL(neoAdminUrl);
+    if (r.protocol !== "https:" || !["https:", "http:"].includes(n.protocol)) return null;
+  } catch {
+    return null;
+  }
+  return { clientId, clientSecret, redirectUri, neoAdminUrl };
+}
+export type ConfigConexao = NonNullable<ReturnType<typeof configConexao>>;
+
+const base64Url = (bytes: Uint8Array) =>
+  btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+/** Desafio PKCE S256 (RFC 7636): base64url(SHA-256(verifier)). */
+export async function desafioPkce(verifier: string): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return base64Url(new Uint8Array(hash));
+}
+
+/** URL de autorização. `login_hint` e `hd` só orientam a tela do Google; a prova de identidade é o id_token. */
+export function urlAutorizacaoGoogle(cfg: ConfigConexao, state: string, desafio: string, conta: string): string {
+  const u = new URL(URL_AUTORIZACAO);
+  u.search = new URLSearchParams({
+    client_id: cfg.clientId, redirect_uri: cfg.redirectUri, response_type: "code", scope: ESCOPOS_PEDIDOS,
+    access_type: "offline", prompt: "consent", code_challenge: desafio, code_challenge_method: "S256",
+    login_hint: conta, hd: DOMINIO_GED, state,
+  }).toString();
+  return u.toString();
+}
+
+/** Conjunto exato de escopos concedidos: tem de ter o drive.readonly e nada fora da lista. Devolve a lista ou null. */
+export function escoposConcedidos(scope: string | undefined): string[] | null {
+  const lista = (scope ?? "").split(" ").filter(Boolean);
+  if (!lista.includes(ESCOPO_DRIVE_LEITURA) || lista.some((s) => !ESCOPOS_ACEITOS.has(s))) return null;
+  return lista;
+}
+
+/**
+ * Confere o id_token recebido DIRETO do endpoint de token (por TLS: a assinatura pode ser dispensada, OIDC Core 3.1.3.7, item 6).
+ * Exige emissor do Google, audiência = cliente do GED, validade, e-mail verificado (ausente = recusa), domínio e a conta configurada.
+ */
+export function conferirIdToken(
+  idToken: string | undefined,
+  esperado: { clientId: string; conta: string; agoraSeg: number },
+): { ok: true; email: string; sub: string } | { ok: false; codigo: "identidade_invalida" | "conta_divergente" } {
+  let d: { iss?: unknown; aud?: unknown; exp?: unknown; email?: unknown; email_verified?: unknown; hd?: unknown; sub?: unknown };
+  try {
+    const parte = (idToken ?? "").split(".")[1];
+    const b64 = parte.replace(/-/g, "+").replace(/_/g, "/");
+    d = JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)));
+  } catch {
+    return { ok: false, codigo: "identidade_invalida" };
+  }
+  const valido =
+    typeof d.iss === "string" && EMISSORES_GOOGLE.has(d.iss) &&
+    d.aud === esperado.clientId &&
+    typeof d.exp === "number" && d.exp > esperado.agoraSeg &&
+    d.email_verified === true &&
+    d.hd === DOMINIO_GED &&
+    typeof d.email === "string" && typeof d.sub === "string" && d.sub.trim() !== "";
+  if (!valido) return { ok: false, codigo: "identidade_invalida" };
+  const email = (d.email as string).trim().toLowerCase();
+  if (email !== esperado.conta.trim().toLowerCase()) return { ok: false, codigo: "conta_divergente" };
+  return { ok: true, email, sub: d.sub as string };
+}
+
+/** Volta ao Neo Admin: destino relativo validado, origem conferida contra NEO_ADMIN_URL, só códigos fixos na query. */
+export function urlRetornoGed(neoAdminUrl: string, destino: string, ged: "conectado" | "recusado" | "erro", codigo?: CodigoErroConexao): string | null {
+  if (!DESTINO_GED.test(destino)) return null;
+  const base = new URL(neoAdminUrl);
+  const u = new URL(destino, base);
+  if (u.origin !== base.origin) return null;
+  u.searchParams.set("ged", ged);
+  if (codigo) u.searchParams.set("codigo", codigo);
+  return u.toString();
+}
+
+export type RespostaGed = { status: number; location?: string; corpo?: string };
+type ResultadoRpc = { data: unknown; error: { message: string } | null };
+type FetchGed = (url: string, init: { method: "POST"; headers: Record<string, string>; body: string; signal?: AbortSignal }) => Promise<Response>;
+export type DepsConexao = {
+  env: (k: string) => string | undefined;
+  rpc: (nome: string, args: Record<string, unknown>) => Promise<ResultadoRpc>;
+  fetch: FetchGed;
+  agoraSeg: () => number;
+};
+
+const texto = (status: number, corpo: string): RespostaGed => ({ status, corpo });
+const ir = (location: string): RespostaGed => ({ status: 302, location });
+const tempoLimite = () => (typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(TEMPO_LIMITE_MS) : undefined);
+
+/** Fluxo da conexão (GET). Ida: `?state=`. Volta: `?code=&state=` ou `?error=&state=`. Nunca devolve code, token ou segredo. */
+export async function tratarConexao(req: { method: string; url: string }, d: DepsConexao): Promise<RespostaGed> {
+  if (req.method !== "GET") return texto(405, "Método não permitido.");
+  const cfg = configConexao(d.env);
+  if (!cfg) return texto(500, "A conexão do GED não está configurada.");
+  const p = new URL(req.url).searchParams;
+  const state = p.get("state") ?? "";
+  if (!STATE_GED.test(state)) return texto(400, "Pedido inválido. Volte ao Neo Admin e comece a conexão de novo.");
+  const expirou = texto(400, "A autorização expirou. Volte ao Neo Admin e comece a conexão de novo.");
+
+  const code = p.get("code");
+  const recusou = p.get("error") !== null;
+
+  // Ida ao Google.
+  if (!code && !recusou) {
+    const { data } = await d.rpc("ged_validar_estado", { p_state: state });
+    const e = data as { code_verifier: string; conta: string } | null;
+    if (!e) return expirou;
+    return ir(urlAutorizacaoGoogle(cfg, state, await desafioPkce(e.code_verifier), e.conta));
+  }
+
+  // Volta: consome o state ANTES de qualquer troca (replay da URL não troca de novo).
+  const { data } = await d.rpc("ged_consumir_estado", { p_state: state });
+  const e = data as { code_verifier: string; destino: string; conta: string } | null;
+  if (!e) return expirou;
+  const falhar = async (codigo: CodigoErroConexao) => {
+    await d.rpc("ged_registrar_erro_conexao", { p_codigo: codigo, p_state: state });
+    const volta = urlRetornoGed(cfg.neoAdminUrl, e.destino, codigo === "recusado" ? "recusado" : "erro", codigo);
+    return volta ? ir(volta) : texto(500, "Não foi possível concluir a conexão.");
+  };
+  if (recusou || !code) return falhar("recusado");
+
+  let tokens: { refresh_token?: string; id_token?: string; scope?: string };
+  try {
+    const resp = await d.fetch(URL_TOKEN, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code, client_id: cfg.clientId, client_secret: cfg.clientSecret, redirect_uri: cfg.redirectUri,
+        grant_type: "authorization_code", code_verifier: e.code_verifier,
+      }).toString(),
+      signal: tempoLimite(),
+    });
+    if (!resp.ok) return falhar("http");
+    tokens = (await resp.json()) as typeof tokens;
+  } catch {
+    return falhar("http");
+  }
+
+  const escopos = escoposConcedidos(tokens.scope);
+  if (!escopos) return falhar("escopo_divergente");
+  const id = conferirIdToken(tokens.id_token, { clientId: cfg.clientId, conta: e.conta, agoraSeg: d.agoraSeg() });
+  if (!id.ok) return falhar(id.codigo);
+  if (!tokens.refresh_token) return falhar("token_ausente");
+
+  const { data: destino, error } = await d.rpc("ged_concluir_conexao", {
+    p_state: state, p_email: id.email, p_sub: id.sub, p_escopos: escopos, p_refresh_token: tokens.refresh_token,
+  });
+  if (error || typeof destino !== "string") {
+    // A conclusão falha com códigos 'ged:<codigo>' (sem dado sensível); desconhecido vira o genérico 'http'.
+    const m = /^ged:(\w+)/.exec(error?.message ?? "")?.[1];
+    if (m === "estado_invalido") return expirou;
+    const conhecidos: CodigoErroConexao[] = ["escopo_divergente", "token_ausente", "identidade_invalida", "conta_divergente"];
+    return falhar(conhecidos.includes(m as CodigoErroConexao) ? (m as CodigoErroConexao) : "http");
+  }
+  const volta = urlRetornoGed(cfg.neoAdminUrl, destino, "conectado");
+  return volta ? ir(volta) : texto(500, "Não foi possível concluir a conexão.");
+}
+
+export type DepsDesconexao = DepsConexao & {
+  /** Perfil admin dono do JWT (rpc ged_perfil_admin_atual com o token do usuário), ou null. */
+  perfilAdmin: (jwt: string) => Promise<string | null>;
+  /** administrativo.ged.revogar_no_google (D-REV; padrão proposto: true). */
+  revogarNoGoogle: () => Promise<boolean>;
+};
+
+/**
+ * Desconexão (POST com o JWT do admin). Com D-REV ligada, revoga no Google ANTES e desconecta localmente SEMPRE: o estado local
+ * nunca fica ambíguo; a falha remota fica registrada ('falhou') para o admin revogar manualmente.
+ */
+export async function tratarDesconexao(req: { method: string; jwt: string | null }, d: DepsDesconexao): Promise<RespostaGed> {
+  if (req.method !== "POST") return texto(405, "Método não permitido.");
+  if (!req.jwt) return texto(401, "Entre no Neo Admin.");
+  const perfil = await d.perfilAdmin(req.jwt);
+  if (!perfil) return texto(403, "Só o administrador geral desconecta o Drive do GED.");
+
+  let revogacao: "ok" | "falhou" | "nao_tentada" = "nao_tentada";
+  if (await d.revogarNoGoogle()) {
+    const { data } = await d.rpc("ged_refresh_token", {});
+    const token = (data as { refresh_token?: string } | null)?.refresh_token;
+    if (token) {
+      try {
+        const resp = await d.fetch(URL_REVOGAR, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ token }).toString(),
+          signal: tempoLimite(),
+        });
+        let jaRevogado = false;
+        if (resp.status === 400) jaRevogado = ((await resp.json().catch(() => ({}))) as { error?: string }).error === "invalid_token";
+        revogacao = resp.ok || jaRevogado ? "ok" : "falhou";
+      } catch {
+        revogacao = "falhou";
+      }
+    }
+  }
+  const { error } = await d.rpc("ged_desconectar", { p_perfil: perfil, p_revogacao: revogacao });
+  if (error) return texto(500, "Não foi possível desconectar. Tente de novo.");
+  return { status: 200, corpo: JSON.stringify({ desconectado: true, revogacao }) };
 }

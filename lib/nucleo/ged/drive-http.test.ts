@@ -68,17 +68,25 @@ describe("criarClienteDrive", () => {
 });
 
 describe("varredura do código do GED", () => {
+  const shared = join(__dirname, "../../../supabase/functions/_shared");
+  const funcoes = join(__dirname, "../../../supabase/functions");
+  const indices = readdirSync(funcoes).filter((n) => /^(nucleo|administrativo)-ged/.test(n)).map((n) => join(funcoes, n, "index.ts"));
+
   it("nenhum arquivo do GED chama a Drive API com método de escrita", () => {
-    const shared = join(__dirname, "../../../supabase/functions/_shared");
-    const funcoes = join(__dirname, "../../../supabase/functions");
-    const fontes = [
-      join(shared, "ged.ts"),
-      ...readdirSync(funcoes).filter((n) => n.startsWith("administrativo-ged")).map((n) => join(funcoes, n, "index.ts")),
-    ];
-    for (const caminho of fontes) {
+    for (const caminho of [join(shared, "ged.ts"), ...indices]) {
       const codigo = readFileSync(caminho, "utf8");
-      expect(codigo, caminho).not.toMatch(/method:\s*["'](POST|PATCH|PUT|DELETE)["']/i);
+      expect(codigo, caminho).not.toMatch(/method:\s*["'](PATCH|PUT|DELETE)["']/i);
       expect(codigo, caminho).not.toMatch(/upload\/drive|\.(create|update|delete|emptyTrash)\(/);
     }
+  });
+
+  it("os únicos POST são ao OAuth do Google (troca de código e revogação), nunca à Drive API", () => {
+    const codigo = readFileSync(join(shared, "ged.ts"), "utf8");
+    expect(codigo.match(/method:\s*["']POST["'],/g)).toHaveLength(2); // chamadas (o tipo FetchGed declara `method: "POST";`)
+    const alvos = [...codigo.matchAll(/d\.fetch\((\w+)/g)].map((m) => m[1]);
+    expect(alvos.sort()).toEqual(["URL_REVOGAR", "URL_TOKEN"]);
+    expect(codigo).toContain('const URL_TOKEN = "https://oauth2.googleapis.com/token";');
+    expect(codigo).toContain('const URL_REVOGAR = "https://oauth2.googleapis.com/revoke";');
+    for (const caminho of indices) expect(readFileSync(caminho, "utf8"), caminho).not.toMatch(/method:\s*["']POST["']/i);
   });
 });

@@ -203,6 +203,22 @@ describe("percorrerMudancas — repetição e parâmetros", () => {
     expect(String((f.mock.calls[0] as unknown[])[0])).toContain("driveId=DRV");
   });
 
+  it("resposta 200 sem a lista não é tratada como vazia (changes.list e files.list)", async () => {
+    const semLista = vi.fn(async () => new Response(JSON.stringify({ newStartPageToken: "novo" }), { status: 200 }));
+    const aplicar = vi.fn(async () => {});
+    await expect(percorrerMudancas(criarClienteDrive(async () => "t", { fazerFetch: semLista }), "t1", aplicar, { maxItens: 10 })).rejects.toThrow(
+      "sem a lista de mudanças",
+    );
+    expect(aplicar).not.toHaveBeenCalled();
+    const semArquivos = vi.fn(async () => new Response("{}", { status: 200 }));
+    await expect(listarPasta(criarClienteDrive(async () => "t", { fazerFetch: semArquivos }), "P")).rejects.toThrow("sem a lista de arquivos");
+  });
+
+  it("lista vazia legítima continua sendo vazia", async () => {
+    const vazia = vi.fn(async () => new Response(JSON.stringify({ files: [] }), { status: 200 }));
+    expect(await listarPasta(criarClienteDrive(async () => "t", { fazerFetch: vazia }), "P")).toEqual([]);
+  });
+
   it("resposta sem token de continuação é erro, e o token não avança", async () => {
     const f = vi.fn(async () => new Response(JSON.stringify({ changes: [] }), { status: 200 }));
     const cliente = criarClienteDrive(async () => "t", { fazerFetch: f });
