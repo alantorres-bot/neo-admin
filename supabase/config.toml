@@ -461,6 +461,10 @@ verify_jwt = false
 [functions.nucleo-ged-metadados]
 verify_jwt = true
 
+# Indexação do GED: só o agendamento do banco chama (x-sincronizacao-segredo); conferido na função.
+[functions.nucleo-ged-indexar]
+verify_jwt = false
+
 [functions.nucleo-notificacoes-enviar]
 verify_jwt = false
 

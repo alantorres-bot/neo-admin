@@ -173,7 +173,9 @@ describe("varredura das tabelas ged_* (11.5, item 1, com o mecanismo aprovado no
   it("toda tabela ged_*: RLS ligada, sem política de delete, bloqueio de delete e sem acesso direto sem política de leitura", async () => {
     const tabelas = (await q(`select c.relname t, c.relrowsecurity rls from pg_class c join pg_namespace n on n.oid = c.relnamespace
                                where n.nspname = 'public' and c.relkind = 'r' and c.relname like 'ged\\_%'`)).rows;
-    expect(tabelas.map((t) => t.t).sort()).toEqual(["ged_conexao", "ged_conexao_estados", "ged_pastas_raiz"]);
+    expect(tabelas.map((t) => t.t).sort()).toEqual([
+      "ged_conexao", "ged_conexao_estados", "ged_documento_revisoes", "ged_documentos", "ged_indexacoes", "ged_pastas", "ged_pastas_raiz", "ged_trava",
+    ]);
     for (const { t, rls } of tabelas) {
       expect(rls, t).toBe(true);
       const pol = (await q(`select cmd from pg_policies where schemaname = 'public' and tablename = $1`, [t])).rows.map((p) => p.cmd);
@@ -189,7 +191,9 @@ describe("varredura das tabelas ged_* (11.5, item 1, com o mecanismo aprovado no
     // ged_conexao_estados não tem bloqueio de delete: o state é consumido e marcado, não apagado (0801); as demais têm.
     const comBloqueio = (await q(`select distinct c.relname t from pg_trigger g join pg_class c on c.oid = g.tgrelid
                                    join pg_proc p on p.oid = g.tgfoid where p.proname = 'fn_bloquear_delete' and c.relname like 'ged\\_%'`)).rows;
-    expect(comBloqueio.map((x) => x.t).sort()).toEqual(["ged_conexao", "ged_pastas_raiz"]);
+    expect(comBloqueio.map((x) => x.t).sort()).toEqual([
+      "ged_conexao", "ged_documento_revisoes", "ged_documentos", "ged_indexacoes", "ged_pastas", "ged_pastas_raiz", "ged_trava",
+    ]);
   });
 
   it("modo de segurança das funções do cadastro (5.10) e execução por papel", async () => {

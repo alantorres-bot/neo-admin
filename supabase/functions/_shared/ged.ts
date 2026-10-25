@@ -371,7 +371,9 @@ export type ResultadoMudanca =
   | { acao: "gravar_pasta"; pasta: PastaIndice }
   | { acao: "gravar_documento"; documento: DocumentoIndice; novo: boolean; novaRevisao: boolean };
 
-const iguais = <T extends object>(a: T, b: T) => JSON.stringify(a) === JSON.stringify(b);
+// Objetos planos; a ordem das chaves não conta (o estado lido do banco vem em outra ordem).
+const canonico = (o: object) => JSON.stringify(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+const iguais = <T extends object>(a: T, b: T) => canonico(a) === canonico(b);
 
 /** Primeira pasta-mãe indexada e ativa, se houver. */
 function maeIndexada(arquivo: ArquivoDrive, pastas: EstadoIndice["pastas"]): PastaIndice | null {
@@ -681,7 +683,7 @@ export async function cargaInicial(
   cliente: ClienteDrive,
   raiz: { driveId: string; driveIdCompartilhado?: string },
   indice: EstadoIndice,
-  opcoes: { maxItens: number },
+  opcoes: { maxItens: number; paralelas?: number; prazo?: { limiteMs: number; agora: () => number } },
 ): Promise<{ resultados: ResultadoMudanca[]; resumo: ReturnType<typeof resumirRodada>; completa: boolean; startPageToken: string | null }> {
   if (indice.pastas.get(raiz.driveId)?.profundidade !== 0) throw new ErroDrive("A raiz precisa estar no índice com profundidade 0.");
   const paramsToken: Record<string, string> = { supportsAllDrives: "true" };
@@ -693,6 +695,8 @@ export async function cargaInicial(
     profundidadeMax: indice.profundidadeMax,
     maxItens: opcoes.maxItens,
     driveId: raiz.driveIdCompartilhado,
+    paralelas: opcoes.paralelas,
+    prazo: opcoes.prazo,
   });
   const copia = { ...indice, pastas: new Map(indice.pastas), documentos: new Map(indice.documentos) };
   const resultados = aplicarPaginaNoIndice(mudancasDaArvore(arvore), copia);
@@ -741,6 +745,21 @@ export const revisoesParaGravar = (resultados: readonly ResultadoMudanca[], idDo
       ? [linhaRevisao(r.documento, exigirId(idDoDocumento(r.documento.driveId), "um documento"))]
       : [],
   );
+
+/**
+ * Lote para `ged_gravar_indice` (0806): o banco resolve os `uuid` pelo `drive_id`, numa transação só (pastas antes dos
+ * documentos). Mesmo resultado dos três passos acima, sem idas e voltas.
+ */
+export function loteParaGravar(resultados: readonly ResultadoMudanca[]) {
+  // raiz_id e pasta_id vazios: o banco ignora e usa os da rodada e o da pasta pelo drive_id.
+  const pastas = resultados.flatMap((r) => (r.acao === "gravar_pasta" ? [linhaPasta(r.pasta, { raizId: "" })] : []));
+  const documentos = resultados.flatMap((r) =>
+    r.acao === "gravar_documento"
+      ? [{ ...linhaDocumento(r.documento, { raizId: "", pastaId: "" }), pasta_drive_id: r.documento.pastaDriveId, nova_revisao: r.novaRevisao }]
+      : [],
+  );
+  return { pastas, documentos };
+}
 
 /** Lista todo o conteúdo de uma pasta (`files.list`), página por página (carga inicial e reconciliação, 5.3.1). */
 export async function listarPasta(cliente: ClienteDrive, pastaId: string, driveId?: string): Promise<ArquivoDrive[]> {
@@ -1082,22 +1101,29 @@ async function prepararLeitura(
   if (!req.jwt) return json(401, { erro: "sem_sessao" });
   const perfil = await d.perfilAdmin(req.jwt);
   if (!perfil) return json(403, { erro: "sem_permissao" });
+  const c = await clienteDoVault(d);
+  if ("erro" in c) {
+    if (c.erro === "nao_configurada") return json(500, { erro: c.erro });
+    if (c.erro === "desconectado") return json(409, { erro: c.erro });
+    await auditar(perfil, c.erro, 0);
+    return json(c.erro === "invalid_grant" ? 409 : 502, { erro: c.erro });
+  }
+  return { perfil, cliente: c.cliente };
+}
+
+/** Cliente do Drive com o token do Vault (renovado agora). invalid_grant marca a conexão "com erro" (a tela pede reconexão). */
+async function clienteDoVault(d: DepsMetadados): Promise<{ cliente: ClienteDrive } | { erro: "nao_configurada" | "desconectado" | "invalid_grant" | "http" }> {
   const cfg = configConexao(d.env);
-  if (!cfg) return json(500, { erro: "nao_configurada" });
+  if (!cfg) return { erro: "nao_configurada" };
   const { data } = await d.rpc("ged_refresh_token", {});
   const refreshToken = (data as { refresh_token?: string } | null)?.refresh_token;
-  if (!refreshToken) return json(409, { erro: "desconectado" });
+  if (!refreshToken) return { erro: "desconectado" };
   const acesso = await acessoDrive(cfg, refreshToken, d);
   if (!acesso.ok) {
-    if (acesso.codigo === "invalid_grant") {
-      await d.rpc("ged_registrar_erro_conexao", { p_codigo: "invalid_grant" }); // a tela passa a mostrar "reconecte"
-      await auditar(perfil, "invalid_grant", 0);
-      return json(409, { erro: "invalid_grant" });
-    }
-    await auditar(perfil, "http", 0);
-    return json(502, { erro: "http" });
+    if (acesso.codigo === "invalid_grant") await d.rpc("ged_registrar_erro_conexao", { p_codigo: "invalid_grant" });
+    return { erro: acesso.codigo };
   }
-  return { perfil, cliente: criarClienteDrive(async () => acesso.token, { fazerFetch: d.fetchDrive, esperar: d.esperar }) };
+  return { cliente: criarClienteDrive(async () => acesso.token, { fazerFetch: d.fetchDrive, esperar: d.esperar }) };
 }
 
 /** Erro do Drive durante a leitura: 403 (API desativada ou sem acesso) tem código próprio; o resto é genérico. */
@@ -1220,4 +1246,122 @@ export async function tratarCadastroRaiz(
   }
   await log(l.perfil, "ok");
   return json(201, { id: data, nome: pasta.name });
+}
+
+// ───────────────────────── Indexação (5.3; gravação na 0806) ─────────────────────────
+// Chamada só pelo agendamento do banco (x-sincronizacao-segredo = SINCRONIZACAO_SEGREDO, 5.3.7). "Atualizar índice agora" não
+// existe ainda [PENDENTE 16]. Só metadados (CAMPOS_ARQUIVO): nada de conteúdo, nada de classificação. Cada raiz ativa tem a sua
+// rodada (ged_iniciar_indexacao confere o interruptor administrativo.ged.indexar, a raiz ativa e a trava):
+//  - sem ponto de continuação: carga inicial (árvore inteira) e, se completa, grava o startPageToken pego ANTES da leitura;
+//  - com ponto de continuação: incremental pelo changes.list do Drive compartilhado, gravando página por página.
+// Falha no meio: a rodada fecha com um código de erro e o token NÃO avança; o que já foi gravado é refeito sem duplicar.
+// Resposta e log só com contagens e códigos (5.11.3, 5.11.11): nada de nome, id ou link.
+
+/** max_itens_rodada proposto (5.3.6) e profundidade proposta (5.3.1); prazo abaixo do tempo máximo da Edge Function. */
+export const LIMITE_INDEXACAO = { profundidadeMax: 4, maxItens: 5000, paralelas: 5, prazoMs: 100_000, documentosPorLote: 500 } as const;
+
+export type RaizIndexavel = { id: string; driveId: string; driveIdCompartilhado: string | null; pageToken: string | null };
+export type DepsIndexacao = DepsMetadados & { raizesAtivas: () => Promise<RaizIndexavel[]> };
+type ResumoRodada = ReturnType<typeof resumirRodada>;
+type ResumoRaiz = { tipo: "inicial" | "incremental"; resultado: string; completa: boolean } & Partial<ResumoRodada>;
+
+const iguaisSeguro = (a: string, b: string) => {
+  if (a.length !== b.length) return false;
+  let r = 0;
+  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return r === 0;
+};
+const codigoDoErro = (e: unknown): string =>
+  e instanceof ErroDrive
+    ? e.status === 403 ? "sem_permissao_drive" : "drive"
+    : /ged:([a-z_]+)/.exec(String((e as { message?: unknown })?.message))?.[1] ?? "falha";
+/** Sem acesso ao Drive, as outras raízes também falhariam: a rodada para. */
+const SEM_ACESSO = ["invalid_grant", "desconectado", "nao_configurada", "http"];
+
+export async function tratarIndexacao(req: { method: string; segredo: string | null }, d: DepsIndexacao): Promise<RespostaGed> {
+  if (req.method !== "POST") return json(405, { erro: "metodo" });
+  const esperado = d.env("SINCRONIZACAO_SEGREDO") ?? "";
+  if (esperado.length < 32 || !req.segredo || !iguaisSeguro(req.segredo, esperado)) return json(401, { erro: "nao_autorizado" });
+
+  const resumo: ResumoRaiz[] = [];
+  let cliente: ClienteDrive | null = null;
+  for (const raiz of await d.raizesAtivas()) {
+    const tipo = raiz.pageToken ? "incremental" : "inicial";
+    const aberta = await d.rpc("ged_iniciar_indexacao", { p_raiz: raiz.id, p_tipo: tipo, p_agendada: true, p_usuario: null });
+    if (aberta.error) {
+      const codigo = codigoDoErro(aberta.error);
+      if (codigo === "raiz_inativa") continue;
+      // Interruptor desligado ou outra rodada em andamento: para, sem tocar no Google.
+      d.log?.(`ged-indexacao: resultado=${codigo}`);
+      return json(200, { parada: codigo, raizes: resumo });
+    }
+    const rodada = aberta.data as string;
+    const fechar = (r: Partial<ResumoRodada>, token: string | null, erro: string | null) =>
+      d.rpc("ged_concluir_indexacao", { p_indexacao: rodada, p_resumo: r, p_page_token: token, p_erro: erro });
+    try {
+      if (!cliente) {
+        const c = await clienteDoVault(d);
+        if ("erro" in c) throw new Error(`ged:${c.erro}`);
+        cliente = c.cliente;
+      }
+      const r = await indexarRaiz(cliente, raiz, tipo, rodada, d);
+      const fechou = await fechar(r.resumo, r.token, null);
+      if (fechou.error) throw new Error(fechou.error.message);
+      resumo.push({ tipo, resultado: "ok", completa: r.completa, ...r.resumo });
+      d.log?.(`ged-indexacao: tipo=${tipo} resultado=ok completa=${r.completa} novos=${r.resumo.novos} alterados=${r.resumo.alterados}`);
+    } catch (e) {
+      const codigo = codigoDoErro(e);
+      await fechar({}, null, codigo); // o token não avança
+      resumo.push({ tipo, resultado: codigo, completa: false });
+      d.log?.(`ged-indexacao: tipo=${tipo} resultado=${codigo}`);
+      if (SEM_ACESSO.includes(codigo)) break;
+    }
+  }
+  return json(200, { raizes: resumo });
+}
+
+/** Estado do índice no banco (ged_estado_indice) → índice em memória, com a raiz na profundidade 0. */
+async function indiceDaRaiz(raiz: RaizIndexavel, d: DepsIndexacao) {
+  const { data, error } = await d.rpc("ged_estado_indice", { p_raiz: raiz.id });
+  if (error) throw new Error(error.message);
+  const e = data as { pastas: PastaIndice[]; documentos: DocumentoIndice[] };
+  const pastas = new Map(e.pastas.map((p) => [p.driveId, p]));
+  const raizNova = !pastas.has(raiz.driveId);
+  if (raizNova) pastas.set(raiz.driveId, { driveId: raiz.driveId, maeDriveId: null, nome: "(raiz)", profundidade: 0, situacao: "ativa" });
+  const indice = { pastas, documentos: new Map(e.documentos.map((x) => [x.driveId, x])), profundidadeMax: LIMITE_INDEXACAO.profundidadeMax };
+  return { indice, raizNova };
+}
+
+/** Grava em lotes de documentos; as pastas vão no primeiro (o banco precisa delas para achar a pasta de cada documento). */
+async function gravarLotes(rodada: string, resultados: readonly ResultadoMudanca[], d: DepsIndexacao, extraPastas: object[] = []) {
+  const { pastas, documentos } = loteParaGravar(resultados);
+  const n = LIMITE_INDEXACAO.documentosPorLote;
+  for (let i = 0; i === 0 || i < documentos.length; i += n) {
+    const { error } = await d.rpc("ged_gravar_indice", {
+      p_indexacao: rodada, p_pastas: i === 0 ? [...extraPastas, ...pastas] : [], p_documentos: documentos.slice(i, i + n),
+    });
+    if (error) throw new Error(error.message);
+  }
+}
+
+async function indexarRaiz(cliente: ClienteDrive, raiz: RaizIndexavel, tipo: "inicial" | "incremental", rodada: string, d: DepsIndexacao) {
+  const { indice, raizNova } = await indiceDaRaiz(raiz, d);
+  const driveId = raiz.driveIdCompartilhado ?? undefined;
+  if (tipo === "inicial") {
+    const r = await cargaInicial(cliente, { driveId: raiz.driveId, driveIdCompartilhado: driveId }, indice, {
+      maxItens: LIMITE_INDEXACAO.maxItens, paralelas: LIMITE_INDEXACAO.paralelas,
+      prazo: { limiteMs: LIMITE_INDEXACAO.prazoMs, agora: d.agoraMs ?? Date.now },
+    });
+    // A raiz entra no índice na profundidade 0; depois a indexação nunca a altera (aplicarMudanca).
+    const raizLinha = raizNova ? [{ drive_id: raiz.driveId, nome: "(raiz)", mae_drive_id: null, profundidade: 0, situacao: "ativa" }] : [];
+    await gravarLotes(rodada, r.resultados, d, raizLinha);
+    return { resumo: r.resumo, token: r.startPageToken, completa: r.completa };
+  }
+  const todos: ResultadoMudanca[] = [];
+  const r = await percorrerMudancas(cliente, raiz.pageToken as string, async (mudancas) => {
+    const pagina = aplicarPaginaNoIndice(mudancas, indice);
+    if (pagina.length) await gravarLotes(rodada, pagina, d);
+    todos.push(...pagina);
+  }, { maxItens: LIMITE_INDEXACAO.maxItens, driveId });
+  return { resumo: resumirRodada(todos), token: r.proximoToken, completa: r.completa };
 }
