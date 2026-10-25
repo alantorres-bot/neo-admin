@@ -206,6 +206,36 @@ describe("verificação das raízes candidatas (A0, 5.2.4)", () => {
     expect(gets.length).toBeLessThanOrEqual(LIMITE_VERIFICACAO.maxPastasAbertas);
   });
 
+  it("prazo de 90 s: ao vencer, para e marca a leitura como incompleta (sem estourar o tempo da função)", async () => {
+    let agora = 0;
+    const t = deps({ drive });
+    t.d.agoraMs = () => (agora += 50_000); // cada consulta ao relógio avança 50 s
+    const r = corpo(await tratarVerificacaoRaiz({ method: "POST", jwt: "jwt", raiz: ELABORACAO }, t.d));
+    expect(r.truncada).toBe(true);
+    expect(t.gets.length).toBeLessThan(4);
+    expect(r.limites.prazoMs).toBe(LIMITE_VERIFICACAO.prazoMs);
+  });
+
+  it("lê até 5 pastas ao mesmo tempo, sem passar disso", async () => {
+    let emVoo = 0;
+    let pico = 0;
+    const largas = async (url: string) => {
+      emVoo++;
+      pico = Math.max(pico, emVoo);
+      await new Promise((ok) => setTimeout(ok, 1));
+      emVoo--;
+      const mae = maeDe(url);
+      const filhos = mae.split("_").length < 3 ? Array.from({ length: 8 }, (_, i) => pasta(`${mae}_${i}`, `p${i}`)) : [];
+      return new Response(JSON.stringify({ files: filhos }), { status: 200 });
+    };
+    const t = deps();
+    t.d.fetchDrive = (url) => largas(url);
+    const r = corpo(await tratarVerificacaoRaiz({ method: "POST", jwt: "jwt", raiz: ELABORACAO }, t.d));
+    expect(r.truncada).toBe(false);
+    expect(pico).toBe(LIMITE_VERIFICACAO.paralelas);
+    expect(r.subpastasNivel1).toEqual(Array.from({ length: 8 }, (_, i) => `p${i}`)); // ordem preservada
+  });
+
   it("sem acesso à pasta (403): código próprio, auditado sem nomes", async () => {
     const { r, rpcs } = await verificar(ELABORACAO, { drive: () => new Response(JSON.stringify({ error: { status: "PERMISSION_DENIED" } }), { status: 403 }) });
     expect([r.status, corpo(r)]).toEqual([502, { erro: "sem_permissao_drive" }]);

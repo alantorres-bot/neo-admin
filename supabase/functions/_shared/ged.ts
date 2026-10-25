@@ -561,27 +561,42 @@ export type ArvoreLida = {
 export async function percorrerArvore(
   cliente: ClienteDrive,
   raizId: string,
-  opcoes: { profundidadeMax: number; maxItens: number; driveId?: string; maxPastasAbertas?: number },
+  opcoes: {
+    profundidadeMax: number;
+    maxItens: number;
+    driveId?: string;
+    /** Teto de requisições: cada pasta aberta é ao menos um files.list. */
+    maxPastasAbertas?: number;
+    /** Pastas lidas ao mesmo tempo (padrão 1). A ordem do resultado não muda. */
+    paralelas?: number;
+    /** Prazo total: ao vencer, para e marca `truncada` (a Edge Function tem tempo máximo de execução). */
+    prazo?: { limiteMs: number; agora: () => number };
+  },
 ): Promise<ArvoreLida> {
   const arvore: ArvoreLida = { pastas: [], arquivos: [], truncada: false };
   const fila: { id: string; profundidade: number }[] = [{ id: raizId, profundidade: 0 }];
+  const inicio = opcoes.prazo?.agora() ?? 0;
   let itens = 0;
   let abertas = 0;
   while (fila.length > 0) {
-    // Teto de requisições: cada pasta aberta é ao menos um files.list.
-    if (opcoes.maxPastasAbertas !== undefined && abertas >= opcoes.maxPastasAbertas) return { ...arvore, truncada: true };
-    abertas++;
-    const atual = fila.shift() as { id: string; profundidade: number };
-    for (const a of await listarPasta(cliente, atual.id, opcoes.driveId)) {
-      if (itens >= opcoes.maxItens) return { ...arvore, truncada: true };
-      itens++;
-      if (a.mimeType === MIME_PASTA) {
-        const profundidade = atual.profundidade + 1;
-        if (profundidade > opcoes.profundidadeMax) continue;
-        arvore.pastas.push({ arquivo: a, profundidade });
-        fila.push({ id: a.id, profundidade });
-      } else {
-        arvore.arquivos.push({ arquivo: a, profundidadeMae: atual.profundidade });
+    if (opcoes.prazo && opcoes.prazo.agora() - inicio >= opcoes.prazo.limiteMs) return { ...arvore, truncada: true };
+    const restantes = opcoes.maxPastasAbertas === undefined ? Infinity : opcoes.maxPastasAbertas - abertas;
+    if (restantes <= 0) return { ...arvore, truncada: true };
+    const lote = fila.splice(0, Math.min(opcoes.paralelas ?? 1, restantes));
+    abertas += lote.length;
+    const listas = await Promise.all(lote.map((p) => listarPasta(cliente, p.id, opcoes.driveId)));
+    for (const [i, atual] of lote.entries()) {
+      for (const a of listas[i]) {
+        if (itens >= opcoes.maxItens) return { ...arvore, truncada: true };
+        itens++;
+        if (a.mimeType === MIME_PASTA) {
+          const profundidade = atual.profundidade + 1;
+          if (profundidade > opcoes.profundidadeMax) continue;
+          arvore.pastas.push({ arquivo: a, profundidade });
+          fila.push({ id: a.id, profundidade });
+        } else {
+          arvore.arquivos.push({ arquivo: a, profundidadeMae: atual.profundidade });
+        }
       }
     }
   }
@@ -1043,6 +1058,8 @@ export type DepsMetadados = DepsConexao & {
   /** GET da Drive API (padrão: fetch global). */
   fetchDrive?: (url: string, init: { method: "GET"; headers: Record<string, string> }) => Promise<Response>;
   esperar?: (ms: number) => Promise<void>;
+  /** Relógio do prazo da verificação (padrão: Date.now). */
+  agoraMs?: () => number;
   /** Log sem dado sensível: só resultado e contagem. */
   log?: (mensagem: string) => void;
 };
@@ -1115,8 +1132,11 @@ export const RAIZES_CANDIDATAS = {
   "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak": { rotulo: "Dossiê: 02 - COMERCIAL / 01 - CLIENTES", finalidade: "dossie_cliente" },
 } as const;
 export type IdRaizCandidata = keyof typeof RAIZES_CANDIDATAS;
-/** Profundidade 4 = proposta da 5.3.1 (ponto 4 em aberto); tetos fixos para a função não estourar o tempo. */
-export const LIMITE_VERIFICACAO = { profundidadeMax: 4, maxItens: 3000, maxPastasAbertas: 150 } as const;
+/**
+ * Profundidade 4 = proposta da 5.3.1 (ponto 4 em aberto). Tetos fixos e prazo de 90 s, abaixo do tempo máximo da Edge Function:
+ * ao atingir qualquer um, a leitura volta marcada como incompleta.
+ */
+export const LIMITE_VERIFICACAO = { profundidadeMax: 4, maxItens: 10000, maxPastasAbertas: 1000, paralelas: 5, prazoMs: 90_000 } as const;
 
 export const ehRaizCandidata = (id: unknown): id is IdRaizCandidata => typeof id === "string" && Object.hasOwn(RAIZES_CANDIDATAS, id);
 
@@ -1133,7 +1153,10 @@ export async function tratarVerificacaoRaiz(
   const l = await prepararLeitura(req, d, auditar);
   if ("status" in l) return l;
   try {
-    const arvore = await percorrerArvore(l.cliente, raiz, { ...LIMITE_VERIFICACAO, driveId: DRIVE_COMPARTILHADO_GED });
+    const { prazoMs, ...limites } = LIMITE_VERIFICACAO;
+    const arvore = await percorrerArvore(l.cliente, raiz, {
+      ...limites, driveId: DRIVE_COMPARTILHADO_GED, prazo: { limiteMs: prazoMs, agora: d.agoraMs ?? Date.now },
+    });
     const itens = arvore.pastas.length + arvore.arquivos.length;
     const ids = new Set(arvore.pastas.map((p) => p.arquivo.id));
     // 5.2.4.1: outras raízes (aqui, as outras candidatas) dentro desta. "Acima dela" aparece na verificação da outra.

@@ -170,7 +170,7 @@ describe("verificarRaizGed", () => {
   const RAIZ = "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak";
   const resposta = { raiz: "Dossiê", itens: 3, truncada: false, candidatasDentro: [], porNivel: [{ profundidade: 1, pastas: 2, arquivos: 1 }],
     subpastasNivel1: ["Cliente ficticio"], subpastasNivel2: [], extensoes: [{ extensao: "pdf", quantidade: 1 }], temporarios: [],
-    limites: { profundidadeMax: 4, maxItens: 3000, maxPastasAbertas: 150 } };
+    limites: { profundidadeMax: 4, maxItens: 10000, maxPastasAbertas: 1000, prazoMs: 90000 } };
 
   it("admin e raiz candidata: chama a função com a ação e a raiz; devolve o resumo validado", async () => {
     estado.invoke.mockResolvedValue({ data: resposta, error: null });

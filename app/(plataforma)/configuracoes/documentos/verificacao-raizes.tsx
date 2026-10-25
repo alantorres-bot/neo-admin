@@ -20,14 +20,15 @@ export function VerificacaoRaizes() {
   const [resultados, setResultados] = useState<Partial<Record<IdRaizCandidata, VerificacaoRaiz>>>({});
   const trava = useRef(criarTrava());
 
-  const verificar = (id: IdRaizCandidata) =>
+  const verificar = (id: IdRaizCandidata) => {
+    setEmCurso(id); // fora da transição: o rótulo "Verificando…" aparece já no clique
     iniciar(async () => void (await trava.current(async () => {
-      setEmCurso(id);
       const r = await verificarRaizGed(id);
       setEmCurso(null);
       if (!r.ok) return void toast.error(r.erro);
       setResultados((atual) => ({ ...atual, [id]: r.verificacao }));
     })));
+  };
 
   return (
     <div className="space-y-3 border-t pt-3">
@@ -52,7 +53,8 @@ export function VerificacaoRaizes() {
               <div className="space-y-2">
                 <p role="status">
                   {v.itens.toLocaleString("pt-BR")} itens lidos até o nível {v.limites.profundidadeMax}.
-                  {v.truncada && ` Leitura incompleta: parou no limite (${v.limites.maxItens} itens ou ${v.limites.maxPastasAbertas} pastas abertas).`}
+                  {v.truncada &&
+                    ` Leitura incompleta: parou num limite (${v.limites.maxItens.toLocaleString("pt-BR")} itens, ${v.limites.maxPastasAbertas} pastas abertas${v.limites.prazoMs ? ` ou ${v.limites.prazoMs / 1000} s` : ""}).`}
                 </p>
                 {v.candidatasDentro.length > 0 && <p className="text-amber-700">Contém outra candidata: {lista(v.candidatasDentro)}. Raízes sobrepostas são recusadas (5.2.3).</p>}
                 <Table interativa={false}>

@@ -158,7 +158,7 @@ export type VerificacaoRaiz = {
   subpastasNivel2: string[];
   extensoes: { extensao: string; quantidade: number }[];
   temporarios: string[];
-  limites: { profundidadeMax: number; maxItens: number; maxPastasAbertas: number };
+  limites: { profundidadeMax: number; maxItens: number; maxPastasAbertas: number; prazoMs?: number };
 };
 
 const listaDeTextos = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
