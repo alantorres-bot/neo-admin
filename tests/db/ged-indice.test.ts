@@ -74,6 +74,11 @@ describe("interruptor e pré-condições (5.3.0, 5.3.5, 5.3.7)", () => {
   it("desligada por padrão: nenhuma rodada começa", async () => {
     expect((await q(`select valor from configuracoes where chave = 'administrativo.ged.indexar'`)).rows[0].valor).toBe(false);
     await expect(iniciar(elab)).rejects.toThrow(/ged:indexacao_desligada/);
+    // 0807: o agendamento nem chama a função com o interruptor desligado (sem net.http_post).
+    expect((await q(`select ged_chamar_indexacao() r`)).rows[0].r).toBeNull();
+    for (const papel of ["anon", "authenticated", "service_role"]) {
+      expect((await q(`select has_function_privilege($1, 'ged_chamar_indexacao()', 'execute') ok`, [papel])).rows[0].ok, papel).toBe(false);
+    }
     expect((await q(`select count(*)::int n from ged_indexacoes`)).rows[0].n).toBe(0);
     await q(`update configuracoes set valor = 'true' where chave = 'administrativo.ged.indexar'`);
   });

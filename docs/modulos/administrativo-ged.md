@@ -46,6 +46,14 @@ funcional nem de número de revisão.
   - conta: mantida a conexão atual com `alantorres@neoformas.com.br` nesta etapa, sem desconectar nem trocar (seção 4.2).
 - **Não aprovado:** a revisão 4 como um todo. As propostas que dependem de decisão continuam pendentes.
 
+**Fase A1a: aprovação parcial (25/10/2026).** O responsável aprovou a A1a **só no recorte da indexação**: raízes (0804 e 0805),
+índice, rodadas e trava (0806), integração `nucleo-ged-indexar` e agendamento criado inativo (0807).
+- **Fatos:** 0804 a 0806 aplicadas e `nucleo-ged-indexar` publicada em 25/10/2026, com o interruptor `administrativo.ged.indexar`
+  desligado e nenhum documento indexado. Na 11.5 passam os itens 1, 2, 3, 7, 8, 9, 10, 13 e 14; o item 4, só na leitura.
+- **Fica para depois, como condição da A2:** `ged_pastas_cliente`, `ged_tipos`, `ged_regras_tipo`, `ged_vinculos`, `ged_alvos` e os itens
+  4 (`ged_vincular`), 5, 6, 11 (log com erro forçado), 12 e 15 da 11.5 (os dois últimos dependem dos PENDENTES 15 e 19).
+- **A1b (primeira indexação) continua bloqueada pelo PENDENTE 12**, ainda sem resposta do administrador do Workspace.
+
 Referências:
 - revisão técnica: `docs/auditoria/REVISAO_CONTRATOS_REV3_2026-10-24.md` (seção 4, achados G-1 a G-9);
 - especificação de Contratos: `docs/modulos/contratos-operacoes.md`, revisão 5.
@@ -824,7 +832,7 @@ essa aprovação **não libera** fase alguma: cada uma depende dos bloqueios aba
 |---|---|---|
 | A0 | [PENDENTE 1] IDs exatos; [PENDENTE 3] conta e cliente OAuth; [PENDENTE 13] forma de exibir a verificação sem persistir metadados; controles mínimos da 5.2.4.5 [AF-6]; **[GED PENDENTE 17] mecanismo de proteção por coluna**: a parte da A0 que depende dele (leitura de `ged_conexao` e do cadastro da raiz sem as colunas sensíveis) **não pode ser executada** antes da decisão | IDs e conta decididos; mecanismo do GED PENDENTE 13 decidido e especificado; GED PENDENTE 17 decidido e especificado; controles mínimos aprovados; testes 11.5, itens 13 e 14, passando com dados fictícios. A A0 não fica liberada por partes, e nada disso foi implementado |
 | A1a | A0 concluída; [PENDENTE 15] forma das pendências; [PENDENTE 16] quem roda "Atualizar índice agora"; [GED PENDENTE 17] projeções das tabelas novas (mecanismo já aprovado); [PENDENTE 19] assinatura da checagem de módulo; [GED PENDENTE 14 = Contratos, item 17] nível mínimo na elaboração; [PENDENTE 2] áreas do dossiê | decisões tomadas e especificadas |
-| A1b | A1a cumprida e aprovada (todos os testes da 11.5 passando); [PENDENTE 12] permissões do Drive compartilhado | aprovação expressa da A1a e validação do Drive pelo administrador do Workspace |
+| A1b | A1a cumprida e aprovada (todos os testes da 11.5 passando; **aprovada em 25/10/2026 só no recorte da indexação**, ver o registro no início); [PENDENTE 12] permissões do Drive compartilhado | aprovação expressa da A1a e validação do Drive pelo administrador do Workspace |
 | A2 básica | A1b concluída; [PENDENTE 18] fonte de verdade da evidência do PDF (afeta o desvínculo) | A1b concluída; PENDENTE 18 decidido |
 | A2 completa | A2 básica; C3 do Contratos (entrega de `ctr_alvos_por_numero` com checagem de autorização) | C3 concluída |
 | B | A2 básica; [PENDENTE 8] | decisão do Fiscal sobre `fis_documentos` |
