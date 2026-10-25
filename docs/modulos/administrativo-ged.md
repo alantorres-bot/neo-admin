@@ -32,6 +32,20 @@ funcional nem de número de revisão.
   estavam.
 - **Não autoriza a implementação** de nenhuma fase: os bloqueios da seção 13 continuam valendo.
 
+**Fase A0: fatos e aprovações (25/10/2026).**
+- **Fatos históricos:** a A0 foi implementada e publicada em produção em 24 e 25/10/2026 (migrations 0801 a 0803, Edge Functions
+  `nucleo-ged-conectar` e `nucleo-ged-metadados`), com autorização expressa do responsável para cada passo, **antes** das aprovações
+  formais abaixo. A conexão foi feita em 24/10/2026 com a conta `alantorres@neoformas.com.br`; as duas raízes foram verificadas
+  por completo em 25/10/2026.
+- **Decisões e aprovações do responsável em 25/10/2026, posteriores à implantação:**
+  - PENDENTE 1 (raízes), PENDENTE 13 (verificação efêmera) e a pasta ALUTEC fora do escopo (seção 14);
+  - PENDENTE 17: mecanismo aprovado tecnicamente, conforme implementado e testado na A0 (seção 14, item 17);
+  - controles mínimos da 5.2.4.5 implementados e testados: aprovados;
+  - cadastro persistente das raízes (`ged_pastas_raiz`) adiado para a A1a: a A0 fica limitada à conexão e à verificação efêmera de
+    metadados;
+  - conta: mantida a conexão atual com `alantorres@neoformas.com.br` nesta etapa, sem desconectar nem trocar (seção 4.2).
+- **Não aprovado:** a revisão 4 como um todo. As propostas que dependem de decisão continuam pendentes.
+
 Referências:
 - revisão técnica: `docs/auditoria/REVISAO_CONTRATOS_REV3_2026-10-24.md` (seção 4, achados G-1 a G-9);
 - especificação de Contratos: `docs/modulos/contratos-operacoes.md`, revisão 5.
@@ -77,7 +91,7 @@ As duas ficam no mesmo **Drive compartilhado** (pai `0ADGzgMWcDLTWUk9PVA`) → `
 | | | Dentro de cada tipo, há **pastas de modelos** com nomes diferentes (`Venda/0-PADRÃO`, `Locação/_Modelos`, `Serviços/Modelos`) e **pastas por ano** (`Venda/2023…2026`; `Locação/2016…2026`) |
 | | | Arquivos de trabalho com o número do contrato no início: `229 - CONTRATO DE VENDA FÔRMAS - <cliente>.docx`, `228 - … .docx` + `.pdf` |
 | | | Há arquivos temporários do Word na estrutura (ex.: `Locação/~WRL0006.tmp`) |
-| Dossiê: `02 - COMERCIAL / 01 - CLIENTES` | `1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak` | uma pasta por cliente, com nome curto (às vezes com o ano), arquivos soltos (seção 2.3) |
+| Dossiê: `02 - COMERCIAL / 01 - CLIENTES` | `1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak` | documentação dos clientes e contratos assinados; uma pasta por cliente, com nome curto (às vezes com o ano), arquivos soltos (seção 2.3) |
 
 Fatos que mudam o desenho:
 - **O mesmo nome de arquivo existe nas duas raízes com IDs diferentes.** Exemplo:
@@ -85,10 +99,12 @@ Fatos que mudam o desenho:
   - são dois arquivos, não um;
   - o dossiê do cliente também tem os PDFs (`… .pdf`, `… V2.pdf`).
 - A busca pelo conector é **paginada e não exaustiva**. Os IDs acima são **candidatos**: a lista completa e a confirmação ficam para a
-  Fase A0 (5.2.4), antes de qualquer indexação [PENDENTE 1].
+  Fase A0 (5.2.4), antes de qualquer indexação [PENDENTE 1]. **Decisão do responsável (25/10/2026):** a raiz de elaboração é
+  `02 - CONTRATOS` inteira (`1JMzjxdPkXTtGXtop0CFx-R47Ql_08alR`), não só a subpasta `Contratos`; o dossiê é `01 - CLIENTES`, que
+  guarda a documentação dos clientes **e** os contratos assinados (finalidade distinta da elaboração).
 - A pasta `04 - CONTRATOS E CLIENTES` (com `01 - CONTRATOS DIGITALIZADOS`, `02 - ADITAMENTOS`, `03 - TERMOS DE QUITACAO` e
   `04 - CLIENTES SEM CADASTRO NO SISTEMA`) fica em **outra pasta de 1º nível do mesmo Drive compartilhado (`ALUTEC`)**. Não faz
-  parte das duas estruturas confirmadas: entra só se o responsável indicar [PENDENTE 1].
+  parte das duas estruturas confirmadas e **fica fora do GED** (decisão do responsável em 25/10/2026).
 
 ### 2.3 Como os arquivos são nomeados e versionados
 - **Nomes de arquivo** (exemplos reais, sem o cliente):
@@ -150,6 +166,11 @@ Mecanismos que já existem no projeto:
 Segredos novos (nomes propostos): `GED_DRIVE_CLIENT_ID` e `GED_DRIVE_CLIENT_SECRET`, gravados com `scripts/gravar-segredo.mjs` [EXISTE].
 Pode-se usar um cliente OAuth novo ou o "Neo Admin Gmail (rascunhos)" com mais um URI de redirecionamento [PENDENTE 3].
 
+**Situação na A0 (25/10/2026):** cliente OAuth novo "Neo Admin GED Drive" (Interno, projeto `neo-admin-neoformas`). A conexão usa a
+conta `alantorres@neoformas.com.br`, do próprio responsável, porque não houve autorização para criar uma conta técnica dedicada.
+Decisão de 25/10/2026: essa conexão é mantida nesta etapa, sem desconectar nem trocar a conta. Uma troca futura significa
+desconectar, configurar a nova conta e conectar de novo.
+
 ### 4.3 Dados do Neo Admin [EXISTE]
 - `contrapartes`: `nome`, `documento` (CNPJ/CPF **com máscara**, único), `codigo_erp` (único, 0114) e `tipos`.
   RLS: lê quem tem alguma área; o tipo `colaborador` só é lido pelo RH (0002).
@@ -202,9 +223,9 @@ Pode-se usar um cliente OAuth novo ou o "Neo Admin Gmail (rascunhos)" com mais u
         - é **exibido só ao admin geral**;
         - **não é persistido** em nenhum local acessível a outros usuários;
       - o campo `ged_pastas_raiz.verificacao` (seção 8) **não pode ser gravado com nomes de pastas** nesse período;
-      - **lacuna em aberto:** o mecanismo seguro de exibir sem persistir não está especificado. Opções a decidir: resposta efêmera da
-        Edge Function só para o admin geral, ou tabela legível só pelo admin geral. **Enquanto não houver decisão, isso bloqueia a
-        implementação da A0** [PENDENTE 13]. Esta especificação não escolhe a solução.
+      - **mecanismo (decidido em 25/10/2026, PENDENTE 13):** resposta efêmera da Edge Function (`nucleo-ged-metadados`, ação
+        `verificar_raiz`), exibida só ao admin geral e descartada ao sair da tela. Nada da árvore é gravado; a auditoria guarda só
+        quem verificou, a raiz, a contagem e o resultado (migration 0803).
    5. **[AF-6] Segurança mínima da A0.** A A0 já grava e lê dados. Os controles destes itens precisam estar **definidos e aprovados
       antes de qualquer execução da A0**, sem depender das tabelas e políticas da A1a:
 
@@ -213,13 +234,17 @@ Pode-se usar um cliente OAuth novo ou o "Neo Admin Gmail (rascunhos)" com mais u
       | `ged_conexao` | gravar a conexão; ler o estado | nenhuma leitura direta por usuários; o admin geral lê por projeção sem `segredo_id`; gravação só por função `security definer` que confere o admin geral |
       | `ged_conexao_estados` | criar e consumir o `state` do OAuth | sem leitura nem escrita por usuários; só funções `security definer` (padrão de `gmail_conexoes`, 0153) |
       | Vault (refresh token) | gravar e ler o segredo | só funções `security definer` e a Edge Function; o segredo nunca vai ao navegador |
-      | Cadastro da raiz candidata (`ged_pastas_raiz`) | gravar ID, finalidade e áreas, sem nomes de subpastas | leitura direta só do admin geral; gravação só por função do admin geral; a trava da `elaboracao` (5.11.1) já valendo |
+      | Cadastro da raiz candidata (`ged_pastas_raiz`) | gravar ID, finalidade e áreas, sem nomes de subpastas | leitura direta só do admin geral; gravação só por função do admin geral; a trava da `elaboracao` (5.11.1) já valendo. **Adiado para a A1a (decisão de 25/10/2026):** a A0 não grava raiz; a verificação aceita só os IDs da lista da 2.2 |
       | Edge Function de conexão e verificação | conectar; listar a árvore | recusa quem não for admin geral **antes** de qualquer chamada ao Drive; resposta e logs sem metadados para não-admin (5.11.11) |
 
       - Testes negativos obrigatórios antes da A0: 11.5, itens 13 e 14.
       - **A A0 não pode começar sem esses controles e sem as decisões dos PENDENTES 13 e 17.** As leituras por projeção desta
         tabela dependem do mecanismo de proteção por coluna [GED PENDENTE 17, AF-6].
-      - Nenhuma solução de exibição ou armazenamento da árvore foi escolhida.
+      - Exibição da árvore: resposta efêmera, sem armazenamento (PENDENTE 13, decidido em 25/10/2026).
+      - **Aprovação (25/10/2026, posterior à implantação da A0):** os controles das linhas `ged_conexao`, `ged_conexao_estados`, Vault e
+        Edge Function, implementados e testados (testes 11.5, itens 13 e 14, e a proteção por coluna em `tests/db/ged-conexao.test.ts`),
+        foram aprovados pelo responsável. O mecanismo do PENDENTE 17 usado na A0 também foi aprovado: funções de projeção
+        `security definer` e nenhum acesso direto de `anon`/`authenticated` às tabelas sensíveis.
 5. **As raízes não se deduplicam entre si.** Cada arquivo do Drive é um documento (`drive_id`):
    - dois arquivos com o mesmo nome, ou até o mesmo `md5`, em raízes diferentes são **dois documentos**;
    - o sistema pode exibir a marca "mesmo nome/conteúdo em <outra raiz>" como informação, mas nunca os funde nem esconde um deles.
@@ -745,7 +770,7 @@ na etapa A1a, antes da indexação (A1b). Os itens 13 e 14 são exigidos já ant
 **Fase A0 (conexão e verificação, somente leitura; corresponde à Fase 1 do plano)**
 1. A conexão com o Drive usa só `drive.readonly`; nenhuma chamada além de `GET`.
 2. A verificação das raízes candidatas é exibida só ao admin geral e não fica persistida em local acessível a outros usuários
-   (5.2.4.4). A forma de fazer isso precisa estar decidida antes [PENDENTE 13].
+   (5.2.4.4). Forma decidida em 25/10/2026: resposta efêmera da Edge Function [PENDENTE 13].
 2a. **[AF-6]** Os controles mínimos da 5.2.4.5 estão especificados e aprovados antes da execução, e os testes 11.5, itens 13 e 14,
     passam com dados fictícios.
 3. **Nenhuma indexação:** nenhuma linha em `ged_pastas`, `ged_documentos` ou `ged_documento_revisoes`.
@@ -785,7 +810,7 @@ na etapa A1a, antes da indexação (A1b). Os itens 13 e 14 são exigidos já ant
 | Fase | Escopo | Corresponde no plano da auditoria |
 |---|---|---|
 | A0 | Conexão (OAuth da conta técnica, Vault) + **verificação das duas raízes**, **somente leitura e sem indexação**: lista da árvore de cada candidata, exibida só ao admin geral para confirmar IDs, finalidade e áreas; nada é gravado no índice nem persistido de forma acessível a outros (5.2.4.4). Inclui só as tabelas e os controles mínimos da 5.2.4.5 | Fase 1 |
-| A1a | **Preparação, sem indexar:** tabelas `ged_*`, políticas da seção 9, projeções de colunas (5.11.10), funções com o modo de segurança da 5.10, pendências conforme o PENDENTE 15, e os testes de autorização da 11.5 com dados fictícios | Fase 2 (início) |
+| A1a | **Preparação, sem indexar:** cadastro persistente das raízes (`ged_pastas_raiz`, adiado da A0), tabelas `ged_*`, políticas da seção 9, projeções de colunas (5.11.10), funções com o modo de segurança da 5.10, pendências conforme o PENDENTE 15, e os testes de autorização da 11.5 com dados fictícios | Fase 2 (início) |
 | A1b | **Indexação**, só depois de a A1a ser cumprida e aprovada: raízes verificadas, carga inicial, incremental, reconciliação, função das pastas de elaboração, pastas → cliente, tipos e regras, avaliação de modelos, telas 1 a 5 | Fase 2 |
 | A2 básica | Vínculos, versões, componente `<DocumentosDoRegistro>`, funções públicas da 5.10, **sem** a sugestão de vínculo por número de contrato | Fase 2 (fim) / Fase 3 |
 | A2 completa | Sugestão de vínculo por número de contrato (5.4.8), usando `ctr_alvos_por_numero`, que é entregue pela fase C3 do Contratos | depois da C3 do Contratos |
@@ -798,12 +823,16 @@ essa aprovação **não libera** fase alguma: cada uma depende dos bloqueios aba
 | Fase | Bloqueada por | Critério para liberar |
 |---|---|---|
 | A0 | [PENDENTE 1] IDs exatos; [PENDENTE 3] conta e cliente OAuth; [PENDENTE 13] forma de exibir a verificação sem persistir metadados; controles mínimos da 5.2.4.5 [AF-6]; **[GED PENDENTE 17] mecanismo de proteção por coluna**: a parte da A0 que depende dele (leitura de `ged_conexao` e do cadastro da raiz sem as colunas sensíveis) **não pode ser executada** antes da decisão | IDs e conta decididos; mecanismo do GED PENDENTE 13 decidido e especificado; GED PENDENTE 17 decidido e especificado; controles mínimos aprovados; testes 11.5, itens 13 e 14, passando com dados fictícios. A A0 não fica liberada por partes, e nada disso foi implementado |
-| A1a | A0 concluída; [PENDENTE 15] forma das pendências; [PENDENTE 16] quem roda "Atualizar índice agora"; [GED PENDENTE 17] mecanismo de proteção de colunas; [PENDENTE 19] assinatura da checagem de módulo; [GED PENDENTE 14 = Contratos, item 17] nível mínimo na elaboração; [PENDENTE 2] áreas do dossiê | decisões tomadas e especificadas |
+| A1a | A0 concluída; [PENDENTE 15] forma das pendências; [PENDENTE 16] quem roda "Atualizar índice agora"; [GED PENDENTE 17] projeções das tabelas novas (mecanismo já aprovado); [PENDENTE 19] assinatura da checagem de módulo; [GED PENDENTE 14 = Contratos, item 17] nível mínimo na elaboração; [PENDENTE 2] áreas do dossiê | decisões tomadas e especificadas |
 | A1b | A1a cumprida e aprovada (todos os testes da 11.5 passando); [PENDENTE 12] permissões do Drive compartilhado | aprovação expressa da A1a e validação do Drive pelo administrador do Workspace |
 | A2 básica | A1b concluída; [PENDENTE 18] fonte de verdade da evidência do PDF (afeta o desvínculo) | A1b concluída; PENDENTE 18 decidido |
 | A2 completa | A2 básica; C3 do Contratos (entrega de `ctr_alvos_por_numero` com checagem de autorização) | C3 concluída |
 | B | A2 básica; [PENDENTE 8] | decisão do Fiscal sobre `fis_documentos` |
 | C | especificação própria | especificação aprovada |
+
+**Situação da A0 (25/10/2026):** os bloqueios da linha A0 foram resolvidos por decisão do responsável **depois** da implantação (ver
+o registro no início): PENDENTES 1, 3 (conta da A0), 13 e 17 (mecanismo) decididos; controles mínimos aprovados; testes 11.5, itens
+13 e 14, passando. O cadastro persistente das raízes passou para a A1a.
 
 **Ordem sem dependência circular** [AF-9]: A0 → A1a → A1b → A2 básica → (Contratos C1 → C3) → A2 completa. A C1 do Contratos depende
 só da A2 básica.
@@ -813,12 +842,16 @@ só da A2 básica.
    - elaboração = `02 - COMERCIAL / 02 - CONTRATOS` (`1JMzjxdPkXTtGXtop0CFx-R47Ql_08alR`), ou só a subpasta `Contratos`
      (`1JOh-QFYw9uwNkxSAdPa6cLzOzIuOiT56`);
    - dossiê = `02 - COMERCIAL / 01 - CLIENTES` (`1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak`).
-   As duas estão em Drive compartilhado. A pasta `ALUTEC / 04 - CONTRATOS E CLIENTES` entra ou fica fora?
+   **Decidido em 25/10/2026:** elaboração = `02 - CONTRATOS` inteira; dossiê = `01 - CLIENTES` (documentação dos clientes e
+   contratos assinados).
+   As duas estão em Drive compartilhado. A pasta `ALUTEC / 04 - CONTRATOS E CLIENTES` **fica fora** (decidido em 25/10/2026).
 2. **Áreas de cada raiz** (parcialmente decidido):
    - **elaboração:** só Contratos, pela decisão preliminar D-6 e travada no banco pela R4-P4 — Segurança do GED (5.11.1);
    - **dossiê:** quem lê? Proposta: Contratos, Comercial e Financeiro (pendente);
    - quem classifica e vincula em cada uma? Proposta: Contratos (pendente).
 3. **Autenticação:** conta técnica por OAuth (recomendada) ou conta de serviço? Qual conta? Cliente OAuth novo ou o existente?
+   **Na A0 (25/10/2026):** OAuth com cliente novo ("Neo Admin GED Drive"); conexão atual com `alantorres@neoformas.com.br` mantida
+   nesta etapa (4.2). A conta definitiva (técnica dedicada ou a do responsável) continua na proposta GED-P3, sem aprovação.
 4. **Profundidade e frequência:** a profundidade máxima (proposta 4) e a frequência (30 min, dias úteis) servem?
 5. **Clientes sem cadastro:** a pasta `04 - CLIENTES SEM CADASTRO NO SISTEMA` deve gerar uma pendência de cadastro no Consistem ou em
    `contrapartes`? Recomendação: só pendência; o cadastro segue o fluxo atual, que liga pelo código do Consistem.
@@ -836,8 +869,8 @@ só da A2 básica.
     compartilhado das duas raízes? A elaboração precisa de permissões próprias no Drive? Sem isso, a restrição da elaboração não vale
     no Drive (5.11.8). **Bloqueia a A1b** (indexação).
 13. **Resultado da verificação na Fase 1 (A0):** como exibir a árvore verificada só ao admin geral sem persistir metadados de forma
-    acessível a outros? Opções: resposta efêmera da Edge Function ou tabela legível só pelo admin geral. **Bloqueia a A0** até a decisão
-    (5.2.4.4).
+    acessível a outros? **Decidido em 25/10/2026: resposta efêmera da Edge Function** (nada gravado; auditoria só com raiz, contagem
+    e resultado). A opção de tabela legível só pelo admin geral foi descartada (5.2.4.4).
 14. **Nível mínimo na raiz `elaboracao`:** consulta ou operador na área Contratos? (mesmo item que Contratos, item 17; não confundir com o GED PENDENTE 17, mecanismo de
     proteção por coluna)
     Depende dele a proteção dos ids e revisões de documentos de elaboração guardados em tabelas do Contratos (Contratos 5.12.7, AF-12).
@@ -846,7 +879,9 @@ só da A2 básica.
 16. **[AF-22] Quem executa "Atualizar índice agora":** gestor da área de operação de cada raiz (só nas raízes que lê) ou só o admin
     geral? **Bloqueia a A1a.**
 17. **[AF-4] Mecanismo de proteção de colunas:** views ou funções de projeção, permissão por coluna do Postgres ou outro mecanismo
-    equivalente. Decisão técnica a validar. **Bloqueia a A1a** e a parte da A0 que depende dela (5.2.4.5).
+    equivalente. **Mecanismo aprovado tecnicamente em 25/10/2026:** funções de projeção (`security definer`) e nenhum acesso direto às
+    tabelas sensíveis, conforme implementado e testado na A0. Para a A1a, falta especificar as projeções de cada tabela nova
+    (5.11.10) antes de implementar.
 18. **[AF-11] Fonte de verdade da evidência do PDF** (com Contratos, item 30): qual registro é autoritativo, o bloqueio do desvínculo
     de documento referenciado, o tratamento de documento indisponível e a sincronização dos estados. **Bloqueia a A2 básica.**
 19. **[AF-13] Assinatura técnica da checagem de módulo em `ged_tipos_presentes`:** confirmar contra o código os nomes e parâmetros

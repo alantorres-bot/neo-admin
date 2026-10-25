@@ -300,6 +300,25 @@ describe("privilégios (GED-P17)", () => {
     }
   });
 
+  it("proteção por coluna (5.2.4.5): nenhuma coluna das tabelas protegidas é acessível a anon/authenticated, depois de todas as migrations", async () => {
+    for (const papel of ["anon", "authenticated"]) {
+      for (const tabela of ["ged_conexao", "ged_conexao_estados"]) {
+        for (const priv of ["SELECT", "INSERT", "UPDATE", "REFERENCES"]) {
+          const r = await q(`select has_any_column_privilege($1, $2, $3) ok`, [papel, tabela, priv]);
+          expect(r.rows[0].ok, `${papel} ${priv} ${tabela}`).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("projeção da conexão: só as colunas autorizadas (sem segredo_id, google_sub nem quem conectou)", async () => {
+    const r = await q(`select pg_get_function_result('ged_situacao_conexao()'::regprocedure) t`);
+    expect(r.rows[0].t).toBe(
+      "TABLE(email text, escopos text[], conectado_em timestamp with time zone, desconectado_em timestamp with time zone, " +
+        "revogacao_remota text, ultimo_erro text, ultimo_erro_em timestamp with time zone, situacao text)",
+    );
+  });
+
   it("a migration não dá grant a anon/authenticated nas tabelas protegidas", () => {
     const sql = readFileSync(join(process.cwd(), "supabase", "migrations", "0801_ged_conexao.sql"), "utf8");
     expect(sql).not.toMatch(/grant\s+[^;]*\bon\s+(table\s+)?ged_conexao(_estados)?\b[^;]*\bto\s+[^;]*(anon|authenticated)/i);
