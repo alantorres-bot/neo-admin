@@ -29,7 +29,7 @@ async function cenario(page: Page, c: Record<string, unknown>) {
   const r = await page.request.post(`${SUPABASE}/__cenario`, { data: c });
   expect(r.ok()).toBeTruthy();
 }
-const chamadas = async (page: Page) => (await (await page.request.get(`${SUPABASE}/__chamadas`)).json()) as { metodo: string; caminho: string; autorizacao: string | null; corpo: string }[];
+const chamadas = async (page: Page) => (await (await page.request.get(`${SUPABASE}/__chamadas`)).json()) as { metodo: string; caminho: string; busca: string; autorizacao: string | null; corpo: string }[];
 
 async function capturar(page: Page, nome: string) {
   const pasta = process.env.GED_E2E_CAPTURAS;
@@ -297,4 +297,51 @@ test("13. pastas-raiz: elaboração cadastra com áreas fixas e não tem botão 
   await expect(elaboracao.getByRole("button", { name: "Áreas" })).toHaveCount(0);
   const cadastro = (await chamadas(page)).find((c) => c.caminho === "/functions/v1/nucleo-ged-metadados");
   expect(JSON.parse(cadastro?.corpo ?? "{}")).toMatchObject({ area: "contratos", areas_leitura: [], area_operacao: "contratos" });
+});
+
+const RAIZES_ATIVAS = [
+  { id: "raiz-e", nome: "02 - CONTRATOS", finalidade: "elaboracao", area: "contratos", areas_leitura: [], area_operacao: "contratos", situacao: "ativa" },
+  { id: "raiz-d", nome: "01 - CLIENTES", finalidade: "dossie_cliente", area: "contratos", areas_leitura: ["comercial"], area_operacao: "contratos", situacao: "ativa" },
+];
+const doc = (id: string, nome: string, raiz: string, o: Record<string, unknown> = {}) => ({
+  id, nome, nome_normalizado: nome.toLowerCase(), raiz_id: raiz, extensao: "pdf", situacao: "vigente", alterado_no_drive_em: "2026-10-20T12:00:00.000Z",
+  web_link: `https://drive.google.com/file/d/${id}/view`, pasta: { nome: "Pasta ficticia" }, ...o,
+});
+const DOCUMENTOS = [
+  doc("d1", "229 - contrato ficticio.docx", "raiz-e"),
+  doc("d2", "229 - contrato ficticio.docx", "raiz-d"),
+  doc("d3", "229 - temporario.tmp", "raiz-e", { situacao: "ignorado" }),
+  doc("d4", "229 - link estranho.pdf", "raiz-d", { web_link: "javascript:alert(1)" }),
+];
+
+test("14. Central de Documentos: busca, filtro por finalidade, mesmo nome nas duas pastas e Abrir no Drive", async ({ page }) => {
+  await cenario(page, { raizes: RAIZES_ATIVAS, documentos: DOCUMENTOS });
+  await entrar(page);
+  await page.goto("/documentos?q=229");
+  await expect(page.getByRole("heading", { name: "Central de Documentos" })).toBeVisible({ timeout: 60_000 });
+  const linhas = page.getByRole("row").filter({ hasText: "229" });
+  await expect(linhas).toHaveCount(3);                                         // o temporário (ignorado) não aparece
+  await expect(page.getByText("Mesmo nome na outra pasta")).toHaveCount(2);
+  const abrir = linhas.filter({ hasText: "Elaboração" }).getByRole("link", { name: /Abrir no Drive/ });
+  await expect(abrir).toHaveAttribute("href", "https://drive.google.com/file/d/d1/view");
+  await expect(abrir).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(linhas.filter({ hasText: "link estranho" }).getByRole("link")).toHaveCount(0);
+  await expect(page.locator('a[href^="javascript"]')).toHaveCount(0);
+
+  await page.getByLabel("Finalidade").selectOption("elaboracao");
+  await page.getByRole("button", { name: "Buscar" }).click();
+  await expect(page).toHaveURL(/finalidade=elaboracao/);
+  await expect(page.getByRole("row").filter({ hasText: "229" })).toHaveCount(1);
+  const busca = (await chamadas(page)).filter((c) => c.caminho === "/rest/v1/ged_documentos").at(-1);
+  expect(busca?.busca).toContain("raiz_id=in.%28raiz-e%29");
+  await capturar(page, "14-documentos");
+});
+
+test("15. Central de Documentos: sem pasta liberada, só o aviso fixo e nenhuma busca", async ({ page }) => {
+  await cenario(page, { raizes: [], documentos: DOCUMENTOS });
+  await entrar(page, COMUM);
+  await page.goto("/documentos?q=229");
+  await expect(page.getByText("Você não tem acesso a nenhuma pasta do GED")).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("textbox")).toHaveCount(0);
+  expect((await chamadas(page)).some((c) => c.caminho === "/rest/v1/ged_documentos")).toBe(false);
 });

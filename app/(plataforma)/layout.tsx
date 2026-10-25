@@ -26,6 +26,8 @@ export default async function LayoutPlataforma({ children }: LayoutProps<"/">) {
   const mostrarConfiguracoes = temAcessoAlgumaArea(sessao.acesso, sessao.areas);
   // Central de Gestão: para todos com alguma área; o restrito à unidade só usa o Faturamento Filial.
   const mostrarCentral = mostrarConfiguracoes && !sessao.acesso.restrito;
+  // Central de Documentos (GED): só com o módulo ativado; quem vê cada pasta é decidido pela RLS na própria tela.
+  const mostrarDocumentos = mostrarCentral && sessao.modulos.some((m) => m.codigo === "administrativo.ged" && m.ativo);
 
   return (
     <Casca
@@ -33,6 +35,7 @@ export default async function LayoutPlataforma({ children }: LayoutProps<"/">) {
       usuario={{ nome: sessao.perfil.nome, email: sessao.perfil.email, adminGeral: sessao.acesso.adminGeral }}
       mostrarConfiguracoes={mostrarConfiguracoes}
       mostrarCentral={mostrarCentral}
+      mostrarDocumentos={mostrarDocumentos}
     >
       {children}
     </Casca>

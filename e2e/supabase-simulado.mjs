@@ -23,6 +23,7 @@ const padrao = () => ({
   desconectarAtrasoMs: 0,
   revogacao: "ok",
   raizes: [], // linhas de ged_raizes (projeção) com drive_id interno do simulado
+  documentos: [], // linhas de ged_documentos (já "filtradas pela RLS" do usuário do cenário)
   verificadas: [], // drive_ids com verificação ok (o banco exige para ativar)
 });
 const NOMES_DRIVE = { "1JMzjxdPkXTtGXtop0CFx-R47Ql_08alR": "02 - CONTRATOS (ficticio)", "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak": "01 - CLIENTES (ficticio)" };
@@ -96,6 +97,14 @@ createServer(async (req, res) => {
     const objeto = (req.headers.accept ?? "").includes("vnd.pgrst.object");
     let linhas = [];
     if (tabela === "perfis") linhas = [perfil(cenario.usuario)];
+    else if (tabela === "ged_documentos") {
+      // Os filtros que a Central de Documentos manda: ilike no nome normalizado, raiz_id in (...) e situacao in (...).
+      const lista = (v) => (v ?? "").replace(/^in\.\(|\)$/g, "").split(",").map((x) => x.replace(/^"|"$/g, ""));
+      const trecho = (url.searchParams.get("nome_normalizado") ?? "").replace(/^ilike\./, "").replaceAll("%", "").replace(/\\(.)/g, "$1");
+      const raizes = lista(url.searchParams.get("raiz_id"));
+      const situacoes = lista(url.searchParams.get("situacao"));
+      linhas = cenario.documentos.filter((d) => d.nome_normalizado.includes(trecho) && raizes.includes(d.raiz_id) && situacoes.includes(d.situacao));
+    }
     else if (tabela === "permissoes") linhas = cenario.usuario === ADMIN ? [] : [{ area: "contratos", nivel: "gestor" }];
     else if (tabela === "areas") linhas = AREAS;
     else if (tabela === "configuracoes" && req.method === "PATCH") {
