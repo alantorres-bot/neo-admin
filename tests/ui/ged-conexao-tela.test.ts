@@ -287,7 +287,7 @@ describe("pastas-raiz (A1a, 0804)", () => {
     expect(await definirAreasRaizGed("r1", "contratos", ["financeiro"], "contratos")).toEqual({ ok: true });
     expect(estado.rpc).toHaveBeenCalledWith("ged_definir_areas_raiz", { p_raiz: "r1", p_area: "contratos", p_areas_leitura: ["financeiro"], p_area_operacao: "contratos" });
     estado.rpc.mockResolvedValue({ data: null, error: { message: "ged:sem_verificacao" } });
-    expect(await definirSituacaoRaizGed("r1", "ativa")).toEqual({ ok: false, erro: expect.stringContaining("Verifique a pasta") });
+    expect(await definirSituacaoRaizGed("r1", "ativa")).toEqual({ ok: false, erro: expect.stringContaining("não foi completa") });
     estado.rpc.mockResolvedValue({ data: null, error: { message: "ged:raiz_travada" } });
     expect(await definirAreasRaizGed("r1", "comercial", [], "contratos")).toEqual({ ok: false, erro: expect.stringContaining("elaboração") });
     estado.rpc.mockReset();

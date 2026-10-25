@@ -169,6 +169,7 @@ function DialogoAreas({ edicao, areas, pendente, fechar, salvar }: {
                 {areas.filter((a) => a.codigo !== area).map((a) => (
                   <label key={a.codigo} className="flex items-center gap-2">
                     <Checkbox
+                      aria-label={a.nome}
                       checked={leitura.includes(a.codigo)}
                       disabled={pendente}
                       onCheckedChange={(v) => setLeitura((atual) => (v === true ? [...atual, a.codigo] : atual.filter((x) => x !== a.codigo)))}

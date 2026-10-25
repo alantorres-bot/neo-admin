@@ -143,13 +143,21 @@ describe("situação (8.1)", () => {
   const mudar = (quem: string, id: string, s: string) => como(db, quem, () => q(`select ged_definir_situacao_raiz($1, $2)`, [id, s]));
   const situacao = async (id: string) => (await q(`select situacao, verificada_por from ged_pastas_raiz where id = $1`, [id])).rows[0];
 
-  it("ativar exige verificação ok auditada da mesma pasta; depois ativa <-> inativa; só admin", async () => {
+  const verificou = (resultado: string, itens = 3) => servico(`select ged_registrar_verificacao_raiz($1, $2, $3, $4)`, [admin, DOSSIE, itens, resultado]);
+
+  it("ativar exige que a última verificação da pasta seja completa (0805); depois ativa <-> inativa; só admin", async () => {
     await expect(mudar(admin, dossie, "ativa")).rejects.toThrow(/ged:sem_verificacao/);
+    // Registro anterior à 0805 (ok sem a marca `completa`, como a leitura truncada de 24/10): não conta.
     await q(`insert into auditoria (tabela, acao, depois, usuario_id) values ('ged_conexao', 'verificou_raiz', $1, $2)`,
-      [{ raiz: DOSSIE, itens: 3, resultado: "http" }, admin]);
+      [{ raiz: DOSSIE, itens: 1240, resultado: "ok" }, admin]);
     await expect(mudar(admin, dossie, "ativa")).rejects.toThrow(/ged:sem_verificacao/);
-    await q(`insert into auditoria (tabela, acao, depois, usuario_id) values ('ged_conexao', 'verificou_raiz', $1, $2)`,
-      [{ raiz: DOSSIE, itens: 3, resultado: "ok" }, admin]);
+    await verificou("http");
+    await expect(mudar(admin, dossie, "ativa")).rejects.toThrow(/ged:sem_verificacao/);
+    // Completa e depois incompleta: vale a última.
+    await verificou("ok");
+    await verificou("incompleta", 1240);
+    await expect(mudar(admin, dossie, "ativa")).rejects.toThrow(/ged:sem_verificacao/);
+    await verificou("ok", 1478);
     await expect(mudar(ctrOperador, dossie, "ativa")).rejects.toThrow(/ged:sem_permissao/);
     await expect(mudar(admin, dossie, "em_verificacao")).rejects.toThrow(/ged:transicao_invalida/);
     await mudar(admin, dossie, "ativa");

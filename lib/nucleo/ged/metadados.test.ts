@@ -203,9 +203,12 @@ describe("verificação das raízes candidatas (A0, 5.2.4)", () => {
   it("teto de pastas abertas: leitura marcada como incompleta", async () => {
     const muitas = (url: string) =>
       new Response(JSON.stringify({ files: Array.from({ length: 6 }, (_, i) => pasta(`${maeDe(url)}_${i}`, `p${i}`)) }), { status: 200 });
-    const { r, gets } = await verificar(ELABORACAO, { drive: muitas });
+    const { r, gets, rpcs, logs } = await verificar(ELABORACAO, { drive: muitas });
     expect(corpo(r).truncada).toBe(true);
     expect(gets.length).toBeLessThanOrEqual(LIMITE_VERIFICACAO.maxPastasAbertas);
+    // 0805: auditada como incompleta (não libera a ativação da raiz).
+    expect(rpcs.filter((x) => x.nome === "ged_registrar_verificacao_raiz").map((x) => x.args.p_resultado)).toEqual(["incompleta"]);
+    expect(logs.at(-1)).toMatch(/^ged-verificacao: resultado=incompleta itens=\d+$/);
   });
 
   it("prazo de 90 s: ao vencer, para e marca a leitura como incompleta (sem estourar o tempo da função)", async () => {

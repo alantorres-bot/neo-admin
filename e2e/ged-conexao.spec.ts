@@ -270,7 +270,7 @@ test("12. pastas-raiz: cadastra o dossiê com áreas explícitas, ativa só depo
 
   // Ativar antes de verificar: recusado pelo banco, com mensagem clara.
   await dossie.getByRole("button", { name: "Ativar" }).click();
-  await expect(page.getByText(/Verifique a pasta/)).toBeVisible();
+  await expect(page.getByText(/não foi completa/)).toBeVisible();
   await expect(dossie).toContainText("Em verificação");
 
   // Verifica (seção acima) e ativa; depois inativa.

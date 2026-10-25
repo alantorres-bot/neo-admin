@@ -1005,7 +1005,8 @@ const CAMPOS_METADADOS = "nextPageToken,files(name,mimeType,modifiedTime,size)";
 
 export type ItemMetadados = { nome: string; tipo: string; modificado_em: string | null; tamanho: number | null };
 export type ConsultaMetadados = { itens: number; limite_atingido: boolean; por_tipo: Record<string, number>; amostra: ItemMetadados[] };
-export type ResultadoConsultaMetadados = "ok" | "invalid_grant" | "sem_permissao_drive" | "http";
+/** `incompleta`: só a verificação de raiz (parou num limite); não libera a ativação (0805). */
+export type ResultadoConsultaMetadados = "ok" | "incompleta" | "invalid_grant" | "sem_permissao_drive" | "http";
 
 export async function consultarMetadados(cliente: ClienteDrive, limite = LIMITE_METADADOS): Promise<ConsultaMetadados> {
   const r: ConsultaMetadados = { itens: 0, limite_atingido: false, por_tipo: {}, amostra: [] };
@@ -1161,7 +1162,7 @@ export async function tratarVerificacaoRaiz(
     const ids = new Set(arvore.pastas.map((p) => p.arquivo.id));
     // 5.2.4.1: outras raízes (aqui, as outras candidatas) dentro desta. "Acima dela" aparece na verificação da outra.
     const candidatasDentro = (Object.keys(RAIZES_CANDIDATAS) as IdRaizCandidata[]).filter((id) => id !== raiz && ids.has(id)).map((id) => RAIZES_CANDIDATAS[id].rotulo);
-    await auditar(l.perfil, "ok", itens);
+    await auditar(l.perfil, arvore.truncada ? "incompleta" : "ok", itens); // só a completa libera a ativação (0805)
     return json(200, { raiz: RAIZES_CANDIDATAS[raiz].rotulo, itens, candidatasDentro, limites: LIMITE_VERIFICACAO, ...resumirArvore(arvore) });
   } catch (e) {
     const resultado = resultadoDoErro(e);

@@ -235,8 +235,12 @@ describe("situação, erros e desconexão", () => {
     await conectar();
     await servico(`select ged_registrar_verificacao_raiz($1, '1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak', 12, 'ok')`, [admin]);
     expect((await q(`select depois, usuario_id from auditoria where tabela = 'ged_conexao' and acao = 'verificou_raiz' and id > $1`, [audDesde])).rows).toEqual([
-      { depois: { raiz: "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak", itens: 12, resultado: "ok" }, usuario_id: admin },
+      { depois: { raiz: "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak", itens: 12, resultado: "ok", completa: true }, usuario_id: admin },
     ]);
+    // 0805: leitura que parou num limite é registrada como incompleta, não como ok.
+    await servico(`select ged_registrar_verificacao_raiz($1, '1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak', 1240, 'incompleta')`, [admin]);
+    expect((await q(`select depois from auditoria where acao = 'verificou_raiz' and id > $1 order by id desc limit 1`, [audDesde])).rows[0].depois)
+      .toEqual({ raiz: "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak", itens: 1240, resultado: "incompleta", completa: false });
     await expect(servico(`select ged_registrar_verificacao_raiz($1, 'outra-pasta', 1, 'ok')`, [admin])).rejects.toThrow(/ged:raiz_invalida/);
     await expect(servico(`select ged_registrar_verificacao_raiz($1, '1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak', 1, 'ok')`, [comum])).rejects.toThrow(/ged:sem_permissao/);
   });

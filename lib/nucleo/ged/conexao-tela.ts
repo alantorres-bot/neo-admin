@@ -193,7 +193,7 @@ const MENSAGEM_RAIZ: Record<string, string> = {
   area_invalida: "Escolha a área dona e a área de operação; as áreas de leitura não podem repetir a área dona.",
   raiz_existente: "Esta raiz já está cadastrada.",
   pasta_invalida: "A pasta não foi encontrada no Drive compartilhado do GED (ou está na lixeira).",
-  sem_verificacao: "Verifique a pasta (botão Verificar, com resultado completo) antes de ativar.",
+  sem_verificacao: "A última verificação desta pasta não foi completa (ou não existe). Verifique de novo e ative quando a leitura vier completa.",
   transicao_invalida: "Essa mudança de situação não é permitida.",
   nao_encontrada: "Raiz não encontrada.",
   desconectado: MENSAGEM_METADADOS.desconectado,
