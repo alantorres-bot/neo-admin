@@ -171,3 +171,38 @@ export function lerVerificacaoRaiz(d: unknown): VerificacaoRaiz | null {
   if (![v.candidatasDentro, v.subpastasNivel1, v.subpastasNivel2, v.temporarios].every(listaDeTextos)) return null;
   return v;
 }
+
+// ───────────── Pastas-raiz (A1a, migration 0804): cadastro pela Edge Function, áreas e situação por funções do banco ─────────────
+/** Linha da projeção ged_raizes() (só colunas autorizadas). */
+export type RaizGed = {
+  id: string;
+  nome: string;
+  finalidade: "elaboracao" | "dossie_cliente" | "tematica";
+  area: string;
+  areas_leitura: string[];
+  area_operacao: string;
+  situacao: "em_verificacao" | "ativa" | "inativa";
+};
+
+export const ROTULO_SITUACAO_RAIZ: Record<RaizGed["situacao"], string> = { em_verificacao: "Em verificação", ativa: "Ativa", inativa: "Inativa" };
+
+const MENSAGEM_RAIZ: Record<string, string> = {
+  sem_permissao: "Só o administrador geral gerencia as pastas-raiz do GED.",
+  raiz_invalida: "Só as duas raízes confirmadas (02 - CONTRATOS e 01 - CLIENTES) podem ser cadastradas.",
+  raiz_travada: "As áreas da raiz de elaboração são fixas (só Contratos) e não podem ser alteradas.",
+  area_invalida: "Escolha a área dona e a área de operação; as áreas de leitura não podem repetir a área dona.",
+  raiz_existente: "Esta raiz já está cadastrada.",
+  pasta_invalida: "A pasta não foi encontrada no Drive compartilhado do GED (ou está na lixeira).",
+  sem_verificacao: "Verifique a pasta (botão Verificar, com resultado completo) antes de ativar.",
+  transicao_invalida: "Essa mudança de situação não é permitida.",
+  nao_encontrada: "Raiz não encontrada.",
+  desconectado: MENSAGEM_METADADOS.desconectado,
+  invalid_grant: MENSAGEM_ERRO.invalid_grant,
+  sem_permissao_drive: MENSAGEM_METADADOS.sem_permissao_drive,
+};
+
+/** Mensagem por código (`ged:<codigo>` do banco ou `erro` da função); qualquer outro texto vira genérico. */
+export function mensagemRaizGed(codigoOuErro: unknown): string {
+  const codigo = typeof codigoOuErro === "string" ? (/ged:([a-z_]+)/.exec(codigoOuErro)?.[1] ?? codigoOuErro) : null;
+  return codigo && Object.hasOwn(MENSAGEM_RAIZ, codigo) ? MENSAGEM_RAIZ[codigo] : "Não foi possível concluir agora. Tente de novo.";
+}

@@ -7,6 +7,7 @@ import {
   LIMITE_METADADOS,
   LIMITE_VERIFICACAO,
   tratarConsultaMetadados,
+  tratarCadastroRaiz,
   tratarVerificacaoRaiz,
   type DepsMetadados,
 } from "../../../supabase/functions/_shared/ged";
@@ -27,7 +28,7 @@ const pagina = (qtd: number, proxima?: string) =>
 
 function deps(o: {
   admin?: boolean; conectado?: boolean; env?: Record<string, string>;
-  token?: () => Response; drive?: (url: string) => Response;
+  token?: () => Response; drive?: (url: string) => Response; cadastro?: { data?: unknown; error?: { message: string } | null };
 } = {}) {
   const rpcs: { nome: string; args: Record<string, unknown> }[] = [];
   const logs: string[] = [];
@@ -40,6 +41,7 @@ function deps(o: {
     rpc: async (nome, args) => {
       rpcs.push({ nome, args });
       if (nome === "ged_refresh_token") return { data: o.conectado === false ? null : { refresh_token: "rt-ficticio" }, error: null };
+      if (nome === "ged_cadastrar_raiz") return { data: o.cadastro?.data ?? "raiz-uuid", error: o.cadastro?.error ?? null };
       return { data: null, error: null };
     },
     fetch: vi.fn(async (url: string, init: { body: string }) => {
@@ -240,5 +242,71 @@ describe("verificação das raízes candidatas (A0, 5.2.4)", () => {
     const { r, rpcs } = await verificar(ELABORACAO, { drive: () => new Response(JSON.stringify({ error: { status: "PERMISSION_DENIED" } }), { status: 403 }) });
     expect([r.status, corpo(r)]).toEqual([502, { erro: "sem_permissao_drive" }]);
     expect(rpcs.filter((x) => x.nome === "ged_registrar_verificacao_raiz").map((x) => x.args.p_resultado)).toEqual(["sem_permissao_drive"]);
+  });
+});
+
+describe("cadastro das pastas-raiz (A1a, 5.2; 0804)", () => {
+  const ELABORACAO = "1JMzjxdPkXTtGXtop0CFx-R47Ql_08alR";
+  const DOSSIE = "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak";
+  const pastaDrive = (o: Record<string, unknown> = {}) => () =>
+    new Response(JSON.stringify({ id: DOSSIE, name: "01 - PASTA FICTICIA", mimeType: "application/vnd.google-apps.folder",
+      driveId: DRIVE_COMPARTILHADO_GED, trashed: false, ...o }), { status: 200 });
+  const pedido = (raiz: unknown, extra: Record<string, unknown> = {}) =>
+    ({ method: "POST", jwt: "jwt", raiz, area: "contratos", areas_leitura: ["comercial"], area_operacao: "contratos", ...extra });
+  const cadastrar = (req: ReturnType<typeof pedido>, o: Parameters<typeof deps>[0] = {}) => {
+    const t = deps({ drive: pastaDrive(), ...o });
+    return tratarCadastroRaiz(req, t.d).then((r) => ({ r, ...t }));
+  };
+
+  it("só as duas raízes confirmadas: subpasta Contratos, ALUTEC e ID livre recusados antes de qualquer chamada", async () => {
+    for (const raiz of ["1JOh-QFYw9uwNkxSAdPa6cLzOzIuOiT56", "pasta-alutec-ficticia", DRIVE_COMPARTILHADO_GED, null]) {
+      const { r, posts, gets, rpcs } = await cadastrar(pedido(raiz));
+      expect([r.status, corpo(r)]).toEqual([400, { erro: "raiz_invalida" }]);
+      expect([posts, gets, rpcs]).toEqual([[], [], []]);
+    }
+  });
+
+  it("áreas fora do formato: recusadas antes do Drive; não-admin: 403 sem ler o Drive", async () => {
+    for (const extra of [{ area: 1 }, { areas_leitura: "comercial" }, { areas_leitura: [1] }, { area_operacao: null }]) {
+      const { r, gets } = await cadastrar(pedido(DOSSIE, extra));
+      expect([r.status, corpo(r), gets]).toEqual([400, { erro: "area_invalida" }, []]);
+    }
+    const { r, gets } = await cadastrar(pedido(DOSSIE), { admin: false });
+    expect([r.status, gets]).toEqual([403, []]);
+  });
+
+  it("lê o nome no Drive (files.get, só GET, Drive compartilhado) e grava pela ged_cadastrar_raiz; log sem nome", async () => {
+    const { r, gets, rpcs, logs } = await cadastrar(pedido(DOSSIE));
+    expect([r.status, corpo(r)]).toEqual([201, { id: "raiz-uuid", nome: "01 - PASTA FICTICIA" }]);
+    expect(gets).toHaveLength(1);
+    const u = new URL(gets[0].url);
+    expect(u.pathname).toBe(`/drive/v3/files/${DOSSIE}`);
+    expect(u.searchParams.get("supportsAllDrives")).toBe("true");
+    expect(rpcs.find((x) => x.nome === "ged_cadastrar_raiz")?.args).toEqual({
+      p_perfil: PERFIL, p_drive_id: DOSSIE, p_nome: "01 - PASTA FICTICIA", p_drive_compartilhado_id: DRIVE_COMPARTILHADO_GED,
+      p_area: "contratos", p_areas_leitura: ["comercial"], p_area_operacao: "contratos",
+    });
+    expect(logs).toEqual(["ged-cadastro: resultado=ok"]);
+    expect(logs.join() + JSON.stringify(rpcs.filter((x) => x.nome !== "ged_cadastrar_raiz"))).not.toMatch(/FICTICIA|rt-ficticio|at-ficticio/);
+  });
+
+  it("pasta que não serve (outro Drive, lixeira, arquivo, ID trocado): 422 sem gravar", async () => {
+    for (const o of [{ driveId: "outro-drive" }, { trashed: true }, { mimeType: "application/pdf" }, { id: ELABORACAO }, { name: " " }]) {
+      const { r, rpcs } = await cadastrar(pedido(DOSSIE), { drive: pastaDrive(o) });
+      expect([r.status, corpo(r)]).toEqual([422, { erro: "pasta_invalida" }]);
+      expect(rpcs.map((x) => x.nome)).not.toContain("ged_cadastrar_raiz");
+    }
+  });
+
+  it("Drive 403 e recusa do banco viram códigos fixos; mensagem técnica do banco não vaza", async () => {
+    const semAcesso = await cadastrar(pedido(DOSSIE), { drive: () => new Response("{}", { status: 403 }) });
+    expect([semAcesso.r.status, corpo(semAcesso.r)]).toEqual([502, { erro: "sem_permissao_drive" }]);
+    for (const [mensagem, status, erro] of [
+      ["ged:raiz_travada", 409, "raiz_travada"], ["ged:raiz_existente", 409, "raiz_existente"], ["ged:area_invalida", 409, "area_invalida"],
+      ["ged:sem_permissao", 403, "sem_permissao"], ["duplicate key value violates unique constraint", 500, "banco"],
+    ] as const) {
+      const { r } = await cadastrar(pedido(DOSSIE), { cadastro: { data: null, error: { message: mensagem } } });
+      expect([r.status, corpo(r)]).toEqual([status, { erro }]);
+    }
   });
 });

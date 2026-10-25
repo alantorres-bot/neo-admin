@@ -1,7 +1,8 @@
 // Supabase SIMULADO para os testes de interface do GED (playwright.ged.config.ts). Só testes: dados fictícios, nada sai da
 // máquina, nenhum banco, nenhum Google. Responde às rotas que a tela /configuracoes/documentos usa:
 //   /auth/v1/user (o getClaims do app confere tokens HS256 aqui), /rest/v1/<tabela>, /rest/v1/rpc/<função> e a Edge Function
-//   /functions/v1/nucleo-ged-conectar (GET simula a ida e volta do Google; POST simula a desconexão).
+//   /functions/v1/nucleo-ged-conectar (GET simula a ida e volta do Google; POST simula a desconexão) e
+//   /functions/v1/nucleo-ged-metadados (verificação e cadastro das pastas-raiz, com as regras da 0804 simplificadas).
 // O cenário é trocado pelo teste em POST /__cenario; GET /__chamadas devolve o que o app pediu.
 // Uso: node e2e/supabase-simulado.mjs <porta> <url-do-app>
 import { createServer } from "node:http";
@@ -21,7 +22,11 @@ const padrao = () => ({
   desconectarErro: false,
   desconectarAtrasoMs: 0,
   revogacao: "ok",
+  raizes: [], // linhas de ged_raizes (projeção) com drive_id interno do simulado
+  verificadas: [], // drive_ids com verificação ok (o banco exige para ativar)
 });
+const NOMES_DRIVE = { "1JMzjxdPkXTtGXtop0CFx-R47Ql_08alR": "02 - CONTRATOS (ficticio)", "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak": "01 - CLIENTES (ficticio)" };
+const FINALIDADE = { "1JMzjxdPkXTtGXtop0CFx-R47Ql_08alR": "elaboracao", "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak": "dossie_cliente" };
 let cenario = padrao();
 let chamadas = [];
 
@@ -36,6 +41,7 @@ const perfil = (id) => ({
 });
 const AREAS = [
   { codigo: "contratos", nome: "Contratos", sensivel: false, ordem: 3 },
+  { codigo: "comercial", nome: "Comercial", sensivel: false, ordem: 4 },
   { codigo: "administrativo", nome: "Administrativo geral", sensivel: false, ordem: 6 },
 ];
 
@@ -67,6 +73,15 @@ createServer(async (req, res) => {
     if (nome === "ged_situacao_conexao") {
       if (cenario.semMigration) return json(res, 404, { code: "PGRST202", message: "Could not find the function public.ged_situacao_conexao" });
       return json(res, 200, cenario.usuario === ADMIN && cenario.situacao ? [cenario.situacao] : []);
+    }
+    if (nome === "ged_raizes") return json(res, 200, cenario.raizes.map((r) => ({ ...r, drive_id: undefined }))); // a projeção não tem drive_id
+    if (nome === "ged_definir_situacao_raiz") {
+      const { p_raiz, p_situacao } = JSON.parse(corpo);
+      const r = cenario.raizes.find((x) => x.id === p_raiz);
+      if (!r) return json(res, 400, { code: "P0001", message: "ged:nao_encontrada" });
+      if (r.situacao === "em_verificacao" && !cenario.verificadas.includes(r.drive_id)) return json(res, 400, { code: "P0001", message: "ged:sem_verificacao" });
+      r.situacao = p_situacao;
+      return json(res, 200, null);
     }
     if (nome === "ged_iniciar_conexao") {
       if (cenario.iniciarErro) return json(res, 400, cenario.iniciarErro);
@@ -119,6 +134,27 @@ createServer(async (req, res) => {
       if (cenario.desconectarErro) return json(res, 500, { erro: "falha simulada" });
       if (cenario.situacao) cenario.situacao = { ...cenario.situacao, situacao: "desconectada", desconectado_em: new Date().toISOString(), revogacao_remota: cenario.revogacao };
       return json(res, 200, { desconectado: true, revogacao: cenario.revogacao });
+    }
+  }
+
+  // Edge Function nucleo-ged-metadados (simulada): verificação (resumo fictício) e cadastro (nome "lido no Drive").
+  if (p === "/functions/v1/nucleo-ged-metadados" && req.method === "POST") {
+    const pedido = JSON.parse(corpo || "{}");
+    if (pedido.acao === "verificar_raiz") {
+      cenario.verificadas.push(pedido.raiz);
+      return json(res, 200, {
+        raiz: "Raiz ficticia", itens: 3, truncada: false, candidatasDentro: [], porNivel: [{ profundidade: 1, pastas: 2, arquivos: 1 }],
+        subpastasNivel1: ["Pasta ficticia"], subpastasNivel2: [], extensoes: [{ extensao: "pdf", quantidade: 1 }], temporarios: [],
+        limites: { profundidadeMax: 4, maxItens: 10000, maxPastasAbertas: 1000, prazoMs: 90000 },
+      });
+    }
+    if (pedido.acao === "cadastrar_raiz") {
+      if (!NOMES_DRIVE[pedido.raiz]) return json(res, 400, { erro: "raiz_invalida" });
+      if (cenario.raizes.some((r) => r.drive_id === pedido.raiz)) return json(res, 409, { erro: "raiz_existente" });
+      const r = { id: `raiz-${cenario.raizes.length + 1}`, drive_id: pedido.raiz, nome: NOMES_DRIVE[pedido.raiz], finalidade: FINALIDADE[pedido.raiz],
+        area: pedido.area, areas_leitura: pedido.areas_leitura, area_operacao: pedido.area_operacao, situacao: "em_verificacao" };
+      cenario.raizes.push(r);
+      return json(res, 201, { id: r.id, nome: r.nome });
     }
   }
 

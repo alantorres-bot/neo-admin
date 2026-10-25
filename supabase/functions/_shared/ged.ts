@@ -1169,3 +1169,54 @@ export async function tratarVerificacaoRaiz(
     return json(502, { erro: resultado });
   }
 }
+
+// ───────────────────────── Cadastro das pastas-raiz (A1a, 5.2; migration 0804) ─────────────────────────
+// Só as duas raízes confirmadas em 25/10/2026 (2.2). O nome vem do Drive (files.get), nunca do navegador; a pasta precisa estar
+// no Drive compartilhado do GED, fora da lixeira. O banco confere de novo: admin geral, IDs, trava da elaboração e áreas.
+
+export const RAIZES_CONFIRMADAS = ["1JMzjxdPkXTtGXtop0CFx-R47Ql_08alR", "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak"] as const satisfies readonly IdRaizCandidata[];
+export type IdRaizConfirmada = (typeof RAIZES_CONFIRMADAS)[number];
+export const ehRaizConfirmada = (id: unknown): id is IdRaizConfirmada => RAIZES_CONFIRMADAS.includes(id as IdRaizConfirmada);
+
+/** Códigos que a função devolve a quem cadastrou (os `ged:<codigo>` do banco e os da leitura do Drive). */
+const CODIGOS_CADASTRO = ["sem_permissao", "raiz_invalida", "raiz_travada", "area_invalida", "raiz_existente"] as const;
+const listaDeAreas = (v: unknown): v is string[] => Array.isArray(v) && v.every((a) => typeof a === "string");
+
+export async function tratarCadastroRaiz(
+  req: { method: string; jwt: string | null; raiz: unknown; area: unknown; areas_leitura: unknown; area_operacao: unknown },
+  d: DepsMetadados,
+): Promise<RespostaGed> {
+  if (req.method === "POST" && !ehRaizConfirmada(req.raiz)) return json(400, { erro: "raiz_invalida" }); // antes de tudo
+  if (req.method === "POST" && (typeof req.area !== "string" || typeof req.area_operacao !== "string" || !listaDeAreas(req.areas_leitura))) {
+    return json(400, { erro: "area_invalida" });
+  }
+  const raiz = req.raiz as IdRaizConfirmada;
+  const log = async (_perfil: string, resultado: string) => void d.log?.(`ged-cadastro: resultado=${resultado}`);
+  const l = await prepararLeitura(req, d, log);
+  if ("status" in l) return l;
+  let pasta: ArquivoDrive & { driveId?: string };
+  try {
+    pasta = (await l.cliente.get(`files/${raiz}`, { fields: "id,name,mimeType,driveId,trashed", supportsAllDrives: "true" })) as typeof pasta;
+  } catch (e) {
+    const resultado = resultadoDoErro(e);
+    await log(l.perfil, resultado);
+    return json(502, { erro: resultado });
+  }
+  if (pasta?.id !== raiz || pasta.mimeType !== MIME_PASTA || pasta.trashed || pasta.driveId !== DRIVE_COMPARTILHADO_GED
+      || typeof pasta.name !== "string" || pasta.name.trim() === "") {
+    await log(l.perfil, "pasta_invalida");
+    return json(422, { erro: "pasta_invalida" });
+  }
+  const { data, error } = await d.rpc("ged_cadastrar_raiz", {
+    p_perfil: l.perfil, p_drive_id: raiz, p_nome: pasta.name, p_drive_compartilhado_id: pasta.driveId,
+    p_area: req.area, p_areas_leitura: req.areas_leitura, p_area_operacao: req.area_operacao,
+  });
+  if (error) {
+    const codigo = /ged:([a-z_]+)/.exec(error.message)?.[1];
+    const conhecido = CODIGOS_CADASTRO.find((c) => c === codigo) ?? "banco";
+    await log(l.perfil, conhecido);
+    return json(conhecido === "sem_permissao" ? 403 : conhecido === "banco" ? 500 : 409, { erro: conhecido });
+  }
+  await log(l.perfil, "ok");
+  return json(201, { id: data, nome: pasta.name });
+}

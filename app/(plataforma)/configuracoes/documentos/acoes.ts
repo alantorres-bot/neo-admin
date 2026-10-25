@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { mensagemDeErroBanco } from "@/lib/nucleo/erros";
-import { ehRaizCandidata, type ConsultaMetadados } from "@/supabase/functions/_shared/ged";
+import { ehRaizCandidata, ehRaizConfirmada, type ConsultaMetadados } from "@/supabase/functions/_shared/ged";
 import {
   FUNCAO_CONEXAO_GED,
   FUNCAO_METADADOS_GED,
@@ -11,6 +11,7 @@ import {
   mensagemConsultaMetadados,
   mensagemDesconexao,
   mensagemErroInicio,
+  mensagemRaizGed,
   ROTA_CONEXAO_GED,
   urlInicioConexaoGed,
   validarContaGed,
@@ -106,4 +107,51 @@ export async function verificarRaizGed(raiz: string): Promise<{ ok: true; verifi
   }
   const verificacao = lerVerificacaoRaiz(data);
   return verificacao ? { ok: true, verificacao } : { ok: false, erro: mensagemConsultaMetadados(null) };
+}
+
+type Resultado = { ok: true } | { ok: false; erro: string };
+const SO_ADMIN_RAIZ = mensagemRaizGed("sem_permissao");
+
+/**
+ * Cadastro de uma das duas raízes confirmadas (A1a, 5.2): a Edge Function lê o nome no Drive (files.get) e grava pela
+ * ged_cadastrar_raiz (0804), que confere de novo admin, IDs, trava da elaboração e áreas. Nada do navegador vira nome.
+ */
+export async function cadastrarRaizGed(raiz: string, area: string, areasLeitura: string[], areaOperacao: string): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: SO_ADMIN_RAIZ };
+  if (!ehRaizConfirmada(raiz)) return { ok: false, erro: mensagemRaizGed("raiz_invalida") };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.functions.invoke(FUNCAO_METADADOS_GED, {
+    method: "POST", body: { acao: "cadastrar_raiz", raiz, area, areas_leitura: areasLeitura, area_operacao: areaOperacao },
+  });
+  if (error) {
+    const corpo = await ((error as { context?: Response }).context?.json?.() as Promise<{ erro?: unknown }> | undefined)?.catch(() => null);
+    return { ok: false, erro: mensagemRaizGed(corpo?.erro) };
+  }
+  revalidatePath(ROTA_CONEXAO_GED);
+  return { ok: true };
+}
+
+/** Áreas do dossiê (PENDENTE 2: escolha explícita do admin, sem padrão). A elaboração é recusada pelo banco (5.11.1). */
+export async function definirAreasRaizGed(id: string, area: string, areasLeitura: string[], areaOperacao: string): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: SO_ADMIN_RAIZ };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("ged_definir_areas_raiz", {
+    p_raiz: id, p_area: area, p_areas_leitura: areasLeitura, p_area_operacao: areaOperacao,
+  });
+  if (error) return { ok: false, erro: mensagemRaizGed(error.message) };
+  revalidatePath(ROTA_CONEXAO_GED);
+  return { ok: true };
+}
+
+/** Ativar (exige verificação `ok` auditada da mesma pasta) ou inativar. As transições valem no banco (8.1). */
+export async function definirSituacaoRaizGed(id: string, situacao: "ativa" | "inativa"): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: SO_ADMIN_RAIZ };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("ged_definir_situacao_raiz", { p_raiz: id, p_situacao: situacao });
+  if (error) return { ok: false, erro: mensagemRaizGed(error.message) };
+  revalidatePath(ROTA_CONEXAO_GED);
+  return { ok: true };
 }

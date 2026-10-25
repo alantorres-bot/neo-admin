@@ -241,3 +241,60 @@ test("tela estreita (celular): sem rolagem horizontal e botões visíveis", asyn
   expect(larguras.doc).toBeLessThanOrEqual(larguras.janela);
   await capturar(page, "11-celular");
 });
+
+test("12. pastas-raiz: cadastra o dossiê com áreas explícitas, ativa só depois da verificação e inativa", async ({ page }) => {
+  await cenario(page, { situacao: CONECTADA });
+  await entrar(page);
+  await page.goto(ROTA);
+  const raizes = page.locator("[data-slot=card]").filter({ hasText: "Pastas-raiz do GED" });
+  const dossie = raizes.getByRole("row").filter({ hasText: "01 - CLIENTES" });
+  await expect(raizes.getByRole("row").filter({ hasText: "02 - CONTRATOS" })).toContainText("Não cadastrada");
+  await expect(raizes).not.toContainText("(alternativa)");
+
+  // Cadastro: nenhuma área vem marcada; o botão só libera com dona e operação escolhidas.
+  await dossie.getByRole("button", { name: "Cadastrar" }).click();
+  const dialogo = page.getByRole("dialog");
+  await expect(dialogo.getByRole("button", { name: "Cadastrar" })).toBeDisabled();
+  await expect(dialogo.getByRole("checkbox", { checked: true })).toHaveCount(0);
+  await dialogo.getByLabel("Área dona (lê)").selectOption("contratos");
+  await dialogo.getByLabel("Área de operação (classifica e vincula)").selectOption("contratos");
+  await dialogo.getByRole("checkbox", { name: "Comercial" }).click();
+  await dialogo.getByRole("button", { name: "Cadastrar" }).click();
+  await expect(dossie).toContainText("01 - CLIENTES (ficticio)");
+  await expect(dossie).toContainText("Em verificação");
+  await expect(dossie).toContainText("Leitura: Comercial");
+  const cadastro = (await chamadas(page)).find((c) => c.caminho === "/functions/v1/nucleo-ged-metadados");
+  expect(JSON.parse(cadastro?.corpo ?? "{}")).toEqual({
+    acao: "cadastrar_raiz", raiz: "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak", area: "contratos", areas_leitura: ["comercial"], area_operacao: "contratos",
+  });
+
+  // Ativar antes de verificar: recusado pelo banco, com mensagem clara.
+  await dossie.getByRole("button", { name: "Ativar" }).click();
+  await expect(page.getByText(/Verifique a pasta/)).toBeVisible();
+  await expect(dossie).toContainText("Em verificação");
+
+  // Verifica (seção acima) e ativa; depois inativa.
+  await page.locator("div.rounded-md.border").filter({ hasText: "Dossiê: 02 - COMERCIAL / 01 - CLIENTES" }).getByRole("button", { name: "Verificar" }).click();
+  await expect(page.getByText("3 itens lidos")).toBeVisible();
+  await dossie.getByRole("button", { name: "Ativar" }).click();
+  await expect(dossie).toContainText("Ativa");
+  await dossie.getByRole("button", { name: "Inativar" }).click();
+  await expect(dossie).toContainText("Inativa");
+  await capturar(page, "12-pastas-raiz");
+});
+
+test("13. pastas-raiz: elaboração cadastra com áreas fixas e não tem botão de áreas", async ({ page }) => {
+  await cenario(page, { situacao: CONECTADA });
+  await entrar(page);
+  await page.goto(ROTA);
+  const elaboracao = page.locator("[data-slot=card]").filter({ hasText: "Pastas-raiz do GED" }).getByRole("row").filter({ hasText: "02 - CONTRATOS" });
+  await elaboracao.getByRole("button", { name: "Cadastrar" }).click();
+  const dialogo = page.getByRole("dialog");
+  await expect(dialogo).toContainText("sem outras áreas de leitura (fixo)");
+  await expect(dialogo.locator("select")).toHaveCount(0);
+  await dialogo.getByRole("button", { name: "Cadastrar" }).click();
+  await expect(elaboracao).toContainText("Dona: Contratos · Operação: Contratos");
+  await expect(elaboracao.getByRole("button", { name: "Áreas" })).toHaveCount(0);
+  const cadastro = (await chamadas(page)).find((c) => c.caminho === "/functions/v1/nucleo-ged-metadados");
+  expect(JSON.parse(cadastro?.corpo ?? "{}")).toMatchObject({ area: "contratos", areas_leitura: [], area_operacao: "contratos" });
+});

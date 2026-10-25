@@ -29,7 +29,9 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
-const { iniciarConexaoGed, desconectarGed, definirContaGed, consultarMetadadosGed, verificarRaizGed } = await import("@/app/(plataforma)/configuracoes/documentos/acoes");
+const { iniciarConexaoGed, desconectarGed, definirContaGed, consultarMetadadosGed, verificarRaizGed, cadastrarRaizGed, definirAreasRaizGed, definirSituacaoRaizGed } =
+  await import("@/app/(plataforma)/configuracoes/documentos/acoes");
+const { PastasRaiz } = await import("@/app/(plataforma)/configuracoes/documentos/pastas-raiz");
 const { ConexaoDrive } = await import("@/app/(plataforma)/configuracoes/documentos/conexao-drive");
 
 const STATE = "c".repeat(64);
@@ -246,5 +248,78 @@ describe("componente ConexaoDrive (render no servidor)", () => {
     const html = render({ disponivel: false });
     expect(html).toContain("ainda não está disponível neste ambiente");
     expect(html).not.toContain("<button");
+  });
+});
+
+describe("pastas-raiz (A1a, 0804)", () => {
+  const DOSSIE = "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak";
+  const ELABORACAO = "1JMzjxdPkXTtGXtop0CFx-R47Ql_08alR";
+  const erroFuncao = (erro: string) => ({ data: null, error: { context: new Response(JSON.stringify({ erro }), { status: 409 }) } });
+
+  it("cadastrar: só admin e só as duas raízes confirmadas; chama a função com a ação e as áreas", async () => {
+    estado.invoke.mockResolvedValue({ data: { id: "r1", nome: "x" }, error: null });
+    expect(await cadastrarRaizGed(DOSSIE, "contratos", ["comercial"], "contratos")).toEqual({ ok: true });
+    expect(estado.invoke).toHaveBeenCalledWith("nucleo-ged-metadados", {
+      method: "POST", body: { acao: "cadastrar_raiz", raiz: DOSSIE, area: "contratos", areas_leitura: ["comercial"], area_operacao: "contratos" },
+    });
+    expect(estado.revalidar).toHaveBeenCalledWith("/configuracoes/documentos");
+    estado.invoke.mockReset();
+    expect(await cadastrarRaizGed("1JOh-QFYw9uwNkxSAdPa6cLzOzIuOiT56", "contratos", [], "contratos")).toEqual({ ok: false, erro: expect.stringContaining("duas raízes") });
+    estado.adminGeral = false;
+    expect((await cadastrarRaizGed(DOSSIE, "contratos", [], "contratos")).ok).toBe(false);
+    expect(estado.invoke).not.toHaveBeenCalled();
+  });
+
+  it("cadastrar: código da função vira mensagem fixa; desconhecido vira genérica", async () => {
+    estado.invoke.mockResolvedValue(erroFuncao("raiz_existente"));
+    expect(await cadastrarRaizGed(DOSSIE, "contratos", [], "contratos")).toEqual({ ok: false, erro: "Esta raiz já está cadastrada." });
+    estado.invoke.mockResolvedValue(erroFuncao("pasta_invalida"));
+    expect(await cadastrarRaizGed(ELABORACAO, "contratos", [], "contratos")).toEqual({ ok: false, erro: expect.stringContaining("Drive compartilhado") });
+    estado.invoke.mockResolvedValue(erroFuncao("detalhe interno qualquer"));
+    expect(await cadastrarRaizGed(DOSSIE, "contratos", [], "contratos")).toEqual({ ok: false, erro: "Não foi possível concluir agora. Tente de novo." });
+    expect(estado.revalidar).not.toHaveBeenCalled();
+  });
+
+  it("situação e áreas: RPC com o cliente do usuário; recusas do banco viram mensagens fixas", async () => {
+    estado.rpc.mockResolvedValue({ data: null, error: null });
+    expect(await definirSituacaoRaizGed("r1", "ativa")).toEqual({ ok: true });
+    expect(estado.rpc).toHaveBeenCalledWith("ged_definir_situacao_raiz", { p_raiz: "r1", p_situacao: "ativa" });
+    expect(await definirAreasRaizGed("r1", "contratos", ["financeiro"], "contratos")).toEqual({ ok: true });
+    expect(estado.rpc).toHaveBeenCalledWith("ged_definir_areas_raiz", { p_raiz: "r1", p_area: "contratos", p_areas_leitura: ["financeiro"], p_area_operacao: "contratos" });
+    estado.rpc.mockResolvedValue({ data: null, error: { message: "ged:sem_verificacao" } });
+    expect(await definirSituacaoRaizGed("r1", "ativa")).toEqual({ ok: false, erro: expect.stringContaining("Verifique a pasta") });
+    estado.rpc.mockResolvedValue({ data: null, error: { message: "ged:raiz_travada" } });
+    expect(await definirAreasRaizGed("r1", "comercial", [], "contratos")).toEqual({ ok: false, erro: expect.stringContaining("elaboração") });
+    estado.rpc.mockReset();
+    estado.adminGeral = false;
+    expect((await definirSituacaoRaizGed("r1", "inativa")).ok).toBe(false);
+    expect((await definirAreasRaizGed("r1", "contratos", [], "contratos")).ok).toBe(false);
+    expect(estado.rpc).not.toHaveBeenCalled();
+  });
+
+  const AREAS = [{ codigo: "contratos", nome: "Contratos" }, { codigo: "comercial", nome: "Comercial" }];
+  const render = (p: Record<string, unknown>) => renderToStaticMarkup(createElement(PastasRaiz, { raizes: [], areas: AREAS, conectado: true, ...p }));
+
+  it("sem cadastro: as duas raízes confirmadas com Cadastrar (desabilitado sem conexão); a subpasta Contratos não aparece", () => {
+    const html = render({});
+    expect(html).toContain("02 - CONTRATOS");
+    expect(html).toContain("01 - CLIENTES");
+    expect(html).not.toContain("(alternativa)");
+    expect(html.match(/>Cadastrar</g)).toHaveLength(2);
+    expect(html).not.toMatch(/disabled=""[^>]*>Cadastrar/);
+    expect(render({ conectado: false })).toMatch(/disabled=""[^>]*>Cadastrar/);
+  });
+
+  it("cadastradas: nome do Drive, áreas e situação; Ativar/Inativar conforme a situação; Áreas só no dossiê", () => {
+    const html = render({ raizes: [
+      { id: "e", nome: "02 - CONTRATOS", finalidade: "elaboracao", area: "contratos", areas_leitura: [], area_operacao: "contratos", situacao: "em_verificacao" },
+      { id: "d", nome: "01 - CLIENTES", finalidade: "dossie_cliente", area: "contratos", areas_leitura: ["comercial"], area_operacao: "contratos", situacao: "ativa" },
+    ] });
+    expect(html).toContain("Em verificação");
+    expect(html).toContain("Leitura: Comercial");
+    expect(html.match(/>Ativar</g)).toHaveLength(1);
+    expect(html.match(/>Inativar</g)).toHaveLength(1);
+    expect(html.match(/<button[^>]*>Áreas<\/button>/g)).toHaveLength(1); // o título da coluna também diz "Áreas"
+    expect(html).not.toContain(">Cadastrar<");
   });
 });
