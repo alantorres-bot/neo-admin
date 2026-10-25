@@ -29,7 +29,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
-const { iniciarConexaoGed, desconectarGed, definirContaGed } = await import("@/app/(plataforma)/configuracoes/documentos/acoes");
+const { iniciarConexaoGed, desconectarGed, definirContaGed, consultarMetadadosGed } = await import("@/app/(plataforma)/configuracoes/documentos/acoes");
 const { ConexaoDrive } = await import("@/app/(plataforma)/configuracoes/documentos/conexao-drive");
 
 const STATE = "c".repeat(64);
@@ -137,6 +137,35 @@ describe("definirContaGed", () => {
   });
 });
 
+describe("consultarMetadadosGed", () => {
+  it("admin: chama a função de metadados por POST e devolve só o formato esperado", async () => {
+    estado.invoke.mockResolvedValue({ data: { itens: 1, limite_atingido: false, por_tipo: { "application/pdf": 1 },
+      amostra: [{ nome: "Ficticio.pdf", tipo: "application/pdf", modificado_em: null, tamanho: null }, { nome: 1 }] }, error: null });
+    const r = await consultarMetadadosGed();
+    expect(estado.invoke).toHaveBeenCalledWith("nucleo-ged-metadados", { method: "POST" });
+    expect(r).toEqual({ ok: true, consulta: { itens: 1, limite_atingido: false, por_tipo: { "application/pdf": 1 },
+      amostra: [{ nome: "Ficticio.pdf", tipo: "application/pdf", modificado_em: null, tamanho: null }] } });
+  });
+
+  it("não-admin: recusado sem chamar a função", async () => {
+    estado.adminGeral = false;
+    expect((await consultarMetadadosGed()).ok).toBe(false);
+    expect(estado.invoke).not.toHaveBeenCalled();
+  });
+
+  it("erro da função: mensagem pelo código conhecido; código desconhecido ou corpo ilegível vira genérica", async () => {
+    const erro = (corpo: unknown) => ({ data: null, error: { message: "FunctionsHttpError", context: new Response(JSON.stringify(corpo), { status: 502 }) } });
+    estado.invoke.mockResolvedValue(erro({ erro: "sem_permissao_drive" }));
+    expect(await consultarMetadadosGed()).toEqual({ ok: false, erro: expect.stringContaining("Drive API") });
+    estado.invoke.mockResolvedValue(erro({ erro: "<script>" }));
+    expect(await consultarMetadadosGed()).toEqual({ ok: false, erro: expect.stringContaining("Não foi possível consultar") });
+    estado.invoke.mockResolvedValue({ data: null, error: { message: "rede" } });
+    expect((await consultarMetadadosGed()).ok).toBe(false);
+    estado.invoke.mockResolvedValue({ data: { inesperado: true }, error: null });
+    expect((await consultarMetadadosGed()).ok).toBe(false);
+  });
+});
+
 describe("componente ConexaoDrive (render no servidor)", () => {
   const conectada = {
     email: "ged.drive@exemplo.invalid", escopos: ["openid", "https://www.googleapis.com/auth/drive.readonly"],
@@ -149,6 +178,7 @@ describe("componente ConexaoDrive (render no servidor)", () => {
   it("desconectada: botão Conectar; sem conta configurada, botão desabilitado e aviso", () => {
     const html = render({});
     expect(html).toContain("Desconectado");
+    expect(html).not.toContain("Consultar arquivos");
     expect(html).toContain("Conectar Google Drive");
     expect(html).not.toContain(">Desconectar<");
     expect(html).toContain('value="ged.drive@exemplo.invalid"'); // campo da conta, só sem conexão ativa
@@ -164,6 +194,7 @@ describe("componente ConexaoDrive (render no servidor)", () => {
     expect(html).toContain("ged.drive@exemplo.invalid");
     expect(html).toContain("Somente leitura do Drive");
     expect(html).toContain("Desconectar");
+    expect(html).toContain("Consultar arquivos (amostra)"); // primeira leitura só com conexão ativa
     expect(html).not.toContain("Conectar Google Drive");
     expect(html).not.toContain("Salvar conta"); // D-TROCA: sem troca de conta com conexão ativa
     for (const s of SENSIVEIS) expect(html).not.toContain(s);

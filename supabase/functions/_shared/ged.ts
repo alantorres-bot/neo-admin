@@ -976,3 +976,108 @@ export async function tratarDesconexao(req: { method: string; jwt: string | null
   if (error) return texto(500, "Não foi possível desconectar. Tente de novo.");
   return { status: 200, corpo: JSON.stringify({ desconectado: true, revogacao }) };
 }
+
+// ───────────────────────── Primeira leitura controlada: só metadados (0802) ─────────────────────────
+// Lista metadados (nome, tipo, data, tamanho) do que a conta conectada já enxerga. Sem download, sem conteúdo, sem gravar
+// índice, sem escrita no Drive (o cliente só faz GET). Limites fixos: até 3 páginas de 100 itens; 20 na amostra da tela.
+
+export const LIMITE_METADADOS = { porPagina: 100, paginas: 3, amostra: 20 } as const;
+const CAMPOS_METADADOS = "nextPageToken,files(name,mimeType,modifiedTime,size)";
+
+export type ItemMetadados = { nome: string; tipo: string; modificado_em: string | null; tamanho: number | null };
+export type ConsultaMetadados = { itens: number; limite_atingido: boolean; por_tipo: Record<string, number>; amostra: ItemMetadados[] };
+export type ResultadoConsultaMetadados = "ok" | "invalid_grant" | "sem_permissao_drive" | "http";
+
+export async function consultarMetadados(cliente: ClienteDrive, limite = LIMITE_METADADOS): Promise<ConsultaMetadados> {
+  const r: ConsultaMetadados = { itens: 0, limite_atingido: false, por_tipo: {}, amostra: [] };
+  let pageToken: string | undefined;
+  let paginas = 0;
+  do {
+    const params: Record<string, string> = {
+      q: "trashed=false", fields: CAMPOS_METADADOS, pageSize: String(limite.porPagina), orderBy: "modifiedTime desc",
+      corpora: "allDrives", supportsAllDrives: "true", includeItemsFromAllDrives: "true",
+    };
+    if (pageToken) params.pageToken = pageToken;
+    const pagina = (await cliente.get("files", params)) as { files?: ArquivoDrive[]; nextPageToken?: string };
+    if (!Array.isArray(pagina.files)) throw new ErroDrive("Resposta do Drive sem a lista de arquivos.");
+    for (const f of pagina.files) {
+      r.itens++;
+      r.por_tipo[f.mimeType] = (r.por_tipo[f.mimeType] ?? 0) + 1;
+      if (r.amostra.length < limite.amostra) {
+        r.amostra.push({ nome: f.name, tipo: f.mimeType, modificado_em: f.modifiedTime ?? null, tamanho: f.size ? Number(f.size) : null });
+      }
+    }
+    paginas++;
+    pageToken = pagina.nextPageToken;
+  } while (pageToken && paginas < limite.paginas);
+  r.limite_atingido = !!pageToken;
+  return r;
+}
+
+/** Troca o refresh token (Vault) por um access token. Confere que a autorização continua só com os escopos aceitos. */
+async function acessoDrive(cfg: ConfigConexao, refreshToken: string, d: DepsConexao): Promise<{ ok: true; token: string } | { ok: false; codigo: "invalid_grant" | "http" }> {
+  try {
+    const resp = await d.fetch(URL_TOKEN, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: cfg.clientId, client_secret: cfg.clientSecret, refresh_token: refreshToken, grant_type: "refresh_token",
+      }).toString(),
+      signal: tempoLimite(),
+    });
+    const corpo = (await resp.json().catch(() => ({}))) as { access_token?: unknown; scope?: string; error?: string };
+    if (resp.status === 400 && corpo.error === "invalid_grant") return { ok: false, codigo: "invalid_grant" };
+    if (!resp.ok || typeof corpo.access_token !== "string" || !escoposConcedidos(corpo.scope)) return { ok: false, codigo: "http" };
+    return { ok: true, token: corpo.access_token };
+  } catch {
+    return { ok: false, codigo: "http" };
+  }
+}
+
+export type DepsMetadados = DepsConexao & {
+  perfilAdmin: (jwt: string) => Promise<string | null>;
+  /** GET da Drive API (padrão: fetch global). */
+  fetchDrive?: (url: string, init: { method: "GET"; headers: Record<string, string> }) => Promise<Response>;
+  esperar?: (ms: number) => Promise<void>;
+  /** Log sem dado sensível: só resultado e contagem. */
+  log?: (mensagem: string) => void;
+};
+
+const json = (status: number, corpo: unknown): RespostaGed => ({ status, corpo: JSON.stringify(corpo) });
+
+/** Consulta de metadados (POST com o JWT do admin geral). Cada consulta fica na auditoria (quem, quantos, resultado). */
+export async function tratarConsultaMetadados(req: { method: string; jwt: string | null }, d: DepsMetadados): Promise<RespostaGed> {
+  if (req.method !== "POST") return json(405, { erro: "metodo" });
+  if (!req.jwt) return json(401, { erro: "sem_sessao" });
+  const perfil = await d.perfilAdmin(req.jwt);
+  if (!perfil) return json(403, { erro: "sem_permissao" });
+  const cfg = configConexao(d.env);
+  if (!cfg) return json(500, { erro: "nao_configurada" });
+  const { data } = await d.rpc("ged_refresh_token", {});
+  const refreshToken = (data as { refresh_token?: string } | null)?.refresh_token;
+  if (!refreshToken) return json(409, { erro: "desconectado" });
+
+  const concluir = async (resultado: ResultadoConsultaMetadados, itens: number, resposta: RespostaGed) => {
+    await d.rpc("ged_registrar_consulta_metadados", { p_perfil: perfil, p_itens: itens, p_resultado: resultado });
+    d.log?.(`ged-metadados: resultado=${resultado} itens=${itens}`);
+    return resposta;
+  };
+
+  const acesso = await acessoDrive(cfg, refreshToken, d);
+  if (!acesso.ok) {
+    if (acesso.codigo === "invalid_grant") {
+      await d.rpc("ged_registrar_erro_conexao", { p_codigo: "invalid_grant" }); // a tela passa a mostrar "reconecte"
+      return concluir("invalid_grant", 0, json(409, { erro: "invalid_grant" }));
+    }
+    return concluir("http", 0, json(502, { erro: "http" }));
+  }
+  try {
+    const cliente = criarClienteDrive(async () => acesso.token, { fazerFetch: d.fetchDrive, esperar: d.esperar });
+    const r = await consultarMetadados(cliente);
+    return concluir("ok", r.itens, json(200, r));
+  } catch (e) {
+    // 403: Drive API desativada no projeto do Google Cloud ou leitura recusada para a conta.
+    if (e instanceof ErroDrive && e.status === 403) return concluir("sem_permissao_drive", 0, json(502, { erro: "sem_permissao_drive" }));
+    return concluir("http", 0, json(502, { erro: "http" }));
+  }
+}

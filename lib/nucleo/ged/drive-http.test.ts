@@ -80,11 +80,11 @@ describe("varredura do código do GED", () => {
     }
   });
 
-  it("os únicos POST são ao OAuth do Google (troca de código e revogação), nunca à Drive API", () => {
+  it("os únicos POST são ao OAuth do Google (troca do código, renovação do acesso e revogação), nunca à Drive API", () => {
     const codigo = readFileSync(join(shared, "ged.ts"), "utf8");
-    expect(codigo.match(/method:\s*["']POST["'],/g)).toHaveLength(2); // chamadas (o tipo FetchGed declara `method: "POST";`)
+    expect(codigo.match(/method:\s*["']POST["'],/g)).toHaveLength(3); // chamadas (o tipo FetchGed declara `method: "POST";`)
     const alvos = [...codigo.matchAll(/d\.fetch\((\w+)/g)].map((m) => m[1]);
-    expect(alvos.sort()).toEqual(["URL_REVOGAR", "URL_TOKEN"]);
+    expect(alvos.sort()).toEqual(["URL_REVOGAR", "URL_TOKEN", "URL_TOKEN"]);
     expect(codigo).toContain('const URL_TOKEN = "https://oauth2.googleapis.com/token";');
     expect(codigo).toContain('const URL_REVOGAR = "https://oauth2.googleapis.com/revoke";');
     for (const caminho of indices) expect(readFileSync(caminho, "utf8"), caminho).not.toMatch(/method:\s*["']POST["']/i);

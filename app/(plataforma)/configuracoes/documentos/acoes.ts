@@ -2,8 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { mensagemDeErroBanco } from "@/lib/nucleo/erros";
+import type { ConsultaMetadados } from "@/supabase/functions/_shared/ged";
 import {
   FUNCAO_CONEXAO_GED,
+  FUNCAO_METADADOS_GED,
+  lerConsultaMetadados,
+  mensagemConsultaMetadados,
   mensagemDesconexao,
   mensagemErroInicio,
   ROTA_CONEXAO_GED,
@@ -65,4 +69,21 @@ export async function desconectarGed(): Promise<({ ok: true } & Aviso) | { ok: f
   if (error) return { ok: false, erro: "Não foi possível desconectar agora. Tente de novo." };
   revalidatePath(ROTA_CONEXAO_GED);
   return { ok: true, ...mensagemDesconexao((data as { revogacao?: unknown } | null)?.revogacao) };
+}
+
+/**
+ * Primeira leitura controlada do Drive: só metadados (nome, tipo, data, tamanho), com limite fixo na Edge Function. A função
+ * confere o admin no banco, renova o acesso com o token do Vault e registra a consulta na auditoria.
+ */
+export async function consultarMetadadosGed(): Promise<{ ok: true; consulta: ConsultaMetadados } | { ok: false; erro: string }> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: mensagemConsultaMetadados("sem_permissao") };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.functions.invoke(FUNCAO_METADADOS_GED, { method: "POST" });
+  if (error) {
+    const corpo = await ((error as { context?: Response }).context?.json?.() as Promise<{ erro?: unknown }> | undefined)?.catch(() => null);
+    return { ok: false, erro: mensagemConsultaMetadados(corpo?.erro) };
+  }
+  const consulta = lerConsultaMetadados(data);
+  return consulta ? { ok: true, consulta } : { ok: false, erro: mensagemConsultaMetadados(null) };
 }

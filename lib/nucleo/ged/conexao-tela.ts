@@ -2,7 +2,7 @@
 // fixos, situação da conexão, mensagens da desconexão. Nada aqui recebe ou exibe token, segredo_id ou google_sub.
 // Fluxo e segurança: supabase/functions/_shared/ged.ts (tratarConexao/tratarDesconexao) e migration 0801.
 
-import type { CodigoErroConexao } from "@/supabase/functions/_shared/ged";
+import type { CodigoErroConexao, ConsultaMetadados } from "@/supabase/functions/_shared/ged";
 
 /** Destino interno fixo da volta do OAuth (o mesmo aceito pelo check de ged_conexao_estados). */
 export const ROTA_CONEXAO_GED = "/configuracoes/documentos";
@@ -104,3 +104,44 @@ export function mensagemDesconexao(revogacao: unknown): Aviso {
   }
   return { tipo: "sucesso", mensagem: "Google Drive desconectado. A revogação no Google não foi feita (desligada ou sem conexão ativa)." };
 }
+
+// ───────────── Primeira leitura do Drive: só metadados (Edge Function nucleo-ged-metadados, migration 0802) ─────────────
+export const FUNCAO_METADADOS_GED = "nucleo-ged-metadados";
+/** Teto da consulta (3 páginas de 100 na Edge Function, LIMITE_METADADOS). */
+export const LIMITE_TOTAL_METADADOS = 300;
+
+const MENSAGEM_METADADOS: Record<string, string> = {
+  desconectado: "O Google Drive do GED não está conectado.",
+  invalid_grant: MENSAGEM_ERRO.invalid_grant,
+  sem_permissao_drive: "O Google recusou a leitura: a Drive API pode estar desativada no projeto do Google Cloud, ou a conta não tem acesso.",
+  sem_permissao: "Só o administrador geral consulta o Drive do GED.",
+  nao_configurada: "A conexão do GED não está configurada neste ambiente.",
+};
+
+/** Código de erro devolvido pela função (só a lista conhecida); qualquer outro vira a mensagem genérica. */
+export function mensagemConsultaMetadados(codigo: unknown): string {
+  return typeof codigo === "string" && Object.hasOwn(MENSAGEM_METADADOS, codigo)
+    ? MENSAGEM_METADADOS[codigo]
+    : "Não foi possível consultar o Drive agora. Tente de novo em alguns minutos.";
+}
+
+/** Confere o formato da resposta antes de exibir (nada fora do esperado chega à tela). */
+export function lerConsultaMetadados(d: unknown): ConsultaMetadados | null {
+  const c = d as ConsultaMetadados | null;
+  if (!c || typeof c.itens !== "number" || typeof c.limite_atingido !== "boolean" || !Array.isArray(c.amostra) || typeof c.por_tipo !== "object") return null;
+  const amostra = c.amostra.filter((i) => typeof i?.nome === "string" && typeof i?.tipo === "string");
+  return { itens: c.itens, limite_atingido: c.limite_atingido, por_tipo: c.por_tipo, amostra };
+}
+
+const TIPOS: Record<string, string> = {
+  "application/vnd.google-apps.folder": "Pasta",
+  "application/pdf": "PDF",
+  "application/vnd.google-apps.document": "Documento Google",
+  "application/vnd.google-apps.spreadsheet": "Planilha Google",
+  "application/vnd.google-apps.presentation": "Apresentação Google",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
+  "image/jpeg": "Imagem JPEG",
+  "image/png": "Imagem PNG",
+};
+export const rotuloTipoArquivo = (mime: string) => TIPOS[mime] ?? mime;

@@ -210,6 +210,27 @@ describe("situação, erros e desconexão", () => {
     await expect(servico(`select ged_registrar_erro_conexao('token: abc')`)).rejects.toThrow(/ged:codigo_invalido/);
   });
 
+  it("0802: tentativa de conexão que falhou (com state) NÃO derruba a conexão ativa; só vai para a auditoria", async () => {
+    await conectar();
+    const s = await iniciar(admin);
+    await consumir(s);
+    await servico(`select ged_registrar_erro_conexao('conta_divergente', $1)`, [s]);
+    expect((await situacao(admin))[0]).toMatchObject({ situacao: "conectada", ultimo_erro: null });
+    expect((await q(`select acao, depois, usuario_id from auditoria where tabela = 'ged_conexao' and id > $1 and acao = 'tentativa_falhou'`, [audDesde])).rows).toEqual([
+      { acao: "tentativa_falhou", depois: { codigo: "conta_divergente" }, usuario_id: admin },
+    ]);
+  });
+
+  it("0802: consulta de metadados auditada só com contagem e resultado; perfil não-admin e código fora da lista recusados", async () => {
+    await conectar();
+    await servico(`select ged_registrar_consulta_metadados($1, 42, 'ok')`, [admin]);
+    const aud = (await q(`select acao, depois, usuario_id from auditoria where tabela = 'ged_conexao' and acao = 'consultou_metadados' and id > $1`, [audDesde])).rows;
+    expect(aud).toEqual([{ acao: "consultou_metadados", depois: { itens: 42, resultado: "ok" }, usuario_id: admin }]);
+    await expect(servico(`select ged_registrar_consulta_metadados($1, 1, 'ok')`, [comum])).rejects.toThrow(/ged:sem_permissao/);
+    await expect(servico(`select ged_registrar_consulta_metadados($1, 1, 'arquivo.pdf')`, [admin])).rejects.toThrow(/ged:codigo_invalido/);
+    await negado(como(db, admin, () => q(`select ged_registrar_consulta_metadados($1, 1, 'ok')`, [admin]), { oauth: true }));
+  });
+
   it("desconecta: apaga o segredo, preserva o registro, audita; repetir não faz nada; não-admin recusado", async () => {
     await conectar();
     await expect(desconectar(comum)).rejects.toThrow(/ged:sem_permissao/);
@@ -256,6 +277,7 @@ describe("privilégios (GED-P17)", () => {
       "ged_registrar_erro_conexao(text,text)": ["service_role"],
       "ged_refresh_token()": ["service_role"],
       "ged_desconectar(uuid,text)": ["service_role"],
+      "ged_registrar_consulta_metadados(uuid,integer,text)": ["service_role"],
       "ged_perfil_admin(uuid)": [],
       "ged_conta_configurada()": [],
     };

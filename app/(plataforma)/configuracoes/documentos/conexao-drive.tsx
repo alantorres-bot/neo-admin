@@ -12,6 +12,7 @@ import { Label } from "@/components/ui/label";
 import { formatarDataHora } from "@/lib/nucleo/fila";
 import { criarTrava, descreverSituacao, lerRetornoGed, ROTA_CONEXAO_GED, type Aviso, type SituacaoConexaoGed } from "@/lib/nucleo/ged/conexao-tela";
 import { definirContaGed, desconectarGed, iniciarConexaoGed } from "./acoes";
+import { AmostraDrive } from "./amostra-drive";
 
 // `id` fixo: o mesmo aviso não se repete quando o efeito de retorno roda de novo (modo estrito do React, atualização da tela).
 const avisar = (a: Aviso, id?: string) =>
@@ -139,6 +140,7 @@ export function ConexaoDrive({ disponivel, situacao, conta, revogarNoGoogle }: {
             <Button variant="outline" onClick={() => setConfirmando(true)} disabled={pendente}>Desconectar</Button>
           )}
         </div>
+        {s.estado === "conectada" && <AmostraDrive />}
       </CardContent>
 
       {confirmando && (
