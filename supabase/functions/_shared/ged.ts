@@ -561,12 +561,16 @@ export type ArvoreLida = {
 export async function percorrerArvore(
   cliente: ClienteDrive,
   raizId: string,
-  opcoes: { profundidadeMax: number; maxItens: number; driveId?: string },
+  opcoes: { profundidadeMax: number; maxItens: number; driveId?: string; maxPastasAbertas?: number },
 ): Promise<ArvoreLida> {
   const arvore: ArvoreLida = { pastas: [], arquivos: [], truncada: false };
   const fila: { id: string; profundidade: number }[] = [{ id: raizId, profundidade: 0 }];
   let itens = 0;
+  let abertas = 0;
   while (fila.length > 0) {
+    // Teto de requisições: cada pasta aberta é ao menos um files.list.
+    if (opcoes.maxPastasAbertas !== undefined && abertas >= opcoes.maxPastasAbertas) return { ...arvore, truncada: true };
+    abertas++;
     const atual = fila.shift() as { id: string; profundidade: number };
     for (const a of await listarPasta(cliente, atual.id, opcoes.driveId)) {
       if (itens >= opcoes.maxItens) return { ...arvore, truncada: true };
@@ -1045,8 +1049,17 @@ export type DepsMetadados = DepsConexao & {
 
 const json = (status: number, corpo: unknown): RespostaGed => ({ status, corpo: JSON.stringify(corpo) });
 
-/** Consulta de metadados (POST com o JWT do admin geral). Cada consulta fica na auditoria (quem, quantos, resultado). */
-export async function tratarConsultaMetadados(req: { method: string; jwt: string | null }, d: DepsMetadados): Promise<RespostaGed> {
+type Leitura = { perfil: string; cliente: ClienteDrive };
+
+/**
+ * Preparação comum das leituras do Drive: admin geral conferido ANTES de qualquer chamada ao Google; acesso renovado com o
+ * token do Vault (invalid_grant marca a conexão "com erro"). `auditar` grava o resultado sem nomes nem tokens.
+ */
+async function prepararLeitura(
+  req: { method: string; jwt: string | null },
+  d: DepsMetadados,
+  auditar: (perfil: string, resultado: ResultadoConsultaMetadados, itens: number) => Promise<void>,
+): Promise<Leitura | RespostaGed> {
   if (req.method !== "POST") return json(405, { erro: "metodo" });
   if (!req.jwt) return json(401, { erro: "sem_sessao" });
   const perfil = await d.perfilAdmin(req.jwt);
@@ -1056,28 +1069,80 @@ export async function tratarConsultaMetadados(req: { method: string; jwt: string
   const { data } = await d.rpc("ged_refresh_token", {});
   const refreshToken = (data as { refresh_token?: string } | null)?.refresh_token;
   if (!refreshToken) return json(409, { erro: "desconectado" });
-
-  const concluir = async (resultado: ResultadoConsultaMetadados, itens: number, resposta: RespostaGed) => {
-    await d.rpc("ged_registrar_consulta_metadados", { p_perfil: perfil, p_itens: itens, p_resultado: resultado });
-    d.log?.(`ged-metadados: resultado=${resultado} itens=${itens}`);
-    return resposta;
-  };
-
   const acesso = await acessoDrive(cfg, refreshToken, d);
   if (!acesso.ok) {
     if (acesso.codigo === "invalid_grant") {
       await d.rpc("ged_registrar_erro_conexao", { p_codigo: "invalid_grant" }); // a tela passa a mostrar "reconecte"
-      return concluir("invalid_grant", 0, json(409, { erro: "invalid_grant" }));
+      await auditar(perfil, "invalid_grant", 0);
+      return json(409, { erro: "invalid_grant" });
     }
-    return concluir("http", 0, json(502, { erro: "http" }));
+    await auditar(perfil, "http", 0);
+    return json(502, { erro: "http" });
   }
+  return { perfil, cliente: criarClienteDrive(async () => acesso.token, { fazerFetch: d.fetchDrive, esperar: d.esperar }) };
+}
+
+/** Erro do Drive durante a leitura: 403 (API desativada ou sem acesso) tem código próprio; o resto é genérico. */
+const resultadoDoErro = (e: unknown): ResultadoConsultaMetadados => (e instanceof ErroDrive && e.status === 403 ? "sem_permissao_drive" : "http");
+
+/** Consulta de metadados (POST com o JWT do admin geral). Cada consulta fica na auditoria (quem, quantos, resultado). */
+export async function tratarConsultaMetadados(req: { method: string; jwt: string | null }, d: DepsMetadados): Promise<RespostaGed> {
+  const auditar = async (perfil: string, resultado: ResultadoConsultaMetadados, itens: number) => {
+    await d.rpc("ged_registrar_consulta_metadados", { p_perfil: perfil, p_itens: itens, p_resultado: resultado });
+    d.log?.(`ged-metadados: resultado=${resultado} itens=${itens}`);
+  };
+  const l = await prepararLeitura(req, d, auditar);
+  if ("status" in l) return l;
   try {
-    const cliente = criarClienteDrive(async () => acesso.token, { fazerFetch: d.fetchDrive, esperar: d.esperar });
-    const r = await consultarMetadados(cliente);
-    return concluir("ok", r.itens, json(200, r));
+    const r = await consultarMetadados(l.cliente);
+    await auditar(l.perfil, "ok", r.itens);
+    return json(200, r);
   } catch (e) {
-    // 403: Drive API desativada no projeto do Google Cloud ou leitura recusada para a conta.
-    if (e instanceof ErroDrive && e.status === 403) return concluir("sem_permissao_drive", 0, json(502, { erro: "sem_permissao_drive" }));
-    return concluir("http", 0, json(502, { erro: "http" }));
+    const resultado = resultadoDoErro(e);
+    await auditar(l.perfil, resultado, 0);
+    return json(502, { erro: resultado });
+  }
+}
+
+// ───────────────────────── Verificação das raízes candidatas (A0, 5.2.4) ─────────────────────────
+// Só as candidatas da especificação (2.2), lidas no Drive compartilhado. O resultado tem nomes de pastas: vai SÓ ao admin geral,
+// na resposta, e não é gravado (5.2.4.4: nada persistido; a auditoria guarda só a raiz, a contagem e o resultado).
+
+export const DRIVE_COMPARTILHADO_GED = "0ADGzgMWcDLTWUk9PVA";
+export const RAIZES_CANDIDATAS = {
+  "1JMzjxdPkXTtGXtop0CFx-R47Ql_08alR": { rotulo: "Elaboração: 02 - COMERCIAL / 02 - CONTRATOS", finalidade: "elaboracao" },
+  "1JOh-QFYw9uwNkxSAdPa6cLzOzIuOiT56": { rotulo: "Elaboração (alternativa): 02 - CONTRATOS / Contratos", finalidade: "elaboracao" },
+  "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak": { rotulo: "Dossiê: 02 - COMERCIAL / 01 - CLIENTES", finalidade: "dossie_cliente" },
+} as const;
+export type IdRaizCandidata = keyof typeof RAIZES_CANDIDATAS;
+/** Profundidade 4 = proposta da 5.3.1 (ponto 4 em aberto); tetos fixos para a função não estourar o tempo. */
+export const LIMITE_VERIFICACAO = { profundidadeMax: 4, maxItens: 3000, maxPastasAbertas: 150 } as const;
+
+export const ehRaizCandidata = (id: unknown): id is IdRaizCandidata => typeof id === "string" && Object.hasOwn(RAIZES_CANDIDATAS, id);
+
+export async function tratarVerificacaoRaiz(
+  req: { method: string; jwt: string | null; raiz: unknown },
+  d: DepsMetadados,
+): Promise<RespostaGed> {
+  if (req.method === "POST" && !ehRaizCandidata(req.raiz)) return json(400, { erro: "raiz_invalida" }); // antes de tudo: nada de ID livre
+  const raiz = req.raiz as IdRaizCandidata;
+  const auditar = async (perfil: string, resultado: ResultadoConsultaMetadados, itens: number) => {
+    await d.rpc("ged_registrar_verificacao_raiz", { p_perfil: perfil, p_raiz: raiz, p_itens: itens, p_resultado: resultado });
+    d.log?.(`ged-verificacao: resultado=${resultado} itens=${itens}`);
+  };
+  const l = await prepararLeitura(req, d, auditar);
+  if ("status" in l) return l;
+  try {
+    const arvore = await percorrerArvore(l.cliente, raiz, { ...LIMITE_VERIFICACAO, driveId: DRIVE_COMPARTILHADO_GED });
+    const itens = arvore.pastas.length + arvore.arquivos.length;
+    const ids = new Set(arvore.pastas.map((p) => p.arquivo.id));
+    // 5.2.4.1: outras raízes (aqui, as outras candidatas) dentro desta. "Acima dela" aparece na verificação da outra.
+    const candidatasDentro = (Object.keys(RAIZES_CANDIDATAS) as IdRaizCandidata[]).filter((id) => id !== raiz && ids.has(id)).map((id) => RAIZES_CANDIDATAS[id].rotulo);
+    await auditar(l.perfil, "ok", itens);
+    return json(200, { raiz: RAIZES_CANDIDATAS[raiz].rotulo, itens, candidatasDentro, limites: LIMITE_VERIFICACAO, ...resumirArvore(arvore) });
+  } catch (e) {
+    const resultado = resultadoDoErro(e);
+    await auditar(l.perfil, resultado, 0);
+    return json(502, { erro: resultado });
   }
 }

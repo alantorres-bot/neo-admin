@@ -116,6 +116,7 @@ const MENSAGEM_METADADOS: Record<string, string> = {
   sem_permissao_drive: "O Google recusou a leitura: a Drive API pode estar desativada no projeto do Google Cloud, ou a conta não tem acesso.",
   sem_permissao: "Só o administrador geral consulta o Drive do GED.",
   nao_configurada: "A conexão do GED não está configurada neste ambiente.",
+  raiz_invalida: "Só as raízes candidatas da especificação podem ser verificadas.",
 };
 
 /** Código de erro devolvido pela função (só a lista conhecida); qualquer outro vira a mensagem genérica. */
@@ -145,3 +146,28 @@ const TIPOS: Record<string, string> = {
   "image/png": "Imagem PNG",
 };
 export const rotuloTipoArquivo = (mime: string) => TIPOS[mime] ?? mime;
+
+/** Resumo da verificação de uma raiz candidata (5.2.4.1), como a Edge Function devolve. Só na tela do admin geral; nunca gravado. */
+export type VerificacaoRaiz = {
+  raiz: string;
+  itens: number;
+  truncada: boolean;
+  candidatasDentro: string[];
+  porNivel: { profundidade: number; pastas: number; arquivos: number }[];
+  subpastasNivel1: string[];
+  subpastasNivel2: string[];
+  extensoes: { extensao: string; quantidade: number }[];
+  temporarios: string[];
+  limites: { profundidadeMax: number; maxItens: number; maxPastasAbertas: number };
+};
+
+const listaDeTextos = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
+
+/** Confere o formato da resposta antes de exibir. */
+export function lerVerificacaoRaiz(d: unknown): VerificacaoRaiz | null {
+  const v = d as VerificacaoRaiz | null;
+  if (!v || typeof v.raiz !== "string" || typeof v.itens !== "number" || typeof v.truncada !== "boolean") return null;
+  if (!Array.isArray(v.porNivel) || !Array.isArray(v.extensoes) || !v.limites) return null;
+  if (![v.candidatasDentro, v.subpastasNivel1, v.subpastasNivel2, v.temporarios].every(listaDeTextos)) return null;
+  return v;
+}

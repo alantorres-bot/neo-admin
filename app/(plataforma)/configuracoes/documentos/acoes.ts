@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import { mensagemDeErroBanco } from "@/lib/nucleo/erros";
-import type { ConsultaMetadados } from "@/supabase/functions/_shared/ged";
+import { ehRaizCandidata, type ConsultaMetadados } from "@/supabase/functions/_shared/ged";
 import {
   FUNCAO_CONEXAO_GED,
   FUNCAO_METADADOS_GED,
   lerConsultaMetadados,
+  lerVerificacaoRaiz,
   mensagemConsultaMetadados,
   mensagemDesconexao,
   mensagemErroInicio,
@@ -15,6 +16,7 @@ import {
   validarContaGed,
   type Aviso,
   type SituacaoConexaoGed,
+  type VerificacaoRaiz,
 } from "@/lib/nucleo/ged/conexao-tela";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
@@ -86,4 +88,22 @@ export async function consultarMetadadosGed(): Promise<{ ok: true; consulta: Con
   }
   const consulta = lerConsultaMetadados(data);
   return consulta ? { ok: true, consulta } : { ok: false, erro: mensagemConsultaMetadados(null) };
+}
+
+/**
+ * Verificação de uma raiz candidata (A0, 5.2.4): o resumo da árvore volta só para esta tela e não é gravado (5.2.4.4). Só os IDs
+ * da lista da especificação; a Edge Function confere de novo, e o banco também.
+ */
+export async function verificarRaizGed(raiz: string): Promise<{ ok: true; verificacao: VerificacaoRaiz } | { ok: false; erro: string }> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: mensagemConsultaMetadados("sem_permissao") };
+  if (!ehRaizCandidata(raiz)) return { ok: false, erro: mensagemConsultaMetadados("raiz_invalida") };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.functions.invoke(FUNCAO_METADADOS_GED, { method: "POST", body: { acao: "verificar_raiz", raiz } });
+  if (error) {
+    const corpo = await ((error as { context?: Response }).context?.json?.() as Promise<{ erro?: unknown }> | undefined)?.catch(() => null);
+    return { ok: false, erro: mensagemConsultaMetadados(corpo?.erro) };
+  }
+  const verificacao = lerVerificacaoRaiz(data);
+  return verificacao ? { ok: true, verificacao } : { ok: false, erro: mensagemConsultaMetadados(null) };
 }

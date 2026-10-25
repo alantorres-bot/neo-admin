@@ -29,7 +29,7 @@ vi.mock("next/navigation", () => ({
 }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn(), warning: vi.fn() } }));
 
-const { iniciarConexaoGed, desconectarGed, definirContaGed, consultarMetadadosGed } = await import("@/app/(plataforma)/configuracoes/documentos/acoes");
+const { iniciarConexaoGed, desconectarGed, definirContaGed, consultarMetadadosGed, verificarRaizGed } = await import("@/app/(plataforma)/configuracoes/documentos/acoes");
 const { ConexaoDrive } = await import("@/app/(plataforma)/configuracoes/documentos/conexao-drive");
 
 const STATE = "c".repeat(64);
@@ -166,6 +166,31 @@ describe("consultarMetadadosGed", () => {
   });
 });
 
+describe("verificarRaizGed", () => {
+  const RAIZ = "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak";
+  const resposta = { raiz: "Dossiê", itens: 3, truncada: false, candidatasDentro: [], porNivel: [{ profundidade: 1, pastas: 2, arquivos: 1 }],
+    subpastasNivel1: ["Cliente ficticio"], subpastasNivel2: [], extensoes: [{ extensao: "pdf", quantidade: 1 }], temporarios: [],
+    limites: { profundidadeMax: 4, maxItens: 3000, maxPastasAbertas: 150 } };
+
+  it("admin e raiz candidata: chama a função com a ação e a raiz; devolve o resumo validado", async () => {
+    estado.invoke.mockResolvedValue({ data: resposta, error: null });
+    expect(await verificarRaizGed(RAIZ)).toEqual({ ok: true, verificacao: resposta });
+    expect(estado.invoke).toHaveBeenCalledWith("nucleo-ged-metadados", { method: "POST", body: { acao: "verificar_raiz", raiz: RAIZ } });
+  });
+
+  it("ID fora da lista ou não-admin: recusado sem chamar a função", async () => {
+    expect(await verificarRaizGed("qualquer-pasta")).toEqual({ ok: false, erro: expect.stringContaining("raízes candidatas") });
+    estado.adminGeral = false;
+    expect((await verificarRaizGed(RAIZ)).ok).toBe(false);
+    expect(estado.invoke).not.toHaveBeenCalled();
+  });
+
+  it("resposta fora do formato não chega à tela", async () => {
+    estado.invoke.mockResolvedValue({ data: { ...resposta, subpastasNivel1: [{ x: 1 }] }, error: null });
+    expect((await verificarRaizGed(RAIZ)).ok).toBe(false);
+  });
+});
+
 describe("componente ConexaoDrive (render no servidor)", () => {
   const conectada = {
     email: "ged.drive@exemplo.invalid", escopos: ["openid", "https://www.googleapis.com/auth/drive.readonly"],
@@ -195,6 +220,7 @@ describe("componente ConexaoDrive (render no servidor)", () => {
     expect(html).toContain("Somente leitura do Drive");
     expect(html).toContain("Desconectar");
     expect(html).toContain("Consultar arquivos (amostra)"); // primeira leitura só com conexão ativa
+    expect(html).toContain("Verificação das raízes candidatas");
     expect(html).not.toContain("Conectar Google Drive");
     expect(html).not.toContain("Salvar conta"); // D-TROCA: sem troca de conta com conexão ativa
     for (const s of SENSIVEIS) expect(html).not.toContain(s);

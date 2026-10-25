@@ -231,6 +231,16 @@ describe("situação, erros e desconexão", () => {
     await negado(como(db, admin, () => q(`select ged_registrar_consulta_metadados($1, 1, 'ok')`, [admin]), { oauth: true }));
   });
 
+  it("0803: verificação de raiz auditada só com a raiz candidata, contagem e resultado; ID fora da lista recusado", async () => {
+    await conectar();
+    await servico(`select ged_registrar_verificacao_raiz($1, '1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak', 12, 'ok')`, [admin]);
+    expect((await q(`select depois, usuario_id from auditoria where tabela = 'ged_conexao' and acao = 'verificou_raiz' and id > $1`, [audDesde])).rows).toEqual([
+      { depois: { raiz: "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak", itens: 12, resultado: "ok" }, usuario_id: admin },
+    ]);
+    await expect(servico(`select ged_registrar_verificacao_raiz($1, 'outra-pasta', 1, 'ok')`, [admin])).rejects.toThrow(/ged:raiz_invalida/);
+    await expect(servico(`select ged_registrar_verificacao_raiz($1, '1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak', 1, 'ok')`, [comum])).rejects.toThrow(/ged:sem_permissao/);
+  });
+
   it("desconecta: apaga o segredo, preserva o registro, audita; repetir não faz nada; não-admin recusado", async () => {
     await conectar();
     await expect(desconectar(comum)).rejects.toThrow(/ged:sem_permissao/);
@@ -278,6 +288,7 @@ describe("privilégios (GED-P17)", () => {
       "ged_refresh_token()": ["service_role"],
       "ged_desconectar(uuid,text)": ["service_role"],
       "ged_registrar_consulta_metadados(uuid,integer,text)": ["service_role"],
+      "ged_registrar_verificacao_raiz(uuid,text,integer,text)": ["service_role"],
       "ged_perfil_admin(uuid)": [],
       "ged_conta_configurada()": [],
     };
