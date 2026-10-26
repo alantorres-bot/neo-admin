@@ -56,6 +56,12 @@ describe("menu lateral", () => {
     expect(montarMenu(rh, mods, admin)[0].modulos.map((m) => m.codigo)).toEqual(["rh.painel", "rh.colaboradores", "rh.folha", "rh.vale_transporte"]);
   });
 
+  it("Central de Documentos (administrativo.ged) ativa não entra no submenu do Administrativo: tem atalho próprio", () => {
+    const comGed = [...modulos, { codigo: "administrativo.ged", area: "administrativo", nome: "Central de Documentos", ativo: true }];
+    const menu = montarMenu(areas, comGed, admin, [], { incluirVazias: true });
+    expect(menu.flatMap((m) => m.modulos.map((x) => x.codigo))).not.toContain("administrativo.ged");
+  });
+
   it("admin_geral vê todas as áreas que têm módulo ativo", () => {
     expect(montarMenu(areas, modulos, admin).map((m) => m.area.codigo)).toEqual(["financeiro", "juridico"]);
   });

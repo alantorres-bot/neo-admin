@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { idsComMesmoNomeEmOutraRaiz, lerFinalidade, linkDoDrive, padraoBusca } from "./busca";
+import { idsComMesmoNomeEmOutraRaiz, lerFinalidade, linkDoDrive, mostrarAtalhoDocumentos, padraoBusca } from "./busca";
 
 describe("busca da Central de Documentos", () => {
   it("padrão: normaliza como a indexação, escapa curingas e exige 2 caracteres", () => {
@@ -26,6 +26,18 @@ describe("busca da Central de Documentos", () => {
       { id: "4", nome: "x.pdf", nome_normalizado: "x.pdf", raiz_id: "D" },
     ];
     expect([...idsComMesmoNomeEmOutraRaiz(linhas)].sort()).toEqual(["1", "2"]);
+  });
+
+  it("atalho Documentos: módulo ativo, não restrito e alguma raiz ATIVA legível", () => {
+    const ativo = [{ codigo: "administrativo.ged", ativo: true }];
+    const inativo = [{ codigo: "administrativo.ged", ativo: false }];
+    const raiz = [{ situacao: "ativa" }];
+    expect(mostrarAtalhoDocumentos(ativo, false, raiz)).toBe(true);
+    expect(mostrarAtalhoDocumentos(inativo, false, raiz)).toBe(false);          // hoje: módulo inativo
+    expect(mostrarAtalhoDocumentos(ativo, true, raiz)).toBe(false);             // restrito à unidade
+    expect(mostrarAtalhoDocumentos(ativo, false, [])).toBe(false);              // não lê raiz nenhuma (ex.: só RH)
+    expect(mostrarAtalhoDocumentos(ativo, false, [{ situacao: "inativa" }])).toBe(false);
+    expect(mostrarAtalhoDocumentos(ativo, false, null)).toBe(false);            // erro na consulta: some, não vaza
   });
 
   it("link: só do Google Drive/Docs, por https", () => {

@@ -1,6 +1,8 @@
 import { Casca } from "@/components/plataforma/casca";
+import { mostrarAtalhoDocumentos } from "@/lib/nucleo/ged/busca";
 import { montarMenu, temAcessoAlgumaArea } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
+import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { sair } from "@/app/(auth)/login/acoes";
 import { Button } from "@/components/ui/button";
 
@@ -26,8 +28,10 @@ export default async function LayoutPlataforma({ children }: LayoutProps<"/">) {
   const mostrarConfiguracoes = temAcessoAlgumaArea(sessao.acesso, sessao.areas);
   // Central de Gestão: para todos com alguma área; o restrito à unidade só usa o Faturamento Filial.
   const mostrarCentral = mostrarConfiguracoes && !sessao.acesso.restrito;
-  // Central de Documentos (GED): só com o módulo ativado; quem vê cada pasta é decidido pela RLS na própria tela.
-  const mostrarDocumentos = mostrarCentral && sessao.modulos.some((m) => m.codigo === "administrativo.ged" && m.ativo);
+  // Central de Documentos (GED): módulo ativo e alguma pasta-raiz ativa que a pessoa lê. A consulta só acontece com o módulo ativo.
+  const gedAtivo = !sessao.acesso.restrito && sessao.modulos.some((m) => m.codigo === "administrativo.ged" && m.ativo);
+  const raizesGed = gedAtivo ? (await (await criarClienteServidor()).rpc("ged_raizes")).data as { situacao: string }[] | null : null;
+  const mostrarDocumentos = mostrarAtalhoDocumentos(sessao.modulos, !!sessao.acesso.restrito, raizesGed);
 
   return (
     <Casca

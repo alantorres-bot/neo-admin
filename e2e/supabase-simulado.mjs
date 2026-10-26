@@ -24,6 +24,7 @@ const padrao = () => ({
   revogacao: "ok",
   raizes: [], // linhas de ged_raizes (projeção) com drive_id interno do simulado
   documentos: [], // linhas de ged_documentos (já "filtradas pela RLS" do usuário do cenário)
+  gedAtivo: false, // modulos.ativo de administrativo.ged
   verificadas: [], // drive_ids com verificação ok (o banco exige para ativar)
 });
 const NOMES_DRIVE = { "1JMzjxdPkXTtGXtop0CFx-R47Ql_08alR": "02 - CONTRATOS (ficticio)", "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak": "01 - CLIENTES (ficticio)" };
@@ -107,6 +108,7 @@ createServer(async (req, res) => {
     }
     else if (tabela === "permissoes") linhas = cenario.usuario === ADMIN ? [] : [{ area: "contratos", nivel: "gestor" }];
     else if (tabela === "areas") linhas = AREAS;
+    else if (tabela === "modulos") linhas = [{ codigo: "administrativo.ged", area: "administrativo", nome: "Central de Documentos", ativo: cenario.gedAtivo }];
     else if (tabela === "configuracoes" && req.method === "PATCH") {
       // Gravação da conta (RLS configuracoes_admin): só o admin; o filtro tem de ser exatamente a chave da conta.
       if (cenario.usuario !== ADMIN) return json(res, 403, { code: "42501", message: "new row violates row-level security policy" });

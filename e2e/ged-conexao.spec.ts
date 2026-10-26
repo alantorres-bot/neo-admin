@@ -345,3 +345,28 @@ test("15. Central de Documentos: sem pasta liberada, só o aviso fixo e nenhuma 
   await expect(page.getByRole("textbox")).toHaveCount(0);
   expect((await chamadas(page)).some((c) => c.caminho === "/rest/v1/ged_documentos")).toBe(false);
 });
+
+test("16. atalho Documentos no trilho: só com o módulo ativo e alguma pasta liberada; nunca no submenu do Administrativo", async ({ page }) => {
+  const atalho = () => page.getByRole("link", { name: "Documentos", exact: true });
+  await cenario(page, { gedAtivo: false, raizes: RAIZES_ATIVAS });
+  await entrar(page);
+  await page.goto("/inicio");
+  await expect(page.getByRole("link", { name: "Início" }).first()).toBeVisible({ timeout: 60_000 });
+  await expect(atalho()).toHaveCount(0);                                        // hoje: módulo inativo
+
+  await cenario(page, { gedAtivo: true, raizes: RAIZES_ATIVAS });
+  await page.goto("/inicio");
+  await expect(atalho()).toBeVisible();
+  await atalho().click();
+  await expect(page).toHaveURL(/\/documentos$/);
+  await expect(page.getByRole("link", { name: "Central de Documentos" })).toHaveCount(0); // não vira item de submenu da área
+
+  await cenario(page, { gedAtivo: true, raizes: [], usuario: COMUM });
+  await entrar(page, COMUM);
+  await page.goto("/inicio");
+  await expect(page.getByRole("link", { name: "Início" }).first()).toBeVisible();
+  await expect(atalho()).toHaveCount(0);                                        // sem pasta liberada: sem atalho
+
+  await page.goto("/administrativo/ged");                                       // rota do módulo leva à tela (sem página "em construção")
+  await expect(page).toHaveURL(/\/documentos$/);
+});

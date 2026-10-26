@@ -25,6 +25,17 @@ export function idsComMesmoNomeEmOutraRaiz(linhas: readonly LinhaBusca[]): Set<s
   return new Set(linhas.filter((l) => (raizesPorNome.get(l.nome_normalizado)?.size ?? 0) > 1).map((l) => l.id));
 }
 
+/**
+ * Atalho "Documentos" no trilho: módulo administrativo.ged ativo, usuário não restrito à unidade e pelo menos uma raiz ativa que ele
+ * lê (a lista vem da projeção ged_raizes, que já aplica ged_pode_ler_raiz). Sem isso, nada aparece no menu.
+ */
+export function mostrarAtalhoDocumentos(
+  modulos: readonly { codigo: string; ativo: boolean }[], restrito: boolean, raizes: readonly { situacao: string }[] | null,
+): boolean {
+  if (restrito || !modulos.some((m) => m.codigo === "administrativo.ged" && m.ativo)) return false;
+  return (raizes ?? []).some((r) => r.situacao === "ativa");
+}
+
 /** Link do Drive só se for do próprio Google (o valor vem do índice, não do usuário, mas a tela não confia). */
 export const linkDoDrive = (url: unknown): string | null =>
   typeof url === "string" && /^https:\/\/(drive|docs)\.google\.com\//.test(url) ? url : null;
