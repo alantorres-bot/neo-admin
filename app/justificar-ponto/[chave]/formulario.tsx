@@ -59,7 +59,7 @@ export function FormularioJustificativas({ chave, ocorrencias }: { chave: string
           <TableHeader>
             <TableRow>
               <TableHead>Funcionário</TableHead><TableHead>Dia</TableHead><TableHead>Previsto</TableHead><TableHead>O que o ponto registrou</TableHead>
-              <TableHead>Justificativa</TableHead><TableHead>Horário</TableHead><TableHead>Observação</TableHead>
+              <TableHead>Justificativa</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -71,21 +71,19 @@ export function FormularioJustificativas({ chave, ocorrencias }: { chave: string
                   <TableCell className="tabular-nums whitespace-nowrap">{formatarData(o.data)} {o.dia_semana}</TableCell>
                   <TableCell className="text-xs whitespace-nowrap">{o.previsto}</TableCell>
                   <TableCell className="text-xs">{oQueHouve(o)}</TableCell>
-                  <TableCell>
+                  <TableCell className="w-72 space-y-1">
                     <select aria-label={`Justificativa de ${o.nome} em ${formatarData(o.data)}`} value={v.tipo ?? ""} onChange={(e) => mudar(o.id, { tipo: (e.target.value || null) as Tipo | null })}
-                      className="h-8 w-64 rounded-[3px] border border-input bg-white px-1 text-sm">
+                      className="h-8 w-full rounded-[3px] border border-input bg-white px-1 text-sm">
                       <option value="">Escolha…</option>
                       {TIPOS.map((t) => <option key={t} value={t}>{ROTULO_TIPO[t]}</option>)}
                     </select>
-                  </TableCell>
-                  <TableCell>
-                    {v.tipo === "esqueceu_bater" && (
-                      <Input value={v.horario} onChange={(e) => mudar(o.id, { horario: e.target.value })} placeholder="hh:mm" aria-label="Horário que faltou (opcional)" className="h-8 w-20" maxLength={5} />
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    <Input value={v.observacao} onChange={(e) => mudar(o.id, { observacao: e.target.value })} placeholder={v.tipo === "outro" ? "Obrigatória" : "Opcional"}
-                      aria-label="Observação" className="h-8 w-56" maxLength={500} />
+                    <div className="flex gap-1">
+                      {v.tipo === "esqueceu_bater" && (
+                        <Input value={v.horario} onChange={(e) => mudar(o.id, { horario: e.target.value })} placeholder="hh:mm" aria-label="Horário que faltou (opcional)" className="h-8 w-20" maxLength={5} />
+                      )}
+                      <Input value={v.observacao} onChange={(e) => mudar(o.id, { observacao: e.target.value })} placeholder="Descreva o que aconteceu (obrigatório)"
+                        aria-label="Observação" className="h-8 flex-1" maxLength={500} />
+                    </div>
                   </TableCell>
                 </TableRow>
               );

@@ -62,13 +62,13 @@ export function acaoSugerida(tipo: Tipo | null, faltaAtrasoMin: number, saldoBan
   }
 }
 
-/** O que o líder precisa preencher para enviar: tipo em todas; observação em "Outro"; horário, se houver, válido. */
+/** O que o líder precisa preencher para enviar: tipo e observação em todas; horário, se houver, válido. */
 export function pendenciasDoFormulario(itens: readonly { tipo: Tipo | null; observacao: string | null; horario: string | null }[]): string[] {
   const erros: string[] = [];
   const semTipo = itens.filter((i) => !i.tipo).length;
   if (semTipo) erros.push(`${semTipo} ocorrência(s) sem justificativa.`);
-  const outroSemObs = itens.filter((i) => i.tipo === "outro" && !(i.observacao ?? "").trim()).length;
-  if (outroSemObs) erros.push(`${outroSemObs} ocorrência(s) "Outro" sem observação.`);
+  const semObs = itens.filter((i) => i.tipo && !(i.observacao ?? "").trim()).length;
+  if (semObs) erros.push(`${semObs} ocorrência(s) sem observação: descreva o que aconteceu.`);
   const horarioRuim = itens.filter((i) => (i.horario ?? "").trim() && !horarioValido(i.horario!)).length;
   if (horarioRuim) erros.push(`${horarioRuim} horário(s) inválido(s) (use hh:mm).`);
   return erros;

@@ -29,13 +29,13 @@ describe("acaoSugerida", () => {
 });
 
 describe("pendenciasDoFormulario", () => {
-  it("exige tipo, observação em Outro e horário válido", () => {
+  it("exige tipo, observação em todas e horário válido", () => {
     expect(pendenciasDoFormulario([
       { tipo: null, observacao: null, horario: null },
       { tipo: "outro", observacao: "  ", horario: null },
       { tipo: "esqueceu_bater", observacao: null, horario: "7:5" },
-    ])).toEqual(["1 ocorrência(s) sem justificativa.", '1 ocorrência(s) "Outro" sem observação.', "1 horário(s) inválido(s) (use hh:mm)."]);
-    expect(pendenciasDoFormulario([{ tipo: "esqueceu_bater", observacao: null, horario: "17:00" }, { tipo: "outro", observacao: "ok", horario: "" }])).toEqual([]);
+    ])).toEqual(["1 ocorrência(s) sem justificativa.", "2 ocorrência(s) sem observação: descreva o que aconteceu.", "1 horário(s) inválido(s) (use hh:mm)."]);
+    expect(pendenciasDoFormulario([{ tipo: "esqueceu_bater", observacao: "esqueceu na saída", horario: "17:00" }, { tipo: "outro", observacao: "ok", horario: "" }])).toEqual([]);
   });
 });
 
