@@ -1642,7 +1642,9 @@ export function analisarDocumento(e: EntradaAnalise): AnaliseDocumento {
   const destXml = xmlNfe ? tag(xmlNfe, "CNPJ", "dest") : null;
   const cnpjsTexto = [...(destXml ? [destXml] : []), ...(e.texto ? cnpjsNoTexto(e.texto) : [])].filter((c) => !proprios.has(c));
   // No nome vai o nome curto (da pasta do cliente ou do arquivo) quando ele é o mesmo cliente do cadastro; senão a razão sem sufixo.
-  const nomeCliente = e.finalidade === "dossie_cliente" ? e.pastaNivel1 : pistasArquivoTrabalho(base).clienteCurto;
+  // pistasArquivoTrabalho corta a extensão sozinho: recebe o nome original (no `base`, ".2026" de "CTR 138.2026" pareceria extensão).
+  // O ano no fim da pasta ("Amorim Coutinho 2026") não faz parte do nome do cliente.
+  const nomeCliente = (e.finalidade === "dossie_cliente" ? e.pastaNivel1 : pistasArquivoTrabalho(e.nome).clienteCurto)?.replace(/\s+(19|20)\d{2}$/, "") || null;
   const rotuloCliente = (c: ClienteCadastro) =>
     nomeCliente && (sugerirCliente(nomeCliente, [], [c]).candidatos[0]?.nota ?? 0) >= 70 ? nomeCliente : nomeCurto(c.nome);
   if (cnpjsTexto.length) {

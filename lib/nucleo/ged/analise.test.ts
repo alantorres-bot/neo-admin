@@ -101,6 +101,11 @@ describe("conteúdo, cadastro, confiança e o que nunca é inventado", () => {
   ])("%s → %s (nome antes do conteúdo; conteúdo só pelo cabeçalho)", (nome, texto, tipo, numero) => {
     expect(resumo(dossie(nome, { texto }))).toMatchObject({ tipo, numero });
   });
+  it("cliente curto: do arquivo de trabalho com ponto no número (CTR 138.2026) e sem o ano no fim da pasta", () => {
+    const texto = "CONTRATO PARTICULAR DE LOCAÇÃO DE FÔRMAS entre as partes";
+    expect(analisarDocumento(elab("CTR 138.2026 - Gama.docx", { texto })).cliente?.valor).toBe("Gama");
+    expect(analisarDocumento(dossie("1_1400 - REMESSA 01.pdf", { pastaNivel1: "Alfa 2026" })).cliente?.valor).toBe("Alfa");
+  });
   it("contrato assinado só pelo D4Sign (no nome ou no conteúdo), não por cláusula da minuta", () => {
     expect(resumo(dossie("228 - CONTRATO DE VENDA - Alfa pdf-D4Sign.pdf", { texto: MINUTA })).tipo).toBe("contrato_assinado");
     expect(resumo(dossie("228 - CONTRATO DE VENDA - Alfa.pdf", { texto: `${MINUTA} Assinaturas D4Sign` })).tipo).toBe("contrato_assinado");

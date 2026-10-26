@@ -136,6 +136,11 @@ describe("seleção e gravação (0811)", () => {
     expect(outros).toMatchObject({ "d-scan": ["sem_texto", null], "d-zip": ["nao_suportado", null], "d-grande": ["nao_suportado", "arquivo_grande"] });
     expect(r.logs).toEqual(["ged-analise: analisados=4 sugeridas=1 sem_texto=1 nao_suportado=2 erro=0 pendentes=0"]);
     expect((await servico(`select count(*)::int n from ged_proximos_para_analisar(20, null)`)).rows[0].n).toBe(0); // retomável: nada pendente
+    // Reanalisar não colide com a própria sugestão anterior (0812): o nome continua sem " (2)".
+    const ids = (await q(`select documento_id from ged_analises`)).rows.map((x) => x.documento_id);
+    await analisar({ documentos: ids });
+    expect((await q(`select nome_sugerido from ged_analises a join ged_documentos d on d.id = a.documento_id where d.drive_id = 'd-nf'`)).rows[0].nome_sugerido)
+      .toBe("NF REMESSA - 794 - Remessa 02 - Alfa - 2025-07-14.docx");
   });
 
   it("pedido inválido: mais de 20 ids ou id que não é uuid", async () => {

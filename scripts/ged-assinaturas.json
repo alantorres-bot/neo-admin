@@ -193,7 +193,7 @@
       "anon": false,
       "args": "p_limite integer, p_documentos uuid[]",
       "nome": "ged_proximos_para_analisar",
-      "corpo_md5": "a6dfd8b434842bf5eb19ca1afe0eb744",
+      "corpo_md5": "5cc5ec93005c3056325aef6e330d64cb",
       "service_role": true,
       "authenticated": false,
       "security_definer": true
