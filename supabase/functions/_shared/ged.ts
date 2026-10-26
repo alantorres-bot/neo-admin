@@ -684,7 +684,7 @@ export async function cargaInicial(
   raiz: { driveId: string; driveIdCompartilhado?: string },
   indice: EstadoIndice,
   opcoes: { maxItens: number; paralelas?: number; prazo?: { limiteMs: number; agora: () => number } },
-): Promise<{ resultados: ResultadoMudanca[]; resumo: ReturnType<typeof resumirRodada>; completa: boolean; startPageToken: string | null }> {
+): Promise<{ resultados: ResultadoMudanca[]; resumo: ReturnType<typeof resumirRodada>; completa: boolean; startPageToken: string | null; itens: number }> {
   if (indice.pastas.get(raiz.driveId)?.profundidade !== 0) throw new ErroDrive("A raiz precisa estar no índice com profundidade 0.");
   const paramsToken: Record<string, string> = { supportsAllDrives: "true" };
   if (raiz.driveIdCompartilhado) paramsToken.driveId = raiz.driveIdCompartilhado;
@@ -700,7 +700,10 @@ export async function cargaInicial(
   });
   const copia = { ...indice, pastas: new Map(indice.pastas), documentos: new Map(indice.documentos) };
   const resultados = aplicarPaginaNoIndice(mudancasDaArvore(arvore), copia);
-  return { resultados, resumo: resumirRodada(resultados), completa: !arvore.truncada, startPageToken: arvore.truncada ? null : startPageToken };
+  return {
+    resultados, resumo: resumirRodada(resultados), completa: !arvore.truncada, startPageToken: arvore.truncada ? null : startPageToken,
+    itens: arvore.pastas.length + arvore.arquivos.length,
+  };
 }
 
 /**
@@ -1278,7 +1281,10 @@ export function tipoDaRodada(raiz: RaizIndexavel, agoraMs: number, indexadaEm?: 
 }
 export type DepsIndexacao = DepsMetadados & { raizesAtivas: () => Promise<(RaizIndexavel & { indexadaEm?: string | null })[]> };
 type ResumoRodada = ReturnType<typeof resumirRodada>;
-type ResumoRaiz = { tipo: TipoRodada; resultado: string; completa: boolean } & Partial<ResumoRodada>;
+/** Etapas da rodada, gravadas no resumo quando ela falha (só o nome da etapa: nada de nome de arquivo, id ou link). */
+export type EtapaIndexacao = "acesso_drive" | "estado_indice" | "leitura_drive" | "gravacao" | "conclusao";
+/** Resumo gravado em ged_indexacoes.resumo e devolvido na resposta: contagens, itens examinados, se leu tudo e, na falha, a etapa. */
+type ResumoRaiz = { tipo: TipoRodada; resultado: string; completa: boolean; itens?: number; etapa?: EtapaIndexacao } & Partial<ResumoRodada>;
 
 const iguaisSeguro = (a: string, b: string) => {
   if (a.length !== b.length) return false;
@@ -1292,6 +1298,8 @@ const codigoDoErro = (e: unknown): string =>
     : /ged:([a-z_]+)/.exec(String((e as { message?: unknown })?.message))?.[1] ?? "falha";
 /** Sem acesso ao Drive, as outras raízes também falhariam: a rodada para. */
 const SEM_ACESSO = ["invalid_grant", "desconectado", "nao_configurada", "http"];
+/** A raiz não abre rodada, mas as outras podem: pula só ela (0810: 3 interrupções seguidas em 24 h). */
+const PULA_RAIZ = ["raiz_inativa", "interrupcoes_seguidas"];
 
 export async function tratarIndexacao(req: { method: string; segredo: string | null }, d: DepsIndexacao): Promise<RespostaGed> {
   if (req.method !== "POST") return json(405, { erro: "metodo" });
@@ -1305,30 +1313,39 @@ export async function tratarIndexacao(req: { method: string; segredo: string | n
     const aberta = await d.rpc("ged_iniciar_indexacao", { p_raiz: raiz.id, p_tipo: tipo, p_agendada: true, p_usuario: null });
     if (aberta.error) {
       const codigo = codigoDoErro(aberta.error);
-      if (codigo === "raiz_inativa") continue;
+      if (PULA_RAIZ.includes(codigo)) {
+        if (codigo !== "raiz_inativa") {
+          resumo.push({ tipo, resultado: codigo, completa: false });
+          d.log?.(`ged-indexacao: tipo=${tipo} resultado=${codigo}`);
+        }
+        continue;
+      }
       // Interruptor desligado ou outra rodada em andamento: para, sem tocar no Google.
       d.log?.(`ged-indexacao: resultado=${codigo}`);
       return json(200, { parada: codigo, raizes: resumo });
     }
     const rodada = aberta.data as string;
-    const fechar = (r: Partial<ResumoRodada>, token: string | null, erro: string | null) =>
+    const fechar = (r: Omit<ResumoRaiz, "tipo" | "resultado">, token: string | null, erro: string | null) =>
       d.rpc("ged_concluir_indexacao", { p_indexacao: rodada, p_resumo: r, p_page_token: token, p_erro: erro });
+    const etapa: { atual: EtapaIndexacao } = { atual: "acesso_drive" };
     try {
       if (!cliente) {
         const c = await clienteDoVault(d);
         if ("erro" in c) throw new Error(`ged:${c.erro}`);
         cliente = c.cliente;
       }
-      const r = await indexarRaiz(cliente, raiz, tipo, rodada, d);
-      const fechou = await fechar(r.resumo, r.token, null);
+      const r = await indexarRaiz(cliente, raiz, tipo, rodada, d, etapa);
+      const final = { ...r.resumo, itens: r.itens, completa: r.completa };
+      etapa.atual = "conclusao";
+      const fechou = await fechar(final, r.token, null);
       if (fechou.error) throw new Error(fechou.error.message);
-      resumo.push({ tipo, resultado: "ok", completa: r.completa, ...r.resumo });
-      d.log?.(`ged-indexacao: tipo=${tipo} resultado=ok completa=${r.completa} novos=${r.resumo.novos} alterados=${r.resumo.alterados}`);
+      resumo.push({ tipo, resultado: "ok", ...final });
+      d.log?.(`ged-indexacao: tipo=${tipo} resultado=ok completa=${r.completa} itens=${r.itens} novos=${r.resumo.novos} alterados=${r.resumo.alterados}`);
     } catch (e) {
       const codigo = codigoDoErro(e);
-      await fechar({}, null, codigo); // o token não avança
-      resumo.push({ tipo, resultado: codigo, completa: false });
-      d.log?.(`ged-indexacao: tipo=${tipo} resultado=${codigo}`);
+      await fechar({ completa: false, etapa: etapa.atual }, null, codigo); // o token não avança
+      resumo.push({ tipo, resultado: codigo, completa: false, etapa: etapa.atual });
+      d.log?.(`ged-indexacao: tipo=${tipo} resultado=${codigo} etapa=${etapa.atual}`);
       if (SEM_ACESSO.includes(codigo)) break;
     }
   }
@@ -1359,9 +1376,13 @@ async function gravarLotes(rodada: string, resultados: readonly ResultadoMudanca
   }
 }
 
-async function indexarRaiz(cliente: ClienteDrive, raiz: RaizIndexavel, tipo: TipoRodada, rodada: string, d: DepsIndexacao) {
+async function indexarRaiz(
+  cliente: ClienteDrive, raiz: RaizIndexavel, tipo: TipoRodada, rodada: string, d: DepsIndexacao, etapa: { atual: EtapaIndexacao },
+) {
+  etapa.atual = "estado_indice";
   const { indice, raizNova } = await indiceDaRaiz(raiz, d);
   const driveId = raiz.driveIdCompartilhado ?? undefined;
+  etapa.atual = "leitura_drive";
   if (tipo === "reconciliacao") {
     // 5.3.4: listagem completa; o que mudou entra pelo caminho comum e cada ausente é consultado no Drive (404 = removido).
     // Listagem incompleta não marca ausentes (ausentesNaListagem lança): a rodada falha e o token fica onde estava.
@@ -1375,9 +1396,10 @@ async function indexarRaiz(cliente: ClienteDrive, raiz: RaizIndexavel, tipo: Tip
     const consultados: MudancaDrive[] = [];
     for (const id of ausentes) consultados.push(await consultarAusente(cliente, id));
     resultados.push(...aplicarPaginaNoIndice(consultados, indice));
+    etapa.atual = "gravacao";
     await gravarLotes(rodada, resultados, d);
     // O ponto de continuação não muda; reenviá-lo faz o banco registrar reconciliada_em (0806).
-    return { resumo: resumirRodada(resultados), token: raiz.pageToken, completa: true };
+    return { resumo: resumirRodada(resultados), token: raiz.pageToken, completa: true, itens: arvore.pastas.length + arvore.arquivos.length };
   }
   if (tipo === "inicial") {
     const r = await cargaInicial(cliente, { driveId: raiz.driveId, driveIdCompartilhado: driveId }, indice, {
@@ -1386,14 +1408,17 @@ async function indexarRaiz(cliente: ClienteDrive, raiz: RaizIndexavel, tipo: Tip
     });
     // A raiz entra no índice na profundidade 0; depois a indexação nunca a altera (aplicarMudanca).
     const raizLinha = raizNova ? [{ drive_id: raiz.driveId, nome: "(raiz)", mae_drive_id: null, profundidade: 0, situacao: "ativa" }] : [];
+    etapa.atual = "gravacao";
     await gravarLotes(rodada, r.resultados, d, raizLinha);
-    return { resumo: r.resumo, token: r.startPageToken, completa: r.completa };
+    return { resumo: r.resumo, token: r.startPageToken, completa: r.completa, itens: r.itens };
   }
   const todos: ResultadoMudanca[] = [];
   const r = await percorrerMudancas(cliente, raiz.pageToken as string, async (mudancas) => {
     const pagina = aplicarPaginaNoIndice(mudancas, indice);
+    etapa.atual = "gravacao";
     if (pagina.length) await gravarLotes(rodada, pagina, d);
+    etapa.atual = "leitura_drive";
     todos.push(...pagina);
   }, { maxItens: LIMITE_INDEXACAO.maxItens, driveId });
-  return { resumo: resumirRodada(todos), token: r.proximoToken, completa: r.completa };
+  return { resumo: resumirRodada(todos), token: r.proximoToken, completa: r.completa, itens: r.itens };
 }

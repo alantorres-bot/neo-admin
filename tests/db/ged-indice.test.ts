@@ -194,3 +194,127 @@ describe("autorização por raiz (11.5)", () => {
     }
   });
 });
+
+describe("rodada interrompida (0810)", () => {
+  const abertas = async () => (await q(`select id from ged_indexacoes where concluida_em is null`)).rows.map((r) => r.id);
+  const estado = async () => (await q(`select (select page_token from ged_pastas_raiz where id = $1) token, (select count(*)::int from ged_documentos) docs,
+                                              (select count(*)::int from ged_documento_revisoes) revisoes`, [elab])).rows[0];
+
+  it("trava ainda válida: a segunda chamada recebe em_andamento e a rodada em curso não é encerrada", async () => {
+    const r1 = await iniciar(elab, "incremental");
+    await expect(iniciar(dossie, "incremental")).rejects.toThrow(/ged:em_andamento/);
+    expect(await abertas()).toEqual([r1]);
+    await concluir(r1, null, "teste");
+  });
+
+  it("trava esquecida (> 15 min): a rodada dona é encerrada como `interrompida` e a nova começa; checkpoint e documentos intactos", async () => {
+    const morta = await iniciar(elab, "incremental");
+    const antes = await estado();
+    await q(`update ged_trava set tomada_em = now() - interval '16 minutes'`); // a função morreu no meio
+    const nova = await iniciar(elab, "incremental");
+    expect((await q(`select erro, resumo, concluida_em is not null concluida from ged_indexacoes where id = $1`, [morta])).rows[0])
+      .toEqual({ erro: "interrompida", resumo: null, concluida: true });
+    expect(await abertas()).toEqual([nova]);
+    expect((await q(`select por from ged_trava`)).rows[0].por).toBe(nova);
+    expect(await estado()).toEqual(antes);
+    // A rodada encerrada não grava nem conclui mais (não é dona da trava e já está concluída).
+    await expect(gravar(morta, { pastas: [], documentos: [] })).rejects.toThrow(/ged:rodada_invalida/);
+    await expect(concluir(morta, "tok-velho")).rejects.toThrow(/ged:rodada_invalida/);
+    // Recuperação bem-sucedida: a nova conclui, o token avança e a trava fica livre.
+    await concluir(nova, "tok-depois-da-interrupcao");
+    expect((await estado()).token).toBe("tok-depois-da-interrupcao");
+    expect((await q(`select tomada_em, por from ged_trava`)).rows[0]).toEqual({ tomada_em: null, por: null });
+    expect(await abertas()).toEqual([]);
+  });
+
+  it("trava livre (rodada anterior concluída normalmente): nada é encerrado como interrompida", async () => {
+    const r = await iniciar(dossie, "incremental");
+    await concluir(r, null, null);
+    const n = (await q(`select count(*)::int n from ged_indexacoes where erro = 'interrompida'`)).rows[0].n;
+    const r2 = await iniciar(dossie, "incremental");
+    expect((await q(`select count(*)::int n from ged_indexacoes where erro = 'interrompida'`)).rows[0].n).toBe(n);
+    await concluir(r2, null, null);
+  });
+
+  it("concorrência: as três funções travam a linha da trava antes da rodada (a disputa real: scripts/local-sem-docker/ged-concorrencia.sh)", async () => {
+    // O PGlite tem uma conexão só: aqui se confere o bloqueio na definição em vigor; a disputa de verdade roda no roteiro isolado.
+    const def = async (f: string) => (await q(`select pg_get_functiondef($1::regprocedure) d`, [f])).rows[0].d as string;
+    expect(await def("ged_iniciar_indexacao(uuid,text,boolean,uuid)")).toMatch(/from ged_trava where id = 1 for update/);
+    expect(await def("ged_gravar_indice(uuid,jsonb,jsonb)")).toMatch(/from ged_trava where id = 1 and por = p_indexacao for share/);
+    expect(await def("ged_concluir_indexacao(uuid,jsonb,text,text)")).toMatch(/from ged_trava where id = 1 and por = p_indexacao for update/);
+  });
+
+  it("rodada aberta que não é a dona da trava não conclui nem avança o token (nem grava)", async () => {
+    const dona = await iniciar(elab, "incremental");
+    const orfa = (await q(`insert into ged_indexacoes (raiz_id, tipo) values ($1, 'incremental') returning id`, [elab])).rows[0].id;
+    const token = (await q(`select page_token from ged_pastas_raiz where id = $1`, [elab])).rows[0].page_token;
+    await expect(concluir(orfa, "tok-da-orfa")).rejects.toThrow(/ged:rodada_invalida/);
+    await expect(gravar(orfa, { pastas: [], documentos: [] })).rejects.toThrow(/ged:rodada_invalida/);
+    expect((await q(`select page_token from ged_pastas_raiz where id = $1`, [elab])).rows[0].page_token).toBe(token);
+    await concluir(dona, null, "teste");
+    await q(`update ged_indexacoes set concluida_em = now(), erro = 'teste' where id = $1`, [orfa]);
+  });
+
+  it("pasta repetida no mesmo lote não derruba a gravação (vale a última) e nada duplica", async () => {
+    const r = await iniciar(elab, "incremental");
+    const p = (nome: string) => ({ drive_id: "E1", nome, mae_drive_id: ELABORACAO, profundidade: 1, situacao: "ativa" });
+    await gravar(r, { pastas: [p("Primeira"), p("Segunda")], documentos: [] });
+    expect((await q(`select nome from ged_pastas where drive_id = 'E1'`)).rows).toEqual([{ nome: "Segunda" }]);
+    await gravar(r, { pastas: [p("Pasta ficticia E1")], documentos: [] });
+    await concluir(r, null, "teste");
+  });
+
+  it("falha no meio da recuperação desfaz tudo: a rodada antiga continua aberta e a trava continua dela", async () => {
+    const morta = await iniciar(elab, "incremental");
+    await q(`update ged_trava set tomada_em = now() - interval '16 minutes'`);
+    await db.exec(`create function lab_falhar() returns trigger language plpgsql as $$ begin raise exception 'falha simulada'; end $$;
+                   create trigger lab_falhar before insert on ged_indexacoes for each row execute function lab_falhar();`);
+    try {
+      await expect(iniciar(elab, "incremental")).rejects.toThrow(/falha simulada/);
+    } finally {
+      await db.exec(`drop trigger lab_falhar on ged_indexacoes; drop function lab_falhar();`);
+    }
+    expect((await q(`select concluida_em, erro from ged_indexacoes where id = $1`, [morta])).rows[0]).toEqual({ concluida_em: null, erro: null });
+    expect((await q(`select por from ged_trava`)).rows[0].por).toBe(morta);
+    const nova = await iniciar(elab, "incremental");                    // sem a falha, a recuperação acontece
+    expect((await q(`select erro from ged_indexacoes where id = $1`, [morta])).rows[0].erro).toBe("interrompida");
+    await concluir(nova, null, "teste");
+  });
+
+  it("uma interrupção entre rodadas boas não bloqueia a raiz (regressão: bool_and ignorava erro nulo)", async () => {
+    await q(`insert into ged_indexacoes (raiz_id, tipo, iniciada_em, concluida_em, erro) values
+               ($1, 'incremental', now() - interval '3 hours', now() - interval '3 hours', 'interrompida'),
+               ($1, 'incremental', now() - interval '2 hours', now() - interval '2 hours', null),
+               ($1, 'incremental', now() - interval '1 hour', now() - interval '1 hour', null)`, [dossie]);
+    const r = await iniciar(dossie, "incremental");
+    await concluir(r, null, null);
+  });
+
+  it("3 interrupções seguidas da raiz em 24 h: ela para de abrir rodada; a outra raiz segue; uma rodada que termina zera a sequência", async () => {
+    for (let i = 0; i < 3; i++) {
+      await iniciar(dossie, "incremental");
+      await q(`update ged_trava set tomada_em = now() - interval '16 minutes'`);
+      if (i < 2) continue;
+      const outra = await iniciar(elab, "incremental");                 // encerra a 3ª como interrompida
+      await concluir(outra, null, "teste");
+    }
+    // As duas primeiras foram encerradas pela chamada seguinte do próprio laço; a terceira, pela da outra raiz.
+    expect((await q(`select count(*)::int n from ged_indexacoes where raiz_id = $1 and erro = 'interrompida' and iniciada_em > now() - interval '1 hour'`, [dossie])).rows[0].n).toBe(3);
+    await expect(iniciar(dossie, "incremental")).rejects.toThrow(/ged:interrupcoes_seguidas/);
+    // Regressão: rodadas boas (erro nulo) entre as interrompidas não podem contar como interrompidas (bool_and ignora nulos).
+    const elabOk = await iniciar(elab, "incremental");
+    await concluir(elabOk, null, null);
+    // Uma rodada do dossiê que termine (aqui, inserida como se fosse de antes do bloqueio) quebra a sequência.
+    await q(`insert into ged_indexacoes (raiz_id, tipo, concluida_em, resumo) values ($1, 'incremental', now(), '{}')`, [dossie]);
+    const volta = await iniciar(dossie, "incremental");
+    await concluir(volta, null, null);
+  });
+
+  it("0810 não muda a regra de acesso da 0809 nem os privilégios", async () => {
+    const def = (await q(`select pg_get_functiondef('ged_pode_ler_raiz(uuid)'::regprocedure) d`)).rows[0].d;
+    expect(def).toMatch(/select eh_admin_geral\(\)/);
+    for (const papel of ["anon", "authenticated"]) {
+      expect((await q(`select has_function_privilege($1, 'ged_iniciar_indexacao(uuid,text,boolean,uuid)', 'execute') ok`, [papel])).rows[0].ok).toBe(false);
+    }
+  });
+});

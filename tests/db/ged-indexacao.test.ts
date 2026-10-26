@@ -1,6 +1,8 @@
 // GED: indexação de ponta a ponta (tratarIndexacao, a mesma lógica da Edge Function nucleo-ged-indexar) contra o banco real das
 // migrations (PGlite) e um Drive SIMULADO: paginação do files.list e do changes.list, falha no meio, repetição, duas raízes.
 // Tudo fictício; nenhum Google, nenhuma credencial real.
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { PGlite } from "@electric-sql/pglite";
 import { como, criarBanco, novoUsuario, type Linha } from "./harness";
@@ -27,7 +29,8 @@ const POR_PAGINA = 2;
 const arquivos = new Map<string, ArquivoDrive>();
 const mudancas: string[] = [];                                           // ids alterados, em ordem; o token é o índice
 let falharEm: ((u: URL) => boolean) | null = null;
-let relogio = 0;                                                         // agoraMs: 0 = "antes" de tudo (nunca reconcilia)
+let relogio = 0;
+const logs: string[] = [];                                                // tudo o que a função registra no log                                                         // agoraMs: 0 = "antes" de tudo (nunca reconcilia)
 const chamadas = { drive: 0, token: 0 };
 
 const pasta = (id: string, mae: string): ArquivoDrive => ({ id, name: `Pasta ficticia ${id}`, mimeType: MIME_PASTA, parents: [mae] });
@@ -88,6 +91,7 @@ function deps(): DepsIndexacao {
     }) as unknown as DepsIndexacao["fetch"],
     fetchDrive: (url) => driveSimulado(url),
     esperar: async () => {},
+    log: (m) => logs.push(m),
     agoraMs: () => relogio,
     raizesAtivas: async () =>
       (await q(`select id, drive_id, drive_compartilhado_id, page_token, indexada_em, reconciliada_em from ged_pastas_raiz where situacao = 'ativa' order by finalidade`)).rows
@@ -133,9 +137,12 @@ describe("indexação de ponta a ponta (5.3)", () => {
     mudar(arq("antes", "FORA")); // mudança anterior à carga: o token pego antes da leitura já a deixa para trás
     const r = await indexar();
     expect(r.corpo.raizes).toEqual([
-      { tipo: "inicial", resultado: "ok", completa: true, novos: 2, alterados: 0, removidos: 0, ignorados: 0, pastas: 2 },
-      { tipo: "inicial", resultado: "ok", completa: true, novos: 5, alterados: 0, removidos: 0, ignorados: 0, pastas: 1 },
+      { tipo: "inicial", resultado: "ok", completa: true, itens: 4, novos: 2, alterados: 0, removidos: 0, ignorados: 0, pastas: 2 },
+      { tipo: "inicial", resultado: "ok", completa: true, itens: 6, novos: 5, alterados: 0, removidos: 0, ignorados: 0, pastas: 1 },
     ]);
+    // O mesmo resumo fica na rodada (observabilidade, sem nomes): itens examinados e leitura completa.
+    expect((await q(`select resumo from ged_indexacoes where erro is null order by iniciada_em`)).rows.map((x) => [x.resumo.itens, x.resumo.completa]))
+      .toEqual([[4, true], [6, true]]);
     expect(await tokens()).toEqual({ dossie_cliente: "1", elaboracao: "1" });
     expect(await contagem()).toEqual({ pastas: 5, docs: 7, revisoes: 7 }); // 2 raízes + E1 + C1 + C2
     const d = await docs();
@@ -175,7 +182,9 @@ describe("indexação de ponta a ponta (5.3)", () => {
     for (const id of ["e7", "e8", "e9", "e10"]) mudar(arq(id, "E1"));
     falharEm = (u) => u.pathname.endsWith("/changes") && u.searchParams.get("pageToken") === "8";
     const r = await indexar();
-    expect(r.corpo.raizes.map((x: Linha) => x.resultado)).toEqual(["drive", "drive"]);
+    expect(r.corpo.raizes.map((x: Linha) => [x.resultado, x.etapa])).toEqual([["drive", "leitura_drive"], ["drive", "leitura_drive"]]);
+    expect((await q(`select resumo from ged_indexacoes where erro = 'drive' order by iniciada_em desc limit 1`)).rows[0].resumo)
+      .toEqual({ completa: false, etapa: "leitura_drive" });
     expect(await tokens()).toEqual({ dossie_cliente: "6", elaboracao: "6" });
     expect((await q(`select erro from ged_indexacoes where concluida_em is not null order by iniciada_em desc limit 2`)).rows.map((x) => x.erro)).toEqual(["drive", "drive"]);
     expect(Object.keys(await docs())).toEqual(expect.arrayContaining(["e7", "e8"]));    // 1ª página gravada
@@ -186,6 +195,29 @@ describe("indexação de ponta a ponta (5.3)", () => {
     expect(await tokens()).toEqual({ dossie_cliente: "10", elaboracao: "10" });
     expect(await contagem()).toEqual({ ...antes, docs: antes.docs + 2, revisoes: antes.revisoes + 2 }); // só e9 e e10
     expect((await q(`select count(*)::int n from ged_trava where tomada_em is not null`)).rows[0].n).toBe(0);
+  });
+
+  it("a gravação dá certo mas a conclusão falha: o token não avança e a próxima rodada conclui sem duplicar", async () => {
+    mudar(arq("e11", "E1"));
+    const antes = { tokens: await tokens(), contagem: await contagem() };
+    const d = deps();
+    const rpc = d.rpc;
+    let falhou = false;
+    d.rpc = async (nome, args) => {
+      if (nome === "ged_concluir_indexacao" && args.p_erro === null && !falhou) {
+        falhou = true;
+        return { data: null, error: { message: "falha simulada de rede" } };
+      }
+      return rpc(nome, args);
+    };
+    const r = await tratarIndexacao({ method: "POST", segredo: SEGREDO }, d);
+    const corpo = JSON.parse(r.corpo ?? "null");
+    expect(corpo.raizes.map((x: Linha) => [x.resultado, x.etapa])).toEqual([["falha", "conclusao"], ["ok", undefined]]);
+    expect((await tokens()).dossie_cliente).toBe(antes.tokens.dossie_cliente);   // a 1ª raiz não avançou
+    expect((await docs()).e11).toEqual({ situacao: "vigente", raiz: "elab" });       // a 2ª gravou e concluiu
+    await indexar();
+    expect(await tokens()).toEqual({ dossie_cliente: "11", elaboracao: "11" });
+    expect((await contagem()).docs).toBe(antes.contagem.docs + 1);
   });
 
   it("outra rodada em andamento: para sem chamar o Google", async () => {
@@ -205,7 +237,7 @@ describe("indexação de ponta a ponta (5.3)", () => {
     const d = await docs();
     expect(d.c2.situacao).toBe("removido_no_drive");
     expect(d.c3).toEqual({ situacao: "vigente", raiz: "dossie" });
-    expect(await tokens()).toEqual({ dossie_cliente: "10", elaboracao: "10" });
+    expect(await tokens()).toEqual({ dossie_cliente: "11", elaboracao: "11" });
     expect((await q(`select count(*)::int n from ged_pastas_raiz where reconciliada_em is not null`)).rows[0].n).toBe(2);
     relogio = Date.now() + 3_600_000;                                    // logo depois: volta ao incremental
     expect((await indexar()).corpo.raizes.map((x: Linha) => x.tipo)).toEqual(["incremental", "incremental"]);
@@ -217,4 +249,26 @@ describe("indexação de ponta a ponta (5.3)", () => {
     expect(await ver(comercial)).toEqual([]);
     expect(await ver(ctrOperador)).toEqual([]);
   });
+
+  it("log da função: só códigos e contagens; nunca o segredo, token, nome, id de arquivo ou link", () => {
+    expect(logs.length).toBeGreaterThan(0);
+    for (const linha of logs) {
+      expect(linha).toMatch(/^ged-indexacao: (tipo=[a-z]+ )?resultado=[a-z_]+( [a-z]+=[a-z0-9_]+)*$/);
+      expect(linha).not.toContain(SEGREDO);
+      expect(linha).not.toMatch(/ficticio|ficticia|at-ficticio|rt-ficticio|https?:/);
+    }
+  });
+
+  it("diagnóstico (scripts/ged-diagnostico.sql): estados inequívocos e nenhuma inconsistência por raiz", async () => {
+    const [rodadas, raizes] = await db.exec(readFileSync(join(process.cwd(), "scripts", "ged-diagnostico.sql"), "utf8"));
+    const estados = new Set(rodadas.rows.map((r) => (r as Linha).estado));
+    expect([...estados].every((e) => ["concluida", "incompleta", "falha", "interrompida", "em_andamento", "esquecida", "orfa"].includes(e))).toBe(true);
+    expect(estados.has("concluida")).toBe(true);
+    expect(estados.has("falha")).toBe(true);
+    for (const r of raizes.rows as Linha[]) {
+      expect([r.token_sem_raiz_no_indice, r.carga_completa_sem_token, r.documento_fora_da_raiz], r.raiz).toEqual([false, false, false]);
+      expect(r.rodadas_abertas).toBe(0);
+    }
+  });
 });
+

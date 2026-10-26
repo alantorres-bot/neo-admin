@@ -1,93 +1,126 @@
-# GED — primeira indexação (procedimento operacional)
+# GED — publicação e primeira indexação (procedimento operacional)
 
-Usar quando o administrador do Google Workspace responder o **PENDENTE 12** (`docs/modulos/administrativo-ged.md`, seção 14, item 12,
-e 5.11.8). Base: commit `35cd4b6` (migration `0807_ged_agendamento.sql`, `scripts/ged-primeira-indexacao.sql` e `nucleo-ged-indexar`
-v2, publicada em 25/10/2026 com a reconciliação semanal).
+Arquitetura e garantias: `docs/GED_ARQUITETURA.md`. Especificação: `docs/modulos/administrativo-ged.md`.
 
-**Cada bloco (A, B, C, D, E) precisa de autorização própria do responsável.** Autorizar um bloco não autoriza o seguinte.
+**Cada bloco (P, A, B, C, D, E) precisa de autorização própria do responsável.** Autorizar um bloco não autoriza o seguinte.
 
-`Q` = `npx supabase db query --linked --project-ref chdszjpbtfpstjrqnmmm --agent no`
+```
+Q   = npx supabase db query --linked --project-ref chdszjpbtfpstjrqnmmm --agent no
+REF = chdszjpbtfpstjrqnmmm
+```
 
-## Por que a 0807 não indexa nada sozinha
+Ferramentas (todas só leitura, nenhuma chama o Google nem a função):
 
-- **Migration 0807:** o job `ged-indexar-30min` é criado e desligado no mesmo bloco, numa transação só. Ele nunca existe ligado.
-- **`ged_chamar_indexacao()`:** volta sem chamar nada se `administrativo.ged.indexar` não for `true` (teste em
-  `tests/db/ged-indice.test.ts`). Não executa por chamada de usuário nem pela service role.
-- **Edge Function `nucleo-ged-indexar` (v2):** só aceita POST com o segredo de agendamento (sem ele ou com outro: 401, conferido em
-  produção). `ged_iniciar_indexacao` recusa abrir a rodada com o interruptor desligado, antes de qualquer chamada ao Google (teste em
-  `tests/db/ged-indexacao.test.ts`).
-- **O PENDENTE 12 não fica no banco:** `scripts/ged-primeira-indexacao.sql` não tem como conferi-lo. A barreira é o passo A3 (registro na
-  especificação, com commit) e o B0, que confere esse registro antes de qualquer passo em produção.
+| Comando | Para quê |
+|---|---|
+| `node scripts/ged-conferir-assinaturas.mjs --ref REF` | Funções, privilégios, RLS e políticas do GED em produção x repositório. Saída 0 = tudo OK; 1 = diferenças (listadas); 2 = não conferiu. |
+| `node scripts/ged-conferir-segredo.mjs --ref REF` | Segredo do agendamento (Vault) x `SINCRONIZACAO_SEGREDO`, só por resumo SHA-256. `IGUAL` (0), `DIFERENTE` (1), `NAO_COMPROVADO` (2). |
+| `Q -f scripts/ged-primeira-indexacao.sql` | Conferência prévia: `pronto`. |
+| `Q -f scripts/ged-verificar-agendamento.sql` | Job, horário, comando, privilégios, interruptor e últimas execuções. |
+| `Q -f scripts/ged-diagnostico.sql` | Estado de cada rodada e consistência por raiz. |
 
-## Tipos de rodada (v2)
+## Regras de migration (valem para P e B)
 
-- **Primeira rodada (D):** `inicial` nas duas raízes (ainda não há ponto de continuação).
-- **Depois:** `incremental`; a cada 7 dias desde a carga ou a última reconciliação, `reconciliacao` (5.3.4). A reconciliação não mexe no
-  ponto de continuação; só grava `reconciliada_em`.
-- **Leitura incompleta na reconciliação:** a rodada falha com `listagem_incompleta`, nada é marcado como sumido e o token fica onde estava.
-  Enquanto isso se repetir, a raiz não volta ao incremental (o índice dela fica parado, sem perda: as mudanças continuam no Drive).
+1. **Antes:** `ged-conferir-assinaturas` mostra exatamente as diferenças que a migration corrige, e nenhuma outra.
+2. **Aplicar:** `Q -f supabase/migrations/<arquivo>.sql`. A CLI envia o arquivo inteiro de uma vez, mas não está comprovado que ela o
+   execute numa transação só; por isso o que vale é a conferência do item 3, nunca a ausência de erro.
+3. **Conferir a definição instalada:** `ged-conferir-assinaturas` de novo. As diferenças da migration sumiram.
+4. **Registrar a versão só depois do item 3:** `Q "insert into supabase_migrations.schema_migrations (version, name) values ('<NNNN>','<nome>') on conflict do nothing"`. O registro não prova que a migration foi aplicada; a prova é o item 3.
+5. **O SQL entrou, mas o registro falhou:** repetir o item 3 (deve continuar OK) e repetir só o insert. Não reaplicar o SQL.
+6. **O SQL falhou:** o item 3 mostra as diferenças de antes. Não registrar, não reaplicar às cegas; investigar o erro.
+7. **Registro existe, mas a definição diverge:** parar. Algo mudou a função depois; investigar antes de seguir.
 
-## Pré-requisitos técnicos ainda não comprovados
+## P. Publicar o código desta etapa (sem indexar)
 
-1. **Desligar o job na criação:** se o pg_cron de produção não aceitar `cron.alter_job(..., active := false)`, a 0807 falha inteira e
-   nada fica gravado. Só aparece ao aplicar.
-2. **Endereço da função:** a URL vem da URL de Recebíveis no Vault, trocando o nome da função (como nos Pedidos, 0701). Ainda não foi
-   testada com o GED.
-3. **Segredo do agendamento:** a igualdade entre o segredo do Vault e o `SINCRONIZACAO_SEGREDO` foi deduzida das respostas 200 de outras
-   rotinas; não foi testada nesta função.
-4. **Tempo de execução:** nenhuma rodada real rodou ainda. Não está comprovado que a carga das duas raízes cabe no tempo máximo da Edge
-   Function e nos 150 s de espera do `net.http_post`.
-5. **Drive compartilhado:** `changes.list` e `startPageToken` só foram testados com o Drive simulado.
-6. **Reconciliação em produção:** a primeira só acontece 7 dias depois da carga; até lá, não há prova de que a leitura completa das duas
-   raízes cabe no prazo de 100 s (o mesmo risco do item 4).
-
-## A. Preparação (sem nada em produção)
-
-| # | Passo | Resultado esperado | Parar se |
+| # | Passo | Esperado | Parar se |
 |---|---|---|---|
-| A1 | **Resposta do administrador:** anotar os membros do Drive compartilhado `0ADGzgMWcDLTWUk9PVA` e a decisão "a elaboração precisa ou não de permissões próprias". | Lista de membros e decisão, com data e nome de quem respondeu. | Resposta parcial ou sem decisão. |
-| A2 | **Pendente 12 resolvido?** Comparar com a especificação (5.11.8 e pendente 12). | Ou os membros fora da área Contratos são aceitos pelo responsável, ou a restrição exigida já foi aplicada no Drive. | Há quem não deveria ver a elaboração e a restrição ainda não foi feita no Drive. |
-| A3 | **Registrar** (com autorização para editar e commitar): item 12 da seção 14 e item 8 da 5.11 em `docs/modulos/administrativo-ged.md`; commit. | Pendente 12 marcado como decidido, com a data. | — |
+| P1 | Commit e push dos arquivos da etapa. | Branch igual à remota. | — |
+| P2 | **Edge Function:** `npx supabase functions deploy nucleo-ged-indexar --project-ref REF --no-verify-jwt`. Compatível com o banco de antes e de depois da 0810. | Nova versão publicada; `curl -s -X POST https://REF.supabase.co/functions/v1/nucleo-ged-indexar` responde `{"erro":"nao_autorizado"}` (401). | Qualquer outra resposta. |
+| P3 | **0810, antes:** `ged-conferir-assinaturas`. | Só `AUSENTE ged_chamar_indexacao()` (0807) e `DIVERGENTE [corpo_md5]` em `ged_iniciar_indexacao`, `ged_gravar_indice` e `ged_concluir_indexacao`. | Qualquer outra diferença. |
+| P4 | **0810, aplicar:** `Q -f supabase/migrations/0810_ged_rodada_interrompida.sql` | Sem erro. | Erro (regra 6). |
+| P5 | **0810, conferir:** `ged-conferir-assinaturas`. | Só `AUSENTE ged_chamar_indexacao()`. | As três ainda divergentes (regra 6) ou outra diferença. |
+| P6 | **0810, registrar:** `Q "insert into supabase_migrations.schema_migrations (version, name) values ('0810','ged_rodada_interrompida') on conflict do nothing"` | A lista final do script traz 0810. | — (falhou: regra 5) |
 
-## B. Aplicar a 0807 (o job continua inativo)
+**Reversão (não validada em produção):** a 0810 só substitui três funções. Voltar ao comportamento anterior = aplicar de novo o texto
+dessas três funções da `0806_ged_indice.sql` como `create or replace`. Isso reabre os defeitos que a 0810 corrige; só faz sentido se a
+0810 der problema. A Edge Function volta com `git checkout 35cd4b6 -- supabase/functions` e deploy (depois restaurar o arquivo).
 
-| # | Passo | Resultado esperado | Parar se |
+## A. PENDENTE 12 (sem nada em produção)
+
+| # | Passo | Esperado | Parar se |
 |---|---|---|---|
-| B0 | **PENDENTE 12 registrado?** `git log -1 --format=%h -- docs/modulos/administrativo-ged.md` e conferir, no item 12 da seção 14, a decisão com data. | O commit do A3 existe e o item 12 diz decidido. | Item 12 ainda em aberto: não seguir para nenhum passo em produção. |
-| B1 | **Conferir o estado:** `Q -f scripts/ged-primeira-indexacao.sql` | `pronto = true` | Qualquer coluna `false`. |
-| B2 | **Aplicar:** `Q -f supabase/migrations/0807_ged_agendamento.sql` | Sem erro. | Erro, sobretudo no desligamento do job. Não reaplicar às cegas. |
-| B3 | **Conferir o job:** `Q "select jobname, schedule, active from cron.job where jobname='ged-indexar-30min'"` | `20,50 11-22 * * 1-5`, `active = false` | Ausente ou `active = true`. Nesse caso desligar na hora com `select cron.alter_job(<jobid>, active := false)`. |
-| B4 | **Registrar a migration:** `Q "insert into supabase_migrations.schema_migrations (version, name) values ('0807','ged_agendamento') on conflict do nothing"` | 0801 a 0807 registradas. | — |
-| B5 | **Conferir de novo:** repetir B1. | `pronto = true`, com o agendamento inativo. | Qualquer `false`. |
+| A1 | Resposta do administrador do Workspace: membros do Drive compartilhado `0ADGzgMWcDLTWUk9PVA` e a decisão "a elaboração precisa ou não de permissões próprias". | Lista e decisão, com data e nome de quem respondeu. | Resposta parcial ou sem decisão. |
+| A2 | Comparar com a especificação (5.11.8 e item 12 da seção 14). | Ou os membros fora de Contratos são aceitos pelo responsável, ou a restrição exigida já foi aplicada no Drive. | Alguém que não deveria ver a elaboração continua com acesso no Drive. |
+| A3 | Registrar a resposta no item 12 da seção 14 e no item 8 da 5.11; commit. | Pendente 12 decidido, com data. | — |
+
+## B. Agendamento (0807), criado inativo
+
+| # | Passo | Esperado | Parar se |
+|---|---|---|---|
+| B0 | `git log -1 --format=%h -- docs/modulos/administrativo-ged.md` e ler o item 12 da seção 14. | O commit do A3 existe e o item diz decidido. | Item em aberto. |
+| B1 | `node scripts/ged-conferir-segredo.mjs --ref REF` | `IGUAL` | `DIFERENTE` ou `NAO_COMPROVADO`. Resposta 200 de outra rotina não é prova. |
+| B2 | `Q -f scripts/ged-primeira-indexacao.sql` | `pronto = true`, `interruptor_ainda_desligado = true` | Qualquer outro. |
+| B3 | **Antes:** `ged-conferir-assinaturas` | Só `AUSENTE ged_chamar_indexacao()` (P concluído). | Outra diferença (P5 não foi feito?). |
+| B4 | **Aplicar:** `Q -f supabase/migrations/0807_ged_agendamento.sql` | Sem erro. | Erro (regra 6). |
+| B5 | **Conferir:** `ged-conferir-assinaturas` e `Q -f scripts/ged-verificar-agendamento.sql` | Assinaturas: tudo OK. Agendamento: `jobs_ged = 1`, `ativo = false`, `horario_utc = 20,50 11-22 * * 1-5`, `comando = select public.ged_chamar_indexacao()`, `chamadora_fechada_a_usuarios = true`. | `ativo = true`: desligar na hora com `Q "select cron.alter_job((select jobid from cron.job where jobname='ged-indexar-30min'), active := false)"` e investigar. |
+| B6 | **Registrar:** `Q "insert into supabase_migrations.schema_migrations (version, name) values ('0807','ged_agendamento') on conflict do nothing"` | 0807 na lista. | — (falhou: regra 5) |
+
+**Reversão (não validada em produção):** `Q "select cron.unschedule('ged-indexar-30min')"` e `Q "drop function ged_chamar_indexacao()"`.
 
 ## C. Ligar o interruptor (o job continua inativo)
 
-| # | Passo | Resultado esperado | Parar se |
+| # | Passo | Esperado | Parar se |
 |---|---|---|---|
-| C1 | **Conferir:** repetir B1 imediatamente antes de ligar. | `pronto = true` | Qualquer `false`. |
-| C2 | **Ligar:** `Q "update configuracoes set valor='true' where chave='administrativo.ged.indexar'"` | 1 linha alterada. | — |
-| C3 | **Conferir que nada rodou sozinho:** `Q "select count(*) from ged_indexacoes"` | `0` | Maior que 0. Desligar com `valor='false'` e investigar. |
+| C1 | Repetir B1 e B2 imediatamente antes. | `IGUAL`; `pronto = true`. | Qualquer outro. |
+| C2 | `Q "update configuracoes set valor='true' where chave='administrativo.ged.indexar'"` | 1 linha. | — |
+| C3 | `Q "select count(*) from ged_indexacoes"` | `0` (nada rodou sozinho). | Maior que 0: desligar (C2 com `'false'`) e investigar. |
 
-## D. Primeira rodada manual
+## D. Primeira rodada manual (uma chamada, sem repetir)
 
-| # | Passo | Resultado esperado | Parar se |
+| # | Passo | Esperado | Parar se |
 |---|---|---|---|
-| D1 | **Disparar:** `Q "select public.ged_chamar_indexacao()"` | Volta um número, que é o id da requisição. | Volta nulo (interruptor ou Vault com problema). |
-| D2 | **Resposta da função**, uns 2 minutos depois: `Q "select status_code, content from net._http_response where id = <id>"` (só contagens e códigos; o pg_net guarda a resposta por algumas horas) | 200, com `raizes` contendo 2 itens `tipo:"inicial"`, `resultado:"ok"` e `completa:true`. | 401 (segredo), 404 (URL), timeout, `resultado` diferente de `ok` ou `completa:false` (prazo de 100 s: não disparar de novo, não seguir para E e investigar o tempo, pré-requisito 4). |
-| D3 | **Rodadas:** `Q "select tipo, erro, resumo, concluida_em from ged_indexacoes order by iniciada_em"` | 2 rodadas `inicial`, sem erro e concluídas. | `erro` preenchido ou `concluida_em` nulo. |
-| D4 | **Pontos de continuação e contagens:** `Q "select r.finalidade, r.page_token is not null tem_token, r.indexada_em, (select count(*) from ged_pastas p where p.raiz_id=r.id) pastas, (select count(*) from ged_documentos d where d.raiz_id=r.id) docs from ged_pastas_raiz r"` | Token presente nas duas raízes. Pastas (menos a raiz) mais documentos perto da verificação: cerca de 814 na elaboração e 1.478 no dossiê. | Sem token, ou diferença maior que 5% sem explicação. |
-| D5 | **Trava e conexão:** `Q "select tomada_em from ged_trava"` e `Q "select ultimo_erro from ged_conexao"` | Trava livre e conexão sem erro. | Trava presa ou conexão com erro. |
-| D6 | **Logs** (painel do Supabase > Edge Functions > `nucleo-ged-indexar`) | Só linhas `ged-indexacao: tipo=... resultado=... novos=...`. | Qualquer nome, ID ou link no log. |
+| D1 | `Q "select public.ged_chamar_indexacao()"` — **uma vez**. Anotar o número devolvido. | Um número (id da requisição). | Nulo: interruptor ou Vault (conferir C2 e B2). |
+| D2 | Uns 2 minutos depois: `Q "select status_code, timed_out, content from net._http_response where id = <id>"`. O pg_net guarda 6 h. | `status_code = 200`; em `content`, 2 itens com `tipo:"inicial"`, `resultado:"ok"`, `completa:true` e `itens`. | 401 (segredo), 404 (URL), `resultado` diferente de `ok`, `completa:false`. **Timeout, `timed_out = true` ou linha vazia: ir para "Timeout ou sem resposta".** |
+| D3 | `Q -f scripts/ged-diagnostico.sql` | As 2 rodadas `concluida`, com `itens`; por raiz: `tem_ponto_de_continuacao = true`, `rodadas_abertas = 0` e as três colunas de inconsistência `false`. | Qualquer `falha`, `incompleta`, `interrompida` ou inconsistência. |
+| D4 | Contagem: na 2ª consulta do D3, `pastas - 1 + documentos` de cada raiz. | Perto da última verificação: cerca de 814 (elaboração) e 1.478 (dossiê). | Diferença maior que 5% sem explicação. |
+| D5 | `Q "select ultimo_erro from ged_conexao"` | Nulo. | Preenchido. |
+| D6 | Tela `/documentos` como admin geral: buscar `229`. | Arquivos das duas raízes, com "Abrir no Drive". | Erro ou vazio para um nome que existe. |
+| D7 | Painel do Supabase > Edge Functions > `nucleo-ged-indexar` > Logs. | Só `ged-indexacao: tipo=… resultado=… itens=… novos=…`. | Qualquer nome, ID, link ou segredo. |
 
-As consultas de D2 a D5 só leem: não chamam a função, não abrem rodada e não mostram segredo.
+### Timeout ou sem resposta no D2
 
-**Se algo falhar:** desligar com `Q "update configuracoes set valor='false' where chave='administrativo.ged.indexar'"` (e, se o job já
-estiver ativo, `select cron.alter_job(<jobid>, active := false)`). O que já foi gravado continua no banco (o índice nunca apaga), e a
-próxima rodada refaz sem duplicar.
+O pg_net desiste em 150 s; a função pode continuar. **Nunca disparar outra chamada por causa de timeout.**
 
-## E. Ligar o agendamento (só com D2 a D6 corretos)
+1. Rodar o D3 e olhar as rodadas desta tentativa:
+   - `em_andamento`: a função ainda está rodando. Esperar e repetir **só o D3** (leitura);
+   - todas `concluida`: terminou; seguir do D4;
+   - `falha` ou `incompleta`: o token daquela raiz não avançou (na carga inicial). Parar; a coluna `etapa` diz onde parou;
+   - `esquecida` (aberta há 15 min ou mais): a função morreu no meio. Parar e investigar nos logs (D7).
+2. **Nova tentativa** (autorização própria): repetir C1. Com `pronto = true`, fazer o D1 de novo, **uma vez**. Se havia uma rodada
+   `esquecida`, essa chamada a encerra como `interrompida` e começa outra (0810); o que já foi gravado fica, nada duplica, e só a raiz
+   que não terminou é refeita. Raiz já carregada segue no incremental.
+3. **Três `interrompida` seguidas da mesma raiz em 24 h:** a raiz deixa de abrir rodada (`interrupcoes_seguidas`) até passarem 24 h. Não
+   insistir; investigar o tempo (limite da Edge Function e prazo de 100 s).
 
-- **Comando:** `Q "select cron.alter_job((select jobid from cron.job where jobname='ged-indexar-30min'), active := true)"`
-- **Conferir:** no primeiro horário :20 ou :50 de um dia útil, aparece uma rodada `incremental` sem erro e o ponto de continuação avança.
-- **Uma semana depois:** conferir a primeira `reconciliacao` (`select tipo, erro, concluida_em from ged_indexacoes where tipo =
-  'reconciliacao'`). Com `erro = 'listagem_incompleta'` repetido, desligar o job e avaliar o prazo (pré-requisito 6).
+**Parar a qualquer momento:** `Q "update configuracoes set valor='false' where chave='administrativo.ged.indexar'"` (e, se o job estiver
+ativo, o comando de desligar do B5). Nenhuma rodada nova começa; o que foi gravado continua (o índice nunca apaga).
+
+## E. Ligar o agendamento (só com D2 a D7 corretos)
+
+| # | Passo | Esperado | Parar se |
+|---|---|---|---|
+| E1 | `Q "select cron.alter_job((select jobid from cron.job where jobname='ged-indexar-30min'), active := true)"` | `ged-verificar-agendamento`: `ativo = true`. | — |
+| E2 | Depois do primeiro :20 ou :50 de um dia útil: `ged-verificar-agendamento` e `ged-diagnostico`. | `ultimas_execucoes_do_job` com `succeeded`; nova rodada `incremental` `concluida`. | `failed`, ou rodada `falha`: desligar o job (B5) e investigar. |
+| E3 | Uma semana depois: `ged-diagnostico`. | A primeira `reconciliacao` `concluida`. | `falha` com `listagem_incompleta` repetida: desligar o job e revisar o prazo. |
+
+## O que está comprovado e o que não está
+
+| Item | Situação |
+|---|---|
+| Funções, privilégios, RLS e políticas já aplicados (0801–0806, 0808, 0809) = repositório | Comprovado em produção (`ged-conferir-assinaturas`, 26/10/2026) |
+| URL da chamadora = `.../functions/v1/nucleo-ged-indexar`; 401 sem segredo | Comprovado em produção (26/10/2026) |
+| Segredo do Vault = `SINCRONIZACAO_SEGREDO` | Comprovado em produção pelos resumos (26/10/2026); refazer no B1 |
+| pg_cron aceita criar o job e desligá-lo na mesma transação | Preparado: pg_cron 1.6.4 tem o parâmetro `active`; só se prova no B4 |
+| Recuperação, posse da trava, idempotência, resumo e diagnóstico | Comprovado localmente (testes); concorrência real só no roteiro `scripts/local-sem-docker/ged-concorrencia.sh` |
+| Carga das duas raízes cabe no tempo | Não comprovado: só na primeira rodada (D2/D3) |
+| `changes.list` e `startPageToken` do Drive compartilhado real | Não comprovado: só na primeira rodada e no E2 |
