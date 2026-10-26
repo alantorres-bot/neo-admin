@@ -494,6 +494,15 @@ atividades e na Central de Gestão. **Esconder um elemento na tela não é contr
      o Neo Admin não impede isso;
    - o administrador do Workspace precisa conferir os membros e decidir se a elaboração precisa de permissões próprias no Drive;
    - **sem essa validação, a restrição da elaboração vale no Neo Admin, mas não no Drive.**
+   - **Decisão final do responsável (26/10/2026) — PENDENTE 12 resolvido (opção 4):**
+     - **nenhuma permissão do Google Drive é alterada:** membros, compartilhamentos e permissões do Drive compartilhado ficam como estão;
+     - os colaboradores continuam acessando os documentos **direto pelo Drive**, conforme as permissões atuais, inclusive a elaboração
+       (`02 - CONTRATOS`) e o dossiê (`01 - CLIENTES`). Isso é aceito;
+     - **dentro do Neo Admin**, só os admins gerais (Alan e Rodrigo) acessam o GED (decisão de 26/10/2026, migration 0809, 5.9.0);
+     - a restrição do Neo Admin **não é** uma mudança de permissão no Drive: uma não substitui nem altera a outra;
+     - a conexão do GED usa a conta do Alan, membro do Drive: a indexação não depende de mudar nada no Drive.
+   - Registro anterior, substituído por esta decisão: na mesma data cogitou-se deixar só o Alan como membro do Drive; foi descartado
+     porque tiraria o acesso direto de todos os demais ao Drive inteiro (`ADMINISTRATIVO`, `ALUTEC`, `01 - CLIENTES`).
 9. **Pré-condição para indexar:** nenhuma raiz entra na indexação (etapa A1b) antes de os testes de autorização da 11.5 passarem.
 10. **[AF-4] Proteção por linha, por coluna e por superfície de acesso:**
     - **por linha (RLS):** decide **quais linhas** alguém lê. **Não esconde colunas** da linha liberada. Quem lê a linha pela API
@@ -793,7 +802,7 @@ na etapa A1a, antes da indexação (A1b). Os itens 13 e 14 são exigidos já ant
 2. Os testes de autorização da 11.5 passam com dados fictícios. **Nenhum documento real foi indexado.**
 
 **Fase A1b (índice e consulta)**
-00. Os critérios da A1a foram cumpridos e aprovados, e o [PENDENTE 12] (Drive compartilhado) foi tratado pelo administrador do Workspace.
+00. Os critérios da A1a foram cumpridos e aprovados, e o [PENDENTE 12] (Drive compartilhado) foi tratado (resolvido em 26/10/2026, opção 4: o Drive fica como está; 5.11.8).
 0. Antes de indexar, as duas raízes (elaboração e dossiê) foram verificadas e ativadas pelo admin geral:
    - os IDs exatos foram confirmados;
    - a árvore resumida foi aceita;
@@ -836,7 +845,7 @@ essa aprovação **não libera** fase alguma: cada uma depende dos bloqueios aba
 |---|---|---|
 | A0 | [PENDENTE 1] IDs exatos; [PENDENTE 3] conta e cliente OAuth; [PENDENTE 13] forma de exibir a verificação sem persistir metadados; controles mínimos da 5.2.4.5 [AF-6]; **[GED PENDENTE 17] mecanismo de proteção por coluna**: a parte da A0 que depende dele (leitura de `ged_conexao` e do cadastro da raiz sem as colunas sensíveis) **não pode ser executada** antes da decisão | IDs e conta decididos; mecanismo do GED PENDENTE 13 decidido e especificado; GED PENDENTE 17 decidido e especificado; controles mínimos aprovados; testes 11.5, itens 13 e 14, passando com dados fictícios. A A0 não fica liberada por partes, e nada disso foi implementado |
 | A1a | A0 concluída; [PENDENTE 15] forma das pendências; [PENDENTE 16] quem roda "Atualizar índice agora"; [GED PENDENTE 17] projeções das tabelas novas (mecanismo já aprovado); [PENDENTE 19] assinatura da checagem de módulo; [GED PENDENTE 14 = Contratos, item 17] nível mínimo na elaboração; [PENDENTE 2] áreas do dossiê | decisões tomadas e especificadas |
-| A1b | A1a cumprida e aprovada (todos os testes da 11.5 passando; **aprovada em 25/10/2026 só no recorte da indexação**, ver o registro no início); [PENDENTE 12] permissões do Drive compartilhado | aprovação expressa da A1a e validação do Drive pelo administrador do Workspace |
+| A1b | A1a cumprida e aprovada (todos os testes da 11.5 passando; **aprovada em 25/10/2026 só no recorte da indexação**, ver o registro no início); [PENDENTE 12] permissões do Drive compartilhado (**resolvido em 26/10/2026**, opção 4: nenhuma mudança no Drive) | aprovação expressa da A1a (feita no recorte da indexação) e PENDENTE 12 resolvido |
 | A2 básica | A1b concluída; [PENDENTE 18] fonte de verdade da evidência do PDF (afeta o desvínculo) | A1b concluída; PENDENTE 18 decidido |
 | A2 completa | A2 básica; C3 do Contratos (entrega de `ctr_alvos_por_numero` com checagem de autorização) | C3 concluída |
 | B | A2 básica; [PENDENTE 8] | decisão do Fiscal sobre `fis_documentos` |
@@ -880,6 +889,9 @@ só da A2 básica.
 12. **Permissões reais do Drive compartilhado** (validação externa, administrador do Workspace): quem são os membros do Drive
     compartilhado das duas raízes? A elaboração precisa de permissões próprias no Drive? Sem isso, a restrição da elaboração não vale
     no Drive (5.11.8). **Bloqueia a A1b** (indexação).
+    **Resolvido em 26/10/2026 (opção 4):** o Drive fica como está — nenhuma alteração de membros, compartilhamentos ou permissões; os
+    colaboradores seguem acessando os documentos direto pelo Drive, e isso é aceito. Dentro do Neo Admin, só os admins gerais acessam o
+    GED (0809). A ideia de deixar só o Alan como membro do Drive foi descartada (detalhes em 5.11.8). **Não bloqueia mais a A1b.**
 13. **Resultado da verificação na Fase 1 (A0):** como exibir a árvore verificada só ao admin geral sem persistir metadados de forma
     acessível a outros? **Decidido em 25/10/2026: resposta efêmera da Edge Function** (nada gravado; auditoria só com raiz, contagem
     e resultado). A opção de tabela legível só pelo admin geral foi descartada (5.2.4.4).

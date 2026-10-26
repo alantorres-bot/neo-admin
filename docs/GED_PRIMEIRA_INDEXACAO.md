@@ -2,7 +2,7 @@
 
 Arquitetura e garantias: `docs/GED_ARQUITETURA.md`. Especificação: `docs/modulos/administrativo-ged.md`.
 
-**Cada bloco (P, A, B, C, D, E) precisa de autorização própria do responsável.** Autorizar um bloco não autoriza o seguinte.
+**Cada bloco (P, A, B, C, D, E) precisa de autorização própria do responsável** (P concluído em 26/10/2026: commit `93d5aa1`, `nucleo-ged-indexar` v3, 0810 aplicada e registrada). Autorizar um bloco não autoriza o seguinte.
 
 ```
 Q   = npx supabase db query --linked --project-ref chdszjpbtfpstjrqnmmm --agent no
@@ -45,19 +45,21 @@ Ferramentas (todas só leitura, nenhuma chama o Google nem a função):
 dessas três funções da `0806_ged_indice.sql` como `create or replace`. Isso reabre os defeitos que a 0810 corrige; só faz sentido se a
 0810 der problema. A Edge Function volta com `git checkout 35cd4b6 -- supabase/functions` e deploy (depois restaurar o arquivo).
 
-## A. PENDENTE 12 (sem nada em produção)
+## A. PENDENTE 12 — resolvido em 26/10/2026 (opção 4)
+
+Decisão do responsável (especificação 5.11.8 e item 12 da seção 14): **o Google Drive fica como está.** Nenhum membro, compartilhamento
+ou permissão do Drive compartilhado é alterado, e os colaboradores continuam acessando os documentos direto pelo Drive. Dentro do Neo
+Admin, só os admins gerais acessam o GED (0809). **Nenhum passo deste procedimento altera o Google Drive** (a conta do GED só lê).
 
 | # | Passo | Esperado | Parar se |
 |---|---|---|---|
-| A1 | Resposta do administrador do Workspace: membros do Drive compartilhado `0ADGzgMWcDLTWUk9PVA` e a decisão "a elaboração precisa ou não de permissões próprias". | Lista e decisão, com data e nome de quem respondeu. | Resposta parcial ou sem decisão. |
-| A2 | Comparar com a especificação (5.11.8 e item 12 da seção 14). | Ou os membros fora de Contratos são aceitos pelo responsável, ou a restrição exigida já foi aplicada no Drive. | Alguém que não deveria ver a elaboração continua com acesso no Drive. |
-| A3 | Registrar a resposta no item 12 da seção 14 e no item 8 da 5.11; commit. | Pendente 12 decidido, com data. | — |
+| A1 | Registro da decisão na especificação, com commit. | Item 12 da seção 14 diz "Resolvido em 26/10/2026 (opção 4)". | Sem commit: fazer o commit antes do bloco B. |
 
 ## B. Agendamento (0807), criado inativo
 
 | # | Passo | Esperado | Parar se |
 |---|---|---|---|
-| B0 | `git log -1 --format=%h -- docs/modulos/administrativo-ged.md` e ler o item 12 da seção 14. | O commit do A3 existe e o item diz decidido. | Item em aberto. |
+| B0 | `git log -1 --format=%h -- docs/modulos/administrativo-ged.md` e `git status --short docs/modulos/administrativo-ged.md`; ler o item 12 da seção 14. | Arquivo sem alteração pendente e o item diz "Resolvido em 26/10/2026 (opção 4)". | Item em aberto ou registro sem commit. |
 | B1 | `node scripts/ged-conferir-segredo.mjs --ref REF` | `IGUAL` | `DIFERENTE` ou `NAO_COMPROVADO`. Resposta 200 de outra rotina não é prova. |
 | B2 | `Q -f scripts/ged-primeira-indexacao.sql` | `pronto = true`, `interruptor_ainda_desligado = true` | Qualquer outro. |
 | B3 | **Antes:** `ged-conferir-assinaturas` | Só `AUSENTE ged_chamar_indexacao()` (P concluído). | Outra diferença (P5 não foi feito?). |
