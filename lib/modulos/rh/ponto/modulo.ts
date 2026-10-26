@@ -12,7 +12,7 @@ export type Tipo = (typeof TIPOS)[number];
 export const ROTULO_TIPO: Record<Tipo, string> = {
   esqueceu_bater: "Esqueceu de bater (trabalhou normalmente)",
   batida_indevida: "Batida indevida (trabalhou normalmente)",
-  saida_atraso: "Saída antecipada, atraso ou meio período",
+  saida_atraso: "Atraso ou saída antecipada sem justificativa: abater no banco de horas",
   falta_injustificada: "Falta sem justificativa",
   justificada: "Falta ou atraso justificado (atestado/declaração)",
   outro: "Outro",
