@@ -26,13 +26,13 @@ export function idsComMesmoNomeEmOutraRaiz(linhas: readonly LinhaBusca[]): Set<s
 }
 
 /**
- * Atalho "Documentos" no trilho: módulo administrativo.ged ativo, usuário não restrito à unidade e pelo menos uma raiz ativa que ele
- * lê (a lista vem da projeção ged_raizes, que já aplica ged_pode_ler_raiz). Sem isso, nada aparece no menu.
+ * Atalho "Documentos" no trilho: módulo administrativo.ged ativo, admin geral (decisão de 26/10/2026; o banco confere o mesmo,
+ * 0809) e pelo menos uma raiz ativa (projeção ged_raizes). Sem isso, nada aparece no menu.
  */
 export function mostrarAtalhoDocumentos(
-  modulos: readonly { codigo: string; ativo: boolean }[], restrito: boolean, raizes: readonly { situacao: string }[] | null,
+  modulos: readonly { codigo: string; ativo: boolean }[], adminGeral: boolean, raizes: readonly { situacao: string }[] | null,
 ): boolean {
-  if (restrito || !modulos.some((m) => m.codigo === "administrativo.ged" && m.ativo)) return false;
+  if (!adminGeral || !modulos.some((m) => m.codigo === "administrativo.ged" && m.ativo)) return false;
   return (raizes ?? []).some((r) => r.situacao === "ativa");
 }
 

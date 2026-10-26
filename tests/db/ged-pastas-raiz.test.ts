@@ -108,18 +108,18 @@ describe("trava da elaboração (5.11.1; 11.5, item 2)", () => {
 });
 
 describe("leitura: ged_pode_ler_raiz e a projeção ged_raizes (5.11.2, seção 9; 11.5, itens 8 a 10)", () => {
-  it("elaboração: admin e operador de Contratos; consulta de Contratos não (PENDENTE 14: o mais restritivo); outras áreas não", async () => {
-    expect(await podeLer(admin, elab)).toBe(true);
-    expect(await podeLer(ctrOperador, elab)).toBe(true);
-    expect(await podeLer(ctrConsulta, elab)).toBe(false);
-    expect(await podeLer(comercial, elab)).toBe(false);
-    expect(await podeLer(financeiro, elab)).toBe(false);
+  it("0809: só o admin geral lê as duas raízes; nenhuma área dá leitura (os colaboradores usam o Drive direto)", async () => {
+    for (const raiz of [elab, dossie]) {
+      expect(await podeLer(admin, raiz)).toBe(true);
+      for (const quem of [ctrOperador, ctrConsulta, comercial, financeiro]) expect(await podeLer(quem, raiz)).toBe(false);
+    }
   });
 
-  it("dossiê: área dona ou areas_leitura com consulta; outra área não", async () => {
-    expect(await podeLer(ctrConsulta, dossie)).toBe(true);
-    expect(await podeLer(comercial, dossie)).toBe(true);
-    expect(await podeLer(financeiro, dossie)).toBe(false);
+  it("0809: as áreas cadastradas e a trava da elaboração continuam gravadas (só não dão leitura)", async () => {
+    expect((await q(`select finalidade, area, areas_leitura from ged_pastas_raiz order by finalidade`)).rows).toEqual([
+      { finalidade: "dossie_cliente", area: "contratos", areas_leitura: ["comercial"] },
+      { finalidade: "elaboracao", area: "contratos", areas_leitura: [] },
+    ]);
   });
 
   it("unidade_restrita não lê raiz nenhuma, mesmo com permissão nas áreas", async () => {
@@ -132,9 +132,7 @@ describe("leitura: ged_pode_ler_raiz e a projeção ged_raizes (5.11.2, seção 
     const r = await q(`select pg_get_function_result('ged_raizes()'::regprocedure) t`);
     expect(r.rows[0].t).toBe("TABLE(id uuid, nome text, finalidade text, area text, areas_leitura text[], area_operacao text, situacao text)");
     expect((await raizes(admin)).map((x) => x.finalidade)).toEqual(["dossie_cliente", "elaboracao"]);
-    expect((await raizes(ctrOperador)).map((x) => x.finalidade)).toEqual(["dossie_cliente", "elaboracao"]);
-    expect((await raizes(comercial)).map((x) => x.finalidade)).toEqual(["dossie_cliente"]);
-    expect(await raizes(financeiro)).toEqual([]);
+    for (const quem of [ctrOperador, ctrConsulta, comercial, financeiro]) expect(await raizes(quem)).toEqual([]);
     await negado(como(db, "anon", () => q(`select * from ged_raizes()`)));
   });
 });
@@ -219,7 +217,7 @@ describe("fluxo completo com a verificação real da A0 (0803 → 0804)", () => 
     await expect(como(db, admin, () => q(`select ged_definir_situacao_raiz($1, 'ativa')`, [elab]))).rejects.toThrow(/ged:sem_verificacao/);
     await servico(`select ged_registrar_verificacao_raiz($1, $2, 815, 'ok')`, [admin, ELABORACAO]);
     await como(db, admin, () => q(`select ged_definir_situacao_raiz($1, 'ativa')`, [elab]));
-    expect((await raizes(ctrOperador)).find((r) => r.id === elab)?.situacao).toBe("ativa");
+    expect((await raizes(admin)).find((r) => r.id === elab)?.situacao).toBe("ativa");
     const aud = (await q(`select acao, antes, depois from auditoria where tabela = 'ged_pastas_raiz' or acao = 'verificou_raiz'`)).rows;
     expect(aud.length).toBeGreaterThan(0);
     expect(JSON.stringify(aud)).not.toMatch(/ficticia|nome|subpastas|porNivel/i);

@@ -211,9 +211,10 @@ describe("indexação de ponta a ponta (5.3)", () => {
     expect((await indexar()).corpo.raizes.map((x: Linha) => x.tipo)).toEqual(["incremental", "incremental"]);
   });
 
-  it("autorização por raiz no resultado: o comercial só vê o dossiê; o operador de Contratos vê as duas", async () => {
+  it("autorização no resultado (0809): só o admin geral vê o que foi indexado; Contratos e Comercial, nada", async () => {
     const ver = (quem: string) => como(db, quem, () => q(`select drive_id from ged_documentos order by drive_id`)).then((r) => r.rows.map((x) => x.drive_id));
-    expect(await ver(comercial)).toEqual(["c1", "c2", "c3"]);
-    expect((await ver(ctrOperador)).length).toBe((await q(`select count(*)::int n from ged_documentos`)).rows[0].n);
+    expect((await ver(admin)).length).toBe((await q(`select count(*)::int n from ged_documentos`)).rows[0].n);
+    expect(await ver(comercial)).toEqual([]);
+    expect(await ver(ctrOperador)).toEqual([]);
   });
 });

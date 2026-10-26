@@ -28,10 +28,10 @@ export default async function LayoutPlataforma({ children }: LayoutProps<"/">) {
   const mostrarConfiguracoes = temAcessoAlgumaArea(sessao.acesso, sessao.areas);
   // Central de Gestão: para todos com alguma área; o restrito à unidade só usa o Faturamento Filial.
   const mostrarCentral = mostrarConfiguracoes && !sessao.acesso.restrito;
-  // Central de Documentos (GED): módulo ativo e alguma pasta-raiz ativa que a pessoa lê. A consulta só acontece com o módulo ativo.
-  const gedAtivo = !sessao.acesso.restrito && sessao.modulos.some((m) => m.codigo === "administrativo.ged" && m.ativo);
+  // Central de Documentos (GED): só admin geral, com o módulo ativo e alguma pasta-raiz ativa. A consulta só acontece para o admin.
+  const gedAtivo = sessao.acesso.adminGeral && sessao.modulos.some((m) => m.codigo === "administrativo.ged" && m.ativo);
   const raizesGed = gedAtivo ? (await (await criarClienteServidor()).rpc("ged_raizes")).data as { situacao: string }[] | null : null;
-  const mostrarDocumentos = mostrarAtalhoDocumentos(sessao.modulos, !!sessao.acesso.restrito, raizesGed);
+  const mostrarDocumentos = mostrarAtalhoDocumentos(sessao.modulos, sessao.acesso.adminGeral, raizesGed);
 
   return (
     <Casca

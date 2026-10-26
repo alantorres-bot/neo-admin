@@ -415,7 +415,11 @@ Exemplos de regras **ilustrativas**, a validar com os nomes reais [PENDENTE 6]:
 4. `fis_documentos` (Fiscal, privado) **não entra** na view sem decisão do Fiscal [PENDENTE 8].
 
 ### 5.9 Permissões e acesso aos arquivos
-1. **Leitura no Neo Admin:**
+0. **Decisão do responsável (26/10/2026), em vigor:** dentro do Neo Admin, **só o admin geral** acessa o GED (tela, atalho e dados). Os
+   demais colaboradores continuam com o acesso que já têm diretamente no Google Drive; nada muda no Drive. No banco,
+   `ged_pode_ler_raiz` = `eh_admin_geral()` (migration 0809), o que vale para a RLS e as projeções. As áreas das raízes e a trava da
+   elaboração continuam gravadas; a regra por área abaixo volta a valer só com nova decisão e migration.
+1. **Leitura no Neo Admin** (regra por área, suspensa pela decisão do item 0):
    - quem tem pelo menos `consulta` na **área dona** da pasta-raiz (`ged_pastas_raiz.area`) **ou** numa das `areas_leitura` vê o
      registro: nome, tipo, cliente, datas e link;
    - **classificar, confirmar e vincular** exige `operador` na `area_operacao` da raiz;

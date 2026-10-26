@@ -1,5 +1,4 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,7 +10,7 @@ import {
 } from "@/lib/nucleo/ged/busca";
 import type { RaizGed } from "@/lib/nucleo/ged/conexao-tela";
 import { formatarData } from "@/lib/nucleo/fila";
-import { exigirSessao } from "@/lib/nucleo/sessao";
+import { exigirAdminGeral } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
 export const metadata: Metadata = { title: "Central de Documentos" };
@@ -25,12 +24,12 @@ type Documento = LinhaBusca & {
 
 /**
  * Central de Documentos (especificação 7.1, fase A1b): busca por nome no índice do Drive, filtro por finalidade e "Abrir no Drive".
- * As linhas vêm com o cliente do usuário: a RLS (ged_pode_ler_raiz) decide o que cada um vê, inclusive a trava da elaboração.
+ * Só o admin geral (decisão de 26/10/2026; os demais usam o Drive direto): a página recusa os demais e o banco também
+ * (ged_pode_ler_raiz = eh_admin_geral, 0809). As linhas vêm com o cliente do usuário, pela RLS.
  * Sem acesso a raiz nenhuma, a mesma mensagem fixa, haja ou não documentos (5.11.7). Tipo, cliente e vínculos chegam na A2.
  */
 export default async function PaginaDocumentos({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  const sessao = await exigirSessao();
-  if (sessao.acesso.restrito) notFound();
+  await exigirAdminGeral();
   const p = await searchParams;
   const texto = typeof p.q === "string" ? p.q : "";
   const finalidade = lerFinalidade(p.finalidade);

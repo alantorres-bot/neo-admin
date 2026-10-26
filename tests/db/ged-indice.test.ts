@@ -145,16 +145,12 @@ describe("gravação pela camada pura (5.3.1–5.3.3)", () => {
 });
 
 describe("autorização por raiz (11.5)", () => {
-  it("item 3: sem a área Contratos (ou só consulta), nenhuma linha da elaboração; o dossiê segue as áreas dele", async () => {
+  it("item 3 (0809): só o admin geral lê pastas, documentos e revisões; nenhuma área, nem pela API direta", async () => {
     expect(await ver(admin, "ged_documentos")).toEqual(["cd1", "ed1", "ed2", "ew"]);
-    expect(await ver(ctrOperador, "ged_documentos")).toEqual(["cd1", "ed1", "ed2", "ew"]);
-    expect(await ver(ctrConsulta, "ged_documentos")).toEqual(["cd1"]); // PENDENTE 14: elaboração exige operador
-    expect(await ver(comercial, "ged_documentos")).toEqual(["cd1"]);
-    expect(await ver(comercial, "ged_pastas")).toEqual([DOSSIE, "C1"]);
-    expect(await ver(financeiro, "ged_documentos")).toEqual([]);
-    const revisoes = (quem: string) => como(db, quem, () => q(`select count(*)::int n from ged_documento_revisoes`)).then((r) => r.rows[0].n);
-    expect(await revisoes(comercial)).toBe(1);
-    expect(await revisoes(financeiro)).toBe(0);
+    for (const quem of [ctrOperador, ctrConsulta, comercial, financeiro]) {
+      for (const t of ["ged_pastas", "ged_documentos"]) expect(await ver(quem, t), `${t}`).toEqual([]);
+      expect((await como(db, quem, () => q(`select count(*)::int n from ged_documento_revisoes`))).rows[0].n).toBe(0);
+    }
   });
 
   it("item 4: por id, a elaboração some igual a um id inexistente", async () => {
@@ -174,9 +170,8 @@ describe("autorização por raiz (11.5)", () => {
     const r = await q(`select pg_get_function_result('ged_indexacoes_visiveis()'::regprocedure) t`);
     expect(r.rows[0].t).toBe("TABLE(id uuid, raiz_id uuid, tipo text, agendada boolean, iniciada_em timestamp with time zone, concluida_em timestamp with time zone, com_erro boolean)");
     const raizes = async (quem: string) => [...new Set((await como(db, quem, () => q(`select raiz_id from ged_indexacoes_visiveis()`))).rows.map((x) => x.raiz_id))].sort();
-    expect(await raizes(comercial)).toEqual([dossie]);
-    expect(await raizes(ctrOperador)).toEqual([elab, dossie].sort());
-    expect(await raizes(financeiro)).toEqual([]);
+    expect(await raizes(admin)).toEqual([elab, dossie].sort());
+    for (const quem of [ctrOperador, comercial, financeiro]) expect(await raizes(quem)).toEqual([]); // 0809
   });
 
   it("ninguém grava direto; as funções da indexação são só da service role", async () => {

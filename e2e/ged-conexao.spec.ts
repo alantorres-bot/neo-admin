@@ -337,13 +337,19 @@ test("14. Central de Documentos: busca, filtro por finalidade, mesmo nome nas du
   await capturar(page, "14-documentos");
 });
 
-test("15. Central de Documentos: sem pasta liberada, só o aviso fixo e nenhuma busca", async ({ page }) => {
+test("15. Central de Documentos: só o admin geral; o usuário comum volta ao início sem nenhuma consulta ao GED", async ({ page }) => {
   await cenario(page, { raizes: [], documentos: DOCUMENTOS });
+  await entrar(page);
+  await page.goto("/documentos?q=229");
+  await expect(page.getByText("Você não tem acesso a nenhuma pasta do GED")).toBeVisible({ timeout: 60_000 }); // admin sem raiz ativa
+  await expect(page.getByRole("textbox")).toHaveCount(0);
+
+  await cenario(page, { raizes: RAIZES_ATIVAS, documentos: DOCUMENTOS, usuario: COMUM });
   await entrar(page, COMUM);
   await page.goto("/documentos?q=229");
-  await expect(page.getByText("Você não tem acesso a nenhuma pasta do GED")).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByRole("textbox")).toHaveCount(0);
-  expect((await chamadas(page)).some((c) => c.caminho === "/rest/v1/ged_documentos")).toBe(false);
+  await expect(page).toHaveURL(/\/inicio/);
+  const ged = (await chamadas(page)).filter((c) => /ged_/.test(c.caminho));
+  expect(ged).toEqual([]);                                                          // nem raízes, nem documentos
 });
 
 test("16. atalho Documentos no trilho: só com o módulo ativo e alguma pasta liberada; nunca no submenu do Administrativo", async ({ page }) => {
@@ -361,12 +367,16 @@ test("16. atalho Documentos no trilho: só com o módulo ativo e alguma pasta li
   await expect(page).toHaveURL(/\/documentos$/);
   await expect(page.getByRole("link", { name: "Central de Documentos" })).toHaveCount(0); // não vira item de submenu da área
 
-  await cenario(page, { gedAtivo: true, raizes: [], usuario: COMUM });
+  await page.goto("/administrativo/ged");                                       // rota do módulo leva à tela (sem página "em construção")
+  await expect(page).toHaveURL(/\/documentos$/);
+
+  // Usuário comum, mesmo com o módulo ativo e raízes ativas: sem atalho, sem consulta às raízes, e a rota do módulo volta ao início.
+  await cenario(page, { gedAtivo: true, raizes: RAIZES_ATIVAS, usuario: COMUM });
   await entrar(page, COMUM);
   await page.goto("/inicio");
   await expect(page.getByRole("link", { name: "Início" }).first()).toBeVisible();
-  await expect(atalho()).toHaveCount(0);                                        // sem pasta liberada: sem atalho
-
-  await page.goto("/administrativo/ged");                                       // rota do módulo leva à tela (sem página "em construção")
-  await expect(page).toHaveURL(/\/documentos$/);
+  await expect(atalho()).toHaveCount(0);
+  await page.goto("/administrativo/ged");
+  await expect(page).toHaveURL(/\/inicio/);
+  expect((await chamadas(page)).filter((c) => /ged_/.test(c.caminho))).toEqual([]);
 });
