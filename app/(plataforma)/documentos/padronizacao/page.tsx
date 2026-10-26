@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { linkDoDrive } from "@/lib/nucleo/ged/busca";
+import type { RaizGed } from "@/lib/nucleo/ged/conexao-tela";
 import { formatarDataHora } from "@/lib/nucleo/fila";
 import {
   CONFIANCAS, LIMITE_LISTA, lerFiltros, padraoCliente, SITUACOES_ANALISE, type SituacaoAnalise,
@@ -18,7 +19,7 @@ export const metadata: Metadata = { title: "Padronização de nomes" };
 const SELECT = "h-9 rounded-md border bg-background px-2 text-sm";
 const RAIZES = { dossie_cliente: "Dossiê de clientes", elaboracao: "Elaboração" } as const;
 type Registro = Omit<LinhaAnalise, "tipo_nome" | "raiz" | "link" | "historico" | "extensao"> & {
-  documento: { extensao: string; web_link: string | null; raiz: { finalidade: keyof typeof RAIZES } | null } | null;
+  documento: { extensao: string; web_link: string | null; raiz_id: string } | null;
 };
 
 /**
@@ -31,12 +32,16 @@ export default async function PaginaPadronizacao({ searchParams }: { searchParam
   const { data: tiposDados } = await supabase.from("ged_tipos").select("codigo, nome").eq("ativo", true).order("ordem");
   const tipos = (tiposDados ?? []) as { codigo: string; nome: string }[];
   const f = lerFiltros(await searchParams, tipos.map((t) => t.codigo));
+  // ged_pastas_raiz não é legível direto pelo usuário: as raízes vêm da projeção ged_raizes(), como em /documentos.
+  const { data: dadosRaizes } = await supabase.rpc("ged_raizes");
+  const raizes = (dadosRaizes as RaizGed[] | null) ?? [];
+  const finalidadeDaRaiz = new Map(raizes.map((r) => [r.id, r.finalidade]));
 
   let consulta = supabase.from("ged_analises")
-    .select("documento_id, situacao, tipo, nome_atual, nome_sugerido, nome_final, confianca, justificativa, erro, campos, documento:ged_documentos!inner(extensao, web_link, raiz:ged_pastas_raiz!inner(finalidade))")
+    .select("documento_id, situacao, tipo, nome_atual, nome_sugerido, nome_final, confianca, justificativa, erro, campos, documento:ged_documentos!inner(extensao, web_link, raiz_id)")
     .order("analisada_em", { ascending: false })
     .limit(LIMITE_LISTA);
-  if (f.finalidade) consulta = consulta.eq("documento.raiz.finalidade", f.finalidade);
+  if (f.finalidade) consulta = consulta.in("documento.raiz_id", raizes.filter((r) => r.finalidade === f.finalidade).map((r) => r.id));
   if (f.tipo) consulta = consulta.eq("tipo", f.tipo);
   if (f.situacao) consulta = consulta.eq("situacao", f.situacao);
   if (f.confianca) consulta = consulta.eq("confianca", f.confianca);
@@ -54,7 +59,7 @@ export default async function PaginaPadronizacao({ searchParams }: { searchParam
     ...r,
     tipo_nome: r.tipo ? nomeTipo.get(r.tipo) ?? r.tipo : null,
     extensao: r.documento?.extensao ?? "",
-    raiz: r.documento?.raiz ? RAIZES[r.documento.raiz.finalidade] ?? "—" : "—",
+    raiz: RAIZES[finalidadeDaRaiz.get(r.documento?.raiz_id ?? "") as keyof typeof RAIZES] ?? "—",
     link: linkDoDrive(r.documento?.web_link),
     historico: (hist ?? []).filter((h) => h.registro_id === r.documento_id).map((h) => {
       const depois = (h.depois ?? {}) as { situacao?: string; motivo?: string };

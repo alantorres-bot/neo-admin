@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { criarTrava } from "@/lib/nucleo/ged/conexao-tela";
 import { CONFIANCAS, SITUACOES_ANALISE, type Confianca, type SituacaoAnalise } from "@/lib/nucleo/ged/padronizacao";
-import { analisarProximos, decidirAnalise } from "./acoes";
+import { analisarProximos, decidirAnalise, reanalisarSemDecisao } from "./acoes";
 
 type Campo = { valor: string; evidencia: string[] } | null;
 export type LinhaAnalise = {
@@ -27,15 +27,17 @@ export function BotaoAnalisar() {
   const router = useRouter();
   const [pendente, iniciar] = useTransition();
   const trava = useRef(criarTrava());
+  const rodar = (acao: typeof analisarProximos) => iniciar(async () => void (await trava.current(async () => {
+    const r = await acao();
+    if (!r.ok) return void toast.error(r.erro);
+    toast.success(r.mensagem ?? "Análise concluída.");
+    router.refresh();
+  })));
   return (
-    <Button disabled={pendente} onClick={() => iniciar(async () => void (await trava.current(async () => {
-      const r = await analisarProximos();
-      if (!r.ok) return void toast.error(r.erro);
-      toast.success(r.mensagem ?? "Análise concluída.");
-      router.refresh();
-    })))}>
-      {pendente ? "Analisando…" : "Analisar próximos 20"}
-    </Button>
+    <div className="flex flex-wrap gap-2">
+      <Button disabled={pendente} onClick={() => rodar(analisarProximos)}>{pendente ? "Analisando…" : "Analisar próximos 20"}</Button>
+      <Button variant="outline" disabled={pendente} onClick={() => rodar(reanalisarSemDecisao)}>Reanalisar 20 sem decisão</Button>
+    </div>
   );
 }
 

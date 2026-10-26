@@ -129,7 +129,7 @@ describe("seleção e gravação (0811)", () => {
     const a = (await q(`select a.situacao, a.tipo, a.nome_sugerido, a.confianca, a.metodo, a.campos, a.contraparte_id is not null cadastro from ged_analises a
                           join ged_documentos d on d.id = a.documento_id where d.drive_id = 'd-nf'`)).rows[0];
     expect(a).toMatchObject({ situacao: "sugerida", tipo: "nf_remessa", confianca: "alta", metodo: "texto", cadastro: true,
-      nome_sugerido: "NF REMESSA - 794 - Remessa 02 - ALFA CONSTRUTORA LTDA - 2025-07-14.docx" });
+      nome_sugerido: "NF REMESSA - 794 - Remessa 02 - Alfa - 2025-07-14.docx" });
     expect(JSON.stringify(a.campos)).not.toMatch(/DANFE|Natureza/);           // o texto não é gravado
     const outros = Object.fromEntries((await q(`select d.drive_id, a.situacao, a.erro from ged_analises a join ged_documentos d on d.id = a.documento_id`)).rows
       .map((x) => [x.drive_id, [x.situacao, x.erro]]));
@@ -157,7 +157,7 @@ describe("decisões e histórico", () => {
     const nf = await idDoc("d-nf");
     await decidir(admin, nf, "aprovar");
     expect((await q(`select situacao, nome_final from ged_analises where documento_id = $1`, [nf])).rows[0])
-      .toEqual({ situacao: "aprovada", nome_final: "NF REMESSA - 794 - Remessa 02 - ALFA CONSTRUTORA LTDA - 2025-07-14.docx" });
+      .toEqual({ situacao: "aprovada", nome_final: "NF REMESSA - 794 - Remessa 02 - Alfa - 2025-07-14.docx" });
     await expect(decidir(admin, nf, "editar", "NF: inválido.docx")).rejects.toThrow(/ged:nome_invalido/);
     await decidir(admin, nf, "editar", "NF REMESSA - 794 - Alfa.docx");
     const scan = await idDoc("d-scan");

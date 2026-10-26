@@ -4,15 +4,20 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const estado = vi.hoisted(() => ({ adminGeral: true, rpc: vi.fn(), invoke: vi.fn(), revalidar: vi.fn() }));
+const estado = vi.hoisted(() => ({ adminGeral: true, rpc: vi.fn(), invoke: vi.fn(), revalidar: vi.fn(), lista: vi.fn() }));
 
 vi.mock("@/lib/nucleo/sessao", () => ({ exigirSessao: async () => ({ acesso: { adminGeral: estado.adminGeral } }) }));
-vi.mock("@/lib/supabase/servidor", () => ({ criarClienteServidor: async () => ({ rpc: estado.rpc, functions: { invoke: estado.invoke } }) }));
+vi.mock("@/lib/supabase/servidor", () => ({
+  criarClienteServidor: async () => ({
+    rpc: estado.rpc, functions: { invoke: estado.invoke },
+    from: () => ({ select: () => ({ in: (_c: string, situacoes: string[]) => ({ order: () => ({ limit: () => estado.lista(situacoes) }) }) }) }),
+  }),
+}));
 vi.mock("next/cache", () => ({ revalidatePath: estado.revalidar }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-const { analisarProximos, decidirAnalise } = await import("@/app/(plataforma)/documentos/padronizacao/acoes");
+const { analisarProximos, decidirAnalise, reanalisarSemDecisao } = await import("@/app/(plataforma)/documentos/padronizacao/acoes");
 const { GradeAnalises, BotaoAnalisar } = await import("@/app/(plataforma)/documentos/padronizacao/grade");
 const { lerFiltros, padraoCliente, resumoAnalise, mensagemPadronizacao } = await import("@/lib/nucleo/ged/padronizacao");
 
@@ -44,6 +49,19 @@ describe("ações da padronização", () => {
     const contexto = new Response(JSON.stringify({ erro: "desconectado" }), { status: 409 });
     estado.invoke.mockResolvedValueOnce({ data: null, error: { context: contexto } });
     expect(await analisarProximos()).toEqual({ ok: false, erro: mensagemPadronizacao("desconectado") });
+  });
+
+  it("reanalisar: só as sem decisão, em ids, para a mesma função", async () => {
+    estado.lista.mockResolvedValueOnce({ data: [{ documento_id: DOC }], error: null });
+    expect((await reanalisarSemDecisao()).ok).toBe(true);
+    expect(estado.lista).toHaveBeenCalledWith(["sugerida", "sem_texto", "nao_suportado", "erro"]);
+    expect(estado.invoke).toHaveBeenCalledWith("nucleo-ged-analisar", { method: "POST", body: { documentos: [DOC] } });
+    estado.lista.mockResolvedValueOnce({ data: [], error: null });
+    estado.invoke.mockClear();
+    expect(await reanalisarSemDecisao()).toEqual({ ok: true, mensagem: "Nenhuma análise sem decisão para refazer." });
+    expect(estado.invoke).not.toHaveBeenCalled();
+    estado.adminGeral = false;
+    expect((await reanalisarSemDecisao()).ok).toBe(false);
   });
 
   it("decidir: editar valida o nome antes do banco; aprovar e rejeitar repassam", async () => {

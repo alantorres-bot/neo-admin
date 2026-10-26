@@ -81,8 +81,29 @@ describe("conteúdo, cadastro, confiança e o que nunca é inventado", () => {
     expect(a.confianca).toBe("alta");
     expect(a.numero).toEqual({ valor: "794", evidencia: ["nome", "texto"] });
     expect(a.data).toEqual({ valor: "2025-07-14", evidencia: ["texto"] });
-    expect(a.cliente).toEqual({ valor: "ALFA CONSTRUTORA LTDA", contraparteId: "c-alfa", evidencia: ["texto", "cadastro"] });
+    // Pasta sem relação com o cliente: a razão social sem o sufixo jurídico.
+    expect(a.cliente).toEqual({ valor: "ALFA CONSTRUTORA", contraparteId: "c-alfa", evidencia: ["texto", "cadastro"] });
     expect(a.metodo).toBe("texto");
+    // Pasta do mesmo cliente: o nome curto da pasta.
+    expect(analisarDocumento(dossie("NF 794 - REM 02 ALFA.pdf", { texto: TEXTO_NF })).cliente?.valor).toBe("Alfa");
+  });
+
+  // Erros da 1ª análise em produção (26/10/2026), com nomes fictícios.
+  const MINUTA = "CONTRATO PARTICULAR DE COMPRA E VENDA DE FÔRMAS Pelo presente instrumento as partes ".padEnd(1600, "x ")
+    + " Cláusula 9: o DIFAL é do comprador. Termo aditivo por escrito. Inscrição estadual do comprador. Documento assinado eletronicamente.";
+  it.each([
+    ["228 - CONTRATO DE VENDA - Alfa.docx", MINUTA, "contrato_venda", "228"],
+    ["1-228 - CONTRATO DE VENDA - Alfa pdf.pdf", MINUTA, "contrato_venda", "228"],
+    ["CTR 136.2026 - Alfa.docx", MINUTA, "contrato_venda", "136"],
+    ["CTR 137.2026 - Alfa.pdf", "CONTRATO PARTICULAR DE LOCAÇÃO DE FÔRMAS entre as partes", "contrato_locacao", "137"],
+    ["2-26.190 V R04 - Alfa Construtora.pdf.pdf", null, "proposta_comercial", "26.190 Rev04"],
+    ["Autorização de faturamento - Alfa.pdf", "AUTORIZAÇÃO DE FATURAMENTO Razão social Alfa Inscrição Estadual 123456 Endereço", "outro", null],
+  ])("%s → %s (nome antes do conteúdo; conteúdo só pelo cabeçalho)", (nome, texto, tipo, numero) => {
+    expect(resumo(dossie(nome, { texto }))).toMatchObject({ tipo, numero });
+  });
+  it("contrato assinado só pelo D4Sign (no nome ou no conteúdo), não por cláusula da minuta", () => {
+    expect(resumo(dossie("228 - CONTRATO DE VENDA - Alfa pdf-D4Sign.pdf", { texto: MINUTA })).tipo).toBe("contrato_assinado");
+    expect(resumo(dossie("228 - CONTRATO DE VENDA - Alfa.pdf", { texto: `${MINUTA} Assinaturas D4Sign` })).tipo).toBe("contrato_assinado");
   });
 
   it("nome sem pista + conteúdo de NF: tipo pelo texto (confiança média)", () => {

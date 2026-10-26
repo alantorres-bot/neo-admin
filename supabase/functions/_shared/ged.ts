@@ -1512,7 +1512,7 @@ const REGRAS_TIPO: { tipo: TipoDocumento; nome?: RegExp; texto?: RegExp }[] = [
   { tipo: "contrato_social", nome: /contrato social|alteracao contratual|consolidad/, texto: /contrato social|alteracao contratual/ },
   { tipo: "qsa", nome: /\bqsa\b/, texto: /quadro de socios e administradores/ },
   { tipo: "cartao_cnpj", nome: /cartao (de )?cnpj|^cnpj\b|insc\.? cnpj|inscricao cnpj/, texto: /comprovante de inscricao e de situacao cadastral/ },
-  { tipo: "inscricao_estadual", nome: /insc(r)?\.? estad|inscricao estadual|\bcfdf\b|sintegra/, texto: /inscricao estadual|cadastro fiscal do distrito federal/ },
+  { tipo: "inscricao_estadual", nome: /insc(r)?\.? estad|inscricao estadual|\bcfdf\b|sintegra/, texto: /comprovante de inscricao estadual|cadastro fiscal do distrito federal|consulta publica ao cadastro/ },
   { tipo: "procuracao", nome: /procurac/, texto: /procuracao|outorgante/ },
   { tipo: "documento_pessoal", nome: /\bcnh\b|\brg\b|identidade/, texto: /carteira nacional de habilitacao|registro geral/ },
   { tipo: "boleto", nome: /boleto/, texto: /linha digitavel|ficha de compensacao/ },
@@ -1526,6 +1526,11 @@ const REGRAS_TIPO: { tipo: TipoDocumento; nome?: RegExp; texto?: RegExp }[] = [
 const NF_NOME = /\bnf[\s-]*e?[\s-]*\d+|nota fiscal|\bdanfe\b|^\d_\d{3,}\b/;
 const NF_TEXTO = /documento auxiliar da nota fiscal|nota fiscal eletronica|\bdanfe\b|<infnfe/;
 const ASSINADO = /d4sign|assinad[oa] (digital|eletronica)mente|assinado por/;
+const CONTRATOS: readonly TipoDocumento[] = ["contrato_venda", "contrato_locacao", "contrato_servico"];
+// Tipos que vencem a pista de NF no nome (o arquivo da CC-e, do DIFAL ou da FL costuma citar a NF).
+const ANTES_DA_NF: readonly TipoDocumento[] = ["carta_correcao", "difal", "fatura_locacao"];
+/** Razão social sem o sufixo jurídico, para o nome não ficar longo. */
+const nomeCurto = (razao: string) => razao.replace(/\s+(ltda|eireli|s\.?\s?a\.?|me|epp)\.?$/i, "").trim();
 
 const somenteNumero = (s: string) => s.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
 const dataValida = (d: number, m: number, a: number) => {
@@ -1549,31 +1554,45 @@ function dataDoTexto(t: string): string | null {
 
 /** Analisa um arquivo. Puro e determinístico: a mesma entrada dá a mesma saída. */
 export function analisarDocumento(e: EntradaAnalise): AnaliseDocumento {
-  const nome = normalizarTexto(e.nome.replace(/\.[a-z0-9]{1,5}$/i, ""));
+  // Nome-base sem extensão repetida (".pdf.pdf"), marca de cópia " (1)" e prefixo de anexo ("1-", "2-").
+  const base = e.nome.replace(/(\.[a-z0-9]{1,5})+$/i, "").replace(/\s*\(\d+\)\s*$/, "").replace(/^\d-(?=\S)/, "");
+  const nome = normalizarTexto(base);
   const texto = e.texto ? normalizarTexto(e.texto.slice(0, 40_000)) : "";
+  // O tipo pelo conteúdo vem só do cabeçalho: no corpo, contratos citam DIFAL, aditivo, inscrição estadual…
+  const cabeca = texto.slice(0, 1500);
   const xmlNfe = e.texto && /<infNFe/i.test(e.texto) ? e.texto : null;
   const pasta = normalizarTexto(e.pasta);
 
-  // Tipo
+  // Tipo: a pista do nome vale mais que a do conteúdo.
   let tipo: TipoDocumento = "outro";
   let tipoEvidencia: Evidencia[] = [];
   const nfNome = NF_NOME.test(nome);
   const nfTexto = NF_TEXTO.test(texto);
-  const regra = REGRAS_TIPO.find((r) => (r.nome?.test(nome) ?? false) || (texto !== "" && (r.texto?.test(texto) ?? false)));
+  const regraNome = REGRAS_TIPO.find((r) => r.nome?.test(nome));
+  const regraTexto = cabeca ? REGRAS_TIPO.find((r) => r.texto?.test(cabeca)) : undefined;
+  const contratoTexto = cabeca ? REGRAS_TIPO.find((r) => CONTRATOS.includes(r.tipo) && r.texto?.test(cabeca)) : undefined;
   if (e.finalidade === "elaboracao" && /(^|\b)(0-padrao|_?modelos?)\b/.test(pasta)) {
     tipo = "modelo_contrato";
     tipoEvidencia = ["pasta"];
-  } else if (regra && !(nfNome || nfTexto) || regra && (regra.tipo === "carta_correcao" || regra.tipo === "difal" || regra.tipo === "fatura_locacao")) {
-    tipo = regra.tipo;
-    tipoEvidencia = unir(regra.nome?.test(nome) && "nome", texto !== "" && regra.texto?.test(texto) && "texto");
+  } else if (regraNome && (!nfNome || ANTES_DA_NF.includes(regraNome.tipo))) {
+    tipo = regraNome.tipo;
+    tipoEvidencia = unir("nome", cabeca !== "" && regraNome.texto?.test(cabeca) && "texto");
+  } else if (!regraNome && /\bctr\b|\bcontrato\b/.test(nome) && contratoTexto) {
+    // "CTR 136.2026 - Cliente": contrato pelo nome; a espécie (venda, locação, serviço) pelo cabeçalho.
+    tipo = contratoTexto.tipo;
+    tipoEvidencia = ["nome", "texto"];
   } else if (nfNome || nfTexto) {
     const natOp = xmlNfe ? normalizarTexto(tag(xmlNfe, "natOp") ?? "") : "";
     const fonte = `${nome} ${natOp} ${texto.slice(0, 3000)}`;
     tipo = /\bretorno\b/.test(fonte) ? "nf_retorno" : /\brem(essa)?\b/.test(fonte) ? "nf_remessa" : "nf_venda";
     tipoEvidencia = unir(nfNome && "nome", nfTexto && "texto");
+  } else if (regraTexto) {
+    tipo = regraTexto.tipo;
+    tipoEvidencia = ["texto"];
   }
   // Contrato com evidência de assinatura eletrônica (D4Sign) = contrato assinado (5.5: nunca só por ser PDF).
-  const assinado = ASSINADO.test(nome) || (texto !== "" && ASSINADO.test(texto));
+  // No conteúdo, só a marca do D4Sign: a minuta cita "assinado eletronicamente" nas cláusulas.
+  const assinado = ASSINADO.test(nome) || /d4sign/.test(texto);
   let assunto: CampoAnalise | null = null;
   if (assinado && (tipo === "contrato_venda" || tipo === "contrato_locacao" || tipo === "contrato_servico" || (tipo === "outro" && /contrato|\bctr\b/.test(nome)))) {
     const sub = tipo === "contrato_locacao" ? "Locacao" : tipo === "contrato_servico" ? "Servico" : tipo === "contrato_venda" ? "Venda" : null;
@@ -1607,7 +1626,7 @@ export function analisarDocumento(e: EntradaAnalise): AnaliseDocumento {
   if (!assunto) {
     const ord = /\b(medicao|parcela|remessa|rem|retorno|jogo)\s*(\d{1,3})\b/.exec(nome) ?? /\b(\d{1,2})[oº]\s*(jogo)\b/.exec(nome);
     // Proposta: "26.120 V Rev01 - Cliente - <assunto...>" — o que vem depois do cliente é o assunto.
-    const miolo = tipo === "proposta_comercial" ? e.nome.replace(/\.[a-z0-9]{1,5}$/i, "").split(/\s+-\s+/).slice(2) : [];
+    const miolo = tipo === "proposta_comercial" ? base.split(/\s+-\s+/).slice(2) : [];
     if (miolo.length) assunto = { valor: miolo.join(" "), evidencia: ["nome"] };
     else if (ord) {
       const [palavra, n] = /\d/.test(ord[1]) ? [ord[2], ord[1]] : [ord[1], ord[2]];
@@ -1622,18 +1641,21 @@ export function analisarDocumento(e: EntradaAnalise): AnaliseDocumento {
   const proprios = new Set(e.cnpjsProprios.map((c) => c.replace(/\D/g, "")));
   const destXml = xmlNfe ? tag(xmlNfe, "CNPJ", "dest") : null;
   const cnpjsTexto = [...(destXml ? [destXml] : []), ...(e.texto ? cnpjsNoTexto(e.texto) : [])].filter((c) => !proprios.has(c));
+  // No nome vai o nome curto (da pasta do cliente ou do arquivo) quando ele é o mesmo cliente do cadastro; senão a razão sem sufixo.
+  const nomeCliente = e.finalidade === "dossie_cliente" ? e.pastaNivel1 : pistasArquivoTrabalho(base).clienteCurto;
+  const rotuloCliente = (c: ClienteCadastro) =>
+    nomeCliente && (sugerirCliente(nomeCliente, [], [c]).candidatos[0]?.nota ?? 0) >= 70 ? nomeCliente : nomeCurto(c.nome);
   if (cnpjsTexto.length) {
     cnpj = { valor: cnpjsTexto[0], evidencia: ["texto"] };
     const doc = e.clientes.find((c) => c.documento && c.documento.replace(/\D/g, "") === cnpjsTexto[0]);
-    if (doc) cliente = { valor: doc.nome, contraparteId: doc.id, evidencia: ["texto", "cadastro"] };
+    if (doc) cliente = { valor: rotuloCliente(doc), contraparteId: doc.id, evidencia: ["texto", "cadastro"] };
   }
-  const nomeCliente = e.finalidade === "dossie_cliente" ? e.pastaNivel1 : pistasArquivoTrabalho(e.nome).clienteCurto;
   if (!cliente && nomeCliente) {
     const s = sugerirCliente(nomeCliente, [e.nome], e.clientes);
     const melhor = s.candidatos[0];
     const c = melhor && melhor.nota >= 90 ? e.clientes.find((x) => x.id === melhor.clienteId) : undefined;
     cliente = c
-      ? { valor: c.nome, contraparteId: c.id, evidencia: [e.finalidade === "dossie_cliente" ? "pasta" : "nome", "cadastro"] }
+      ? { valor: rotuloCliente(c), contraparteId: c.id, evidencia: [e.finalidade === "dossie_cliente" ? "pasta" : "nome", "cadastro"] }
       : { valor: nomeCliente, contraparteId: null, evidencia: [e.finalidade === "dossie_cliente" ? "pasta" : "nome"] };
   }
 

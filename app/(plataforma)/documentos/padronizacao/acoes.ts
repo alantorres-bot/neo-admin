@@ -13,10 +13,29 @@ const SO_ADMIN = mensagemPadronizacao("sem_permissao");
 
 /** "Analisar próximos 20": a Edge Function baixa, extrai, sugere e grava; aqui só chegam contagens. Nada é renomeado no Drive. */
 export async function analisarProximos(): Promise<Resultado> {
+  return analisar({ limite: 20 });
+}
+
+/**
+ * "Reanalisar 20 sem decisão": as 20 análises mais antigas ainda sem decisão voltam à função (com as regras atuais).
+ * Decisões (aprovada, editada, rejeitada) nunca entram: o banco também as preserva.
+ */
+export async function reanalisarSemDecisao(): Promise<Resultado> {
   const sessao = await exigirSessao();
   if (!sessao.acesso.adminGeral) return { ok: false, erro: SO_ADMIN };
   const supabase = await criarClienteServidor();
-  const { data, error } = await supabase.functions.invoke(FUNCAO_ANALISE_GED, { method: "POST", body: { limite: 20 } });
+  const { data, error } = await supabase.from("ged_analises").select("documento_id")
+    .in("situacao", ["sugerida", "sem_texto", "nao_suportado", "erro"]).order("analisada_em").limit(20);
+  if (error) return { ok: false, erro: mensagemPadronizacao(null) };
+  if (!data?.length) return { ok: true, mensagem: "Nenhuma análise sem decisão para refazer." };
+  return analisar({ documentos: data.map((r) => r.documento_id) });
+}
+
+async function analisar(corpo: { limite: number } | { documentos: string[] }): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: SO_ADMIN };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.functions.invoke(FUNCAO_ANALISE_GED, { method: "POST", body: corpo });
   if (error) {
     const corpo = await ((error as { context?: Response }).context?.json?.() as Promise<{ erro?: unknown }> | undefined)?.catch(() => null);
     return { ok: false, erro: mensagemPadronizacao(corpo?.erro) };
