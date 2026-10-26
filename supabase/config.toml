@@ -465,6 +465,10 @@ verify_jwt = true
 [functions.nucleo-ged-indexar]
 verify_jwt = false
 
+# Padronização de nomes do GED: só o admin geral (JWT conferido também na função).
+[functions.nucleo-ged-analisar]
+verify_jwt = true
+
 [functions.nucleo-notificacoes-enviar]
 verify_jwt = false
 

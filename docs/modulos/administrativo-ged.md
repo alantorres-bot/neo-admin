@@ -521,6 +521,29 @@ atividades e na Central de Gestão. **Esconder um elemento na tela não é contr
     - para diagnóstico, guardar o código do erro, a etapa, o id da raiz (só para o admin geral), as contagens e o status HTTP do Google;
     - teste: 11.5, item 11.
 
+### 5.12 Padronização de nomes (v1, sem IA externa) [EM DESENVOLVIMENTO — 0811 só local]
+Tela `Documentos > Padronização de nomes` (`/documentos/padronizacao`), só admin geral. A v1 **sugere e registra** o nome padronizado;
+**nada é renomeado, movido ou apagado no Google Drive** (id e link originais preservados).
+1. **Padrão:** `TIPO - IDENTIFICADOR - Assunto - Cliente - AAAA-MM-DD.ext`. Tipo em maiúsculas, do catálogo `ged_tipos`; demais
+   campos sem acento, com espaços simples e sem `/ \ : * ? " < > |`; campo sem evidência é **omitido** (nunca inventado); data só
+   do conteúdo (XML `dhEmi` ou data com rótulo de emissão/assinatura no texto), nunca a data do Drive; extensão original em
+   minúscula; até 150 caracteres (corta o assunto primeiro); colisão na mesma pasta ganha ` (2)`, ` (3)`.
+   Ex.: `NF REMESSA - 794 - Remessa 02 - Construteto - 2025-07-14.pdf`; `PROPOSTA - 26.120 Rev01 - 2o Jogo Mossoro - EC Construtora.pdf`.
+2. **Tipos (catálogo inicial):** contrato de venda, de locação, de serviço, aditamento, contrato assinado (só com evidência D4Sign ou
+   assinatura), modelo de contrato, proposta comercial, NF de venda, de remessa, de retorno, fatura de locação (FL), medição, carta de
+   correção, DIFAL, boleto, comprovante, cartão CNPJ, contrato social, QSA, procuração, documento pessoal, inscrição estadual, termo
+   de quitação, projeto e outro (`DOCUMENTO`).
+3. **Análise** (Edge `nucleo-ged-analisar`, JWT de admin geral): até 20 documentos por chamada, 15 MB por arquivo, prazo de 100 s;
+   o que não couber fica para a próxima (retomável pelo estado em `ged_analises`). Lê o arquivo pelo Drive (`drive.readonly`) e extrai
+   o texto **na própria função**: PDF com camada de texto (até 10 páginas), DOCX, XLSX e XML de NF-e. Não lidos na v1: PDF escaneado
+   e imagens (sem OCR), `.doc`, `.xls`, `.zip`, `.p7s`, atalhos e arquivos nativos do Google — ficam com sugestão só pelo nome e pasta.
+   O texto **não é gravado nem vai a log**; só os campos derivados, cada um com a evidência (nome, pasta, conteúdo, cadastro).
+   Cliente: CNPJ do texto no cadastro de contrapartes (excluídos os CNPJs do grupo), senão nome parecido (≥ 90), senão a pasta.
+   Confiança: alta (nome e conteúdo concordam), média (um deles), baixa (só metadados).
+4. **Decisão:** aprovar, editar (o nome passa pelo mesmo normalizador) ou rejeitar (motivo obrigatório), por `ged_decidir_analise`,
+   com registro em `auditoria` (histórico na tela). Nova revisão do arquivo reabre a análise; a mesma revisão não sobrescreve decisão.
+   Sem exclusão. Renomear no Drive, OCR e IA ficam para entregas futuras, cada uma com aprovação própria.
+
 ## 6. Saídas e automações
 - **Rodada de indexação**, agendada ou manual, com registro em `ged_indexacoes`.
 - **Pendências** pela função do núcleo `publicar_pendencia(jsonb)` [EXISTE, 0097/0099]. O **módulo** em que cada pendência é publicada

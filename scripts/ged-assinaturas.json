@@ -74,6 +74,15 @@
     },
     {
       "anon": false,
+      "args": "p_documento uuid, p_decisao text, p_nome text, p_motivo text",
+      "nome": "ged_decidir_analise",
+      "corpo_md5": "290c02be0763e653941ae5028c140f1b",
+      "service_role": false,
+      "authenticated": true,
+      "security_definer": true
+    },
+    {
+      "anon": false,
       "args": "p_raiz uuid, p_area text, p_areas_leitura text[], p_area_operacao text",
       "nome": "ged_definir_areas_raiz",
       "corpo_md5": "26a6252703248b45bd520fbd238734d2",
@@ -104,6 +113,15 @@
       "args": "p_raiz uuid",
       "nome": "ged_estado_indice",
       "corpo_md5": "cd951ca487b512f65d0fc5f70fbbb744",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_lote jsonb",
+      "nome": "ged_gravar_analises",
+      "corpo_md5": "d126165f09327c6802958203d93b9a6e",
       "service_role": true,
       "authenticated": false,
       "security_definer": true
@@ -173,6 +191,15 @@
     },
     {
       "anon": false,
+      "args": "p_limite integer, p_documentos uuid[]",
+      "nome": "ged_proximos_para_analisar",
+      "corpo_md5": "a6dfd8b434842bf5eb19ca1afe0eb744",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
       "args": "",
       "nome": "ged_raizes",
       "corpo_md5": "5c9e8ec3bca3623c276ae9f6242e76c9",
@@ -238,6 +265,13 @@
   "tabelas": [
     {
       "rls": true,
+      "tabela": "ged_analises",
+      "anon_select": false,
+      "authenticated_select": true,
+      "authenticated_escrita": false
+    },
+    {
+      "rls": true,
       "tabela": "ged_conexao",
       "anon_select": false,
       "authenticated_select": false,
@@ -287,6 +321,13 @@
     },
     {
       "rls": true,
+      "tabela": "ged_tipos",
+      "anon_select": false,
+      "authenticated_select": true,
+      "authenticated_escrita": false
+    },
+    {
+      "rls": true,
       "tabela": "ged_trava",
       "anon_select": false,
       "authenticated_select": false,
@@ -294,6 +335,14 @@
     }
   ],
   "politicas": [
+    {
+      "papeis": [
+        "authenticated"
+      ],
+      "tabela": "ged_analises",
+      "comando": "SELECT",
+      "politica": "ged_analises_ler"
+    },
     {
       "papeis": [
         "authenticated"
@@ -317,6 +366,14 @@
       "tabela": "ged_pastas",
       "comando": "SELECT",
       "politica": "ged_pastas_ler"
+    },
+    {
+      "papeis": [
+        "authenticated"
+      ],
+      "tabela": "ged_tipos",
+      "comando": "SELECT",
+      "politica": "ged_tipos_ler"
     }
   ]
 }

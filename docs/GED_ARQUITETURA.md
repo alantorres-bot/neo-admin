@@ -71,4 +71,19 @@ código faz hoje, conferido nos arquivos citados; o que não está aqui não exi
 | Carga inicial que nunca cabe em 100 s | cada rodada refaz a carga e não termina | Fica `incompleta` (diagnóstico). Sem correção automática: exige revisar o prazo. |
 | Reconciliação sempre incompleta | a raiz não volta ao incremental | Falha `listagem_incompleta` repetida (diagnóstico); desligar o job e revisar. |
 | `invalid_grant` | conexão com erro | Reconectar em Configurações > Google Drive. |
-| Extração de conteúdo | **não existe** | O GED só guarda metadados (5.9.5). |
+| Extração de conteúdo | **não existe na indexação** | O índice só guarda metadados (5.9.5). A padronização (abaixo) lê o conteúdo à parte e não grava o texto. |
+
+## Padronização de nomes (5.12; 0811 e `nucleo-ged-analisar` ainda **não** estão em produção)
+
+Separada da indexação: não toca em `ged_indexacoes`, trava, interruptor nem agendamento; só roda por clique do admin geral.
+
+| Peça | Onde | Papel |
+|---|---|---|
+| Fila | `ged_proximos_para_analisar(limite, documentos)` (0811, service role) | Vigentes de raízes ativas sem análise da revisão atual (até 20), com pasta, pasta de nível 1 e nomes da pasta. |
+| Edge Function | `nucleo-ged-analisar/index.ts` → `tratarAnalise` em `_shared/ged.ts` | JWT de admin geral; baixa por `baixar` (`GET files/{id}?alt=media`, teto 15 MB), extrai (`extrairTexto`: unpdf e jszip injetados), classifica (`analisarDocumento`), monta o nome (`montarNomePadrao`). Prazo 100 s. Resposta e log só com contagens. |
+| Gravação | `ged_gravar_analises(lote)` (service role) | Grava só campos derivados; decisão humana da mesma revisão é preservada; revisão nova reabre. |
+| Decisão | `ged_decidir_analise` (authenticated + `eh_admin_geral`) | Aprovar, editar, rejeitar; histórico em `auditoria`. |
+| Leitura | RLS de `ged_analises` = `ged_pode_ler_raiz`; `ged_tipos` = `eh_admin_geral` | Tela `/documentos/padronizacao`. |
+
+Testes: `lib/nucleo/ged/analise.test.ts` (regras, nome, extração), `tests/db/ged-padronizacao.test.ts` (rodada com Drive simulado,
+RLS, decisões, privilégios), `tests/ui/ged-padronizacao-tela.test.ts` (ações e grade).

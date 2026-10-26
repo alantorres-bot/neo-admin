@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,7 @@ export default async function PaginaDocumentos({ searchParams }: { searchParams:
         <p className="text-sm text-muted-foreground">
           Busca nos arquivos do Google Drive das pastas que você pode ver. O arquivo abre no próprio Drive, que confere o seu acesso.
         </p>
+        <Link href="/documentos/padronizacao" className="text-sm font-medium underline-offset-2 hover:underline">Padronização de nomes</Link>
       </div>
 
       {erroRaizes ? (

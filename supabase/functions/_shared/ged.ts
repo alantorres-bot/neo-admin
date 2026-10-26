@@ -283,7 +283,7 @@ export function criarClienteDrive(obterToken: () => Promise<string>, opcoes: Opc
   const fazerFetch = opcoes.fazerFetch ?? fetch;
   const esperar = opcoes.esperar ?? esperarPadrao;
 
-  async function requisitar(metodo: string, caminho: string, params: Record<string, string> = {}): Promise<unknown> {
+  async function pedir(metodo: string, caminho: string, params: Record<string, string> = {}): Promise<Response> {
     if (metodo.toUpperCase() !== "GET") throw new ErroDrive(`O GED só lê o Drive: o método ${metodo} foi recusado.`);
     const url = new URL(caminho, DRIVE_BASE);
     if (url.origin !== "https://www.googleapis.com" || !url.pathname.startsWith("/drive/v3/")) {
@@ -309,10 +309,25 @@ export function criarClienteDrive(obterToken: () => Promise<string>, opcoes: Opc
       const mensagem = `Drive respondeu ${resposta.status}${motivo ? ` (${motivo})` : ""}.`;
       throw new ErroDrive(token ? mensagem.split(token).join("***") : mensagem, resposta.status);
     }
-    return resposta.json();
+    return resposta;
+  }
+  const requisitar = async (metodo: string, caminho: string, params: Record<string, string> = {}): Promise<unknown> =>
+    (await pedir(metodo, caminho, params)).json();
+
+  /**
+   * Conteúdo de um arquivo (`alt=media`), só para a padronização de nomes (5.12): GET, só `/drive/v3/files/{id}`, com teto de bytes.
+   * A indexação nunca chama isto (ela só lê metadados; teste em tests/db/ged-indexacao.test.ts).
+   */
+  async function baixar(arquivoId: string, maxBytes: number): Promise<Uint8Array> {
+    if (!/^[A-Za-z0-9_-]+$/.test(arquivoId)) throw new ErroDrive("ID de arquivo inválido.");
+    const resposta = await pedir("GET", `files/${arquivoId}`, { alt: "media", supportsAllDrives: "true" });
+    if (Number(resposta.headers.get("content-length") ?? 0) > maxBytes) throw new ErroDrive("arquivo_grande");
+    const bytes = new Uint8Array(await resposta.arrayBuffer());
+    if (bytes.byteLength > maxBytes) throw new ErroDrive("arquivo_grande");
+    return bytes;
   }
 
-  return { requisitar, get: (caminho: string, params?: Record<string, string>) => requisitar("GET", caminho, params) };
+  return { requisitar, get: (caminho: string, params?: Record<string, string>) => requisitar("GET", caminho, params), baixar };
 }
 
 export type ClienteDrive = ReturnType<typeof criarClienteDrive>;
@@ -1421,4 +1436,392 @@ async function indexarRaiz(
     todos.push(...pagina);
   }, { maxItens: LIMITE_INDEXACAO.maxItens, driveId });
   return { resumo: resumirRodada(todos), token: r.proximoToken, completa: r.completa, itens: r.itens };
+}
+
+// ───────────────────────── Padronização de nomes (5.12; migration 0811) ─────────────────────────
+// Analisa cada arquivo (nome + pasta + texto extraído no próprio Supabase, sem IA externa) e SUGERE um nome no padrão
+// `TIPO - IDENTIFICADOR - Assunto - Cliente - AAAA-MM-DD.ext`. Nada é renomeado no Drive; o admin aprova, edita ou rejeita.
+// Campo sem evidência é omitido (nunca inventado). O texto do arquivo não é gravado nem vai a log: só os campos derivados.
+
+/** Catálogo de tipos (espelha `ged_tipos` da 0811). `rotulo` é o começo do nome padronizado. */
+export const TIPOS_DOCUMENTO = {
+  contrato_venda: { nome: "Contrato de venda", rotulo: "CONTRATO VENDA" },
+  contrato_locacao: { nome: "Contrato de locação", rotulo: "CONTRATO LOCACAO" },
+  contrato_servico: { nome: "Contrato de serviço", rotulo: "CONTRATO SERVICO" },
+  contrato_assinado: { nome: "Contrato assinado", rotulo: "CONTRATO ASSINADO" },
+  aditamento: { nome: "Aditamento", rotulo: "ADITAMENTO" },
+  modelo_contrato: { nome: "Modelo de contrato", rotulo: "MODELO CONTRATO" },
+  proposta_comercial: { nome: "Proposta comercial", rotulo: "PROPOSTA" },
+  nf_venda: { nome: "Nota fiscal de venda", rotulo: "NF VENDA" },
+  nf_remessa: { nome: "Nota fiscal de remessa", rotulo: "NF REMESSA" },
+  nf_retorno: { nome: "Nota fiscal de retorno", rotulo: "NF RETORNO" },
+  fatura_locacao: { nome: "Fatura de locação", rotulo: "FATURA LOCACAO" },
+  medicao: { nome: "Medição", rotulo: "MEDICAO" },
+  carta_correcao: { nome: "Carta de correção", rotulo: "CARTA CORRECAO" },
+  difal: { nome: "DIFAL", rotulo: "DIFAL" },
+  boleto: { nome: "Boleto", rotulo: "BOLETO" },
+  comprovante: { nome: "Comprovante", rotulo: "COMPROVANTE" },
+  cartao_cnpj: { nome: "Cartão CNPJ", rotulo: "CARTAO CNPJ" },
+  qsa: { nome: "Quadro de sócios (QSA)", rotulo: "QSA" },
+  contrato_social: { nome: "Contrato social", rotulo: "CONTRATO SOCIAL" },
+  procuracao: { nome: "Procuração", rotulo: "PROCURACAO" },
+  documento_pessoal: { nome: "Documento pessoal", rotulo: "DOCUMENTO PESSOAL" },
+  inscricao_estadual: { nome: "Inscrição estadual", rotulo: "INSCRICAO ESTADUAL" },
+  termo_quitacao: { nome: "Termo de quitação", rotulo: "TERMO QUITACAO" },
+  projeto: { nome: "Projeto", rotulo: "PROJETO" },
+  outro: { nome: "Outro", rotulo: "DOCUMENTO" },
+} as const;
+export type TipoDocumento = keyof typeof TIPOS_DOCUMENTO;
+
+export type Evidencia = "nome" | "pasta" | "texto" | "cadastro";
+export type CampoAnalise = { valor: string; evidencia: Evidencia[] };
+export type Confianca = "alta" | "media" | "baixa";
+export type AnaliseDocumento = {
+  tipo: TipoDocumento;
+  tipoEvidencia: Evidencia[];
+  numero: CampoAnalise | null;
+  assunto: CampoAnalise | null;
+  cliente: (CampoAnalise & { contraparteId: string | null }) | null;
+  data: CampoAnalise | null;
+  cnpj: CampoAnalise | null;
+  confianca: Confianca;
+  metodo: "metadados" | "texto";
+  justificativa: string;
+};
+export type EntradaAnalise = {
+  nome: string;
+  /** Nome da pasta onde o arquivo está e o da pasta de 1º nível da raiz (no dossiê, a pasta do cliente). */
+  pasta: string;
+  pastaNivel1: string | null;
+  finalidade: Finalidade;
+  /** Texto extraído do arquivo, ou nulo (sem texto ou formato não suportado). */
+  texto: string | null;
+  clientes: readonly ClienteCadastro[];
+  /** CNPJs das empresas do grupo (somente dígitos): nunca são o "cliente" do documento. */
+  cnpjsProprios: readonly string[];
+};
+
+// Regras de tipo: `nome` e `texto` sobre o texto normalizado (minúsculo, sem acento). A primeira que casar vence; a NF ganha subtipo.
+const REGRAS_TIPO: { tipo: TipoDocumento; nome?: RegExp; texto?: RegExp }[] = [
+  { tipo: "carta_correcao", nome: /\bcc-?e\b|carta de corre/, texto: /carta de correcao/ },
+  { tipo: "difal", nome: /\bdifal\b/, texto: /diferencial de aliquota/ },
+  { tipo: "fatura_locacao", nome: /\bfl\s*\d+|fatura de locacao/, texto: /fatura de locacao/ },
+  { tipo: "proposta_comercial", nome: /^\d{2}\.\d{3}\s*[vl]\b/, texto: /proposta (comercial|tecnica)/ },
+  { tipo: "aditamento", nome: /aditiv|aditament/, texto: /termo aditivo|aditamento/ },
+  { tipo: "termo_quitacao", nome: /quitac/, texto: /termo de quitacao/ },
+  { tipo: "contrato_social", nome: /contrato social|alteracao contratual|consolidad/, texto: /contrato social|alteracao contratual/ },
+  { tipo: "qsa", nome: /\bqsa\b/, texto: /quadro de socios e administradores/ },
+  { tipo: "cartao_cnpj", nome: /cartao (de )?cnpj|^cnpj\b|insc\.? cnpj|inscricao cnpj/, texto: /comprovante de inscricao e de situacao cadastral/ },
+  { tipo: "inscricao_estadual", nome: /insc(r)?\.? estad|inscricao estadual|\bcfdf\b|sintegra/, texto: /inscricao estadual|cadastro fiscal do distrito federal/ },
+  { tipo: "procuracao", nome: /procurac/, texto: /procuracao|outorgante/ },
+  { tipo: "documento_pessoal", nome: /\bcnh\b|\brg\b|identidade/, texto: /carteira nacional de habilitacao|registro geral/ },
+  { tipo: "boleto", nome: /boleto/, texto: /linha digitavel|ficha de compensacao/ },
+  { tipo: "contrato_venda", nome: /contrato[\s-]+de[\s-]+(compra[\s-]+e[\s-]+)?venda/, texto: /contrato (particular )?de (compra e )?venda/ },
+  { tipo: "contrato_locacao", nome: /contrato[\s-]+de[\s-]+locacao/, texto: /contrato (particular )?de locacao/ },
+  { tipo: "contrato_servico", nome: /contrato[\s-]+de[\s-]+(prestacao[\s-]+de[\s-]+)?servic/, texto: /contrato (particular )?de prestacao de servic/ },
+  { tipo: "medicao", nome: /\bmedicao\b/, texto: /boletim de medicao/ },
+  { tipo: "comprovante", nome: /comprovante/, texto: /comprovante de (pagamento|transferencia)/ },
+  { tipo: "projeto", nome: /\bplanta\b|\bprojeto\b/ },
+];
+const NF_NOME = /\bnf[\s-]*e?[\s-]*\d+|nota fiscal|\bdanfe\b|^\d_\d{3,}\b/;
+const NF_TEXTO = /documento auxiliar da nota fiscal|nota fiscal eletronica|\bdanfe\b|<infnfe/;
+const ASSINADO = /d4sign|assinad[oa] (digital|eletronica)mente|assinado por/;
+
+const somenteNumero = (s: string) => s.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+const dataValida = (d: number, m: number, a: number) => {
+  const dt = new Date(Date.UTC(a, m - 1, d));
+  return a >= 1990 && a <= 2100 && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+};
+const iso = (d: number, m: number, a: number) => `${a}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+const tag = (xml: string, nome: string, dentro?: string) => {
+  const bloco = dentro ? new RegExp(`<${dentro}[\\s>][\\s\\S]*?</${dentro}>`, "i").exec(xml)?.[0] ?? "" : xml;
+  return new RegExp(`<${nome}>([^<]+)</${nome}>`, "i").exec(bloco)?.[1]?.trim() ?? null;
+};
+const unir = (...e: (Evidencia | false | null | undefined)[]) => [...new Set(e.filter(Boolean) as Evidencia[])];
+
+/** Data do documento a partir do texto: só com rótulo de emissão/assinatura/data por perto (nunca a data do Drive). */
+function dataDoTexto(t: string): string | null {
+  const m = /(data (de |da )?(emissao|assinatura)|emitid[oa] em|emissao|assinad[oa] em|data)\W{0,15}(\d{2})[/.-](\d{2})[/.-](\d{4})/.exec(t);
+  if (!m) return null;
+  const [d, mes, a] = [Number(m[4]), Number(m[5]), Number(m[6])];
+  return dataValida(d, mes, a) ? iso(d, mes, a) : null;
+}
+
+/** Analisa um arquivo. Puro e determinístico: a mesma entrada dá a mesma saída. */
+export function analisarDocumento(e: EntradaAnalise): AnaliseDocumento {
+  const nome = normalizarTexto(e.nome.replace(/\.[a-z0-9]{1,5}$/i, ""));
+  const texto = e.texto ? normalizarTexto(e.texto.slice(0, 40_000)) : "";
+  const xmlNfe = e.texto && /<infNFe/i.test(e.texto) ? e.texto : null;
+  const pasta = normalizarTexto(e.pasta);
+
+  // Tipo
+  let tipo: TipoDocumento = "outro";
+  let tipoEvidencia: Evidencia[] = [];
+  const nfNome = NF_NOME.test(nome);
+  const nfTexto = NF_TEXTO.test(texto);
+  const regra = REGRAS_TIPO.find((r) => (r.nome?.test(nome) ?? false) || (texto !== "" && (r.texto?.test(texto) ?? false)));
+  if (e.finalidade === "elaboracao" && /(^|\b)(0-padrao|_?modelos?)\b/.test(pasta)) {
+    tipo = "modelo_contrato";
+    tipoEvidencia = ["pasta"];
+  } else if (regra && !(nfNome || nfTexto) || regra && (regra.tipo === "carta_correcao" || regra.tipo === "difal" || regra.tipo === "fatura_locacao")) {
+    tipo = regra.tipo;
+    tipoEvidencia = unir(regra.nome?.test(nome) && "nome", texto !== "" && regra.texto?.test(texto) && "texto");
+  } else if (nfNome || nfTexto) {
+    const natOp = xmlNfe ? normalizarTexto(tag(xmlNfe, "natOp") ?? "") : "";
+    const fonte = `${nome} ${natOp} ${texto.slice(0, 3000)}`;
+    tipo = /\bretorno\b/.test(fonte) ? "nf_retorno" : /\brem(essa)?\b/.test(fonte) ? "nf_remessa" : "nf_venda";
+    tipoEvidencia = unir(nfNome && "nome", nfTexto && "texto");
+  }
+  // Contrato com evidência de assinatura eletrônica (D4Sign) = contrato assinado (5.5: nunca só por ser PDF).
+  const assinado = ASSINADO.test(nome) || (texto !== "" && ASSINADO.test(texto));
+  let assunto: CampoAnalise | null = null;
+  if (assinado && (tipo === "contrato_venda" || tipo === "contrato_locacao" || tipo === "contrato_servico" || (tipo === "outro" && /contrato|\bctr\b/.test(nome)))) {
+    const sub = tipo === "contrato_locacao" ? "Locacao" : tipo === "contrato_servico" ? "Servico" : tipo === "contrato_venda" ? "Venda" : null;
+    if (sub) assunto = { valor: sub, evidencia: tipoEvidencia };
+    tipo = "contrato_assinado";
+    tipoEvidencia = unir(...tipoEvidencia, ASSINADO.test(nome) && "nome", texto !== "" && ASSINADO.test(texto) && "texto");
+  }
+
+  // Número / identificador
+  let numero: CampoAnalise | null = null;
+  const nfNumNome = /\bnf[\s-]*e?[\s-]*(\d{2,9})|^\d_(\d{3,9})\b/.exec(nome);
+  const nfNumXml = xmlNfe ? tag(xmlNfe, "nNF") : null;
+  const nfNumTexto = /(?:nf-?e|nota fiscal)[^\d]{0,40}n[o°º.]*\s*:?\s*([\d.]{1,11})/.exec(texto)?.[1];
+  if (tipo.startsWith("nf_") || tipo === "carta_correcao" || tipo === "difal") {
+    const deNome = nfNumNome ? somenteNumero(nfNumNome[1] ?? nfNumNome[2]) : null;
+    const deTexto = nfNumXml ? somenteNumero(nfNumXml) : nfNumTexto ? somenteNumero(nfNumTexto) : null;
+    const v = deNome ?? deTexto;
+    if (v) numero = { valor: v, evidencia: unir(deNome === v && "nome", deTexto === v && "texto") };
+  } else if (tipo === "fatura_locacao") {
+    const v = /\bfl\s*(\d+)/.exec(nome)?.[1] ?? /fatura de locacao\D{0,20}(\d+)/.exec(`${nome} ${texto}`)?.[1];
+    if (v) numero = { valor: somenteNumero(v), evidencia: ["nome"] };
+  } else if (tipo === "proposta_comercial") {
+    const m = /^(\d{2}\.\d{3})\s*[vl]\s*(r(?:ev)?\.?\s*\d+)?/.exec(nome);
+    if (m) numero = { valor: m[2] ? `${m[1]} Rev${m[2].replace(/\D/g, "").padStart(2, "0")}` : m[1], evidencia: ["nome"] };
+  } else if (tipo.startsWith("contrato") || tipo === "aditamento") {
+    const v = /\bctr[\s-]*(\d+)/.exec(nome)?.[1] ?? /^(\d{1,4})\s*-+\s*(contrato|ctr)/.exec(nome)?.[1] ?? pistasArquivoTrabalho(e.nome).numeroContrato;
+    if (v) numero = { valor: somenteNumero(v), evidencia: ["nome"] };
+  }
+
+  // Assunto (ordinais e o miolo das propostas); nunca inventado
+  if (!assunto) {
+    const ord = /\b(medicao|parcela|remessa|rem|retorno|jogo)\s*(\d{1,3})\b/.exec(nome) ?? /\b(\d{1,2})[oº]\s*(jogo)\b/.exec(nome);
+    // Proposta: "26.120 V Rev01 - Cliente - <assunto...>" — o que vem depois do cliente é o assunto.
+    const miolo = tipo === "proposta_comercial" ? e.nome.replace(/\.[a-z0-9]{1,5}$/i, "").split(/\s+-\s+/).slice(2) : [];
+    if (miolo.length) assunto = { valor: miolo.join(" "), evidencia: ["nome"] };
+    else if (ord) {
+      const [palavra, n] = /\d/.test(ord[1]) ? [ord[2], ord[1]] : [ord[1], ord[2]];
+      const rotulo = { medicao: "Medicao", parcela: "Parcela", remessa: "Remessa", rem: "Remessa", retorno: "Retorno", jogo: "Jogo" }[palavra] ?? palavra;
+      assunto = { valor: `${rotulo} ${n.padStart(2, "0")}`, evidencia: ["nome"] };
+    }
+  }
+
+  // Cliente: CNPJ do texto no cadastro > nome da pasta/arquivo no cadastro > nome da pasta do cliente (dossiê) ou do arquivo (elaboração)
+  let cliente: AnaliseDocumento["cliente"] = null;
+  let cnpj: CampoAnalise | null = null;
+  const proprios = new Set(e.cnpjsProprios.map((c) => c.replace(/\D/g, "")));
+  const destXml = xmlNfe ? tag(xmlNfe, "CNPJ", "dest") : null;
+  const cnpjsTexto = [...(destXml ? [destXml] : []), ...(e.texto ? cnpjsNoTexto(e.texto) : [])].filter((c) => !proprios.has(c));
+  if (cnpjsTexto.length) {
+    cnpj = { valor: cnpjsTexto[0], evidencia: ["texto"] };
+    const doc = e.clientes.find((c) => c.documento && c.documento.replace(/\D/g, "") === cnpjsTexto[0]);
+    if (doc) cliente = { valor: doc.nome, contraparteId: doc.id, evidencia: ["texto", "cadastro"] };
+  }
+  const nomeCliente = e.finalidade === "dossie_cliente" ? e.pastaNivel1 : pistasArquivoTrabalho(e.nome).clienteCurto;
+  if (!cliente && nomeCliente) {
+    const s = sugerirCliente(nomeCliente, [e.nome], e.clientes);
+    const melhor = s.candidatos[0];
+    const c = melhor && melhor.nota >= 90 ? e.clientes.find((x) => x.id === melhor.clienteId) : undefined;
+    cliente = c
+      ? { valor: c.nome, contraparteId: c.id, evidencia: [e.finalidade === "dossie_cliente" ? "pasta" : "nome", "cadastro"] }
+      : { valor: nomeCliente, contraparteId: null, evidencia: [e.finalidade === "dossie_cliente" ? "pasta" : "nome"] };
+  }
+
+  // Data
+  let data: CampoAnalise | null = null;
+  const dhEmi = xmlNfe ? tag(xmlNfe, "dhEmi") ?? tag(xmlNfe, "dEmi") : null;
+  const mXml = dhEmi ? /^(\d{4})-(\d{2})-(\d{2})/.exec(dhEmi) : null;
+  if (mXml && dataValida(Number(mXml[3]), Number(mXml[2]), Number(mXml[1]))) data = { valor: `${mXml[1]}-${mXml[2]}-${mXml[3]}`, evidencia: ["texto"] };
+  else if (texto) {
+    const d = dataDoTexto(texto);
+    if (d) data = { valor: d, evidencia: ["texto"] };
+  }
+
+  // Confiança: tipo confirmado por nome e conteúdo = alta; só um deles = média; nada (ou só a pasta) = baixa.
+  const temTexto = texto.replace(/[^a-z0-9]/g, "").length >= 30;
+  const confianca: Confianca =
+    tipo === "outro" ? "baixa"
+      : tipoEvidencia.includes("nome") && tipoEvidencia.includes("texto") ? "alta"
+      : tipoEvidencia.length ? "media" : "baixa";
+  const partes = [
+    `tipo ${TIPOS_DOCUMENTO[tipo].nome.toLowerCase()} por ${tipoEvidencia.length ? tipoEvidencia.join(" e ") : "falta de evidência"}`,
+    numero && `número pelo ${numero.evidencia.join(" e ")}`,
+    cliente && `cliente pel${cliente.evidencia.includes("cadastro") ? "o cadastro" : "a " + cliente.evidencia[0]}`,
+    data && "data pelo conteúdo",
+    !temTexto && "sem texto do arquivo (só metadados)",
+  ].filter(Boolean);
+  return {
+    tipo, tipoEvidencia, numero, assunto, cliente, data, cnpj, confianca,
+    metodo: temTexto ? "texto" : "metadados",
+    justificativa: partes.join("; ") + ".",
+  };
+}
+
+const PROIBIDOS = /[\\/:*?"<>|\u0000-\u001f]/g;
+export const LIMITE_NOME = 150;
+/** Um campo do nome: sem acento, sem caractere proibido no Drive/Windows, espaços simples, sem " - " interno (é o separador). */
+export const limparCampoNome = (s: string) =>
+  s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(PROIBIDOS, " ").replace(/\s+-\s+/g, " ").replace(/\s+/g, " ").trim()
+    .replace(/^[-.\s]+|[-.\s]+$/g, "");
+
+/** Nome padronizado `TIPO - IDENTIFICADOR - Assunto - Cliente - AAAA-MM-DD.ext`, com campos ausentes omitidos e colisões numeradas. */
+export function montarNomePadrao(a: Pick<AnaliseDocumento, "tipo" | "numero" | "assunto" | "cliente" | "data">, extensao: string, ocupados: Iterable<string> = []): string {
+  const ext = extensao ? `.${extensao.toLowerCase().replace(/[^a-z0-9]/g, "")}` : "";
+  const fixo = [TIPOS_DOCUMENTO[a.tipo].rotulo, a.numero?.valor].map((x) => (x ? limparCampoNome(x) : "")).filter(Boolean);
+  const fim = [a.cliente?.valor, a.data?.valor].map((x) => (x ? limparCampoNome(x) : "")).filter(Boolean);
+  let assunto = a.assunto ? limparCampoNome(a.assunto.valor) : "";
+  const montar = (sufixo = "") => [...fixo, ...(assunto ? [assunto] : []), ...fim].join(" - ") + sufixo + ext;
+  const folga = 6; // " (99)"
+  while (montar().length > LIMITE_NOME - folga && assunto.length > 0) assunto = assunto.slice(0, Math.max(0, assunto.length - (montar().length - (LIMITE_NOME - folga)))).trim();
+  const usados = new Set([...ocupados].map((n) => n.toLowerCase()));
+  let nome = montar();
+  for (let i = 2; usados.has(nome.toLowerCase()); i++) nome = montar(` (${i})`);
+  return nome;
+}
+
+/** Nome digitado pelo admin (Editar): mesmas regras do padrão; devolve nulo se não servir. */
+export function validarNomeEditado(nome: string, extensao: string): string | null {
+  const ext = extensao ? `.${extensao.toLowerCase()}` : "";
+  const base = nome.trim().replace(new RegExp(`${ext.replace(".", "\\.")}$`, "i"), "");
+  const partes = base.split(/\s+-\s+/).map(limparCampoNome).filter(Boolean);
+  const final = partes.join(" - ") + ext;
+  return partes.length && final.length <= LIMITE_NOME ? final : null;
+}
+
+// ── Extração de texto (sem rede além do Drive; bibliotecas injetadas: npm:unpdf e npm:jszip na Edge, as mesmas no Vitest) ──
+export type Extratores = {
+  /** Texto das primeiras páginas de um PDF (camada de texto; PDF escaneado volta vazio). */
+  pdf: (bytes: Uint8Array) => Promise<string>;
+  /** Abre um zip (DOCX/XLSX) e devolve uma função que lê um arquivo interno como texto (nulo se não existir). */
+  zip: (bytes: Uint8Array) => Promise<(caminho: string) => Promise<string | null>>;
+};
+export type ResultadoExtracao = { situacao: "texto" | "sem_texto" | "nao_suportado"; texto: string | null };
+
+type PdfDoc = { numPages: number; getPage: (n: number) => Promise<{ getTextContent: () => Promise<{ items: object[] }> }> };
+type Zip = { file: (nome: string) => { async: (tipo: "string") => Promise<string> } | null };
+/** Extratores a partir das bibliotecas (unpdf `getDocumentProxy` e JSZip `loadAsync`), iguais na Edge e nos testes. PDF: até 10 páginas. */
+export function criarExtratores(libs: { abrirPdf: (b: Uint8Array) => Promise<PdfDoc>; abrirZip: (b: Uint8Array) => Promise<Zip> }): Extratores {
+  return {
+    pdf: async (bytes) => {
+      const doc = await libs.abrirPdf(bytes);
+      const paginas: string[] = [];
+      for (let i = 1; i <= Math.min(doc.numPages, 10); i++) {
+        paginas.push((await (await doc.getPage(i)).getTextContent()).items.map((x) => ("str" in x && typeof x.str === "string" ? x.str : "")).join(" "));
+      }
+      return paginas.join("\n");
+    },
+    zip: async (bytes) => {
+      const zip = await libs.abrirZip(bytes);
+      return async (caminho) => (await zip.file(caminho)?.async("string")) ?? null;
+    },
+  };
+}
+export const EXTENSOES_COM_TEXTO = ["pdf", "docx", "xlsx", "xml"] as const;
+const LIMITE_TEXTO = 40_000;
+const decodificarXml = (s: string) =>
+  s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))).replace(/&amp;/g, "&");
+const textoDoXmlOffice = (xml: string) =>
+  decodificarXml(xml.replace(/<\/(w:p|si|row)>/g, "\n").replace(/<w:tab\/>/g, " ").replace(/<[^>]+>/g, " ")).replace(/[ \t]+/g, " ").trim();
+
+export async function extrairTexto(bytes: Uint8Array, extensao: string, ex: Extratores): Promise<ResultadoExtracao> {
+  const ext = extensao.toLowerCase();
+  let texto = "";
+  if (ext === "pdf") texto = await ex.pdf(bytes);
+  else if (ext === "docx") texto = textoDoXmlOffice((await (await ex.zip(bytes))("word/document.xml")) ?? "");
+  else if (ext === "xlsx") texto = textoDoXmlOffice((await (await ex.zip(bytes))("xl/sharedStrings.xml")) ?? "");
+  else if (ext === "xml") texto = new TextDecoder("utf-8").decode(bytes);
+  else return { situacao: "nao_suportado", texto: null };
+  texto = texto.slice(0, LIMITE_TEXTO);
+  return texto.replace(/[^\p{L}\p{N}]/gu, "").length >= 30 ? { situacao: "texto", texto } : { situacao: "sem_texto", texto: null };
+}
+
+// ── Rodada de análise (Edge Function nucleo-ged-analisar) ──
+export const LIMITE_ANALISE = { porChamada: 20, maxBytes: 15 * 1024 * 1024, prazoMs: 100_000 } as const;
+
+export type DocumentoParaAnalisar = {
+  documento_id: string; drive_id: string; nome: string; extensao: string; tamanho_bytes: number | null; drive_revisao: string | null;
+  finalidade: Finalidade; pasta: string; pasta_nivel1: string | null; nomes_na_pasta: string[];
+};
+export type DepsAnalise = DepsMetadados & {
+  cadastros: () => Promise<{ clientes: ClienteCadastro[]; cnpjsProprios: string[] }>;
+  extratores: Extratores;
+};
+type SituacaoAnalise = "sugerida" | "sem_texto" | "nao_suportado" | "erro";
+
+/** Linha para `ged_gravar_analises` (0811): só campos derivados, nunca o texto. */
+export function linhaAnalise(doc: DocumentoParaAnalisar, situacao: SituacaoAnalise, a: AnaliseDocumento | null, nomeSugerido: string | null, erro: string | null) {
+  return {
+    documento_id: doc.documento_id, drive_revisao: doc.drive_revisao, situacao, erro,
+    tipo: a?.tipo ?? null, contraparte_id: a?.cliente?.contraparteId ?? null, confianca: a?.confianca ?? null, metodo: a?.metodo ?? null,
+    justificativa: a?.justificativa ?? null, nome_atual: doc.nome, nome_sugerido: nomeSugerido,
+    campos: a ? { tipo_evidencia: a.tipoEvidencia, numero: a.numero, assunto: a.assunto, cliente: a.cliente, data: a.data, cnpj: a.cnpj } : {},
+  };
+}
+
+/**
+ * Analisa até 20 documentos por chamada (os próximos sem análise da revisão atual, ou os ids pedidos). Só o admin geral; nada é
+ * renomeado; resposta e log só com contagens. O que não couber no prazo fica para a próxima chamada (retomável pelo banco).
+ */
+export async function tratarAnalise(req: { method: string; jwt: string | null; corpo: unknown }, d: DepsAnalise): Promise<RespostaGed> {
+  const corpo = (req.corpo ?? {}) as { limite?: unknown; documentos?: unknown };
+  const ids = Array.isArray(corpo.documentos) ? corpo.documentos : null;
+  if (req.method === "POST" && ids && (ids.length > LIMITE_ANALISE.porChamada || !ids.every((x) => typeof x === "string" && /^[0-9a-f-]{36}$/i.test(x)))) {
+    return json(400, { erro: "pedido_invalido" });
+  }
+  const limite = Math.min(LIMITE_ANALISE.porChamada, Math.max(1, Number(corpo.limite) || LIMITE_ANALISE.porChamada));
+  const l = await prepararLeitura(req, d, async (_perfil, resultado) => void d.log?.(`ged-analise: resultado=${resultado}`));
+  if ("status" in l) return l;
+  const fila = await d.rpc("ged_proximos_para_analisar", { p_limite: ids ? ids.length : limite, p_documentos: ids });
+  if (fila.error) return json(500, { erro: "banco" });
+  const docs = (fila.data ?? []) as DocumentoParaAnalisar[];
+  const { clientes, cnpjsProprios } = await d.cadastros();
+  const inicio = (d.agoraMs ?? Date.now)();
+  const contagem: Record<SituacaoAnalise, number> = { sugerida: 0, sem_texto: 0, nao_suportado: 0, erro: 0 };
+  const lote: ReturnType<typeof linhaAnalise>[] = [];
+  const ocupadosPorPasta = new Map<string, Set<string>>();
+  let pendentes = 0;
+  for (const doc of docs) {
+    if ((d.agoraMs ?? Date.now)() - inicio > LIMITE_ANALISE.prazoMs) { pendentes++; continue; }
+    let extracao: ResultadoExtracao = { situacao: "nao_suportado", texto: null };
+    let erro: string | null = null;
+    const ext = doc.extensao.toLowerCase();
+    if ((EXTENSOES_COM_TEXTO as readonly string[]).includes(ext)) {
+      if ((doc.tamanho_bytes ?? 0) > LIMITE_ANALISE.maxBytes) erro = "arquivo_grande";
+      else {
+        try {
+          extracao = await extrairTexto(await l.cliente.baixar(doc.drive_id, LIMITE_ANALISE.maxBytes), ext, d.extratores);
+        } catch (e) {
+          erro = e instanceof ErroDrive && /arquivo_grande/.test(e.message) ? "arquivo_grande"
+            : e instanceof ErroDrive ? (e.status === 403 ? "sem_permissao_drive" : e.status === 404 ? "removido_no_drive" : "drive") : "leitura";
+        }
+      }
+    }
+    const a = analisarDocumento({
+      nome: doc.nome, pasta: doc.pasta, pastaNivel1: doc.pasta_nivel1, finalidade: doc.finalidade, texto: extracao.texto, clientes, cnpjsProprios,
+    });
+    const chavePasta = `${doc.finalidade}|${doc.pasta}`;
+    const ocupados = ocupadosPorPasta.get(chavePasta) ?? new Set(doc.nomes_na_pasta.filter((n) => n !== doc.nome));
+    ocupadosPorPasta.set(chavePasta, ocupados);
+    const sugerido = montarNomePadrao(a, ext, ocupados);
+    ocupados.add(sugerido);
+    const situacao: SituacaoAnalise = erro && erro !== "arquivo_grande" ? "erro" : extracao.situacao === "texto" ? "sugerida" : extracao.situacao === "sem_texto" ? "sem_texto" : "nao_suportado";
+    contagem[situacao]++;
+    lote.push(linhaAnalise(doc, situacao, a, sugerido, erro));
+  }
+  if (lote.length) {
+    const g = await d.rpc("ged_gravar_analises", { p_lote: lote });
+    if (g.error) return json(500, { erro: "banco" });
+  }
+  d.log?.(`ged-analise: analisados=${lote.length} sugeridas=${contagem.sugerida} sem_texto=${contagem.sem_texto} nao_suportado=${contagem.nao_suportado} erro=${contagem.erro} pendentes=${pendentes}`);
+  return json(200, { analisados: lote.length, ...contagem, pendentes });
 }
