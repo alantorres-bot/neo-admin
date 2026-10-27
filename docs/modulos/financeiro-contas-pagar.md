@@ -69,6 +69,9 @@ Valores vêm como **texto em formato brasileiro** ("2.525,44"). Datas em `AAAA-M
 7. **Um lançamento não pode estar em duas autorizações ativas** ao mesmo tempo. Cancelada a primeira, pode entrar em outra.
    Exceção (16/10/2026): item marcado **"não pago"** na conferência com o banco deixa de prender o lançamento, que volta à lista
    se seguir em aberto no Consistem (seção 17).
+   **Desde 27/10/2026 (0187, pedido do Alan): o que vale é o Consistem.** Só o **rascunho** prende o lançamento. Autorização
+   **autorizada** não prende: se o título segue em aberto no Consistem, volta à lista com "já autorizado na N, ainda em aberto no
+   Consistem" e pode entrar numa nova autorização (caso real: FM DO BRASIL 9735/4, autorizado na 141026, não pago e protestado).
 8. Ao autorizar, nasce a pendência **"Executar autorização de pagamento nº N — R$ X"** (módulo `financeiro.contas-pagar`,
    link para a autorização, prazo = menor vencimento dos itens ou hoje se já venceu, criticidade alta se vence em ≤ 3 dias).
    O financeiro conclui a pendência pela Fila do dia. Cancelar a autorização cancela a pendência.
@@ -462,3 +465,9 @@ bancárias da empresa**, com a opção de somar **valores adicionais do dia** (d
 - **Publicar (ordem):** aplicar 0169 e registrar em `schema_migrations` → publicar `cap-sincronizar-consistem` → publicar o
   frontend (as telas leem `caixa_composicao`; sem a migration a página da autorização falha). Conferir na 1ª rodada se o token
   CSMEN050 tem o serviço `dadosBancarios` liberado (403 aparece no resumo da sincronização, em `contasBancarias`).
+
+### Vale o Consistem (27/10/2026, pedido do Alan)
+- `cap_adicionar_itens` (migration `0187_cap_aberto_no_consistem.sql`) só recusa lançamento que já está em outro **rascunho**;
+  em autorização autorizada (e ainda em aberto no espelho) ele entra na nova. `estaPendente` (`pendentes.ts`) idem.
+- A autorização antiga não muda (prova). Quando a baixa vier, a sincronização anota `baixado_consistem_em` nos itens das duas.
+- Testes: `pendentes.test.ts` e `tests/db/cap-autorizacoes.test.ts` ("vale o Consistem").
