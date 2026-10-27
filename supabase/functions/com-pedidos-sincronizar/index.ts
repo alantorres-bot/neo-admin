@@ -561,7 +561,12 @@ async function sincronizarEmpresa(
     const abertas = await lerTudo<{ id: string; referencia_id: string | null; descricao: string | null }>((de, ate) => banco.from("pendencias")
       .select("id, referencia_id, descricao").eq("modulo", MODULO).eq("empresa_id", emp.id).eq("referencia_tabela", "com_pedidos")
       .eq("titulo", TITULO_PENDENCIA_ATRASO).in("status", ["aberta", "em_andamento"]).order("id").range(de, ate));
-    const plano = planejarPendenciasAtraso(pedidosPend.map((p) => ({ ...p, valor_saldo: Number(p.valor_saldo) })), abertas, hoje);
+    // Interruptor da 0705: false = não publica nem mexe nas pendências de atraso e de MDF-e.
+    const { data: cfgPend } = await banco.from("configuracoes").select("valor").eq("chave", "comercial.pedidos.pendencias").maybeSingle();
+    const publicarPendencias = cfgPend?.valor !== false;
+    const plano = publicarPendencias
+      ? planejarPendenciasAtraso(pedidosPend.map((p) => ({ ...p, valor_saldo: Number(p.valor_saldo) })), abertas, hoje)
+      : { abrir: [], atualizar: [], concluir: [] };
     for (const lote of lotes(plano.abrir)) {
       await gravar(banco.from("pendencias").insert(lote.map((x) => ({ ...x, modulo: MODULO, empresa_id: emp.id, criticidade: "normal" }))));
     }
@@ -590,7 +595,9 @@ async function sincronizarEmpresa(
       const abertasMdfe = await lerTudo<{ id: string; referencia_id: string | null }>((de, ate) => banco.from("pendencias")
         .select("id, referencia_id").eq("modulo", MODULO).eq("empresa_id", emp.id).eq("referencia_tabela", "com_mdfes")
         .eq("titulo", TITULO_PENDENCIA_MDFE).in("status", ["aberta", "em_andamento"]).order("id").range(de, ate));
-      const planoMdfe = planejarPendenciasMdfe(gravados, abertasMdfe, hoje, diasAlertaMdfe(cfgAlerta?.valor));
+      const planoMdfe = publicarPendencias
+        ? planejarPendenciasMdfe(gravados, abertasMdfe, hoje, diasAlertaMdfe(cfgAlerta?.valor))
+        : { abrir: [], concluir: [] };
       for (const lote of lotes(planoMdfe.abrir)) {
         await gravar(banco.from("pendencias").insert(lote.map((x) => ({ ...x, modulo: MODULO, empresa_id: emp.id, criticidade: "alta" }))));
       }

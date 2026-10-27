@@ -2,6 +2,10 @@
 
 Status: em construção. Fase 0 (especificação e sondagem) concluída em 19/10/2026. Fase 1 (carteira e faturamento) publicada no banco e na Edge Function em 19/10/2026 e no app (Cloud Run, revisão neo-admin-00069-nfj, publicada pelo Alan).
 
+**27/10/2026 — pendências automáticas DESLIGADAS** (0705, pedido do Alan: as regras ainda misturavam a Fila). Interruptor
+`comercial.pedidos.pendencias` = false: a sincronização segue (carteira, notas, MDF-e), mas não cria nem conclui
+"Pedido com previsão vencida" e "MDF-e não encerrado"; as 37 abertas foram canceladas. Religar: valor `true`.
+
 ## 1. Objetivo
 Acompanhar o pedido de venda do digitado até a entrega e a liquidação, num só lugar:
 - carteira e previsão de faturamento;

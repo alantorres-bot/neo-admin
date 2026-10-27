@@ -137,6 +137,10 @@ Cada aplicativo ganha uma Edge Function **só de leitura**, `neo-admin-pendencia
 2. Neo Admin: gravar o mesmo valor em `NEOCONTROL_SEGREDO` (`node scripts/gravar-segredo.mjs NEOCONTROL_SEGREDO --ref chdszjpbtfpstjrqnmmm`).
    A Vigilância Fiscal usa o `NEO_FISCAL_SEGREDO` que já existe.
 3. Aplicar a 0800 e registrar em `schema_migrations`; publicar a função `nucleo-apps-pendencias` e a aplicação.
+**Publicado em 27/10/2026:** 0800 aplicada e registrada; função `nucleo-apps-pendencias` publicada; agendamento de
+30 min ativo; endereços dos dois aplicativos gravados, leitura desligada. Falta: `NEOCONTROL_SEGREDO` (passos 1 e 2),
+"Ler agora", responsáveis e ligar.
+
 4. Configurações › Aplicativos › Pendências: endereço de cada função
    (`https://ycokizsmegdwntcsstfh.supabase.co/functions/v1/neo-admin-pendencias` e
    `https://scrvxqouaicjiogyagfk.supabase.co/functions/v1/neo-admin-pendencias`), "Ler agora" com a leitura desligada
