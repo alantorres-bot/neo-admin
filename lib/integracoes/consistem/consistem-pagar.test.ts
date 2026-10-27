@@ -12,6 +12,7 @@ import {
   paraCentavos,
   paraDataIso,
   planejarSincronizacaoPagar,
+  principalQuitado,
   type LancamentoBanco,
   type LancamentoPagarApi,
 } from "../../../supabase/functions/_shared/consistem-pagar";
@@ -170,6 +171,17 @@ describe("planejarSincronizacaoPagar", () => {
   it("reaberto: baixado no banco que voltou com saldo na API perde o baixado_em", () => {
     const plano = planejarSincronizacaoPagar([lanc({ codLancamento: "1" })], [banco({ codLancamento: "1", baixadoEm: "2026-10-01" })]);
     expect(plano.alterados).toEqual([{ id: "id-1", campos: { baixado_em: null } }]);
+  });
+  it("título quitado com resíduo de juros: baixa enquanto o saldo for o mesmo; saldo mudou reabre", () => {
+    expect(principalQuitado(12_901_17, 12_901_17)).toBe(true);
+    expect(principalQuitado(0, 9_338_11)).toBe(false);
+    expect(principalQuitado(null, 100)).toBe(false);
+    const juros = lanc({ codLancamento: "1", saldoCentavos: 48_894 });
+    expect(planejarSincronizacaoPagar([juros], [banco({ codLancamento: "1", saldoCentavos: 48_894, quitadoSaldoCentavos: 48_894 })]).baixados).toEqual(["id-1"]);
+    const jaBaixado = banco({ codLancamento: "1", saldoCentavos: 0, baixadoEm: "2026-10-27", quitadoSaldoCentavos: 48_894 });
+    expect(planejarSincronizacaoPagar([juros], [jaBaixado]).alterados).toEqual([]);
+    const mudou = planejarSincronizacaoPagar([lanc({ codLancamento: "1", saldoCentavos: 50_000 })], [jaBaixado]);
+    expect(mudou.alterados).toEqual([{ id: "id-1", campos: { valor_atualizado: 500, baixado_em: null } }]);
   });
   it("código repetido na API: vale o primeiro e o resto vai para duplicadosApi", () => {
     const plano = planejarSincronizacaoPagar([lanc({ codLancamento: "1" }), lanc({ codLancamento: "1", saldoCentavos: 1 })], []);
