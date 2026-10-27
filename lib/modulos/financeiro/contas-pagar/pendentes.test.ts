@@ -51,6 +51,9 @@ describe("borderô = paga; atalhos de período", () => {
     expect(estaPendente(antecipacao("a", { temBordero: true }))).toBe(false);
     expect(estaPendente(antecipacao("a", { temBordero: false }))).toBe(true);
     expect(estaPendente(antecipacao("a"))).toBe(true);
+    // autorização aprovada não prende (vale o Consistem); rascunho prende
+    expect(estaPendente(item({ id: "t", autorizacao: { id: "x", numero: 1, codigo: "141026", status: "autorizada" } }))).toBe(true);
+    expect(estaPendente(item({ id: "t", autorizacao: { id: "x", numero: 1, codigo: "141026", status: "rascunho" } }))).toBe(false);
     expect(estaPaga(item({ id: "t", temBordero: true }))).toBe(false); // título com borderô não é "pago" (pagamento parcial)
   });
   it("mostrar=pendentes esconde as pagas; todos inclui", () => {

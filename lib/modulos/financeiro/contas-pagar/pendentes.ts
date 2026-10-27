@@ -46,9 +46,9 @@ export type ItemPendente = {
 /** Antecipação paga de verdade: tem borderô no Consistem. */
 export const estaPaga = (i: Pick<ItemPendente, "tipo" | "temBordero">): boolean => i.tipo === "antecipacao" && i.temBordero === true;
 
-/** Pendente de autorização = sem autorização ativa, não tratada e (antecipação) sem borderô. */
+/** Pendente de autorização = em aberto no Consistem, fora de rascunho, não tratada e (antecipação) sem borderô. Autorização aprovada não prende: o que vale é o Consistem. */
 export const estaPendente = (i: Pick<ItemPendente, "tipo" | "autorizacao" | "tratada" | "temBordero">): boolean =>
-  i.autorizacao === null && i.tratada === null && !estaPaga(i);
+  i.autorizacao?.status !== "rascunho" && i.tratada === null && !estaPaga(i);
 
 // ---------------------------------------------------------------- atalhos de período (vencimento)
 

@@ -70,6 +70,15 @@ describe("criar autorização (rascunho)", () => {
     const r = (await criar(finOperador, [t])).rows[0].r;
     await expect(criar(finOperador, [t])).rejects.toThrow(new RegExp(`já está na autorização ${r.codigo}`));
   });
+  it("vale o Consistem: lançamento autorizado e ainda em aberto entra em nova autorização (0187)", async () => {
+    const t = await lancamento("C", 10);
+    const r1 = (await criar(finGestor, [t], { autorizar: true })).rows[0].r;
+    const r2 = (await criar(finOperador, [t])).rows[0].r;
+    expect(r2.id).not.toBe(r1.id);
+    const vw = (await rpc(finConsulta, `select autorizacao_codigo, autorizacao_status from cap_vw_pendentes where id = $1`, [t])).rows[0];
+    expect(vw).toEqual({ autorizacao_codigo: r2.codigo, autorizacao_status: "rascunho" });
+    await rpc(finGestor, `select cap_cancelar($1, 'teste')`, [r2.id]);
+  });
   it("a tela lista o pendente com a autorização ativa; o lançamento some da lista quando a autorização é cancelada? não: volta a ficar livre", async () => {
     const t = await lancamento("C", 10);
     const r = (await criar(finOperador, [t])).rows[0].r;
