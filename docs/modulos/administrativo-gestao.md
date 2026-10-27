@@ -332,7 +332,9 @@ Objetivo: o gestor saber o que cada pessoa **fez** e **viu** no Neo Admin. Exemp
 
 **Registro de acessos (o que viu)**
 - Tabela do núcleo `acessos`, com quem, tela (rota), registro aberto (quando a rota identifica um) e quando.
-- É gravada no servidor ao abrir a página; não usa rastreador no navegador.
+- É gravada quando a tela é aberta de verdade (`app/(plataforma)/registro-acesso.tsx` chama `registrar_acesso` no
+  próprio Neo Admin); não usa rastreador nem serviço externo. Até 27/10/2026 era no `proxy.ts`, mas o Next 16 esconde dele
+  o cabeçalho de pré-carregamento e cada link pré-carregado virava acesso (visto no 1º dia ligado; registro desligado).
 - Agrupamento: uma linha por pessoa, tela e registro a cada 30 minutos (`administrativo.gestao.acessos_agrupar_minutos`).
 - **Retenção de 12 meses** (`administrativo.gestao.acessos_reter_meses`): uma rotina do pg_cron apaga o que passou do prazo.
   É a exceção documentada à regra de não apagar, porque acesso não é prova de ação.
