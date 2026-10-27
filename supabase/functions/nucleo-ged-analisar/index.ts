@@ -48,6 +48,12 @@ Deno.serve(async (req) => {
         cnpjsProprios: (e.data ?? []).map((x) => String(x.cnpj ?? "").replace(/\D/g, "")).filter(Boolean),
       };
     },
+    analisesDeContratos: async (numeros) => {
+      const { data } = await banco.from("ged_analises").select("documento_id, tipo, campos")
+        .in("tipo", ["contrato_venda", "contrato_locacao", "contrato_servico", "contrato_assinado"])
+        .in("campos->numero->>valor", numeros).limit(1000);
+      return (data ?? []) as Awaited<ReturnType<NonNullable<DepsAnalise["analisesDeContratos"]>>>;
+    },
     extratores: criarExtratores({
       abrirPdf: (b) => getDocumentProxy(b),
       abrirZip: (b) => JSZip.loadAsync(b),

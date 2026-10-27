@@ -528,6 +528,8 @@ Tela `Documentos > Padronização de nomes` (`/documentos/padronizacao`), só ad
    campos sem acento, com espaços simples e sem `/ \ : * ? " < > |`; campo sem evidência é **omitido** (nunca inventado); data só
    do conteúdo (XML `dhEmi` ou data com rótulo de emissão/assinatura no texto), nunca a data do Drive; extensão original em
    minúscula; até 150 caracteres (corta o assunto primeiro); colisão na mesma pasta ganha ` (2)`, ` (3)`.
+   Arquivos do mesmo contrato (espécie + número, inclusive a versão assinada) levam o mesmo cliente: o da maioria dos arquivos,
+   preferindo o do cadastro e, no empate, o do conteúdo; a justificativa avisa quando o texto do arquivo apontava outro cliente.
    Ex.: `NF REMESSA - 794 - Remessa 02 - Construteto - 2025-07-14.pdf`; `PROPOSTA - 26.120 Rev01 - 2o Jogo Mossoro - EC Construtora.pdf`.
 2. **Tipos (catálogo inicial):** contrato de venda, de locação, de serviço, aditamento, contrato assinado (só com evidência D4Sign ou
    assinatura), modelo de contrato, proposta comercial, NF de venda, de remessa, de retorno, fatura de locação (FL), medição, carta de

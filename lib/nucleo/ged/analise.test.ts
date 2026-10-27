@@ -9,6 +9,7 @@ import {
   extrairTexto,
   limparCampoNome,
   montarNomePadrao,
+  unificarClientesDeContratos,
   validarNomeEditado,
   type ClienteCadastro,
   type EntradaAnalise,
@@ -199,5 +200,37 @@ describe("extração de texto (as mesmas bibliotecas da Edge: unpdf e jszip)", (
     const vazio = new JSZip();
     vazio.file("outro.xml", "<x/>");
     expect((await extrairTexto(await vazio.generateAsync({ type: "uint8array" }), "docx", ex)).situacao).toBe("sem_texto");
+  });
+});
+
+describe("mesmo contrato, mesmo cliente", () => {
+  const cli = (valor: string, contraparteId: string | null, ...evidencia: ("nome" | "pasta" | "texto" | "cadastro")[]) => ({ valor, contraparteId, evidencia });
+  const ctr = (tipo: string, n: string, cliente: ReturnType<typeof cli>, assunto: string | null = null) =>
+    ({ tipo, numero: { valor: n, evidencia: ["nome" as const] }, assunto: assunto ? { valor: assunto, evidencia: ["nome" as const] } : null, cliente });
+
+  it("o arquivo divergente segue a maioria do cadastro; o assinado conta como a mesma espécie", () => {
+    const lote = [
+      ctr("contrato_locacao", "137", cli("CANOPUS TERESINA", "c-ter", "texto", "cadastro")),
+      ctr("contrato_locacao", "137", cli("CANOPUS", "c-can", "texto", "cadastro")),
+      ctr("contrato_venda", "228", cli("Junqueira", null, "pasta")),
+    ];
+    const gravadas = [
+      ctr("contrato_assinado", "137", cli("CANOPUS TERESINA", "c-ter", "texto", "cadastro"), "Locacao"),
+      ctr("contrato_venda", "228", cli("CONSTRUJUNQUEIRA", "c-jun", "texto", "cadastro")),
+      ctr("contrato_venda", "137", cli("OUTRO", "c-out", "texto", "cadastro")), // venda 137 é outro contrato
+    ];
+    const m = unificarClientesDeContratos(lote, gravadas);
+    expect([...m.keys()]).toEqual([1, 2]);
+    expect(m.get(1)).toMatchObject({ cliente: { valor: "CANOPUS TERESINA", contraparteId: "c-ter" } });
+    expect(m.get(1)!.nota).toMatch(/contrato 137 \(2 de 3\); o texto deste arquivo aponta outro cliente/);
+    expect(m.get(2)).toMatchObject({ cliente: { valor: "CONSTRUJUNQUEIRA", contraparteId: "c-jun", evidencia: ["texto", "cadastro"] } });
+  });
+
+  it("mesmo cadastro com rótulos diferentes vira um só; arquivo sozinho não muda", () => {
+    const m = unificarClientesDeContratos(
+      [ctr("contrato_locacao", "136", cli("Amorim Coutinho -", "c-am", "texto", "cadastro")), ctr("contrato_locacao", "999", cli("X", null, "nome"))],
+      [ctr("contrato_locacao", "136", cli("Amorim Coutinho", "c-am", "nome", "cadastro"))],
+    );
+    expect(m.size).toBe(0); // "Amorim Coutinho -" limpo é "Amorim Coutinho": nada a mudar
   });
 });

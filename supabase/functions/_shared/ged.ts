@@ -1691,6 +1691,56 @@ export function analisarDocumento(e: EntradaAnalise): AnaliseDocumento {
   };
 }
 
+/** Espécie do contrato para agrupar os arquivos do mesmo contrato (venda e locação têm numeração própria); nulo se não for contrato. */
+export function especieContrato(tipo: string | null, assunto: CampoAnalise | null | undefined): string | null {
+  return tipo === "contrato_venda" ? "Venda" : tipo === "contrato_locacao" ? "Locacao" : tipo === "contrato_servico" ? "Servico"
+    : tipo === "contrato_assinado" ? assunto?.valor ?? null : null;
+}
+type ParaUnificar = { tipo: string | null; numero: CampoAnalise | null; assunto: CampoAnalise | null; cliente: AnaliseDocumento["cliente"] };
+
+/**
+ * Mesmo contrato (espécie + número), mesmo cliente: os arquivos do lote seguem o cliente da maioria dos arquivos do contrato
+ * (lote + análises já gravadas), preferindo o que está no cadastro e, no empate, o que veio do conteúdo. Devolve, por índice do
+ * lote, o cliente unificado e a nota para a justificativa (só dos que mudaram).
+ */
+export function unificarClientesDeContratos(lote: readonly ParaUnificar[], gravadas: readonly ParaUnificar[]) {
+  const chave = (x: ParaUnificar) => {
+    const esp = especieContrato(x.tipo, x.assunto);
+    return esp && x.numero && x.cliente ? `${esp}|${x.numero.valor}` : null;
+  };
+  const grupos = new Map<string, ParaUnificar[]>();
+  for (const x of [...lote, ...gravadas]) {
+    const k = chave(x);
+    if (k) grupos.set(k, [...(grupos.get(k) ?? []), x]);
+  }
+  const quem = (c: NonNullable<ParaUnificar["cliente"]>) => c.contraparteId ?? `nome:${normalizarTexto(limparCampoNome(c.valor))}`;
+  const mudancas = new Map<number, { cliente: NonNullable<AnaliseDocumento["cliente"]>; nota: string }>();
+  lote.forEach((x, i) => {
+    const k = chave(x);
+    const grupo = k ? grupos.get(k)! : [];
+    if (grupo.length < 2) return;
+    const porQuem = new Map<string, NonNullable<ParaUnificar["cliente"]>[]>();
+    for (const g of grupo) porQuem.set(quem(g.cliente!), [...(porQuem.get(quem(g.cliente!)) ?? []), g.cliente!]);
+    if (porQuem.size < 2 && new Set(grupo.map((g) => limparCampoNome(g.cliente!.valor))).size < 2) return;
+    const nota = (cs: NonNullable<ParaUnificar["cliente"]>[]) =>
+      [cs[0].contraparteId ? 1 : 0, cs.length, cs.filter((c) => c.evidencia.includes("texto")).length];
+    const [, vencedor] = [...porQuem].sort(([, a], [, b]) => {
+      const [na, nb] = [nota(a), nota(b)];
+      return nb[0] - na[0] || nb[1] - na[1] || nb[2] - na[2];
+    })[0];
+    // Rótulo mais frequente entre os arquivos do vencedor (já limpo: "Amorim Coutinho -" = "Amorim Coutinho").
+    const rotulos = vencedor.map((c) => limparCampoNome(c.valor));
+    const rotulo = rotulos.sort((a, b) => rotulos.filter((r) => r === b).length - rotulos.filter((r) => r === a).length)[0];
+    if (quem(x.cliente!) === quem(vencedor[0]) && limparCampoNome(x.cliente!.valor) === rotulo) return;
+    const outro = quem(x.cliente!) !== quem(vencedor[0]) && x.cliente!.evidencia.includes("texto") ? "; o texto deste arquivo aponta outro cliente" : "";
+    mudancas.set(i, {
+      cliente: { valor: rotulo, contraparteId: vencedor[0].contraparteId, evidencia: unir(...vencedor.flatMap((c) => c.evidencia)) },
+      nota: `cliente unificado com os outros arquivos do contrato ${x.numero!.valor} (${vencedor.length} de ${grupo.length})${outro}.`,
+    });
+  });
+  return mudancas;
+}
+
 const PROIBIDOS = /[\\/:*?"<>|\u0000-\u001f]/g;
 export const LIMITE_NOME = 150;
 /** Um campo do nome: sem acento, sem caractere proibido no Drive/Windows, espaços simples, sem " - " interno (é o separador). */
@@ -1779,6 +1829,8 @@ export type DocumentoParaAnalisar = {
 export type DepsAnalise = DepsMetadados & {
   cadastros: () => Promise<{ clientes: ClienteCadastro[]; cnpjsProprios: string[] }>;
   extratores: Extratores;
+  /** Análises já gravadas dos contratos com estes números (para unificar o cliente do mesmo contrato). */
+  analisesDeContratos?: (numeros: string[]) => Promise<{ documento_id: string; tipo: string | null; campos: Partial<Record<"numero" | "assunto", CampoAnalise | null>> & { cliente?: AnaliseDocumento["cliente"] } | null }[]>;
 };
 type SituacaoAnalise = "sugerida" | "sem_texto" | "nao_suportado" | "erro";
 
@@ -1813,6 +1865,7 @@ export async function tratarAnalise(req: { method: string; jwt: string | null; c
   const contagem: Record<SituacaoAnalise, number> = { sugerida: 0, sem_texto: 0, nao_suportado: 0, erro: 0 };
   const lote: ReturnType<typeof linhaAnalise>[] = [];
   const ocupadosPorPasta = new Map<string, Set<string>>();
+  const analisados: { doc: DocumentoParaAnalisar; a: AnaliseDocumento; ext: string; extracao: ResultadoExtracao; erro: string | null }[] = [];
   let pendentes = 0;
   for (const doc of docs) {
     if ((d.agoraMs ?? Date.now)() - inicio > LIMITE_ANALISE.prazoMs) { pendentes++; continue; }
@@ -1833,6 +1886,19 @@ export async function tratarAnalise(req: { method: string; jwt: string | null; c
     const a = analisarDocumento({
       nome: doc.nome, pasta: doc.pasta, pastaNivel1: doc.pasta_nivel1, finalidade: doc.finalidade, texto: extracao.texto, clientes, cnpjsProprios,
     });
+    analisados.push({ doc, a, ext, extracao, erro });
+  }
+  // Mesmo contrato, mesmo cliente (com as análises já gravadas dos outros arquivos do contrato).
+  const numeros = [...new Set(analisados.filter((x) => especieContrato(x.a.tipo, x.a.assunto) && x.a.numero).map((x) => x.a.numero!.valor))];
+  const noLote = new Set(analisados.map((x) => x.doc.documento_id));
+  const gravadas = numeros.length && d.analisesDeContratos
+    ? (await d.analisesDeContratos(numeros)).filter((g) => !noLote.has(g.documento_id))
+      .map((g) => ({ tipo: g.tipo, numero: g.campos?.numero ?? null, assunto: g.campos?.assunto ?? null, cliente: g.campos?.cliente ?? null }))
+    : [];
+  const unificados = unificarClientesDeContratos(analisados.map((x) => x.a), gravadas);
+  for (const [i, { doc, a: original, ext, extracao, erro }] of analisados.entries()) {
+    const u = unificados.get(i);
+    const a = u ? { ...original, cliente: u.cliente, justificativa: `${original.justificativa} ${u.nota.charAt(0).toUpperCase()}${u.nota.slice(1)}` } : original;
     const chavePasta = `${doc.finalidade}|${doc.pasta}`;
     const ocupados = ocupadosPorPasta.get(chavePasta) ?? new Set(doc.nomes_na_pasta.filter((n) => n !== doc.nome));
     ocupadosPorPasta.set(chavePasta, ocupados);
