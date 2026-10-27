@@ -3,6 +3,7 @@ import { montarMenu, temAcessoAlgumaArea } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { sair } from "@/app/(auth)/login/acoes";
 import { Button } from "@/components/ui/button";
+import { RegistroAcesso } from "./registro-acesso";
 
 export default async function LayoutPlataforma({ children }: LayoutProps<"/">) {
   // O layout não redireciona quem deve trocar a senha (senão /conta entraria em laço); cada página faz a checagem.
@@ -34,6 +35,7 @@ export default async function LayoutPlataforma({ children }: LayoutProps<"/">) {
       mostrarConfiguracoes={mostrarConfiguracoes}
       mostrarCentral={mostrarCentral}
     >
+      <RegistroAcesso />
       {children}
     </Casca>
   );
