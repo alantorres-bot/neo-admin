@@ -864,6 +864,11 @@ cobrança bloqueada no Recebíveis (não existem como dado).
 **Implementado, mas não testado de verdade:** as duas Edge Functions (Slack e ClickUp). O código foi escrito no padrão de
 `cap-enviar-slack`; as regras delas estão testadas, mas o envio real só pode ser validado com as credenciais.
 
+**Configurado em produção (27/10/2026).** Slack no ar desde 23/10 só com mensagens diretas (sem canal; resumo diário
+desligado, decisão do Alan). ClickUp: `nucleo-clickup-enviar` publicada, `CLICKUP_TOKEN` (token pessoal do Alan; as tarefas
+saem em nome dele), lista Administrativo > Tarefas (`900700678248`), `clickup_url` no Vault. Validado com uma pendência de
+teste: tarefa `17tq1ae8fwt` criada na lista, com o link da pendência.
+
 **Configuração pendente (só Alan)**
 1. Aplicar a `0098` depois da `0206` e registrá-la.
 2. Publicar as funções:
