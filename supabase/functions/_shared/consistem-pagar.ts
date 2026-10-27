@@ -206,7 +206,13 @@ export type LancamentoBanco = {
   valorDocumentoCentavos: number;
   saldoCentavos: number;
   baixadoEm: string | null;
+  /** Título (C) com o principal pago no Consistem e só juros/multa no saldo: o saldo que restava quando o detalhe foi lido. */
+  quitadoSaldoCentavos?: number | null;
 };
+
+/** Principal pago por inteiro: o resto do saldo é juros/multa que o Consistem não baixa (27/10/2026: 652 títulos assim). */
+export const principalQuitado = (valorPagoCentavos: number | null, valorDocumentoCentavos: number): boolean =>
+  valorPagoCentavos !== null && valorDocumentoCentavos > 0 && valorPagoCentavos >= valorDocumentoCentavos;
 
 export type CamposAlterados = {
   cod_fornecedor?: string | null;
@@ -253,7 +259,9 @@ export function planejarSincronizacaoPagar(api: readonly LancamentoPagarApi[], b
       continue;
     }
     vistos.add(l.codLancamento);
-    const aberto = estaEmAberto(l);
+    const b = porCodigo.get(l.codLancamento);
+    // Saldo que é só o resíduo de juros de um título quitado (mesmo saldo de quando o detalhe foi lido) conta como baixado.
+    const aberto = estaEmAberto(l) && !(l.tipo === "C" && b?.quitadoSaldoCentavos != null && b.quitadoSaldoCentavos === l.saldoCentavos);
     if (aberto) {
       plano.abertosPorTipo[l.tipo].quantidade++;
       plano.abertosPorTipo[l.tipo].centavos += l.saldoCentavos;
@@ -262,7 +270,6 @@ export function planejarSincronizacaoPagar(api: readonly LancamentoPagarApi[], b
       if (aberto) plano.ignorados++;
       continue;
     }
-    const b = porCodigo.get(l.codLancamento);
     if (!aberto) {
       if (!b) plano.encerradosNaApi++;
       // gravado e sem saldo na API: vira "baixado" abaixo (não entra em abertosNaApi)

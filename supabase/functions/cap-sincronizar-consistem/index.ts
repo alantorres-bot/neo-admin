@@ -34,6 +34,8 @@
 // Regras:
 //   - A API devolve a vida inteira e ignora `situacao`: em aberto = valorAtualizado > 0. Só C, A e D são gravados.
 //   - Lançamento gravado que sumiu dos abertos (ou voltou com saldo zero) recebe `baixado_em` (não é apagado).
+//   - Título (C) com o principal pago e só juros/multa no saldo (valorPago do detalhe, guardado em quitado_saldo; 0188) conta
+//     como baixado enquanto a API devolver o mesmo saldo.
 //   - Confirmação (CCFFB014): não é mais lida desde 13/10/2026 (o Consistem passou a "Sem Controle" na CCFFB000; migration 0161).
 //   - Se a API devolver nenhum lançamento em aberto mas há abertos no banco, nada é alterado (provável falha).
 //   - Nunca escreve no Consistem.
@@ -61,6 +63,7 @@ import {
   normalizarFornecedorApi,
   normalizarLancamentoPagar,
   planejarSincronizacaoPagar,
+  principalQuitado,
   ROTA_CONTAS_PAGAR,
   ROTA_DETALHE_LANCAMENTO,
   ROTA_FORNECEDORES,
@@ -73,6 +76,8 @@ import {
 
 const MODULO = "financeiro.contas-pagar";
 const LOTE = 200;
+/** Detalhes de títulos com resíduo de juros lidos por rodada (a 1ª carga, ~650, leva 2 rodadas; ~1 s a cada 10). */
+const LIMITE_QUITADOS_POR_RODADA = 400;
 const TITULO_FALHA = "Falha na atualização do contas a pagar";
 
 /** Data de hoje no fuso de Cuiabá, 'aaaa-mm-dd'. */
@@ -190,15 +195,17 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
   type Linha = {
     id: string; cod_lancamento: string; tipo_lancamento: TipoGravado; cod_fornecedor: string | null; num_documento: string | null;
     complemento_historico: string | null; data_vencimento: string | null; valor_documento: number | string; valor_atualizado: number | string; baixado_em: string | null;
+    quitado_saldo: number | string | null;
   };
   const linhas = await lerTudo<Linha>((de, ate) =>
     banco.from("cap_lancamentos")
-      .select("id, cod_lancamento, tipo_lancamento, cod_fornecedor, num_documento, complemento_historico, data_vencimento, valor_documento, valor_atualizado, baixado_em")
+      .select("id, cod_lancamento, tipo_lancamento, cod_fornecedor, num_documento, complemento_historico, data_vencimento, valor_documento, valor_atualizado, baixado_em, quitado_saldo")
       .eq("empresa_id", empresa.id).order("id").range(de, ate));
   const noBanco: LancamentoBanco[] = linhas.map((l) => ({
     id: l.id, codLancamento: l.cod_lancamento, tipo: l.tipo_lancamento, codFornecedor: l.cod_fornecedor ?? "", numDocumento: l.num_documento ?? "",
     complemento: l.complemento_historico ?? "", vencimento: l.data_vencimento, valorDocumentoCentavos: Math.round(Number(l.valor_documento) * 100),
     saldoCentavos: Math.round(Number(l.valor_atualizado) * 100), baixadoEm: l.baixado_em,
+    quitadoSaldoCentavos: l.quitado_saldo === null ? null : Math.round(Number(l.quitado_saldo) * 100),
   }));
 
   const plano: PlanoPagar = planejarSincronizacaoPagar(lancamentos, noBanco);
@@ -380,6 +387,36 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
     resumo.avisoDetalhe = `Detalhe das antecipações não lido: ${e instanceof Error ? e.message.slice(0, 200) : "falha"}`;
   }
 
+  // 7b) Título com saldo menor que o documento: o detalhe diz se o principal já foi pago (o saldo é só juros/multa). Lido uma vez
+  // por saldo; quitado vira baixado na rodada seguinte (planejarSincronizacaoPagar). Falha aqui não derruba a rodada.
+  try {
+    type LinhaC = { id: string; cod_lancamento: string; valor_documento: number | string; valor_atualizado: number | string; pago_conferido_saldo: number | string | null };
+    const abertosC = await lerTudo<LinhaC>((de, ate) =>
+      banco.from("cap_lancamentos").select("id, cod_lancamento, valor_documento, valor_atualizado, pago_conferido_saldo")
+        .eq("empresa_id", empresa.id).eq("tipo_lancamento", "C").is("baixado_em", null).gt("valor_atualizado", 0).order("id").range(de, ate));
+    const aConferir = abertosC.filter((l) => Number(l.valor_atualizado) < Number(l.valor_documento) &&
+      (l.pago_conferido_saldo === null || Number(l.pago_conferido_saldo) !== Number(l.valor_atualizado))).slice(0, LIMITE_QUITADOS_POR_RODADA);
+    let quitados = 0;
+    let falhas = 0;
+    for (const lote of lotes(aConferir, 5)) {
+      await Promise.all(lote.map(async (l) => {
+        try {
+          const d = normalizarDetalheLancamento(await buscarObjeto(buscar, cfg, `${ROTA_DETALHE_LANCAMENTO}/${encodeURIComponent(l.cod_lancamento)}`));
+          const quitado = principalQuitado(d.valorPagoCentavos, Math.round(Number(l.valor_documento) * 100));
+          const { error: erroUpd } = await banco.from("cap_lancamentos")
+            .update({ pago_conferido_saldo: l.valor_atualizado, quitado_saldo: quitado ? l.valor_atualizado : null }).eq("id", l.id);
+          if (erroUpd) throw new Error(erroUpd.message);
+          if (quitado) quitados++;
+        } catch {
+          falhas++;
+        }
+      }));
+    }
+    resumo.quitadosComJuros = { conferidos: aConferir.length - falhas, quitados, falhas };
+  } catch (e) {
+    resumo.avisoQuitados = `Títulos com resíduo de juros não conferidos: ${e instanceof Error ? e.message.slice(0, 200) : "falha"}`;
+  }
+
   // 8) Registro da execução
   const { error: erroLog } = await banco.from("importacoes").insert({
     modulo: MODULO,
@@ -390,6 +427,7 @@ async function sincronizarEmpresa(banco: Banco, empresa: Empresa, cfgBase: Omit<
       recusados: recusados.slice(0, 20), duplicadosApi: plano.duplicadosApi.slice(0, 20), ignorados: plano.ignorados, encerradosNaApi: plano.encerradosNaApi,
       fornecedoresNovos, avisoFornecedores: resumo.avisoFornecedores ?? null, detalhesLidos: resumo.detalhesLidos ?? 0, avisoDetalhe: resumo.avisoDetalhe ?? null,
       avisoAutorizacoes: resumo.avisoAutorizacoes ?? null, borderos: resumo.borderos ?? null, avisoBorderos: resumo.avisoBorderos ?? null,
+      quitadosComJuros: resumo.quitadosComJuros ?? null, avisoQuitados: resumo.avisoQuitados ?? null,
     },
     linhas_novas: plano.novos.length,
     linhas_alteradas: plano.alterados.length,

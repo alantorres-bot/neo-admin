@@ -471,3 +471,13 @@ bancárias da empresa**, com a opção de somar **valores adicionais do dia** (d
   em autorização autorizada (e ainda em aberto no espelho) ele entra na nova. `estaPendente` (`pendentes.ts`) idem.
 - A autorização antiga não muda (prova). Quando a baixa vier, a sincronização anota `baixado_consistem_em` nos itens das duas.
 - Testes: `pendentes.test.ts` e `tests/db/cap-autorizacoes.test.ts` ("vale o Consistem").
+
+### Título quitado com resíduo de juros (27/10/2026, 0188)
+Depois da 0187 apareceram na lista títulos já pagos no Consistem: o principal foi pago por inteiro (`valorPago` = `valorDocumento`)
+e o saldo da API (`valorAtualizado`) é só juros/multa que ficaram sem baixa (ex.: custas de cartório lançadas nos juros). Eram 652
+títulos, R$ 484 mil de juros. A listagem não traz `valorPago`; só o detalhe (`lancamentoContasPagar/{id}`).
+- A sincronização (etapa 7b) lê o detalhe dos títulos C em aberto com saldo menor que o documento, uma vez por saldo
+  (`pago_conferido_saldo`), até 400 por rodada. Principal pago → grava `quitado_saldo` = saldo restante.
+- `planejarSincronizacaoPagar` trata como **não aberto** o título cuja API devolve o mesmo saldo de `quitado_saldo`: vira baixado
+  (e o item da autorização recebe `baixado_consistem_em`). Saldo mudou no Consistem → reabre e é conferido de novo.
+- Regra pura `principalQuitado` (`_shared/consistem-pagar.ts`), testes em `consistem-pagar.test.ts`.
