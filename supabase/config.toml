@@ -455,6 +455,20 @@ verify_jwt = false
 [functions.nucleo-gmail-conectar]
 verify_jwt = false
 
+[functions.nucleo-ged-conectar]
+verify_jwt = false
+
+[functions.nucleo-ged-metadados]
+verify_jwt = true
+
+# Indexação do GED: só o agendamento do banco chama (x-sincronizacao-segredo); conferido na função.
+[functions.nucleo-ged-indexar]
+verify_jwt = false
+
+# Padronização de nomes do GED: só o admin geral (JWT conferido também na função).
+[functions.nucleo-ged-analisar]
+verify_jwt = true
+
 [functions.nucleo-notificacoes-enviar]
 verify_jwt = false
 

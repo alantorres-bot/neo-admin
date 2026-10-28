@@ -59,10 +59,12 @@ justifica ocorrência por ocorrência num formulário. O RH ajusta no Control iD
    |---|---|
    | Esqueceu de bater (trabalhou normalmente) | Incluir a marcação. Horário **opcional**; em branco, o previsto |
    | Batida indevida (trabalhou normalmente) | Desconsiderar a marcação |
-   | Saída antecipada, atraso ou meio período | Banco de horas se o saldo do PDF cobre; senão desconto (ou parte de cada) |
+   | Atraso ou saída antecipada sem justificativa: abater no banco de horas (rótulo de 26/10/2026) | Banco de horas se o saldo do PDF cobre; senão desconto (ou parte de cada) |
    | Falta sem justificativa | Descontar |
    | Falta ou atraso justificado | Abonar; o **RH** anexa o atestado (o líder não anexa, por LGPD) |
-   | Outro | Observação obrigatória |
+   | Outro | Ver a observação do líder |
+
+   A **observação é obrigatória em todas** as justificativas (0524, 26/10/2026): o líder descreve o que aconteceu, para o RH ter o contexto.
 
    A ação é só **sugestão**: não há regra de desconto, DSR ou abono calculada aqui.
 5. **Prazo do líder:**

@@ -26,6 +26,12 @@ export type Acesso = {
 /** Módulos que o usuário restrito a uma unidade enxerga. */
 export const MODULOS_DA_UNIDADE: readonly string[] = ["financeiro.filial", "financeiro.cobranca", "financeiro.recebiveis"];
 
+/**
+ * Módulos com atalho próprio no trilho (fora do submenu da área). A Central de Documentos atende várias áreas (quem lê cada pasta é
+ * decidido por raiz, 0804), então não fica no submenu do Administrativo: o atalho aparece para quem lê alguma raiz.
+ */
+export const MODULOS_COM_ATALHO_PROPRIO: readonly string[] = ["administrativo.ged"];
+
 export function nivelAtinge(nivel: NivelAcesso, minimo: NivelAcesso): boolean {
   return NIVEIS.indexOf(nivel) >= NIVEIS.indexOf(minimo);
 }
@@ -112,7 +118,7 @@ export function montarMenu(
       area,
       modulos: [
         ...modulos
-          .filter((m) => m.area === area.codigo && m.ativo)
+          .filter((m) => m.area === area.codigo && m.ativo && !MODULOS_COM_ATALHO_PROPRIO.includes(m.codigo))
           .sort(painelPrimeiro)
           .map((m): ItemMenu => ({ codigo: m.codigo, nome: m.nome, rota: rotaDoModulo(m.codigo) })),
         ...aplicativos

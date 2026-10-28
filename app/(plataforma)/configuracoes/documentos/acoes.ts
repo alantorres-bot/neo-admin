@@ -1,0 +1,157 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { mensagemDeErroBanco } from "@/lib/nucleo/erros";
+import { ehRaizCandidata, ehRaizConfirmada, type ConsultaMetadados } from "@/supabase/functions/_shared/ged";
+import {
+  FUNCAO_CONEXAO_GED,
+  FUNCAO_METADADOS_GED,
+  lerConsultaMetadados,
+  lerVerificacaoRaiz,
+  mensagemConsultaMetadados,
+  mensagemDesconexao,
+  mensagemErroInicio,
+  mensagemRaizGed,
+  ROTA_CONEXAO_GED,
+  urlInicioConexaoGed,
+  validarContaGed,
+  type Aviso,
+  type SituacaoConexaoGed,
+  type VerificacaoRaiz,
+} from "@/lib/nucleo/ged/conexao-tela";
+import { exigirSessao } from "@/lib/nucleo/sessao";
+import { criarClienteServidor } from "@/lib/supabase/servidor";
+
+const SO_ADMIN = "Só o administrador geral conecta ou desconecta o Google Drive do GED.";
+
+/**
+ * "Conectar Google Drive": gera o state no banco (ged_iniciar_conexao, que também confere o admin) com o destino FIXO desta tela
+ * e devolve a URL da Edge Function, que leva ao Google. Nenhum parâmetro de destino vem do navegador.
+ */
+export async function iniciarConexaoGed(): Promise<{ ok: true; url: string } | { ok: false; erro: string }> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: SO_ADMIN };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.rpc("ged_iniciar_conexao", { p_destino: ROTA_CONEXAO_GED });
+  if (error) return { ok: false, erro: mensagemErroInicio(error) };
+  const url = urlInicioConexaoGed(process.env.NEXT_PUBLIC_SUPABASE_URL, data);
+  return url ? { ok: true, url } : { ok: false, erro: "Não foi possível iniciar a conexão. Tente de novo." };
+}
+
+/**
+ * Grava a conta dedicada (administrativo.ged.conta) pelo mesmo caminho dos outros parâmetros: RLS configuracoes_admin
+ * (só admin geral) e auditoria do núcleo (antes e depois). D-TROCA: só sem conexão ativa; na dúvida (situação ilegível), recusa.
+ */
+export async function definirContaGed(texto: string): Promise<{ ok: true } | { ok: false; erro: string }> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: "Só o administrador geral configura a conta do GED." };
+  const validada = validarContaGed(texto);
+  if (!validada.ok) return validada;
+  const supabase = await criarClienteServidor();
+  const situacao = await supabase.rpc("ged_situacao_conexao");
+  if (situacao.error) return { ok: false, erro: "Não foi possível conferir a conexão atual. Tente de novo." };
+  const atual = (situacao.data as SituacaoConexaoGed[] | null)?.[0];
+  if (atual && atual.situacao !== "desconectada") return { ok: false, erro: "Desconecte o Google Drive antes de trocar a conta." };
+  const { data, error } = await supabase.from("configuracoes").update({ valor: validada.conta })
+    .eq("chave", "administrativo.ged.conta").select("chave");
+  if (error) return { ok: false, erro: mensagemDeErroBanco(error) };
+  if (!data?.length) return { ok: false, erro: "Parâmetro não encontrado: aplique a migration 0801." };
+  revalidatePath(ROTA_CONEXAO_GED);
+  return { ok: true };
+}
+
+/**
+ * "Desconectar": chama a Edge Function com o JWT do usuário (ela confere o admin no banco, revoga no Google se
+ * administrativo.ged.revogar_no_google estiver ligada e desconecta localmente sempre).
+ */
+export async function desconectarGed(): Promise<({ ok: true } & Aviso) | { ok: false; erro: string }> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: SO_ADMIN };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.functions.invoke(FUNCAO_CONEXAO_GED, { method: "POST" });
+  if (error) return { ok: false, erro: "Não foi possível desconectar agora. Tente de novo." };
+  revalidatePath(ROTA_CONEXAO_GED);
+  return { ok: true, ...mensagemDesconexao((data as { revogacao?: unknown } | null)?.revogacao) };
+}
+
+/**
+ * Primeira leitura controlada do Drive: só metadados (nome, tipo, data, tamanho), com limite fixo na Edge Function. A função
+ * confere o admin no banco, renova o acesso com o token do Vault e registra a consulta na auditoria.
+ */
+export async function consultarMetadadosGed(): Promise<{ ok: true; consulta: ConsultaMetadados } | { ok: false; erro: string }> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: mensagemConsultaMetadados("sem_permissao") };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.functions.invoke(FUNCAO_METADADOS_GED, { method: "POST" });
+  if (error) {
+    const corpo = await ((error as { context?: Response }).context?.json?.() as Promise<{ erro?: unknown }> | undefined)?.catch(() => null);
+    return { ok: false, erro: mensagemConsultaMetadados(corpo?.erro) };
+  }
+  const consulta = lerConsultaMetadados(data);
+  return consulta ? { ok: true, consulta } : { ok: false, erro: mensagemConsultaMetadados(null) };
+}
+
+/**
+ * Verificação de uma raiz candidata (A0, 5.2.4): o resumo da árvore volta só para esta tela e não é gravado (5.2.4.4). Só os IDs
+ * da lista da especificação; a Edge Function confere de novo, e o banco também.
+ */
+export async function verificarRaizGed(raiz: string): Promise<{ ok: true; verificacao: VerificacaoRaiz } | { ok: false; erro: string }> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: mensagemConsultaMetadados("sem_permissao") };
+  if (!ehRaizCandidata(raiz)) return { ok: false, erro: mensagemConsultaMetadados("raiz_invalida") };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.functions.invoke(FUNCAO_METADADOS_GED, { method: "POST", body: { acao: "verificar_raiz", raiz } });
+  if (error) {
+    const corpo = await ((error as { context?: Response }).context?.json?.() as Promise<{ erro?: unknown }> | undefined)?.catch(() => null);
+    return { ok: false, erro: mensagemConsultaMetadados(corpo?.erro) };
+  }
+  const verificacao = lerVerificacaoRaiz(data);
+  return verificacao ? { ok: true, verificacao } : { ok: false, erro: mensagemConsultaMetadados(null) };
+}
+
+type Resultado = { ok: true } | { ok: false; erro: string };
+const SO_ADMIN_RAIZ = mensagemRaizGed("sem_permissao");
+
+/**
+ * Cadastro de uma das duas raízes confirmadas (A1a, 5.2): a Edge Function lê o nome no Drive (files.get) e grava pela
+ * ged_cadastrar_raiz (0804), que confere de novo admin, IDs, trava da elaboração e áreas. Nada do navegador vira nome.
+ */
+export async function cadastrarRaizGed(raiz: string, area: string, areasLeitura: string[], areaOperacao: string): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: SO_ADMIN_RAIZ };
+  if (!ehRaizConfirmada(raiz)) return { ok: false, erro: mensagemRaizGed("raiz_invalida") };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.functions.invoke(FUNCAO_METADADOS_GED, {
+    method: "POST", body: { acao: "cadastrar_raiz", raiz, area, areas_leitura: areasLeitura, area_operacao: areaOperacao },
+  });
+  if (error) {
+    const corpo = await ((error as { context?: Response }).context?.json?.() as Promise<{ erro?: unknown }> | undefined)?.catch(() => null);
+    return { ok: false, erro: mensagemRaizGed(corpo?.erro) };
+  }
+  revalidatePath(ROTA_CONEXAO_GED);
+  return { ok: true };
+}
+
+/** Áreas do dossiê (PENDENTE 2: escolha explícita do admin, sem padrão). A elaboração é recusada pelo banco (5.11.1). */
+export async function definirAreasRaizGed(id: string, area: string, areasLeitura: string[], areaOperacao: string): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: SO_ADMIN_RAIZ };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("ged_definir_areas_raiz", {
+    p_raiz: id, p_area: area, p_areas_leitura: areasLeitura, p_area_operacao: areaOperacao,
+  });
+  if (error) return { ok: false, erro: mensagemRaizGed(error.message) };
+  revalidatePath(ROTA_CONEXAO_GED);
+  return { ok: true };
+}
+
+/** Ativar (exige verificação `ok` auditada da mesma pasta) ou inativar. As transições valem no banco (8.1). */
+export async function definirSituacaoRaizGed(id: string, situacao: "ativa" | "inativa"): Promise<Resultado> {
+  const sessao = await exigirSessao();
+  if (!sessao.acesso.adminGeral) return { ok: false, erro: SO_ADMIN_RAIZ };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.rpc("ged_definir_situacao_raiz", { p_raiz: id, p_situacao: situacao });
+  if (error) return { ok: false, erro: mensagemRaizGed(error.message) };
+  revalidatePath(ROTA_CONEXAO_GED);
+  return { ok: true };
+}

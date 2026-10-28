@@ -1,0 +1,1917 @@
+// GED — Central de Documentos: regras puras usadas pela indexação (Edge Function) e pelo app
+// (docs/modulos/administrativo-ged.md). Sem imports: o tsc do app não aceita import com ".ts" e o Deno exige a extensão.
+// Nada aqui grava no banco nem escreve no Drive: o cliente HTTP só faz GET (5.1).
+
+// ───────────────────────── Texto e documentos (cópias locais de lib/nucleo) ─────────────────────────
+
+/** Minúsculas, sem acento e com espaços simples (mesma regra de `normalizar`, lib/nucleo/tabela.ts). */
+export const normalizarTexto = (texto: string): string =>
+  texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+
+const somenteDigitos = (valor: string): string => valor.replace(/\D/g, "");
+
+// Cópia de `validarCnpj` (lib/nucleo/documentos.ts).
+function validarCnpj(valor: string): boolean {
+  const d = somenteDigitos(valor);
+  if (d.length !== 14 || /^(\d)\1+$/.test(d)) return false;
+  const dv = (base: string, pesos: number[]) => {
+    const resto = base.split("").reduce((acc, x, i) => acc + Number(x) * pesos[i], 0) % 11;
+    return resto < 2 ? 0 : 11 - resto;
+  };
+  const d1 = dv(d.slice(0, 12), [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  const d2 = dv(d.slice(0, 12) + d1, [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]);
+  return d === d.slice(0, 12) + d1 + d2;
+}
+
+// ───────────────────────── Pasta → cliente (5.4.2, 5.4.3) ─────────────────────────
+// Só sugestão: nada é confirmado automaticamente, nem com nota 100.
+
+/** Termos societários e de ramo retirados do nome (5.4.2; a lista é configurável). */
+export const TERMOS_IGNORADOS_PADRAO = ["ltda", "sa", "me", "eireli", "construtora", "construcoes", "engenharia"];
+// Conectivos retirados para que "X Engenharia e Construções" e "X" cheguem ao mesmo núcleo (detalhe técnico, 11.1).
+const CONECTIVOS = ["e", "de", "da", "do", "das", "dos"];
+
+/** Núcleo do nome: sem acento, minúsculo, sem sufixo de ano ("- 2026"), sem pontuação, sem termos societários. */
+export function normalizarNomeCliente(nome: string, termos: readonly string[] = TERMOS_IGNORADOS_PADRAO): string {
+  return nome
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s*-\s*(19|20)\d{2}\s*$/, "")
+    .replace(/\bs\s*\/\s*a\b|\bs\.a\.?/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(" ")
+    .filter((p) => p !== "" && !termos.includes(p) && !CONECTIVOS.includes(p))
+    .join(" ");
+}
+
+/** CNPJs válidos citados num texto (com ou sem máscara). */
+export function cnpjsNoTexto(texto: string): string[] {
+  const achados = texto.match(/\d{2}\.?\d{3}\.?\d{3}\/?\d{4}-?\d{2}/g) ?? [];
+  return [...new Set(achados.map(somenteDigitos).filter(validarCnpj))];
+}
+
+export type ClienteCadastro = { id: string; nome: string; documento: string | null };
+export type Candidato = { clienteId: string; nota: number; motivo: string };
+export type SugestaoCliente = { situacao: "sugerida" | "sem_sugestao"; candidatos: Candidato[] };
+
+// shortcut: semelhança por palavras em comum (Jaccard) com corte fixo; trocar por um índice de similaridade do banco
+// (pg_trgm, ponto 9) se a qualidade das sugestões não bastar.
+const NOTA_MINIMA = 40;
+
+function semelhanca(a: string, b: string): number {
+  const x = new Set(a.split(" ").filter(Boolean));
+  const y = new Set(b.split(" ").filter(Boolean));
+  if (x.size === 0 || y.size === 0) return 0;
+  const comuns = [...x].filter((p) => y.has(p)).length;
+  return comuns / (x.size + y.size - comuns);
+}
+
+/**
+ * Sugere até 3 clientes para uma pasta (`contrapartes` do tipo cliente, ativas). CNPJ válido no nome da pasta ou de um arquivo
+ * dela vale nota 100; nome igual depois da normalização, 90; semelhança de palavras, até 80.
+ */
+export function sugerirCliente(nomePasta: string, nomesArquivos: readonly string[], clientes: readonly ClienteCadastro[]): SugestaoCliente {
+  const cnpjPasta = cnpjsNoTexto(nomePasta);
+  const cnpjArquivos = nomesArquivos.flatMap(cnpjsNoTexto);
+  const nucleo = normalizarNomeCliente(nomePasta);
+
+  const candidatos = clientes
+    .map((c): Candidato | null => {
+      const doc = c.documento ? somenteDigitos(c.documento) : "";
+      if (doc && cnpjPasta.includes(doc)) return { clienteId: c.id, nota: 100, motivo: "mesmo CNPJ no nome da pasta" };
+      if (doc && cnpjArquivos.includes(doc)) return { clienteId: c.id, nota: 100, motivo: "mesmo CNPJ no nome do arquivo" };
+      const outro = normalizarNomeCliente(c.nome);
+      if (nucleo !== "" && outro === nucleo) return { clienteId: c.id, nota: 90, motivo: "nome igual após normalização" };
+      const nota = Math.round(semelhanca(nucleo, outro) * 80);
+      return nota >= NOTA_MINIMA ? { clienteId: c.id, nota, motivo: "nome parecido" } : null;
+    })
+    .filter((c): c is Candidato => c !== null)
+    .sort((a, b) => b.nota - a.nota)
+    .slice(0, 3);
+
+  return { situacao: candidatos.length > 0 ? "sugerida" : "sem_sugestao", candidatos };
+}
+
+// ───────────────────────── Tipo documental (5.5) ─────────────────────────
+// As regras vêm do catálogo `ged_regras_tipo`; nenhuma regra de nome é fixada no código [PENDENTE 6].
+
+export type Finalidade = "elaboracao" | "dossie_cliente" | "tematica";
+export type FuncaoPasta = "modelos" | "trabalho";
+export type TipoSituacao = "sugerido" | "confirmado" | "sem_tipo";
+
+export type RegraTipo = {
+  tipo: string;
+  expressao: string;
+  /** Menor número = avaliada primeiro. */
+  prioridade: number;
+  finalidade?: Finalidade;
+  funcaoPasta?: FuncaoPasta;
+};
+export type RegraPreparada = RegraTipo & { re: RegExp };
+
+export type DocumentoClassificavel = {
+  nome: string;
+  finalidade: Finalidade;
+  funcaoPasta?: FuncaoPasta | null;
+  tipo: string | null;
+  tipoSituacao: TipoSituacao;
+};
+export type Classificacao = { tipo: string | null; tipoSituacao: TipoSituacao; modeloSituacao?: "nao_avaliado" };
+
+/**
+ * "Documentação cadastral" que a raiz `elaboracao` não sugere. PROVISÓRIO: a especificação não lista os códigos.
+ * shortcut: leitura do assistente (cartão CNPJ, contrato social, procuração); substituir pelo catálogo final [PENDENTE 6 (GED)].
+ */
+export const TIPOS_CADASTRAIS_PROVISORIOS: readonly string[] = ["cartao_cnpj", "contrato_social", "procuracao"];
+
+/** Tipos que a raiz não deixa sugerir (5.5, cautela 4); continuam classificáveis à mão. */
+export const TIPOS_NAO_SUGERIDOS: Record<Finalidade, readonly string[]> = {
+  elaboracao: ["contrato_assinado", "nf_venda", "nf_remessa", "boleto", ...TIPOS_CADASTRAIS_PROVISORIOS],
+  dossie_cliente: ["modelo_contrato"],
+  tematica: [],
+};
+
+export class ErroRegraTipo extends Error {
+  constructor(mensagem: string) {
+    super(mensagem);
+    this.name = "ErroRegraTipo";
+  }
+}
+
+/** Compila as regras uma vez, na ordem de prioridade. Expressão inválida é erro de configuração. */
+export function prepararRegras(regras: readonly RegraTipo[]): RegraPreparada[] {
+  return [...regras]
+    .sort((a, b) => a.prioridade - b.prioridade)
+    .map((r) => {
+      try {
+        return { ...r, re: new RegExp(r.expressao) };
+      } catch {
+        throw new ErroRegraTipo(`Expressão inválida na regra do tipo "${r.tipo}".`);
+      }
+    });
+}
+
+/**
+ * Sugere o tipo. Confirmado: devolve como está. Arquivo em pasta de modelos da elaboração: `modelo_contrato` não avaliado
+ * (cautela 1). Senão, a primeira regra que casa com o nome normalizado, respeitando finalidade, função da pasta e os
+ * limites da raiz; nenhuma casando: `sem_tipo`.
+ */
+export function classificarTipo(doc: DocumentoClassificavel, regras: readonly RegraPreparada[]): Classificacao {
+  if (doc.tipoSituacao === "confirmado") return { tipo: doc.tipo, tipoSituacao: "confirmado" };
+  if (doc.finalidade === "elaboracao" && doc.funcaoPasta === "modelos") {
+    return { tipo: "modelo_contrato", tipoSituacao: "sugerido", modeloSituacao: "nao_avaliado" };
+  }
+  const nome = normalizarTexto(doc.nome);
+  const bloqueados = TIPOS_NAO_SUGERIDOS[doc.finalidade];
+  const regra = regras.find(
+    (r) =>
+      !bloqueados.includes(r.tipo) &&
+      (r.finalidade === undefined || r.finalidade === doc.finalidade) &&
+      (r.funcaoPasta === undefined || r.funcaoPasta === doc.funcaoPasta) &&
+      r.re.test(nome),
+  );
+  return regra ? { tipo: regra.tipo, tipoSituacao: "sugerido" } : { tipo: null, tipoSituacao: "sem_tipo" };
+}
+
+// ───────────────────────── Temporários e versões (5.2.7, 5.6.3, 5.6.4) ─────────────────────────
+
+/** Padrões padrão de `administrativo.ged.ignorar_padroes`: começa com `~$` ou `~WRL`, ou termina em `.tmp`. */
+export const IGNORAR_PADROES_PADRAO = ["^~\\$", "^~wrl", "\\.tmp$"];
+
+/** Arquivo temporário ou de sistema: fica `ignorado` e não aparece na busca. */
+export function ehArquivoTemporario(nome: string, padroes: readonly string[] = IGNORAR_PADROES_PADRAO): boolean {
+  return padroes.some((p) => new RegExp(p, "i").test(nome.trim()));
+}
+
+const MARCA_VERSAO = /\s*(?:\bv\s*(\d+)|\brev\.?\s*(\d+)|\((\d+)\))\s*$/i;
+
+/** Nome sem extensão e sem a marca de versão final (`V2`, `Rev03`, `(1)`), com a versão encontrada (0 = sem marca). */
+export function separarVersao(nome: string): { base: string; extensao: string; versao: number } {
+  const ponto = nome.lastIndexOf(".");
+  const extensao = ponto > 0 ? nome.slice(ponto + 1).toLowerCase() : "";
+  let base = ponto > 0 ? nome.slice(0, ponto) : nome;
+  const m = MARCA_VERSAO.exec(base);
+  const versao = m ? Number(m[1] ?? m[2] ?? m[3]) : 0;
+  if (m) base = base.slice(0, m.index);
+  return { base: base.trim().toLowerCase(), extensao, versao };
+}
+
+export type ArquivoVersionavel = { id: string; nome: string; raizId: string; pastaId: string };
+export type SugestaoSubstituicao = { substitutoId: string; substituidoId: string };
+
+/**
+ * Sugere substituições (nunca aplica) entre arquivos da mesma pasta — e, por consequência, da mesma raiz — com o mesmo
+ * nome-base e a mesma extensão, que diferem só pela marca de versão. Raízes diferentes nunca são comparadas (5.6.4).
+ */
+export function sugerirSubstituicoes(arquivos: readonly ArquivoVersionavel[]): SugestaoSubstituicao[] {
+  const grupos = new Map<string, { id: string; versao: number }[]>();
+  for (const a of arquivos) {
+    const { base, extensao, versao } = separarVersao(a.nome);
+    const chave = JSON.stringify([a.raizId, a.pastaId, base, extensao]);
+    grupos.set(chave, [...(grupos.get(chave) ?? []), { id: a.id, versao }]);
+  }
+  const sugestoes: SugestaoSubstituicao[] = [];
+  for (const grupo of grupos.values()) {
+    const ordenado = [...grupo].sort((a, b) => a.versao - b.versao);
+    for (let i = 1; i < ordenado.length; i++) {
+      // Mesma versão (ex.: duas cópias sem marca) não é sugestão: não dá para saber qual substitui qual.
+      if (ordenado[i].versao !== ordenado[i - 1].versao) {
+        sugestoes.push({ substitutoId: ordenado[i].id, substituidoId: ordenado[i - 1].id });
+      }
+    }
+  }
+  return sugestoes;
+}
+
+// ───────────────────────── Pistas do arquivo de trabalho (5.4.8) ─────────────────────────
+
+/**
+ * Pistas para SUGERIR o vínculo de um arquivo da raiz `elaboracao` (5.4.8): o número de contrato no início do nome (`^\d+ - `)
+ * e o nome curto do cliente no último trecho "… - <cliente>", sem extensão e sem marca de versão. Só sugestão: quem compara com
+ * os contratos é `ctr_alvos_por_numero` (com a autorização de quem pergunta), e a confirmação é sempre humana.
+ */
+export function pistasArquivoTrabalho(nome: string): { numeroContrato: string | null; clienteCurto: string | null } {
+  const numero = /^\s*(\d+)\s+-\s+/.exec(nome)?.[1] ?? null;
+  const ponto = nome.lastIndexOf(".");
+  const semExtensao = ponto > 0 ? nome.slice(0, ponto) : nome;
+  const trechos = semExtensao.replace(MARCA_VERSAO, "").split(/\s+-\s+/);
+  const ultimo = trechos.length >= 2 ? trechos[trechos.length - 1].trim() : "";
+  return { numeroContrato: numero, clienteCurto: ultimo !== "" && !/^\d+$/.test(ultimo) ? ultimo : null };
+}
+
+// ───────────────────────── Pastas-raiz (5.2.4, 5.3.0) ─────────────────────────
+
+export type SituacaoRaiz = "em_verificacao" | "ativa" | "inativa";
+/** Raiz como o cadastro a enxerga: o ID do Drive e os IDs de todas as pastas acima dela. */
+export type RaizCaminho = { driveId: string; ancestrais: readonly string[] };
+
+/** A nova raiz é a mesma, está dentro ou está acima de alguma raiz já cadastrada? Devolve o driveId em conflito ou null. */
+export function raizSobreposta(nova: RaizCaminho, cadastradas: readonly RaizCaminho[]): string | null {
+  const conflito = cadastradas.find(
+    (r) => r.driveId === nova.driveId || nova.ancestrais.includes(r.driveId) || r.ancestrais.includes(nova.driveId),
+  );
+  return conflito?.driveId ?? null;
+}
+
+export const podeIndexar = (situacao: SituacaoRaiz): boolean => situacao === "ativa";
+
+// ───────────────────────── Cliente HTTP da Drive API, só leitura (4.1, 5.1, 10) ─────────────────────────
+// Método diferente de GET, ou endereço fora de www.googleapis.com/drive/v3, falha ANTES do fetch.
+// O token só entra no cabeçalho e nunca aparece em mensagem de erro.
+
+export const DRIVE_BASE = "https://www.googleapis.com/drive/v3/";
+/** Campos de arquivo pedidos em `files.list` e `changes.list` (4.1). */
+export const CAMPOS_ARQUIVO = "id,name,mimeType,size,md5Checksum,createdTime,modifiedTime,parents,webViewLink,headRevisionId,trashed,shortcutDetails";
+// Mesmo desenho do retry de 429 do Consistem (_shared/consistem-receber.ts): 1 s, 2 s, 4 s.
+const MAX_TENTATIVAS = 4;
+
+export class ErroDrive extends Error {
+  constructor(mensagem: string, readonly status: number | null = null) {
+    super(mensagem);
+    this.name = "ErroDrive";
+  }
+}
+
+type Fetch = (url: string, init: { method: "GET"; headers: Record<string, string> }) => Promise<Response>;
+type OpcoesCliente = { fazerFetch?: Fetch; esperar?: (ms: number) => Promise<void> };
+
+const esperarPadrao = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+const transitorio = (status: number) => status === 429 || status >= 500;
+
+export function criarClienteDrive(obterToken: () => Promise<string>, opcoes: OpcoesCliente = {}) {
+  const fazerFetch = opcoes.fazerFetch ?? fetch;
+  const esperar = opcoes.esperar ?? esperarPadrao;
+
+  async function pedir(metodo: string, caminho: string, params: Record<string, string> = {}): Promise<Response> {
+    if (metodo.toUpperCase() !== "GET") throw new ErroDrive(`O GED só lê o Drive: o método ${metodo} foi recusado.`);
+    const url = new URL(caminho, DRIVE_BASE);
+    if (url.origin !== "https://www.googleapis.com" || !url.pathname.startsWith("/drive/v3/")) {
+      throw new ErroDrive("O GED só acessa a Drive API v3.");
+    }
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+
+    const token = await obterToken();
+    const init = { method: "GET" as const, headers: { Authorization: `Bearer ${token}` } };
+    let resposta = await fazerFetch(url.toString(), init);
+    for (let tentativa = 1; transitorio(resposta.status) && tentativa < MAX_TENTATIVAS; tentativa++) {
+      await esperar(2 ** (tentativa - 1) * 1000);
+      resposta = await fazerFetch(url.toString(), init);
+    }
+    if (!resposta.ok) {
+      let motivo = "";
+      try {
+        const corpo = (await resposta.json()) as { error?: { status?: string; message?: string } };
+        motivo = corpo.error?.status ?? corpo.error?.message ?? "";
+      } catch {
+        // corpo sem JSON: fica só o status HTTP
+      }
+      const mensagem = `Drive respondeu ${resposta.status}${motivo ? ` (${motivo})` : ""}.`;
+      throw new ErroDrive(token ? mensagem.split(token).join("***") : mensagem, resposta.status);
+    }
+    return resposta;
+  }
+  const requisitar = async (metodo: string, caminho: string, params: Record<string, string> = {}): Promise<unknown> =>
+    (await pedir(metodo, caminho, params)).json();
+
+  /**
+   * Conteúdo de um arquivo (`alt=media`), só para a padronização de nomes (5.12): GET, só `/drive/v3/files/{id}`, com teto de bytes.
+   * A indexação nunca chama isto (ela só lê metadados; teste em tests/db/ged-indexacao.test.ts).
+   */
+  async function baixar(arquivoId: string, maxBytes: number): Promise<Uint8Array> {
+    if (!/^[A-Za-z0-9_-]+$/.test(arquivoId)) throw new ErroDrive("ID de arquivo inválido.");
+    const resposta = await pedir("GET", `files/${arquivoId}`, { alt: "media", supportsAllDrives: "true" });
+    if (Number(resposta.headers.get("content-length") ?? 0) > maxBytes) throw new ErroDrive("arquivo_grande");
+    const bytes = new Uint8Array(await resposta.arrayBuffer());
+    if (bytes.byteLength > maxBytes) throw new ErroDrive("arquivo_grande");
+    return bytes;
+  }
+
+  return { requisitar, get: (caminho: string, params?: Record<string, string>) => requisitar("GET", caminho, params), baixar };
+}
+
+export type ClienteDrive = ReturnType<typeof criarClienteDrive>;
+
+// ───────────────────────── Indexação: mudanças do Drive (5.3.2, 8.1) ─────────────────────────
+
+export const MIME_PASTA = "application/vnd.google-apps.folder";
+
+export type ArquivoDrive = {
+  id: string;
+  name: string;
+  mimeType: string;
+  parents?: string[];
+  trashed?: boolean;
+  headRevisionId?: string;
+  createdTime?: string;
+  modifiedTime?: string;
+  size?: string;
+  md5Checksum?: string;
+  webViewLink?: string;
+  shortcutDetails?: { targetId?: string };
+};
+export type MudancaDrive = { fileId: string; removed?: boolean; file?: ArquivoDrive };
+
+export type SituacaoDocumento = "vigente" | "substituido" | "removido_no_drive" | "fora_do_escopo" | "ignorado";
+export type SituacaoPasta = "ativa" | "removida_no_drive" | "fora_do_escopo";
+
+export type DocumentoIndice = {
+  driveId: string;
+  pastaDriveId: string;
+  nome: string;
+  /** Para a busca por `ilike` (seção 8): minúsculo, sem acento. */
+  nomeNormalizado: string;
+  extensao: string;
+  mime: string;
+  driveRevisao: string | null;
+  criadoNoDriveEm: string | null;
+  alteradoNoDriveEm: string | null;
+  tamanhoBytes: number | null;
+  md5: string | null;
+  webLink: string | null;
+  atalhoPara: string | null;
+  situacao: SituacaoDocumento;
+};
+export type PastaIndice = { driveId: string; maeDriveId: string | null; nome: string; profundidade: number; situacao: SituacaoPasta };
+
+export type EstadoIndice = {
+  pastas: ReadonlyMap<string, PastaIndice>;
+  documentos: ReadonlyMap<string, DocumentoIndice>;
+  profundidadeMax: number;
+  padroesIgnorar?: readonly string[];
+};
+
+export type ResultadoMudanca =
+  | { acao: "nenhuma" }
+  | { acao: "gravar_pasta"; pasta: PastaIndice }
+  | { acao: "gravar_documento"; documento: DocumentoIndice; novo: boolean; novaRevisao: boolean };
+
+// Objetos planos; a ordem das chaves não conta (o estado lido do banco vem em outra ordem).
+const canonico = (o: object) => JSON.stringify(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)));
+const iguais = <T extends object>(a: T, b: T) => canonico(a) === canonico(b);
+
+/** Primeira pasta-mãe indexada e ativa, se houver. */
+function maeIndexada(arquivo: ArquivoDrive, pastas: EstadoIndice["pastas"]): PastaIndice | null {
+  for (const id of arquivo.parents ?? []) {
+    const p = pastas.get(id);
+    if (p && p.situacao === "ativa") return p;
+  }
+  return null;
+}
+
+function moverPasta(atual: PastaIndice | undefined, situacao: SituacaoPasta): ResultadoMudanca {
+  if (!atual || atual.situacao === situacao) return { acao: "nenhuma" };
+  return { acao: "gravar_pasta", pasta: { ...atual, situacao } };
+}
+
+// O sistema só move entre vigente, removido, fora do escopo e ignorado (8.1). `substituido` é decisão de uma pessoa:
+// a indexação não mexe na situação dele (o que fazer com um substituído removido do Drive não está especificado).
+function moverDocumento(atual: DocumentoIndice | undefined, situacao: SituacaoDocumento): ResultadoMudanca {
+  if (!atual || atual.situacao === situacao || atual.situacao === "substituido") return { acao: "nenhuma" };
+  return { acao: "gravar_documento", documento: { ...atual, situacao }, novo: false, novaRevisao: false };
+}
+
+/**
+ * Decide o efeito de uma mudança do `changes.list` sobre o índice, sem gravar nada e sem nunca apagar (5.3.2):
+ * - removido ou na lixeira: `removido_no_drive` (pasta: `removida_no_drive`);
+ * - pasta-mãe fora do índice: `fora_do_escopo`;
+ * - senão, insere ou atualiza; documento removido ou fora volta a `vigente` se reaparecer (8.1);
+ * - pasta além de `profundidadeMax` não entra no índice.
+ * Aplicar a mesma mudança duas vezes dá `nenhuma` na segunda. Quando uma pasta sai do escopo, o Drive não manda mudança
+ * para os arquivos dentro dela: quem os acerta é a reconciliação completa (5.3.4).
+ */
+export function aplicarMudanca(m: MudancaDrive, indice: EstadoIndice): ResultadoMudanca {
+  const pasta = indice.pastas.get(m.fileId);
+  // A raiz (profundidade 0) é governada pelo cadastro (`ged_pastas_raiz`, 5.2.3), não pela indexação.
+  if (pasta?.profundidade === 0) return { acao: "nenhuma" };
+  const doc = indice.documentos.get(m.fileId);
+  // Sem `file` e sem `removed`: a conta técnica deixou de enxergar o item. Sem leitura não há o que indexar, então conta como
+  // removido (nunca como inserção). Mudanças do próprio Drive compartilhado vêm sem `fileId` e não acham nada no índice.
+  const removido = m.removed === true || m.file?.trashed === true || !m.file;
+
+  if (removido) return pasta ? moverPasta(pasta, "removida_no_drive") : moverDocumento(doc, "removido_no_drive");
+
+  const f = m.file as ArquivoDrive;
+  const mae = maeIndexada(f, indice.pastas);
+
+  if (f.mimeType === MIME_PASTA) {
+    if (!mae || mae.profundidade + 1 > indice.profundidadeMax) return moverPasta(pasta, "fora_do_escopo");
+    const nova: PastaIndice = { driveId: f.id, maeDriveId: mae.driveId, nome: f.name, profundidade: mae.profundidade + 1, situacao: "ativa" };
+    return pasta && iguais(pasta, nova) ? { acao: "nenhuma" } : { acao: "gravar_pasta", pasta: nova };
+  }
+
+  if (!mae) return moverDocumento(doc, "fora_do_escopo");
+  const situacao: SituacaoDocumento =
+    doc?.situacao === "substituido" ? "substituido" : ehArquivoTemporario(f.name, indice.padroesIgnorar) ? "ignorado" : "vigente";
+  const novo: DocumentoIndice = {
+    driveId: f.id,
+    pastaDriveId: mae.driveId,
+    nome: f.name,
+    nomeNormalizado: normalizarTexto(f.name),
+    extensao: separarVersao(f.name).extensao,
+    mime: f.mimeType,
+    driveRevisao: f.headRevisionId ?? null,
+    criadoNoDriveEm: f.createdTime ?? null,
+    alteradoNoDriveEm: f.modifiedTime ?? null,
+    tamanhoBytes: f.size !== undefined ? Number(f.size) : null,
+    md5: f.md5Checksum ?? null,
+    webLink: f.webViewLink ?? null,
+    atalhoPara: f.shortcutDetails?.targetId ?? null,
+    situacao,
+  };
+  if (doc && iguais(doc, novo)) return { acao: "nenhuma" };
+  return {
+    acao: "gravar_documento",
+    documento: novo,
+    novo: !doc,
+    novaRevisao: novo.driveRevisao !== null && novo.driveRevisao !== (doc?.driveRevisao ?? null),
+  };
+}
+
+// ───────────────────────── Indexação: rodada paginada (5.3.1–5.3.3, 5.3.6) ─────────────────────────
+
+type PaginaMudancas = { changes?: MudancaDrive[]; nextPageToken?: string; newStartPageToken?: string };
+
+/**
+ * Percorre o `changes.list` a partir do token salvo e entrega cada página a `aplicarPagina`, que grava.
+ * Devolve o token a gravar SÓ quando todas as páginas lidas foram aplicadas; se algo falhar no meio, lança e o token
+ * não avança (a próxima rodada reprocessa, de forma idempotente).
+ * - `completa`: chegou ao `newStartPageToken`;
+ * - limite de itens atingido: devolve o `nextPageToken` da página seguinte, e o resto fica para a próxima rodada.
+ */
+export async function percorrerMudancas(
+  cliente: ClienteDrive,
+  pageToken: string,
+  aplicarPagina: (mudancas: MudancaDrive[]) => Promise<void>,
+  opcoes: { maxItens: number; driveId?: string },
+): Promise<{ proximoToken: string; completa: boolean; itens: number }> {
+  let token = pageToken;
+  let itens = 0;
+  for (;;) {
+    const params: Record<string, string> = {
+      pageToken: token,
+      fields: `nextPageToken,newStartPageToken,changes(fileId,removed,file(${CAMPOS_ARQUIVO}))`,
+      includeItemsFromAllDrives: "true",
+      supportsAllDrives: "true",
+      pageSize: "1000",
+    };
+    if (opcoes.driveId) Object.assign(params, { driveId: opcoes.driveId });
+    const pagina = (await cliente.get("changes", params)) as PaginaMudancas;
+    // A API sempre devolve a lista, mesmo vazia: sem ela, é resposta inválida, não "nenhuma mudança".
+    if (!Array.isArray(pagina.changes)) throw new ErroDrive("Resposta do Drive sem a lista de mudanças.");
+    const mudancas = pagina.changes;
+    await aplicarPagina(mudancas);
+    itens += mudancas.length;
+
+    if (pagina.newStartPageToken) return { proximoToken: pagina.newStartPageToken, completa: true, itens };
+    if (!pagina.nextPageToken) throw new ErroDrive("Resposta do Drive sem token de continuação.");
+    token = pagina.nextPageToken;
+    if (itens >= opcoes.maxItens) return { proximoToken: token, completa: false, itens };
+  }
+}
+
+// ───────────────────────── Linhas para o banco (seção 8, modelo PROPOSTO) ─────────────────────────
+// Só as colunas que a indexação grava. Tipo, cliente, versão e modelo são decisões de pessoas (funções de decisão, 5.10) e não
+// entram aqui. Os `uuid` internos (raiz e pasta) vêm de quem grava. O modelo de dados ainda é [PROPOSTA]; se mudar, muda aqui.
+
+export function linhaDocumento(d: DocumentoIndice, ids: { raizId: string; pastaId: string }) {
+  return {
+    origem: "drive",
+    drive_id: d.driveId,
+    raiz_id: ids.raizId,
+    pasta_id: ids.pastaId,
+    nome: d.nome,
+    nome_normalizado: d.nomeNormalizado,
+    mime: d.mime,
+    extensao: d.extensao,
+    tamanho_bytes: d.tamanhoBytes,
+    md5: d.md5,
+    drive_revisao: d.driveRevisao,
+    criado_no_drive_em: d.criadoNoDriveEm,
+    alterado_no_drive_em: d.alteradoNoDriveEm,
+    web_link: d.webLink,
+    atalho_para: d.atalhoPara,
+    situacao: d.situacao,
+  };
+}
+
+export function linhaPasta(p: PastaIndice, ids: { raizId: string }) {
+  return { raiz_id: ids.raizId, drive_id: p.driveId, nome: p.nome, mae_drive_id: p.maeDriveId, profundidade: p.profundidade, situacao: p.situacao };
+}
+
+/** Linha de `ged_documento_revisoes` (só inserção), quando `aplicarMudanca` sinaliza `novaRevisao`. */
+export function linhaRevisao(d: DocumentoIndice, documentoId: string) {
+  if (d.driveRevisao === null) throw new Error("Documento sem revisão do Drive.");
+  return { documento_id: documentoId, drive_revisao: d.driveRevisao, alterado_no_drive_em: d.alteradoNoDriveEm, tamanho_bytes: d.tamanhoBytes, md5: d.md5 };
+}
+
+/** Contagens da rodada para `ged_indexacoes.resumo` (seção 8): novos, alterados, removidos e ignorados. */
+export function resumirRodada(resultados: readonly ResultadoMudanca[]) {
+  const resumo = { novos: 0, alterados: 0, removidos: 0, ignorados: 0, pastas: 0 };
+  for (const r of resultados) {
+    if (r.acao === "gravar_pasta") resumo.pastas++;
+    if (r.acao !== "gravar_documento") continue;
+    const s = r.documento.situacao;
+    if (s === "removido_no_drive" || s === "fora_do_escopo") resumo.removidos++;
+    else if (s === "ignorado") resumo.ignorados++;
+    else if (r.novo) resumo.novos++;
+    else resumo.alterados++;
+  }
+  return resumo;
+}
+
+// ───────────────────────── Carga inicial, verificação e reconciliação (5.2.4.1, 5.3.1, 5.3.4) ─────────────────────────
+
+export type ArvoreLida = {
+  /** Pastas encontradas (sem a raiz), com a profundidade (filha direta da raiz = 1). */
+  pastas: { arquivo: ArquivoDrive; profundidade: number }[];
+  /** Arquivos (não pastas), com a profundidade da pasta-mãe. */
+  arquivos: { arquivo: ArquivoDrive; profundidadeMae: number }[];
+  /** Parou pelo limite de itens: a árvore está incompleta. */
+  truncada: boolean;
+};
+
+/**
+ * Percorre a raiz em largura, só com `files.list` (GET), até `profundidadeMax` (5.3.1). Pastas além do limite não são abertas.
+ * Para em `maxItens` e marca `truncada`. Não grava nada: serve à carga inicial, à verificação e à reconciliação.
+ */
+export async function percorrerArvore(
+  cliente: ClienteDrive,
+  raizId: string,
+  opcoes: {
+    profundidadeMax: number;
+    maxItens: number;
+    driveId?: string;
+    /** Teto de requisições: cada pasta aberta é ao menos um files.list. */
+    maxPastasAbertas?: number;
+    /** Pastas lidas ao mesmo tempo (padrão 1). A ordem do resultado não muda. */
+    paralelas?: number;
+    /** Prazo total: ao vencer, para e marca `truncada` (a Edge Function tem tempo máximo de execução). */
+    prazo?: { limiteMs: number; agora: () => number };
+  },
+): Promise<ArvoreLida> {
+  const arvore: ArvoreLida = { pastas: [], arquivos: [], truncada: false };
+  const fila: { id: string; profundidade: number }[] = [{ id: raizId, profundidade: 0 }];
+  const inicio = opcoes.prazo?.agora() ?? 0;
+  let itens = 0;
+  let abertas = 0;
+  while (fila.length > 0) {
+    if (opcoes.prazo && opcoes.prazo.agora() - inicio >= opcoes.prazo.limiteMs) return { ...arvore, truncada: true };
+    const restantes = opcoes.maxPastasAbertas === undefined ? Infinity : opcoes.maxPastasAbertas - abertas;
+    if (restantes <= 0) return { ...arvore, truncada: true };
+    const lote = fila.splice(0, Math.min(opcoes.paralelas ?? 1, restantes));
+    abertas += lote.length;
+    const listas = await Promise.all(lote.map((p) => listarPasta(cliente, p.id, opcoes.driveId)));
+    for (const [i, atual] of lote.entries()) {
+      for (const a of listas[i]) {
+        if (itens >= opcoes.maxItens) return { ...arvore, truncada: true };
+        itens++;
+        if (a.mimeType === MIME_PASTA) {
+          const profundidade = atual.profundidade + 1;
+          if (profundidade > opcoes.profundidadeMax) continue;
+          arvore.pastas.push({ arquivo: a, profundidade });
+          fila.push({ id: a.id, profundidade });
+        } else {
+          arvore.arquivos.push({ arquivo: a, profundidadeMae: atual.profundidade });
+        }
+      }
+    }
+  }
+  return arvore;
+}
+
+/** A árvore lida como mudanças do Drive, pastas antes dos arquivos e em ordem de profundidade, prontas para `aplicarMudanca`. */
+export function mudancasDaArvore(arvore: ArvoreLida): MudancaDrive[] {
+  const pastas = [...arvore.pastas].sort((a, b) => a.profundidade - b.profundidade);
+  return [...pastas.map((p) => p.arquivo), ...arvore.arquivos.map((a) => a.arquivo)].map((f) => ({ fileId: f.id, file: f }));
+}
+
+/**
+ * Resumo da verificação da raiz (5.2.4.1): quantidades por nível, subpastas de 1º e 2º nível, extensões mais comuns e temporários.
+ * Contém NOMES de pastas e arquivos: só pode ir ao admin geral, e a persistência segue a 5.2.4.4 [PENDENTE 13].
+ */
+export function resumirArvore(arvore: ArvoreLida, padroesIgnorar?: readonly string[]) {
+  const niveis = new Map<number, { pastas: number; arquivos: number }>();
+  const nivel = (n: number) => {
+    let c = niveis.get(n);
+    if (!c) niveis.set(n, (c = { pastas: 0, arquivos: 0 }));
+    return c;
+  };
+  for (const p of arvore.pastas) nivel(p.profundidade).pastas++;
+  for (const a of arvore.arquivos) nivel(a.profundidadeMae).arquivos++;
+
+  const extensoes = new Map<string, number>();
+  for (const { arquivo } of arvore.arquivos) {
+    const ext = separarVersao(arquivo.name).extensao || "(sem extensão)";
+    extensoes.set(ext, (extensoes.get(ext) ?? 0) + 1);
+  }
+  return {
+    porNivel: [...niveis].sort((a, b) => a[0] - b[0]).map(([profundidade, c]) => ({ profundidade, ...c })),
+    subpastasNivel1: arvore.pastas.filter((p) => p.profundidade === 1).map((p) => p.arquivo.name),
+    subpastasNivel2: arvore.pastas.filter((p) => p.profundidade === 2).map((p) => p.arquivo.name),
+    extensoes: [...extensoes].sort((a, b) => b[1] - a[1]).slice(0, 10).map(([extensao, quantidade]) => ({ extensao, quantidade })),
+    temporarios: arvore.arquivos.map((a) => a.arquivo.name).filter((n) => ehArquivoTemporario(n, padroesIgnorar)),
+    truncada: arvore.truncada,
+  };
+}
+
+/**
+ * Reconciliação (5.3.4): itens indexados que não apareceram na listagem completa. Não há regra que diga, só pela ausência, se o
+ * item foi apagado ou movido; por isso cada ausente é consultado no Drive (`files.get`, GET) e vira uma mudança comum, que
+ * `aplicarMudanca` trata como qualquer outra (404 = removido). A raiz (profundidade 0) não entra.
+ */
+export function ausentesNaListagem(arvore: ArvoreLida, indice: EstadoIndice): string[] {
+  // Árvore truncada não serve: o que não foi lido pareceria sumido.
+  if (arvore.truncada) throw new ErroDrive("Listagem incompleta (limite de itens): a reconciliação não pode marcar ausentes.");
+  const vistos = new Set([...arvore.pastas.map((p) => p.arquivo.id), ...arvore.arquivos.map((a) => a.arquivo.id)]);
+  const pastas = [...indice.pastas.values()].filter((p) => p.profundidade > 0 && p.situacao === "ativa").map((p) => p.driveId);
+  const docs = [...indice.documentos.values()]
+    .filter((d) => d.situacao === "vigente" || d.situacao === "ignorado")
+    .map((d) => d.driveId);
+  return [...pastas, ...docs].filter((id) => !vistos.has(id));
+}
+
+/** Consulta um item ausente e o devolve como mudança: 404 vira `removed`; senão, o arquivo como está hoje. */
+export async function consultarAusente(cliente: ClienteDrive, driveId: string): Promise<MudancaDrive> {
+  if (!/^[A-Za-z0-9_-]+$/.test(driveId)) throw new ErroDrive("ID de arquivo inválido.");
+  try {
+    const file = (await cliente.get(`files/${driveId}`, { fields: CAMPOS_ARQUIVO, supportsAllDrives: "true" })) as ArquivoDrive;
+    return { fileId: driveId, file };
+  } catch (e) {
+    if (e instanceof ErroDrive && e.status === 404) return { fileId: driveId, removed: true };
+    throw e;
+  }
+}
+
+// ───────────────────────── Carga inicial integrada (5.3.1) ─────────────────────────
+
+/**
+ * Carga inicial de uma raiz: pega o `startPageToken` ANTES de listar (para não perder mudanças feitas durante a leitura), percorre
+ * a árvore e aplica tudo pelo mesmo caminho do incremental (`aplicarMudanca`), sobre uma cópia do índice atual. Não grava nada.
+ * - Listagem completa: devolve o token, que só então pode ser gravado (5.3.1 e 5.3.3).
+ * - Listagem truncada pelo limite: devolve o que foi lido (só inserções e atualizações; a listagem não traz itens na lixeira, então
+ *   nada é marcado como removido) e token nulo. A próxima rodada refaz a carga, que é idempotente.
+ * - Falha no meio (Drive ou gravação): a exceção sobe e nada é devolvido.
+ * Sugestões de vínculo (5.4.8) NÃO são calculadas aqui: são feitas na hora, com a permissão do usuário (5.11.5).
+ */
+export async function cargaInicial(
+  cliente: ClienteDrive,
+  raiz: { driveId: string; driveIdCompartilhado?: string },
+  indice: EstadoIndice,
+  opcoes: { maxItens: number; paralelas?: number; prazo?: { limiteMs: number; agora: () => number } },
+): Promise<{ resultados: ResultadoMudanca[]; resumo: ReturnType<typeof resumirRodada>; completa: boolean; startPageToken: string | null; itens: number }> {
+  if (indice.pastas.get(raiz.driveId)?.profundidade !== 0) throw new ErroDrive("A raiz precisa estar no índice com profundidade 0.");
+  const paramsToken: Record<string, string> = { supportsAllDrives: "true" };
+  if (raiz.driveIdCompartilhado) paramsToken.driveId = raiz.driveIdCompartilhado;
+  const { startPageToken } = (await cliente.get("changes/startPageToken", paramsToken)) as { startPageToken?: string };
+  if (!startPageToken) throw new ErroDrive("Resposta do Drive sem startPageToken.");
+
+  const arvore = await percorrerArvore(cliente, raiz.driveId, {
+    profundidadeMax: indice.profundidadeMax,
+    maxItens: opcoes.maxItens,
+    driveId: raiz.driveIdCompartilhado,
+    paralelas: opcoes.paralelas,
+    prazo: opcoes.prazo,
+  });
+  const copia = { ...indice, pastas: new Map(indice.pastas), documentos: new Map(indice.documentos) };
+  const resultados = aplicarPaginaNoIndice(mudancasDaArvore(arvore), copia);
+  return {
+    resultados, resumo: resumirRodada(resultados), completa: !arvore.truncada, startPageToken: arvore.truncada ? null : startPageToken,
+    itens: arvore.pastas.length + arvore.arquivos.length,
+  };
+}
+
+/**
+ * Aplica uma página do `changes.list` sobre o índice em memória, na ordem recebida (uma mudança pode depender da anterior,
+ * ex.: pasta criada e arquivo dentro dela). Devolve só o que muda, para a gravação; o `indice` passado é atualizado.
+ * Usada no `aplicarPagina` de `percorrerMudancas`: se a gravação falhar, o token não avança e a página é reaplicada depois.
+ */
+export function aplicarPaginaNoIndice(
+  mudancas: readonly MudancaDrive[],
+  indice: { pastas: Map<string, PastaIndice>; documentos: Map<string, DocumentoIndice>; profundidadeMax: number; padroesIgnorar?: readonly string[] },
+): ResultadoMudanca[] {
+  const resultados: ResultadoMudanca[] = [];
+  for (const m of mudancas) {
+    const r = aplicarMudanca(m, indice);
+    if (r.acao === "gravar_pasta") indice.pastas.set(r.pasta.driveId, r.pasta);
+    if (r.acao === "gravar_documento") indice.documentos.set(r.documento.driveId, r.documento);
+    if (r.acao !== "nenhuma") resultados.push(r);
+  }
+  return resultados;
+}
+
+// Gravação em três passos, porque os `uuid` só existem depois do insert: pastas → documentos (com o id da pasta) → revisões
+// (com o id do documento). Sem o id correspondente, para em vez de gravar uma linha órfã. A mensagem não cita IDs (5.11.11).
+const exigirId = (id: string | undefined, oQue: string): string => {
+  if (!id) throw new Error(`Sem o id interno de ${oQue}: a gravação foi interrompida para não deixar linha órfã.`);
+  return id;
+};
+
+export const pastasParaGravar = (resultados: readonly ResultadoMudanca[], raizId: string) =>
+  resultados.flatMap((r) => (r.acao === "gravar_pasta" ? [linhaPasta(r.pasta, { raizId })] : []));
+
+export const documentosParaGravar = (resultados: readonly ResultadoMudanca[], raizId: string, idDaPasta: (driveId: string) => string | undefined) =>
+  resultados.flatMap((r) =>
+    r.acao === "gravar_documento"
+      ? [linhaDocumento(r.documento, { raizId, pastaId: exigirId(idDaPasta(r.documento.pastaDriveId), "uma pasta") })]
+      : [],
+  );
+
+export const revisoesParaGravar = (resultados: readonly ResultadoMudanca[], idDoDocumento: (driveId: string) => string | undefined) =>
+  resultados.flatMap((r) =>
+    r.acao === "gravar_documento" && r.novaRevisao
+      ? [linhaRevisao(r.documento, exigirId(idDoDocumento(r.documento.driveId), "um documento"))]
+      : [],
+  );
+
+/**
+ * Lote para `ged_gravar_indice` (0806): o banco resolve os `uuid` pelo `drive_id`, numa transação só (pastas antes dos
+ * documentos). Mesmo resultado dos três passos acima, sem idas e voltas.
+ */
+export function loteParaGravar(resultados: readonly ResultadoMudanca[]) {
+  // raiz_id e pasta_id vazios: o banco ignora e usa os da rodada e o da pasta pelo drive_id.
+  const pastas = resultados.flatMap((r) => (r.acao === "gravar_pasta" ? [linhaPasta(r.pasta, { raizId: "" })] : []));
+  const documentos = resultados.flatMap((r) =>
+    r.acao === "gravar_documento"
+      ? [{ ...linhaDocumento(r.documento, { raizId: "", pastaId: "" }), pasta_drive_id: r.documento.pastaDriveId, nova_revisao: r.novaRevisao }]
+      : [],
+  );
+  return { pastas, documentos };
+}
+
+/** Lista todo o conteúdo de uma pasta (`files.list`), página por página (carga inicial e reconciliação, 5.3.1). */
+export async function listarPasta(cliente: ClienteDrive, pastaId: string, driveId?: string): Promise<ArquivoDrive[]> {
+  if (!/^[A-Za-z0-9_-]+$/.test(pastaId)) throw new ErroDrive("ID de pasta inválido.");
+  const arquivos: ArquivoDrive[] = [];
+  let pageToken: string | undefined;
+  do {
+    const params: Record<string, string> = {
+      q: `'${pastaId}' in parents and trashed=false`,
+      fields: `nextPageToken,files(${CAMPOS_ARQUIVO})`,
+      pageSize: "1000",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true",
+    };
+    if (driveId) Object.assign(params, { corpora: "drive", driveId });
+    if (pageToken) params.pageToken = pageToken;
+    const pagina = (await cliente.get("files", params)) as { files?: ArquivoDrive[]; nextPageToken?: string };
+    // Sem a lista, é resposta inválida, não pasta vazia (senão a reconciliação veria tudo como sumido).
+    if (!Array.isArray(pagina.files)) throw new ErroDrive("Resposta do Drive sem a lista de arquivos.");
+    arquivos.push(...pagina.files);
+    pageToken = pagina.nextPageToken;
+  } while (pageToken);
+  return arquivos;
+}
+
+// ───────────────────────── Conexão OAuth da conta dedicada (A0-conexão) ─────────────────────────
+// Plano: docs/auditoria/PLANO_FASE_A0_GED_2026-10-24.md (versão consolidada). Migration: 0801_ged_conexao.sql.
+// PKCE S256; state consumido no banco ANTES da troca do código; identidade e escopos conferidos; só códigos fixos na URL de
+// volta. Os únicos POST do GED são ao OAuth do Google (token e revoke); a Drive API continua só GET. Nada aqui registra log.
+
+export const ESCOPO_DRIVE_LEITURA = "https://www.googleapis.com/auth/drive.readonly";
+const ESCOPOS_ACEITOS = new Set(["openid", "email", "https://www.googleapis.com/auth/userinfo.email", ESCOPO_DRIVE_LEITURA]);
+const ESCOPOS_PEDIDOS = `openid email ${ESCOPO_DRIVE_LEITURA}`;
+const DOMINIO_GED = "neoformas.com.br";
+const EMISSORES_GOOGLE = new Set(["accounts.google.com", "https://accounts.google.com"]);
+const URL_AUTORIZACAO = "https://accounts.google.com/o/oauth2/v2/auth";
+const URL_TOKEN = "https://oauth2.googleapis.com/token";
+const URL_REVOGAR = "https://oauth2.googleapis.com/revoke";
+const STATE_GED = /^[0-9a-f]{64}$/;
+export const DESTINO_GED = /^\/(?!\/)[a-z0-9_-]+(\/[a-z0-9_-]+)*$/;
+const TEMPO_LIMITE_MS = 10_000;
+
+export type CodigoErroConexao =
+  | "invalid_grant" | "escopo_divergente" | "conta_divergente" | "identidade_invalida" | "token_ausente" | "http" | "recusado";
+
+/** Configuração obrigatória, sem fallback. Faltando ou inválido qualquer item: null (a função responde 500 genérico). */
+export function configConexao(env: (k: string) => string | undefined) {
+  const clientId = env("GED_DRIVE_CLIENT_ID")?.trim();
+  const clientSecret = env("GED_DRIVE_CLIENT_SECRET")?.trim();
+  const redirectUri = env("GED_DRIVE_REDIRECT_URI")?.trim();
+  const neoAdminUrl = env("NEO_ADMIN_URL")?.trim();
+  if (!clientId || !clientSecret || !redirectUri || !neoAdminUrl) return null;
+  try {
+    const r = new URL(redirectUri);
+    const n = new URL(neoAdminUrl);
+    if (r.protocol !== "https:" || !["https:", "http:"].includes(n.protocol)) return null;
+  } catch {
+    return null;
+  }
+  return { clientId, clientSecret, redirectUri, neoAdminUrl };
+}
+export type ConfigConexao = NonNullable<ReturnType<typeof configConexao>>;
+
+const base64Url = (bytes: Uint8Array) =>
+  btoa(String.fromCharCode(...bytes)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+/** Desafio PKCE S256 (RFC 7636): base64url(SHA-256(verifier)). */
+export async function desafioPkce(verifier: string): Promise<string> {
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+  return base64Url(new Uint8Array(hash));
+}
+
+/** URL de autorização. `login_hint` e `hd` só orientam a tela do Google; a prova de identidade é o id_token. */
+export function urlAutorizacaoGoogle(cfg: ConfigConexao, state: string, desafio: string, conta: string): string {
+  const u = new URL(URL_AUTORIZACAO);
+  u.search = new URLSearchParams({
+    client_id: cfg.clientId, redirect_uri: cfg.redirectUri, response_type: "code", scope: ESCOPOS_PEDIDOS,
+    access_type: "offline", prompt: "consent", code_challenge: desafio, code_challenge_method: "S256",
+    login_hint: conta, hd: DOMINIO_GED, state,
+  }).toString();
+  return u.toString();
+}
+
+/** Conjunto exato de escopos concedidos: tem de ter o drive.readonly e nada fora da lista. Devolve a lista ou null. */
+export function escoposConcedidos(scope: string | undefined): string[] | null {
+  const lista = (scope ?? "").split(" ").filter(Boolean);
+  if (!lista.includes(ESCOPO_DRIVE_LEITURA) || lista.some((s) => !ESCOPOS_ACEITOS.has(s))) return null;
+  return lista;
+}
+
+/**
+ * Confere o id_token recebido DIRETO do endpoint de token (por TLS: a assinatura pode ser dispensada, OIDC Core 3.1.3.7, item 6).
+ * Exige emissor do Google, audiência = cliente do GED, validade, e-mail verificado (ausente = recusa), domínio e a conta configurada.
+ */
+export function conferirIdToken(
+  idToken: string | undefined,
+  esperado: { clientId: string; conta: string; agoraSeg: number },
+): { ok: true; email: string; sub: string } | { ok: false; codigo: "identidade_invalida" | "conta_divergente" } {
+  let d: { iss?: unknown; aud?: unknown; exp?: unknown; email?: unknown; email_verified?: unknown; hd?: unknown; sub?: unknown };
+  try {
+    const parte = (idToken ?? "").split(".")[1];
+    const b64 = parte.replace(/-/g, "+").replace(/_/g, "/");
+    d = JSON.parse(atob(b64 + "=".repeat((4 - (b64.length % 4)) % 4)));
+  } catch {
+    return { ok: false, codigo: "identidade_invalida" };
+  }
+  const valido =
+    typeof d.iss === "string" && EMISSORES_GOOGLE.has(d.iss) &&
+    d.aud === esperado.clientId &&
+    typeof d.exp === "number" && d.exp > esperado.agoraSeg &&
+    d.email_verified === true &&
+    d.hd === DOMINIO_GED &&
+    typeof d.email === "string" && typeof d.sub === "string" && d.sub.trim() !== "";
+  if (!valido) return { ok: false, codigo: "identidade_invalida" };
+  const email = (d.email as string).trim().toLowerCase();
+  if (email !== esperado.conta.trim().toLowerCase()) return { ok: false, codigo: "conta_divergente" };
+  return { ok: true, email, sub: d.sub as string };
+}
+
+/** Volta ao Neo Admin: destino relativo validado, origem conferida contra NEO_ADMIN_URL, só códigos fixos na query. */
+export function urlRetornoGed(neoAdminUrl: string, destino: string, ged: "conectado" | "recusado" | "erro", codigo?: CodigoErroConexao): string | null {
+  if (!DESTINO_GED.test(destino)) return null;
+  const base = new URL(neoAdminUrl);
+  const u = new URL(destino, base);
+  if (u.origin !== base.origin) return null;
+  u.searchParams.set("ged", ged);
+  if (codigo) u.searchParams.set("codigo", codigo);
+  return u.toString();
+}
+
+export type RespostaGed = { status: number; location?: string; corpo?: string };
+type ResultadoRpc = { data: unknown; error: { message: string } | null };
+type FetchGed = (url: string, init: { method: "POST"; headers: Record<string, string>; body: string; signal?: AbortSignal }) => Promise<Response>;
+export type DepsConexao = {
+  env: (k: string) => string | undefined;
+  rpc: (nome: string, args: Record<string, unknown>) => Promise<ResultadoRpc>;
+  fetch: FetchGed;
+  agoraSeg: () => number;
+};
+
+const texto = (status: number, corpo: string): RespostaGed => ({ status, corpo });
+const ir = (location: string): RespostaGed => ({ status: 302, location });
+const tempoLimite = () => (typeof AbortSignal.timeout === "function" ? AbortSignal.timeout(TEMPO_LIMITE_MS) : undefined);
+
+/** Fluxo da conexão (GET). Ida: `?state=`. Volta: `?code=&state=` ou `?error=&state=`. Nunca devolve code, token ou segredo. */
+export async function tratarConexao(req: { method: string; url: string }, d: DepsConexao): Promise<RespostaGed> {
+  if (req.method !== "GET") return texto(405, "Método não permitido.");
+  const cfg = configConexao(d.env);
+  if (!cfg) return texto(500, "A conexão do GED não está configurada.");
+  const p = new URL(req.url).searchParams;
+  const state = p.get("state") ?? "";
+  if (!STATE_GED.test(state)) return texto(400, "Pedido inválido. Volte ao Neo Admin e comece a conexão de novo.");
+  const expirou = texto(400, "A autorização expirou. Volte ao Neo Admin e comece a conexão de novo.");
+
+  const code = p.get("code");
+  const recusou = p.get("error") !== null;
+
+  // Ida ao Google.
+  if (!code && !recusou) {
+    const { data } = await d.rpc("ged_validar_estado", { p_state: state });
+    const e = data as { code_verifier: string; conta: string } | null;
+    if (!e) return expirou;
+    return ir(urlAutorizacaoGoogle(cfg, state, await desafioPkce(e.code_verifier), e.conta));
+  }
+
+  // Volta: consome o state ANTES de qualquer troca (replay da URL não troca de novo).
+  const { data } = await d.rpc("ged_consumir_estado", { p_state: state });
+  const e = data as { code_verifier: string; destino: string; conta: string } | null;
+  if (!e) return expirou;
+  const falhar = async (codigo: CodigoErroConexao) => {
+    await d.rpc("ged_registrar_erro_conexao", { p_codigo: codigo, p_state: state });
+    const volta = urlRetornoGed(cfg.neoAdminUrl, e.destino, codigo === "recusado" ? "recusado" : "erro", codigo);
+    return volta ? ir(volta) : texto(500, "Não foi possível concluir a conexão.");
+  };
+  if (recusou || !code) return falhar("recusado");
+
+  let tokens: { refresh_token?: string; id_token?: string; scope?: string };
+  try {
+    const resp = await d.fetch(URL_TOKEN, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code, client_id: cfg.clientId, client_secret: cfg.clientSecret, redirect_uri: cfg.redirectUri,
+        grant_type: "authorization_code", code_verifier: e.code_verifier,
+      }).toString(),
+      signal: tempoLimite(),
+    });
+    if (!resp.ok) return falhar("http");
+    tokens = (await resp.json()) as typeof tokens;
+  } catch {
+    return falhar("http");
+  }
+
+  const escopos = escoposConcedidos(tokens.scope);
+  if (!escopos) return falhar("escopo_divergente");
+  const id = conferirIdToken(tokens.id_token, { clientId: cfg.clientId, conta: e.conta, agoraSeg: d.agoraSeg() });
+  if (!id.ok) return falhar(id.codigo);
+  if (!tokens.refresh_token) return falhar("token_ausente");
+
+  const { data: destino, error } = await d.rpc("ged_concluir_conexao", {
+    p_state: state, p_email: id.email, p_sub: id.sub, p_escopos: escopos, p_refresh_token: tokens.refresh_token,
+  });
+  if (error || typeof destino !== "string") {
+    // A conclusão falha com códigos 'ged:<codigo>' (sem dado sensível); desconhecido vira o genérico 'http'.
+    const m = /^ged:(\w+)/.exec(error?.message ?? "")?.[1];
+    if (m === "estado_invalido") return expirou;
+    const conhecidos: CodigoErroConexao[] = ["escopo_divergente", "token_ausente", "identidade_invalida", "conta_divergente"];
+    return falhar(conhecidos.includes(m as CodigoErroConexao) ? (m as CodigoErroConexao) : "http");
+  }
+  const volta = urlRetornoGed(cfg.neoAdminUrl, destino, "conectado");
+  return volta ? ir(volta) : texto(500, "Não foi possível concluir a conexão.");
+}
+
+export type DepsDesconexao = DepsConexao & {
+  /** Perfil admin dono do JWT (rpc ged_perfil_admin_atual com o token do usuário), ou null. */
+  perfilAdmin: (jwt: string) => Promise<string | null>;
+  /** administrativo.ged.revogar_no_google (D-REV; padrão proposto: true). */
+  revogarNoGoogle: () => Promise<boolean>;
+};
+
+/**
+ * Desconexão (POST com o JWT do admin). Com D-REV ligada, revoga no Google ANTES e desconecta localmente SEMPRE: o estado local
+ * nunca fica ambíguo; a falha remota fica registrada ('falhou') para o admin revogar manualmente.
+ */
+export async function tratarDesconexao(req: { method: string; jwt: string | null }, d: DepsDesconexao): Promise<RespostaGed> {
+  if (req.method !== "POST") return texto(405, "Método não permitido.");
+  if (!req.jwt) return texto(401, "Entre no Neo Admin.");
+  const perfil = await d.perfilAdmin(req.jwt);
+  if (!perfil) return texto(403, "Só o administrador geral desconecta o Drive do GED.");
+
+  let revogacao: "ok" | "falhou" | "nao_tentada" = "nao_tentada";
+  if (await d.revogarNoGoogle()) {
+    const { data } = await d.rpc("ged_refresh_token", {});
+    const token = (data as { refresh_token?: string } | null)?.refresh_token;
+    if (token) {
+      try {
+        const resp = await d.fetch(URL_REVOGAR, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({ token }).toString(),
+          signal: tempoLimite(),
+        });
+        let jaRevogado = false;
+        if (resp.status === 400) jaRevogado = ((await resp.json().catch(() => ({}))) as { error?: string }).error === "invalid_token";
+        revogacao = resp.ok || jaRevogado ? "ok" : "falhou";
+      } catch {
+        revogacao = "falhou";
+      }
+    }
+  }
+  const { error } = await d.rpc("ged_desconectar", { p_perfil: perfil, p_revogacao: revogacao });
+  if (error) return texto(500, "Não foi possível desconectar. Tente de novo.");
+  return { status: 200, corpo: JSON.stringify({ desconectado: true, revogacao }) };
+}
+
+// ───────────────────────── Primeira leitura controlada: só metadados (0802) ─────────────────────────
+// Lista metadados (nome, tipo, data, tamanho) do que a conta conectada já enxerga. Sem download, sem conteúdo, sem gravar
+// índice, sem escrita no Drive (o cliente só faz GET). Limites fixos: até 3 páginas de 100 itens; 20 na amostra da tela.
+
+export const LIMITE_METADADOS = { porPagina: 100, paginas: 3, amostra: 20 } as const;
+const CAMPOS_METADADOS = "nextPageToken,files(name,mimeType,modifiedTime,size)";
+
+export type ItemMetadados = { nome: string; tipo: string; modificado_em: string | null; tamanho: number | null };
+export type ConsultaMetadados = { itens: number; limite_atingido: boolean; por_tipo: Record<string, number>; amostra: ItemMetadados[] };
+/** `incompleta`: só a verificação de raiz (parou num limite); não libera a ativação (0805). */
+export type ResultadoConsultaMetadados = "ok" | "incompleta" | "invalid_grant" | "sem_permissao_drive" | "http";
+
+export async function consultarMetadados(cliente: ClienteDrive, limite = LIMITE_METADADOS): Promise<ConsultaMetadados> {
+  const r: ConsultaMetadados = { itens: 0, limite_atingido: false, por_tipo: {}, amostra: [] };
+  let pageToken: string | undefined;
+  let paginas = 0;
+  do {
+    const params: Record<string, string> = {
+      q: "trashed=false", fields: CAMPOS_METADADOS, pageSize: String(limite.porPagina), orderBy: "modifiedTime desc",
+      corpora: "allDrives", supportsAllDrives: "true", includeItemsFromAllDrives: "true",
+    };
+    if (pageToken) params.pageToken = pageToken;
+    const pagina = (await cliente.get("files", params)) as { files?: ArquivoDrive[]; nextPageToken?: string };
+    if (!Array.isArray(pagina.files)) throw new ErroDrive("Resposta do Drive sem a lista de arquivos.");
+    for (const f of pagina.files) {
+      r.itens++;
+      r.por_tipo[f.mimeType] = (r.por_tipo[f.mimeType] ?? 0) + 1;
+      if (r.amostra.length < limite.amostra) {
+        r.amostra.push({ nome: f.name, tipo: f.mimeType, modificado_em: f.modifiedTime ?? null, tamanho: f.size ? Number(f.size) : null });
+      }
+    }
+    paginas++;
+    pageToken = pagina.nextPageToken;
+  } while (pageToken && paginas < limite.paginas);
+  r.limite_atingido = !!pageToken;
+  return r;
+}
+
+/** Troca o refresh token (Vault) por um access token. Confere que a autorização continua só com os escopos aceitos. */
+async function acessoDrive(cfg: ConfigConexao, refreshToken: string, d: DepsConexao): Promise<{ ok: true; token: string } | { ok: false; codigo: "invalid_grant" | "http" }> {
+  try {
+    const resp = await d.fetch(URL_TOKEN, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: cfg.clientId, client_secret: cfg.clientSecret, refresh_token: refreshToken, grant_type: "refresh_token",
+      }).toString(),
+      signal: tempoLimite(),
+    });
+    const corpo = (await resp.json().catch(() => ({}))) as { access_token?: unknown; scope?: string; error?: string };
+    if (resp.status === 400 && corpo.error === "invalid_grant") return { ok: false, codigo: "invalid_grant" };
+    if (!resp.ok || typeof corpo.access_token !== "string" || !escoposConcedidos(corpo.scope)) return { ok: false, codigo: "http" };
+    return { ok: true, token: corpo.access_token };
+  } catch {
+    return { ok: false, codigo: "http" };
+  }
+}
+
+export type DepsMetadados = DepsConexao & {
+  perfilAdmin: (jwt: string) => Promise<string | null>;
+  /** GET da Drive API (padrão: fetch global). */
+  fetchDrive?: (url: string, init: { method: "GET"; headers: Record<string, string> }) => Promise<Response>;
+  esperar?: (ms: number) => Promise<void>;
+  /** Relógio do prazo da verificação (padrão: Date.now). */
+  agoraMs?: () => number;
+  /** Log sem dado sensível: só resultado e contagem. */
+  log?: (mensagem: string) => void;
+};
+
+const json = (status: number, corpo: unknown): RespostaGed => ({ status, corpo: JSON.stringify(corpo) });
+
+type Leitura = { perfil: string; cliente: ClienteDrive };
+
+/**
+ * Preparação comum das leituras do Drive: admin geral conferido ANTES de qualquer chamada ao Google; acesso renovado com o
+ * token do Vault (invalid_grant marca a conexão "com erro"). `auditar` grava o resultado sem nomes nem tokens.
+ */
+async function prepararLeitura(
+  req: { method: string; jwt: string | null },
+  d: DepsMetadados,
+  auditar: (perfil: string, resultado: ResultadoConsultaMetadados, itens: number) => Promise<void>,
+): Promise<Leitura | RespostaGed> {
+  if (req.method !== "POST") return json(405, { erro: "metodo" });
+  if (!req.jwt) return json(401, { erro: "sem_sessao" });
+  const perfil = await d.perfilAdmin(req.jwt);
+  if (!perfil) return json(403, { erro: "sem_permissao" });
+  const c = await clienteDoVault(d);
+  if ("erro" in c) {
+    if (c.erro === "nao_configurada") return json(500, { erro: c.erro });
+    if (c.erro === "desconectado") return json(409, { erro: c.erro });
+    await auditar(perfil, c.erro, 0);
+    return json(c.erro === "invalid_grant" ? 409 : 502, { erro: c.erro });
+  }
+  return { perfil, cliente: c.cliente };
+}
+
+/** Cliente do Drive com o token do Vault (renovado agora). invalid_grant marca a conexão "com erro" (a tela pede reconexão). */
+async function clienteDoVault(d: DepsMetadados): Promise<{ cliente: ClienteDrive } | { erro: "nao_configurada" | "desconectado" | "invalid_grant" | "http" }> {
+  const cfg = configConexao(d.env);
+  if (!cfg) return { erro: "nao_configurada" };
+  const { data } = await d.rpc("ged_refresh_token", {});
+  const refreshToken = (data as { refresh_token?: string } | null)?.refresh_token;
+  if (!refreshToken) return { erro: "desconectado" };
+  const acesso = await acessoDrive(cfg, refreshToken, d);
+  if (!acesso.ok) {
+    if (acesso.codigo === "invalid_grant") await d.rpc("ged_registrar_erro_conexao", { p_codigo: "invalid_grant" });
+    return { erro: acesso.codigo };
+  }
+  return { cliente: criarClienteDrive(async () => acesso.token, { fazerFetch: d.fetchDrive, esperar: d.esperar }) };
+}
+
+/** Erro do Drive durante a leitura: 403 (API desativada ou sem acesso) tem código próprio; o resto é genérico. */
+const resultadoDoErro = (e: unknown): ResultadoConsultaMetadados => (e instanceof ErroDrive && e.status === 403 ? "sem_permissao_drive" : "http");
+
+/** Consulta de metadados (POST com o JWT do admin geral). Cada consulta fica na auditoria (quem, quantos, resultado). */
+export async function tratarConsultaMetadados(req: { method: string; jwt: string | null }, d: DepsMetadados): Promise<RespostaGed> {
+  const auditar = async (perfil: string, resultado: ResultadoConsultaMetadados, itens: number) => {
+    await d.rpc("ged_registrar_consulta_metadados", { p_perfil: perfil, p_itens: itens, p_resultado: resultado });
+    d.log?.(`ged-metadados: resultado=${resultado} itens=${itens}`);
+  };
+  const l = await prepararLeitura(req, d, auditar);
+  if ("status" in l) return l;
+  try {
+    const r = await consultarMetadados(l.cliente);
+    await auditar(l.perfil, "ok", r.itens);
+    return json(200, r);
+  } catch (e) {
+    const resultado = resultadoDoErro(e);
+    await auditar(l.perfil, resultado, 0);
+    return json(502, { erro: resultado });
+  }
+}
+
+// ───────────────────────── Verificação das raízes candidatas (A0, 5.2.4) ─────────────────────────
+// Só as candidatas da especificação (2.2), lidas no Drive compartilhado. O resultado tem nomes de pastas: vai SÓ ao admin geral,
+// na resposta, e não é gravado (5.2.4.4: nada persistido; a auditoria guarda só a raiz, a contagem e o resultado).
+
+export const DRIVE_COMPARTILHADO_GED = "0ADGzgMWcDLTWUk9PVA";
+export const RAIZES_CANDIDATAS = {
+  "1JMzjxdPkXTtGXtop0CFx-R47Ql_08alR": { rotulo: "Elaboração: 02 - COMERCIAL / 02 - CONTRATOS", finalidade: "elaboracao" },
+  "1JOh-QFYw9uwNkxSAdPa6cLzOzIuOiT56": { rotulo: "Elaboração (alternativa): 02 - CONTRATOS / Contratos", finalidade: "elaboracao" },
+  "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak": { rotulo: "Dossiê: 02 - COMERCIAL / 01 - CLIENTES", finalidade: "dossie_cliente" },
+} as const;
+export type IdRaizCandidata = keyof typeof RAIZES_CANDIDATAS;
+/**
+ * Profundidade 4 = proposta da 5.3.1 (ponto 4 em aberto). Tetos fixos e prazo de 90 s, abaixo do tempo máximo da Edge Function:
+ * ao atingir qualquer um, a leitura volta marcada como incompleta.
+ */
+export const LIMITE_VERIFICACAO = { profundidadeMax: 4, maxItens: 10000, maxPastasAbertas: 1000, paralelas: 5, prazoMs: 90_000 } as const;
+
+export const ehRaizCandidata = (id: unknown): id is IdRaizCandidata => typeof id === "string" && Object.hasOwn(RAIZES_CANDIDATAS, id);
+
+export async function tratarVerificacaoRaiz(
+  req: { method: string; jwt: string | null; raiz: unknown },
+  d: DepsMetadados,
+): Promise<RespostaGed> {
+  if (req.method === "POST" && !ehRaizCandidata(req.raiz)) return json(400, { erro: "raiz_invalida" }); // antes de tudo: nada de ID livre
+  const raiz = req.raiz as IdRaizCandidata;
+  const auditar = async (perfil: string, resultado: ResultadoConsultaMetadados, itens: number) => {
+    await d.rpc("ged_registrar_verificacao_raiz", { p_perfil: perfil, p_raiz: raiz, p_itens: itens, p_resultado: resultado });
+    d.log?.(`ged-verificacao: resultado=${resultado} itens=${itens}`);
+  };
+  const l = await prepararLeitura(req, d, auditar);
+  if ("status" in l) return l;
+  try {
+    const { prazoMs, ...limites } = LIMITE_VERIFICACAO;
+    const arvore = await percorrerArvore(l.cliente, raiz, {
+      ...limites, driveId: DRIVE_COMPARTILHADO_GED, prazo: { limiteMs: prazoMs, agora: d.agoraMs ?? Date.now },
+    });
+    const itens = arvore.pastas.length + arvore.arquivos.length;
+    const ids = new Set(arvore.pastas.map((p) => p.arquivo.id));
+    // 5.2.4.1: outras raízes (aqui, as outras candidatas) dentro desta. "Acima dela" aparece na verificação da outra.
+    const candidatasDentro = (Object.keys(RAIZES_CANDIDATAS) as IdRaizCandidata[]).filter((id) => id !== raiz && ids.has(id)).map((id) => RAIZES_CANDIDATAS[id].rotulo);
+    await auditar(l.perfil, arvore.truncada ? "incompleta" : "ok", itens); // só a completa libera a ativação (0805)
+    return json(200, { raiz: RAIZES_CANDIDATAS[raiz].rotulo, itens, candidatasDentro, limites: LIMITE_VERIFICACAO, ...resumirArvore(arvore) });
+  } catch (e) {
+    const resultado = resultadoDoErro(e);
+    await auditar(l.perfil, resultado, 0);
+    return json(502, { erro: resultado });
+  }
+}
+
+// ───────────────────────── Cadastro das pastas-raiz (A1a, 5.2; migration 0804) ─────────────────────────
+// Só as duas raízes confirmadas em 25/10/2026 (2.2). O nome vem do Drive (files.get), nunca do navegador; a pasta precisa estar
+// no Drive compartilhado do GED, fora da lixeira. O banco confere de novo: admin geral, IDs, trava da elaboração e áreas.
+
+export const RAIZES_CONFIRMADAS = ["1JMzjxdPkXTtGXtop0CFx-R47Ql_08alR", "1-mAz3tuBGa2-sMGCIWoo3jR2RlZ9lNak"] as const satisfies readonly IdRaizCandidata[];
+export type IdRaizConfirmada = (typeof RAIZES_CONFIRMADAS)[number];
+export const ehRaizConfirmada = (id: unknown): id is IdRaizConfirmada => RAIZES_CONFIRMADAS.includes(id as IdRaizConfirmada);
+
+/** Códigos que a função devolve a quem cadastrou (os `ged:<codigo>` do banco e os da leitura do Drive). */
+const CODIGOS_CADASTRO = ["sem_permissao", "raiz_invalida", "raiz_travada", "area_invalida", "raiz_existente"] as const;
+const listaDeAreas = (v: unknown): v is string[] => Array.isArray(v) && v.every((a) => typeof a === "string");
+
+export async function tratarCadastroRaiz(
+  req: { method: string; jwt: string | null; raiz: unknown; area: unknown; areas_leitura: unknown; area_operacao: unknown },
+  d: DepsMetadados,
+): Promise<RespostaGed> {
+  if (req.method === "POST" && !ehRaizConfirmada(req.raiz)) return json(400, { erro: "raiz_invalida" }); // antes de tudo
+  if (req.method === "POST" && (typeof req.area !== "string" || typeof req.area_operacao !== "string" || !listaDeAreas(req.areas_leitura))) {
+    return json(400, { erro: "area_invalida" });
+  }
+  const raiz = req.raiz as IdRaizConfirmada;
+  const log = async (_perfil: string, resultado: string) => void d.log?.(`ged-cadastro: resultado=${resultado}`);
+  const l = await prepararLeitura(req, d, log);
+  if ("status" in l) return l;
+  let pasta: ArquivoDrive & { driveId?: string };
+  try {
+    pasta = (await l.cliente.get(`files/${raiz}`, { fields: "id,name,mimeType,driveId,trashed", supportsAllDrives: "true" })) as typeof pasta;
+  } catch (e) {
+    const resultado = resultadoDoErro(e);
+    await log(l.perfil, resultado);
+    return json(502, { erro: resultado });
+  }
+  if (pasta?.id !== raiz || pasta.mimeType !== MIME_PASTA || pasta.trashed || pasta.driveId !== DRIVE_COMPARTILHADO_GED
+      || typeof pasta.name !== "string" || pasta.name.trim() === "") {
+    await log(l.perfil, "pasta_invalida");
+    return json(422, { erro: "pasta_invalida" });
+  }
+  const { data, error } = await d.rpc("ged_cadastrar_raiz", {
+    p_perfil: l.perfil, p_drive_id: raiz, p_nome: pasta.name, p_drive_compartilhado_id: pasta.driveId,
+    p_area: req.area, p_areas_leitura: req.areas_leitura, p_area_operacao: req.area_operacao,
+  });
+  if (error) {
+    const codigo = /ged:([a-z_]+)/.exec(error.message)?.[1];
+    const conhecido = CODIGOS_CADASTRO.find((c) => c === codigo) ?? "banco";
+    await log(l.perfil, conhecido);
+    return json(conhecido === "sem_permissao" ? 403 : conhecido === "banco" ? 500 : 409, { erro: conhecido });
+  }
+  await log(l.perfil, "ok");
+  return json(201, { id: data, nome: pasta.name });
+}
+
+// ───────────────────────── Indexação (5.3; gravação na 0806) ─────────────────────────
+// Chamada só pelo agendamento do banco (x-sincronizacao-segredo = SINCRONIZACAO_SEGREDO, 5.3.7). "Atualizar índice agora" não
+// existe ainda [PENDENTE 16]. Só metadados (CAMPOS_ARQUIVO): nada de conteúdo, nada de classificação. Cada raiz ativa tem a sua
+// rodada (ged_iniciar_indexacao confere o interruptor administrativo.ged.indexar, a raiz ativa e a trava):
+//  - sem ponto de continuação: carga inicial (árvore inteira) e, se completa, grava o startPageToken pego ANTES da leitura;
+//  - com ponto de continuação: incremental pelo changes.list do Drive compartilhado, gravando página por página.
+// Falha no meio: a rodada fecha com um código de erro e o token NÃO avança; o que já foi gravado é refeito sem duplicar.
+// Resposta e log só com contagens e códigos (5.11.3, 5.11.11): nada de nome, id ou link.
+
+/** max_itens_rodada proposto (5.3.6) e profundidade proposta (5.3.1); prazo abaixo do tempo máximo da Edge Function. */
+// shortcut: reconciliação a cada 7 dias fixos (proposta da 5.3.4); virar o parâmetro administrativo.ged.reconciliar_dias quando a
+// frequência for decidida (seção 14, item 4).
+export const LIMITE_INDEXACAO = {
+  profundidadeMax: 4, maxItens: 5000, paralelas: 5, prazoMs: 100_000, documentosPorLote: 500, reconciliarDias: 7,
+} as const;
+
+export type RaizIndexavel = {
+  id: string; driveId: string; driveIdCompartilhado: string | null; pageToken: string | null; reconciliadaEm: string | null;
+};
+type TipoRodada = "inicial" | "incremental" | "reconciliacao";
+
+/** Sem ponto de continuação: carga inicial. Com ele: reconciliação se a última (ou a carga) tiver mais de N dias; senão, incremental. */
+export function tipoDaRodada(raiz: RaizIndexavel, agoraMs: number, indexadaEm?: string | null): TipoRodada {
+  if (!raiz.pageToken) return "inicial";
+  const desde = raiz.reconciliadaEm ?? indexadaEm ?? null;
+  if (!desde) return "incremental";
+  return agoraMs - Date.parse(desde) >= LIMITE_INDEXACAO.reconciliarDias * 86_400_000 ? "reconciliacao" : "incremental";
+}
+export type DepsIndexacao = DepsMetadados & { raizesAtivas: () => Promise<(RaizIndexavel & { indexadaEm?: string | null })[]> };
+type ResumoRodada = ReturnType<typeof resumirRodada>;
+/** Etapas da rodada, gravadas no resumo quando ela falha (só o nome da etapa: nada de nome de arquivo, id ou link). */
+export type EtapaIndexacao = "acesso_drive" | "estado_indice" | "leitura_drive" | "gravacao" | "conclusao";
+/** Resumo gravado em ged_indexacoes.resumo e devolvido na resposta: contagens, itens examinados, se leu tudo e, na falha, a etapa. */
+type ResumoRaiz = { tipo: TipoRodada; resultado: string; completa: boolean; itens?: number; etapa?: EtapaIndexacao } & Partial<ResumoRodada>;
+
+const iguaisSeguro = (a: string, b: string) => {
+  if (a.length !== b.length) return false;
+  let r = 0;
+  for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return r === 0;
+};
+const codigoDoErro = (e: unknown): string =>
+  e instanceof ErroDrive
+    ? e.status === 403 ? "sem_permissao_drive" : "drive"
+    : /ged:([a-z_]+)/.exec(String((e as { message?: unknown })?.message))?.[1] ?? "falha";
+/** Sem acesso ao Drive, as outras raízes também falhariam: a rodada para. */
+const SEM_ACESSO = ["invalid_grant", "desconectado", "nao_configurada", "http"];
+/** A raiz não abre rodada, mas as outras podem: pula só ela (0810: 3 interrupções seguidas em 24 h). */
+const PULA_RAIZ = ["raiz_inativa", "interrupcoes_seguidas"];
+
+export async function tratarIndexacao(req: { method: string; segredo: string | null }, d: DepsIndexacao): Promise<RespostaGed> {
+  if (req.method !== "POST") return json(405, { erro: "metodo" });
+  const esperado = d.env("SINCRONIZACAO_SEGREDO") ?? "";
+  if (esperado.length < 32 || !req.segredo || !iguaisSeguro(req.segredo, esperado)) return json(401, { erro: "nao_autorizado" });
+
+  const resumo: ResumoRaiz[] = [];
+  let cliente: ClienteDrive | null = null;
+  for (const raiz of await d.raizesAtivas()) {
+    const tipo = tipoDaRodada(raiz, (d.agoraMs ?? Date.now)(), raiz.indexadaEm);
+    const aberta = await d.rpc("ged_iniciar_indexacao", { p_raiz: raiz.id, p_tipo: tipo, p_agendada: true, p_usuario: null });
+    if (aberta.error) {
+      const codigo = codigoDoErro(aberta.error);
+      if (PULA_RAIZ.includes(codigo)) {
+        if (codigo !== "raiz_inativa") {
+          resumo.push({ tipo, resultado: codigo, completa: false });
+          d.log?.(`ged-indexacao: tipo=${tipo} resultado=${codigo}`);
+        }
+        continue;
+      }
+      // Interruptor desligado ou outra rodada em andamento: para, sem tocar no Google.
+      d.log?.(`ged-indexacao: resultado=${codigo}`);
+      return json(200, { parada: codigo, raizes: resumo });
+    }
+    const rodada = aberta.data as string;
+    const fechar = (r: Omit<ResumoRaiz, "tipo" | "resultado">, token: string | null, erro: string | null) =>
+      d.rpc("ged_concluir_indexacao", { p_indexacao: rodada, p_resumo: r, p_page_token: token, p_erro: erro });
+    const etapa: { atual: EtapaIndexacao } = { atual: "acesso_drive" };
+    try {
+      if (!cliente) {
+        const c = await clienteDoVault(d);
+        if ("erro" in c) throw new Error(`ged:${c.erro}`);
+        cliente = c.cliente;
+      }
+      const r = await indexarRaiz(cliente, raiz, tipo, rodada, d, etapa);
+      const final = { ...r.resumo, itens: r.itens, completa: r.completa };
+      etapa.atual = "conclusao";
+      const fechou = await fechar(final, r.token, null);
+      if (fechou.error) throw new Error(fechou.error.message);
+      resumo.push({ tipo, resultado: "ok", ...final });
+      d.log?.(`ged-indexacao: tipo=${tipo} resultado=ok completa=${r.completa} itens=${r.itens} novos=${r.resumo.novos} alterados=${r.resumo.alterados}`);
+    } catch (e) {
+      const codigo = codigoDoErro(e);
+      await fechar({ completa: false, etapa: etapa.atual }, null, codigo); // o token não avança
+      resumo.push({ tipo, resultado: codigo, completa: false, etapa: etapa.atual });
+      d.log?.(`ged-indexacao: tipo=${tipo} resultado=${codigo} etapa=${etapa.atual}`);
+      if (SEM_ACESSO.includes(codigo)) break;
+    }
+  }
+  return json(200, { raizes: resumo });
+}
+
+/** Estado do índice no banco (ged_estado_indice) → índice em memória, com a raiz na profundidade 0. */
+async function indiceDaRaiz(raiz: RaizIndexavel, d: DepsIndexacao) {
+  const { data, error } = await d.rpc("ged_estado_indice", { p_raiz: raiz.id });
+  if (error) throw new Error(error.message);
+  const e = data as { pastas: PastaIndice[]; documentos: DocumentoIndice[] };
+  const pastas = new Map(e.pastas.map((p) => [p.driveId, p]));
+  const raizNova = !pastas.has(raiz.driveId);
+  if (raizNova) pastas.set(raiz.driveId, { driveId: raiz.driveId, maeDriveId: null, nome: "(raiz)", profundidade: 0, situacao: "ativa" });
+  const indice = { pastas, documentos: new Map(e.documentos.map((x) => [x.driveId, x])), profundidadeMax: LIMITE_INDEXACAO.profundidadeMax };
+  return { indice, raizNova };
+}
+
+/** Grava em lotes de documentos; as pastas vão no primeiro (o banco precisa delas para achar a pasta de cada documento). */
+async function gravarLotes(rodada: string, resultados: readonly ResultadoMudanca[], d: DepsIndexacao, extraPastas: object[] = []) {
+  const { pastas, documentos } = loteParaGravar(resultados);
+  const n = LIMITE_INDEXACAO.documentosPorLote;
+  for (let i = 0; i === 0 || i < documentos.length; i += n) {
+    const { error } = await d.rpc("ged_gravar_indice", {
+      p_indexacao: rodada, p_pastas: i === 0 ? [...extraPastas, ...pastas] : [], p_documentos: documentos.slice(i, i + n),
+    });
+    if (error) throw new Error(error.message);
+  }
+}
+
+async function indexarRaiz(
+  cliente: ClienteDrive, raiz: RaizIndexavel, tipo: TipoRodada, rodada: string, d: DepsIndexacao, etapa: { atual: EtapaIndexacao },
+) {
+  etapa.atual = "estado_indice";
+  const { indice, raizNova } = await indiceDaRaiz(raiz, d);
+  const driveId = raiz.driveIdCompartilhado ?? undefined;
+  etapa.atual = "leitura_drive";
+  if (tipo === "reconciliacao") {
+    // 5.3.4: listagem completa; o que mudou entra pelo caminho comum e cada ausente é consultado no Drive (404 = removido).
+    // Listagem incompleta não marca ausentes (ausentesNaListagem lança): a rodada falha e o token fica onde estava.
+    const arvore = await percorrerArvore(cliente, raiz.driveId, {
+      profundidadeMax: LIMITE_INDEXACAO.profundidadeMax, maxItens: LIMITE_INDEXACAO.maxItens, driveId,
+      paralelas: LIMITE_INDEXACAO.paralelas, prazo: { limiteMs: LIMITE_INDEXACAO.prazoMs, agora: d.agoraMs ?? Date.now },
+    });
+    if (arvore.truncada) throw new Error("ged:listagem_incompleta");
+    const resultados = aplicarPaginaNoIndice(mudancasDaArvore(arvore), indice);
+    const ausentes = ausentesNaListagem(arvore, indice);
+    const consultados: MudancaDrive[] = [];
+    for (const id of ausentes) consultados.push(await consultarAusente(cliente, id));
+    resultados.push(...aplicarPaginaNoIndice(consultados, indice));
+    etapa.atual = "gravacao";
+    await gravarLotes(rodada, resultados, d);
+    // O ponto de continuação não muda; reenviá-lo faz o banco registrar reconciliada_em (0806).
+    return { resumo: resumirRodada(resultados), token: raiz.pageToken, completa: true, itens: arvore.pastas.length + arvore.arquivos.length };
+  }
+  if (tipo === "inicial") {
+    const r = await cargaInicial(cliente, { driveId: raiz.driveId, driveIdCompartilhado: driveId }, indice, {
+      maxItens: LIMITE_INDEXACAO.maxItens, paralelas: LIMITE_INDEXACAO.paralelas,
+      prazo: { limiteMs: LIMITE_INDEXACAO.prazoMs, agora: d.agoraMs ?? Date.now },
+    });
+    // A raiz entra no índice na profundidade 0; depois a indexação nunca a altera (aplicarMudanca).
+    const raizLinha = raizNova ? [{ drive_id: raiz.driveId, nome: "(raiz)", mae_drive_id: null, profundidade: 0, situacao: "ativa" }] : [];
+    etapa.atual = "gravacao";
+    await gravarLotes(rodada, r.resultados, d, raizLinha);
+    return { resumo: r.resumo, token: r.startPageToken, completa: r.completa, itens: r.itens };
+  }
+  const todos: ResultadoMudanca[] = [];
+  const r = await percorrerMudancas(cliente, raiz.pageToken as string, async (mudancas) => {
+    const pagina = aplicarPaginaNoIndice(mudancas, indice);
+    etapa.atual = "gravacao";
+    if (pagina.length) await gravarLotes(rodada, pagina, d);
+    etapa.atual = "leitura_drive";
+    todos.push(...pagina);
+  }, { maxItens: LIMITE_INDEXACAO.maxItens, driveId });
+  return { resumo: resumirRodada(todos), token: r.proximoToken, completa: r.completa, itens: r.itens };
+}
+
+// ───────────────────────── Padronização de nomes (5.12; migration 0811) ─────────────────────────
+// Analisa cada arquivo (nome + pasta + texto extraído no próprio Supabase, sem IA externa) e SUGERE um nome no padrão
+// `TIPO - IDENTIFICADOR - Assunto - Cliente - AAAA-MM-DD.ext`. Nada é renomeado no Drive; o admin aprova, edita ou rejeita.
+// Campo sem evidência é omitido (nunca inventado). O texto do arquivo não é gravado nem vai a log: só os campos derivados.
+
+/** Catálogo de tipos (espelha `ged_tipos` da 0811). `rotulo` é o começo do nome padronizado. */
+export const TIPOS_DOCUMENTO = {
+  contrato_venda: { nome: "Contrato de venda", rotulo: "CONTRATO VENDA" },
+  contrato_locacao: { nome: "Contrato de locação", rotulo: "CONTRATO LOCACAO" },
+  contrato_servico: { nome: "Contrato de serviço", rotulo: "CONTRATO SERVICO" },
+  contrato_assinado: { nome: "Contrato assinado", rotulo: "CONTRATO ASSINADO" },
+  aditamento: { nome: "Aditamento", rotulo: "ADITAMENTO" },
+  modelo_contrato: { nome: "Modelo de contrato", rotulo: "MODELO CONTRATO" },
+  proposta_comercial: { nome: "Proposta comercial", rotulo: "PROPOSTA" },
+  nf_venda: { nome: "Nota fiscal de venda", rotulo: "NF VENDA" },
+  nf_remessa: { nome: "Nota fiscal de remessa", rotulo: "NF REMESSA" },
+  nf_retorno: { nome: "Nota fiscal de retorno", rotulo: "NF RETORNO" },
+  fatura_locacao: { nome: "Fatura de locação", rotulo: "FATURA LOCACAO" },
+  medicao: { nome: "Medição", rotulo: "MEDICAO" },
+  carta_correcao: { nome: "Carta de correção", rotulo: "CARTA CORRECAO" },
+  difal: { nome: "DIFAL", rotulo: "DIFAL" },
+  boleto: { nome: "Boleto", rotulo: "BOLETO" },
+  comprovante: { nome: "Comprovante", rotulo: "COMPROVANTE" },
+  cartao_cnpj: { nome: "Cartão CNPJ", rotulo: "CARTAO CNPJ" },
+  qsa: { nome: "Quadro de sócios (QSA)", rotulo: "QSA" },
+  contrato_social: { nome: "Contrato social", rotulo: "CONTRATO SOCIAL" },
+  procuracao: { nome: "Procuração", rotulo: "PROCURACAO" },
+  documento_pessoal: { nome: "Documento pessoal", rotulo: "DOCUMENTO PESSOAL" },
+  inscricao_estadual: { nome: "Inscrição estadual", rotulo: "INSCRICAO ESTADUAL" },
+  termo_quitacao: { nome: "Termo de quitação", rotulo: "TERMO QUITACAO" },
+  projeto: { nome: "Projeto", rotulo: "PROJETO" },
+  outro: { nome: "Outro", rotulo: "DOCUMENTO" },
+} as const;
+export type TipoDocumento = keyof typeof TIPOS_DOCUMENTO;
+
+export type Evidencia = "nome" | "pasta" | "texto" | "cadastro";
+export type CampoAnalise = { valor: string; evidencia: Evidencia[] };
+export type Confianca = "alta" | "media" | "baixa";
+export type AnaliseDocumento = {
+  tipo: TipoDocumento;
+  tipoEvidencia: Evidencia[];
+  numero: CampoAnalise | null;
+  assunto: CampoAnalise | null;
+  cliente: (CampoAnalise & { contraparteId: string | null }) | null;
+  data: CampoAnalise | null;
+  cnpj: CampoAnalise | null;
+  confianca: Confianca;
+  metodo: "metadados" | "texto";
+  justificativa: string;
+};
+export type EntradaAnalise = {
+  nome: string;
+  /** Nome da pasta onde o arquivo está e o da pasta de 1º nível da raiz (no dossiê, a pasta do cliente). */
+  pasta: string;
+  pastaNivel1: string | null;
+  finalidade: Finalidade;
+  /** Texto extraído do arquivo, ou nulo (sem texto ou formato não suportado). */
+  texto: string | null;
+  clientes: readonly ClienteCadastro[];
+  /** CNPJs das empresas do grupo (somente dígitos): nunca são o "cliente" do documento. */
+  cnpjsProprios: readonly string[];
+};
+
+// Regras de tipo: `nome` e `texto` sobre o texto normalizado (minúsculo, sem acento). A primeira que casar vence; a NF ganha subtipo.
+const REGRAS_TIPO: { tipo: TipoDocumento; nome?: RegExp; texto?: RegExp }[] = [
+  { tipo: "carta_correcao", nome: /\bcc-?e\b|carta de corre/, texto: /carta de correcao/ },
+  { tipo: "difal", nome: /\bdifal\b/, texto: /diferencial de aliquota/ },
+  { tipo: "fatura_locacao", nome: /\bfl\s*\d+|fatura de locacao/, texto: /fatura de locacao/ },
+  { tipo: "proposta_comercial", nome: /^\d{2}\.\d{3}\s*[vl]\b/, texto: /proposta (comercial|tecnica)/ },
+  { tipo: "aditamento", nome: /aditiv|aditament/, texto: /termo aditivo|aditamento/ },
+  { tipo: "termo_quitacao", nome: /quitac/, texto: /termo de quitacao/ },
+  { tipo: "contrato_social", nome: /contrato social|alteracao contratual|consolidad/, texto: /contrato social|alteracao contratual/ },
+  { tipo: "qsa", nome: /\bqsa\b/, texto: /quadro de socios e administradores/ },
+  { tipo: "cartao_cnpj", nome: /cartao (de )?cnpj|^cnpj\b|insc\.? cnpj|inscricao cnpj/, texto: /comprovante de inscricao e de situacao cadastral/ },
+  { tipo: "inscricao_estadual", nome: /insc(r)?\.? estad|inscricao estadual|\bcfdf\b|sintegra/, texto: /comprovante de inscricao estadual|cadastro fiscal do distrito federal|consulta publica ao cadastro/ },
+  { tipo: "procuracao", nome: /procurac/, texto: /procuracao|outorgante/ },
+  { tipo: "documento_pessoal", nome: /\bcnh\b|\brg\b|identidade/, texto: /carteira nacional de habilitacao|registro geral/ },
+  { tipo: "boleto", nome: /boleto/, texto: /linha digitavel|ficha de compensacao/ },
+  { tipo: "contrato_venda", nome: /contrato[\s-]+de[\s-]+(compra[\s-]+e[\s-]+)?venda/, texto: /contrato (particular )?de (compra e )?venda/ },
+  { tipo: "contrato_locacao", nome: /contrato[\s-]+de[\s-]+locacao/, texto: /contrato (particular )?de locacao/ },
+  { tipo: "contrato_servico", nome: /contrato[\s-]+de[\s-]+(prestacao[\s-]+de[\s-]+)?servic/, texto: /contrato (particular )?de prestacao de servic/ },
+  { tipo: "medicao", nome: /\bmedicao\b/, texto: /boletim de medicao/ },
+  { tipo: "comprovante", nome: /comprovante/, texto: /comprovante de (pagamento|transferencia)/ },
+  { tipo: "projeto", nome: /\bplanta\b|\bprojeto\b/ },
+];
+const NF_NOME = /\bnf[\s-]*e?[\s-]*\d+|nota fiscal|\bdanfe\b|^\d_\d{3,}\b/;
+const NF_TEXTO = /documento auxiliar da nota fiscal|nota fiscal eletronica|\bdanfe\b|<infnfe/;
+const ASSINADO = /d4sign|assinad[oa] (digital|eletronica)mente|assinado por/;
+const CONTRATOS: readonly TipoDocumento[] = ["contrato_venda", "contrato_locacao", "contrato_servico"];
+// Tipos que vencem a pista de NF no nome (o arquivo da CC-e, do DIFAL ou da FL costuma citar a NF).
+const ANTES_DA_NF: readonly TipoDocumento[] = ["carta_correcao", "difal", "fatura_locacao"];
+/** Razão social sem o sufixo jurídico, para o nome não ficar longo. */
+const nomeCurto = (razao: string) => razao.replace(/\s+(ltda|eireli|s\.?\s?a\.?|me|epp)\.?$/i, "").trim();
+
+const somenteNumero = (s: string) => s.replace(/\D/g, "").replace(/^0+(?=\d)/, "");
+const dataValida = (d: number, m: number, a: number) => {
+  const dt = new Date(Date.UTC(a, m - 1, d));
+  return a >= 1990 && a <= 2100 && dt.getUTCMonth() === m - 1 && dt.getUTCDate() === d;
+};
+const iso = (d: number, m: number, a: number) => `${a}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+const tag = (xml: string, nome: string, dentro?: string) => {
+  const bloco = dentro ? new RegExp(`<${dentro}[\\s>][\\s\\S]*?</${dentro}>`, "i").exec(xml)?.[0] ?? "" : xml;
+  return new RegExp(`<${nome}>([^<]+)</${nome}>`, "i").exec(bloco)?.[1]?.trim() ?? null;
+};
+const unir = (...e: (Evidencia | false | null | undefined)[]) => [...new Set(e.filter(Boolean) as Evidencia[])];
+
+/** Data do documento a partir do texto: só com rótulo de emissão/assinatura/data por perto (nunca a data do Drive). */
+function dataDoTexto(t: string): string | null {
+  const m = /(data (de |da )?(emissao|assinatura)|emitid[oa] em|emissao|assinad[oa] em|data)\W{0,15}(\d{2})[/.-](\d{2})[/.-](\d{4})/.exec(t);
+  if (!m) return null;
+  const [d, mes, a] = [Number(m[4]), Number(m[5]), Number(m[6])];
+  return dataValida(d, mes, a) ? iso(d, mes, a) : null;
+}
+
+/** Analisa um arquivo. Puro e determinístico: a mesma entrada dá a mesma saída. */
+export function analisarDocumento(e: EntradaAnalise): AnaliseDocumento {
+  // Nome-base sem extensão repetida (".pdf.pdf"), marca de cópia " (1)" e prefixo de anexo ("1-", "2-").
+  const base = e.nome.replace(/(\.[a-z0-9]{1,5})+$/i, "").replace(/\s*\(\d+\)\s*$/, "").replace(/^\d-(?=\S)/, "");
+  const nome = normalizarTexto(base);
+  const texto = e.texto ? normalizarTexto(e.texto.slice(0, 40_000)) : "";
+  // O tipo pelo conteúdo vem só do cabeçalho: no corpo, contratos citam DIFAL, aditivo, inscrição estadual…
+  const cabeca = texto.slice(0, 1500);
+  const xmlNfe = e.texto && /<infNFe/i.test(e.texto) ? e.texto : null;
+  const pasta = normalizarTexto(e.pasta);
+
+  // Tipo: a pista do nome vale mais que a do conteúdo.
+  let tipo: TipoDocumento = "outro";
+  let tipoEvidencia: Evidencia[] = [];
+  const nfNome = NF_NOME.test(nome);
+  const nfTexto = NF_TEXTO.test(texto);
+  const regraNome = REGRAS_TIPO.find((r) => r.nome?.test(nome));
+  const regraTexto = cabeca ? REGRAS_TIPO.find((r) => r.texto?.test(cabeca)) : undefined;
+  const contratoTexto = cabeca ? REGRAS_TIPO.find((r) => CONTRATOS.includes(r.tipo) && r.texto?.test(cabeca)) : undefined;
+  if (e.finalidade === "elaboracao" && /(^|\b)(0-padrao|_?modelos?)\b/.test(pasta)) {
+    tipo = "modelo_contrato";
+    tipoEvidencia = ["pasta"];
+  } else if (regraNome && (!nfNome || ANTES_DA_NF.includes(regraNome.tipo))) {
+    tipo = regraNome.tipo;
+    tipoEvidencia = unir("nome", cabeca !== "" && regraNome.texto?.test(cabeca) && "texto");
+  } else if (!regraNome && /\bctr\b|\bcontrato\b/.test(nome) && contratoTexto) {
+    // "CTR 136.2026 - Cliente": contrato pelo nome; a espécie (venda, locação, serviço) pelo cabeçalho.
+    tipo = contratoTexto.tipo;
+    tipoEvidencia = ["nome", "texto"];
+  } else if (nfNome || nfTexto) {
+    const natOp = xmlNfe ? normalizarTexto(tag(xmlNfe, "natOp") ?? "") : "";
+    const fonte = `${nome} ${natOp} ${texto.slice(0, 3000)}`;
+    tipo = /\bretorno\b/.test(fonte) ? "nf_retorno" : /\brem(essa)?\b/.test(fonte) ? "nf_remessa" : "nf_venda";
+    tipoEvidencia = unir(nfNome && "nome", nfTexto && "texto");
+  } else if (regraTexto) {
+    tipo = regraTexto.tipo;
+    tipoEvidencia = ["texto"];
+  }
+  // Contrato com evidência de assinatura eletrônica (D4Sign) = contrato assinado (5.5: nunca só por ser PDF).
+  // No conteúdo, só a marca do D4Sign: a minuta cita "assinado eletronicamente" nas cláusulas.
+  const assinado = ASSINADO.test(nome) || /d4sign/.test(texto);
+  let assunto: CampoAnalise | null = null;
+  if (assinado && (tipo === "contrato_venda" || tipo === "contrato_locacao" || tipo === "contrato_servico" || (tipo === "outro" && /contrato|\bctr\b/.test(nome)))) {
+    const sub = tipo === "contrato_locacao" ? "Locacao" : tipo === "contrato_servico" ? "Servico" : tipo === "contrato_venda" ? "Venda" : null;
+    if (sub) assunto = { valor: sub, evidencia: tipoEvidencia };
+    tipo = "contrato_assinado";
+    tipoEvidencia = unir(...tipoEvidencia, ASSINADO.test(nome) && "nome", texto !== "" && ASSINADO.test(texto) && "texto");
+  }
+
+  // Número / identificador
+  let numero: CampoAnalise | null = null;
+  const nfNumNome = /\bnf[\s-]*e?[\s-]*(\d{2,9})|^\d_(\d{3,9})\b/.exec(nome);
+  const nfNumXml = xmlNfe ? tag(xmlNfe, "nNF") : null;
+  const nfNumTexto = /(?:nf-?e|nota fiscal)[^\d]{0,40}n[o°º.]*\s*:?\s*([\d.]{1,11})/.exec(texto)?.[1];
+  if (tipo.startsWith("nf_") || tipo === "carta_correcao" || tipo === "difal") {
+    const deNome = nfNumNome ? somenteNumero(nfNumNome[1] ?? nfNumNome[2]) : null;
+    const deTexto = nfNumXml ? somenteNumero(nfNumXml) : nfNumTexto ? somenteNumero(nfNumTexto) : null;
+    const v = deNome ?? deTexto;
+    if (v) numero = { valor: v, evidencia: unir(deNome === v && "nome", deTexto === v && "texto") };
+  } else if (tipo === "fatura_locacao") {
+    const v = /\bfl\s*(\d+)/.exec(nome)?.[1] ?? /fatura de locacao\D{0,20}(\d+)/.exec(`${nome} ${texto}`)?.[1];
+    if (v) numero = { valor: somenteNumero(v), evidencia: ["nome"] };
+  } else if (tipo === "proposta_comercial") {
+    const m = /^(\d{2}\.\d{3})\s*[vl]\s*(r(?:ev)?\.?\s*\d+)?/.exec(nome);
+    if (m) numero = { valor: m[2] ? `${m[1]} Rev${m[2].replace(/\D/g, "").padStart(2, "0")}` : m[1], evidencia: ["nome"] };
+  } else if (tipo.startsWith("contrato") || tipo === "aditamento") {
+    const v = /\bctr[\s-]*(\d+)/.exec(nome)?.[1] ?? /^(\d{1,4})\s*-+\s*(contrato|ctr)/.exec(nome)?.[1] ?? pistasArquivoTrabalho(e.nome).numeroContrato;
+    if (v) numero = { valor: somenteNumero(v), evidencia: ["nome"] };
+  }
+
+  // Assunto (ordinais e o miolo das propostas); nunca inventado
+  if (!assunto) {
+    const ord = /\b(medicao|parcela|remessa|rem|retorno|jogo)\s*(\d{1,3})\b/.exec(nome) ?? /\b(\d{1,2})[oº]\s*(jogo)\b/.exec(nome);
+    // Proposta: "26.120 V Rev01 - Cliente - <assunto...>" — o que vem depois do cliente é o assunto.
+    const miolo = tipo === "proposta_comercial" ? base.split(/\s+-\s+/).slice(2) : [];
+    if (miolo.length) assunto = { valor: miolo.join(" "), evidencia: ["nome"] };
+    else if (ord) {
+      const [palavra, n] = /\d/.test(ord[1]) ? [ord[2], ord[1]] : [ord[1], ord[2]];
+      const rotulo = { medicao: "Medicao", parcela: "Parcela", remessa: "Remessa", rem: "Remessa", retorno: "Retorno", jogo: "Jogo" }[palavra] ?? palavra;
+      assunto = { valor: `${rotulo} ${n.padStart(2, "0")}`, evidencia: ["nome"] };
+    }
+  }
+
+  // Cliente: CNPJ do texto no cadastro > nome da pasta/arquivo no cadastro > nome da pasta do cliente (dossiê) ou do arquivo (elaboração)
+  let cliente: AnaliseDocumento["cliente"] = null;
+  let cnpj: CampoAnalise | null = null;
+  const proprios = new Set(e.cnpjsProprios.map((c) => c.replace(/\D/g, "")));
+  const destXml = xmlNfe ? tag(xmlNfe, "CNPJ", "dest") : null;
+  const cnpjsTexto = [...(destXml ? [destXml] : []), ...(e.texto ? cnpjsNoTexto(e.texto) : [])].filter((c) => !proprios.has(c));
+  // No nome vai o nome curto (da pasta do cliente ou do arquivo) quando ele é o mesmo cliente do cadastro; senão a razão sem sufixo.
+  // pistasArquivoTrabalho corta a extensão sozinho: recebe o nome original (no `base`, ".2026" de "CTR 138.2026" pareceria extensão).
+  // O ano no fim da pasta ("Amorim Coutinho 2026") não faz parte do nome do cliente.
+  const nomeCliente = (e.finalidade === "dossie_cliente" ? e.pastaNivel1 : pistasArquivoTrabalho(e.nome).clienteCurto)?.replace(/\s+(19|20)\d{2}$/, "") || null;
+  const rotuloCliente = (c: ClienteCadastro) =>
+    nomeCliente && (sugerirCliente(nomeCliente, [], [c]).candidatos[0]?.nota ?? 0) >= 70 ? nomeCliente : nomeCurto(c.nome);
+  if (cnpjsTexto.length) {
+    cnpj = { valor: cnpjsTexto[0], evidencia: ["texto"] };
+    const doc = e.clientes.find((c) => c.documento && c.documento.replace(/\D/g, "") === cnpjsTexto[0]);
+    if (doc) cliente = { valor: rotuloCliente(doc), contraparteId: doc.id, evidencia: ["texto", "cadastro"] };
+  }
+  if (!cliente && nomeCliente) {
+    const s = sugerirCliente(nomeCliente, [e.nome], e.clientes);
+    const melhor = s.candidatos[0];
+    const c = melhor && melhor.nota >= 90 ? e.clientes.find((x) => x.id === melhor.clienteId) : undefined;
+    cliente = c
+      ? { valor: rotuloCliente(c), contraparteId: c.id, evidencia: [e.finalidade === "dossie_cliente" ? "pasta" : "nome", "cadastro"] }
+      : { valor: nomeCliente, contraparteId: null, evidencia: [e.finalidade === "dossie_cliente" ? "pasta" : "nome"] };
+  }
+
+  // Data
+  let data: CampoAnalise | null = null;
+  const dhEmi = xmlNfe ? tag(xmlNfe, "dhEmi") ?? tag(xmlNfe, "dEmi") : null;
+  const mXml = dhEmi ? /^(\d{4})-(\d{2})-(\d{2})/.exec(dhEmi) : null;
+  if (mXml && dataValida(Number(mXml[3]), Number(mXml[2]), Number(mXml[1]))) data = { valor: `${mXml[1]}-${mXml[2]}-${mXml[3]}`, evidencia: ["texto"] };
+  else if (texto) {
+    const d = dataDoTexto(texto);
+    if (d) data = { valor: d, evidencia: ["texto"] };
+  }
+
+  // Confiança: tipo confirmado por nome e conteúdo = alta; só um deles = média; nada (ou só a pasta) = baixa.
+  const temTexto = texto.replace(/[^a-z0-9]/g, "").length >= 30;
+  const confianca: Confianca =
+    tipo === "outro" ? "baixa"
+      : tipoEvidencia.includes("nome") && tipoEvidencia.includes("texto") ? "alta"
+      : tipoEvidencia.length ? "media" : "baixa";
+  const partes = [
+    `tipo ${TIPOS_DOCUMENTO[tipo].nome.toLowerCase()} por ${tipoEvidencia.length ? tipoEvidencia.join(" e ") : "falta de evidência"}`,
+    numero && `número pelo ${numero.evidencia.join(" e ")}`,
+    cliente && `cliente pel${cliente.evidencia.includes("cadastro") ? "o cadastro" : "a " + cliente.evidencia[0]}`,
+    data && "data pelo conteúdo",
+    !temTexto && "sem texto do arquivo (só metadados)",
+  ].filter(Boolean);
+  return {
+    tipo, tipoEvidencia, numero, assunto, cliente, data, cnpj, confianca,
+    metodo: temTexto ? "texto" : "metadados",
+    justificativa: partes.join("; ") + ".",
+  };
+}
+
+/** Espécie do contrato para agrupar os arquivos do mesmo contrato (venda e locação têm numeração própria); nulo se não for contrato. */
+export function especieContrato(tipo: string | null, assunto: CampoAnalise | null | undefined): string | null {
+  return tipo === "contrato_venda" ? "Venda" : tipo === "contrato_locacao" ? "Locacao" : tipo === "contrato_servico" ? "Servico"
+    : tipo === "contrato_assinado" ? assunto?.valor ?? null : null;
+}
+type ParaUnificar = { tipo: string | null; numero: CampoAnalise | null; assunto: CampoAnalise | null; cliente: AnaliseDocumento["cliente"] };
+
+/**
+ * Mesmo contrato (espécie + número), mesmo cliente: os arquivos do lote seguem o cliente da maioria dos arquivos do contrato
+ * (lote + análises já gravadas), preferindo o que está no cadastro e, no empate, o que veio do conteúdo. Devolve, por índice do
+ * lote, o cliente unificado e a nota para a justificativa (só dos que mudaram).
+ */
+export function unificarClientesDeContratos(lote: readonly ParaUnificar[], gravadas: readonly ParaUnificar[]) {
+  const chave = (x: ParaUnificar) => {
+    const esp = especieContrato(x.tipo, x.assunto);
+    return esp && x.numero && x.cliente ? `${esp}|${x.numero.valor}` : null;
+  };
+  const grupos = new Map<string, ParaUnificar[]>();
+  for (const x of [...lote, ...gravadas]) {
+    const k = chave(x);
+    if (k) grupos.set(k, [...(grupos.get(k) ?? []), x]);
+  }
+  const quem = (c: NonNullable<ParaUnificar["cliente"]>) => c.contraparteId ?? `nome:${normalizarTexto(limparCampoNome(c.valor))}`;
+  const mudancas = new Map<number, { cliente: NonNullable<AnaliseDocumento["cliente"]>; nota: string }>();
+  lote.forEach((x, i) => {
+    const k = chave(x);
+    const grupo = k ? grupos.get(k)! : [];
+    if (grupo.length < 2) return;
+    const porQuem = new Map<string, NonNullable<ParaUnificar["cliente"]>[]>();
+    for (const g of grupo) porQuem.set(quem(g.cliente!), [...(porQuem.get(quem(g.cliente!)) ?? []), g.cliente!]);
+    if (porQuem.size < 2 && new Set(grupo.map((g) => limparCampoNome(g.cliente!.valor))).size < 2) return;
+    const nota = (cs: NonNullable<ParaUnificar["cliente"]>[]) =>
+      [cs[0].contraparteId ? 1 : 0, cs.length, cs.filter((c) => c.evidencia.includes("texto")).length];
+    const [, vencedor] = [...porQuem].sort(([, a], [, b]) => {
+      const [na, nb] = [nota(a), nota(b)];
+      return nb[0] - na[0] || nb[1] - na[1] || nb[2] - na[2];
+    })[0];
+    // Rótulo mais frequente entre os arquivos do vencedor (já limpo: "Amorim Coutinho -" = "Amorim Coutinho").
+    const rotulos = vencedor.map((c) => limparCampoNome(c.valor));
+    const rotulo = rotulos.sort((a, b) => rotulos.filter((r) => r === b).length - rotulos.filter((r) => r === a).length)[0];
+    if (quem(x.cliente!) === quem(vencedor[0]) && limparCampoNome(x.cliente!.valor) === rotulo) return;
+    const outro = quem(x.cliente!) !== quem(vencedor[0]) && x.cliente!.evidencia.includes("texto") ? "; o texto deste arquivo aponta outro cliente" : "";
+    mudancas.set(i, {
+      cliente: { valor: rotulo, contraparteId: vencedor[0].contraparteId, evidencia: unir(...vencedor.flatMap((c) => c.evidencia)) },
+      nota: `cliente unificado com os outros arquivos do contrato ${x.numero!.valor} (${vencedor.length} de ${grupo.length})${outro}.`,
+    });
+  });
+  return mudancas;
+}
+
+const PROIBIDOS = /[\\/:*?"<>|\u0000-\u001f]/g;
+export const LIMITE_NOME = 150;
+/** Um campo do nome: sem acento, sem caractere proibido no Drive/Windows, espaços simples, sem " - " interno (é o separador). */
+export const limparCampoNome = (s: string) =>
+  s.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(PROIBIDOS, " ").replace(/\s+-\s+/g, " ").replace(/\s+/g, " ").trim()
+    .replace(/^[-.\s]+|[-.\s]+$/g, "");
+
+/** Nome padronizado `TIPO - IDENTIFICADOR - Assunto - Cliente - AAAA-MM-DD.ext`, com campos ausentes omitidos e colisões numeradas. */
+export function montarNomePadrao(a: Pick<AnaliseDocumento, "tipo" | "numero" | "assunto" | "cliente" | "data">, extensao: string, ocupados: Iterable<string> = []): string {
+  const ext = extensao ? `.${extensao.toLowerCase().replace(/[^a-z0-9]/g, "")}` : "";
+  const fixo = [TIPOS_DOCUMENTO[a.tipo].rotulo, a.numero?.valor].map((x) => (x ? limparCampoNome(x) : "")).filter(Boolean);
+  const fim = [a.cliente?.valor, a.data?.valor].map((x) => (x ? limparCampoNome(x) : "")).filter(Boolean);
+  let assunto = a.assunto ? limparCampoNome(a.assunto.valor) : "";
+  const montar = (sufixo = "") => [...fixo, ...(assunto ? [assunto] : []), ...fim].join(" - ") + sufixo + ext;
+  const folga = 6; // " (99)"
+  while (montar().length > LIMITE_NOME - folga && assunto.length > 0) assunto = assunto.slice(0, Math.max(0, assunto.length - (montar().length - (LIMITE_NOME - folga)))).trim();
+  const usados = new Set([...ocupados].map((n) => n.toLowerCase()));
+  let nome = montar();
+  for (let i = 2; usados.has(nome.toLowerCase()); i++) nome = montar(` (${i})`);
+  return nome;
+}
+
+/** Nome digitado pelo admin (Editar): mesmas regras do padrão; devolve nulo se não servir. */
+export function validarNomeEditado(nome: string, extensao: string): string | null {
+  const ext = extensao ? `.${extensao.toLowerCase()}` : "";
+  const base = nome.trim().replace(new RegExp(`${ext.replace(".", "\\.")}$`, "i"), "");
+  const partes = base.split(/\s+-\s+/).map(limparCampoNome).filter(Boolean);
+  const final = partes.join(" - ") + ext;
+  return partes.length && final.length <= LIMITE_NOME ? final : null;
+}
+
+// ── Extração de texto (sem rede além do Drive; bibliotecas injetadas: npm:unpdf e npm:jszip na Edge, as mesmas no Vitest) ──
+export type Extratores = {
+  /** Texto das primeiras páginas de um PDF (camada de texto; PDF escaneado volta vazio). */
+  pdf: (bytes: Uint8Array) => Promise<string>;
+  /** Abre um zip (DOCX/XLSX) e devolve uma função que lê um arquivo interno como texto (nulo se não existir). */
+  zip: (bytes: Uint8Array) => Promise<(caminho: string) => Promise<string | null>>;
+};
+export type ResultadoExtracao = { situacao: "texto" | "sem_texto" | "nao_suportado"; texto: string | null };
+
+type PdfDoc = { numPages: number; getPage: (n: number) => Promise<{ getTextContent: () => Promise<{ items: object[] }> }> };
+type Zip = { file: (nome: string) => { async: (tipo: "string") => Promise<string> } | null };
+/** Extratores a partir das bibliotecas (unpdf `getDocumentProxy` e JSZip `loadAsync`), iguais na Edge e nos testes. PDF: até 10 páginas. */
+export function criarExtratores(libs: { abrirPdf: (b: Uint8Array) => Promise<PdfDoc>; abrirZip: (b: Uint8Array) => Promise<Zip> }): Extratores {
+  return {
+    pdf: async (bytes) => {
+      const doc = await libs.abrirPdf(bytes);
+      const paginas: string[] = [];
+      for (let i = 1; i <= Math.min(doc.numPages, 10); i++) {
+        paginas.push((await (await doc.getPage(i)).getTextContent()).items.map((x) => ("str" in x && typeof x.str === "string" ? x.str : "")).join(" "));
+      }
+      return paginas.join("\n");
+    },
+    zip: async (bytes) => {
+      const zip = await libs.abrirZip(bytes);
+      return async (caminho) => (await zip.file(caminho)?.async("string")) ?? null;
+    },
+  };
+}
+export const EXTENSOES_COM_TEXTO = ["pdf", "docx", "xlsx", "xml"] as const;
+const LIMITE_TEXTO = 40_000;
+const decodificarXml = (s: string) =>
+  s.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n))).replace(/&amp;/g, "&");
+const textoDoXmlOffice = (xml: string) =>
+  decodificarXml(xml.replace(/<\/(w:p|si|row)>/g, "\n").replace(/<w:tab\/>/g, " ").replace(/<[^>]+>/g, " ")).replace(/[ \t]+/g, " ").trim();
+
+export async function extrairTexto(bytes: Uint8Array, extensao: string, ex: Extratores): Promise<ResultadoExtracao> {
+  const ext = extensao.toLowerCase();
+  let texto = "";
+  if (ext === "pdf") texto = await ex.pdf(bytes);
+  else if (ext === "docx") texto = textoDoXmlOffice((await (await ex.zip(bytes))("word/document.xml")) ?? "");
+  else if (ext === "xlsx") texto = textoDoXmlOffice((await (await ex.zip(bytes))("xl/sharedStrings.xml")) ?? "");
+  else if (ext === "xml") texto = new TextDecoder("utf-8").decode(bytes);
+  else return { situacao: "nao_suportado", texto: null };
+  texto = texto.slice(0, LIMITE_TEXTO);
+  return texto.replace(/[^\p{L}\p{N}]/gu, "").length >= 30 ? { situacao: "texto", texto } : { situacao: "sem_texto", texto: null };
+}
+
+// ── Rodada de análise (Edge Function nucleo-ged-analisar) ──
+export const LIMITE_ANALISE = { porChamada: 20, maxBytes: 15 * 1024 * 1024, prazoMs: 100_000 } as const;
+
+export type DocumentoParaAnalisar = {
+  documento_id: string; drive_id: string; nome: string; extensao: string; tamanho_bytes: number | null; drive_revisao: string | null;
+  finalidade: Finalidade; pasta: string; pasta_nivel1: string | null; nomes_na_pasta: string[];
+};
+export type DepsAnalise = DepsMetadados & {
+  cadastros: () => Promise<{ clientes: ClienteCadastro[]; cnpjsProprios: string[] }>;
+  extratores: Extratores;
+  /** Análises já gravadas dos contratos com estes números (para unificar o cliente do mesmo contrato). */
+  analisesDeContratos?: (numeros: string[]) => Promise<{ documento_id: string; tipo: string | null; campos: Partial<Record<"numero" | "assunto", CampoAnalise | null>> & { cliente?: AnaliseDocumento["cliente"] } | null }[]>;
+};
+type SituacaoAnalise = "sugerida" | "sem_texto" | "nao_suportado" | "erro";
+
+/** Linha para `ged_gravar_analises` (0811): só campos derivados, nunca o texto. */
+export function linhaAnalise(doc: DocumentoParaAnalisar, situacao: SituacaoAnalise, a: AnaliseDocumento | null, nomeSugerido: string | null, erro: string | null) {
+  return {
+    documento_id: doc.documento_id, drive_revisao: doc.drive_revisao, situacao, erro,
+    tipo: a?.tipo ?? null, contraparte_id: a?.cliente?.contraparteId ?? null, confianca: a?.confianca ?? null, metodo: a?.metodo ?? null,
+    justificativa: a?.justificativa ?? null, nome_atual: doc.nome, nome_sugerido: nomeSugerido,
+    campos: a ? { tipo_evidencia: a.tipoEvidencia, numero: a.numero, assunto: a.assunto, cliente: a.cliente, data: a.data, cnpj: a.cnpj } : {},
+  };
+}
+
+/**
+ * Analisa até 20 documentos por chamada (os próximos sem análise da revisão atual, ou os ids pedidos). Só o admin geral; nada é
+ * renomeado; resposta e log só com contagens. O que não couber no prazo fica para a próxima chamada (retomável pelo banco).
+ */
+export async function tratarAnalise(req: { method: string; jwt: string | null; corpo: unknown }, d: DepsAnalise): Promise<RespostaGed> {
+  const corpo = (req.corpo ?? {}) as { limite?: unknown; documentos?: unknown };
+  const ids = Array.isArray(corpo.documentos) ? corpo.documentos : null;
+  if (req.method === "POST" && ids && (ids.length > LIMITE_ANALISE.porChamada || !ids.every((x) => typeof x === "string" && /^[0-9a-f-]{36}$/i.test(x)))) {
+    return json(400, { erro: "pedido_invalido" });
+  }
+  const limite = Math.min(LIMITE_ANALISE.porChamada, Math.max(1, Number(corpo.limite) || LIMITE_ANALISE.porChamada));
+  const l = await prepararLeitura(req, d, async (_perfil, resultado) => void d.log?.(`ged-analise: resultado=${resultado}`));
+  if ("status" in l) return l;
+  const fila = await d.rpc("ged_proximos_para_analisar", { p_limite: ids ? ids.length : limite, p_documentos: ids });
+  if (fila.error) return json(500, { erro: "banco" });
+  const docs = (fila.data ?? []) as DocumentoParaAnalisar[];
+  const { clientes, cnpjsProprios } = await d.cadastros();
+  const inicio = (d.agoraMs ?? Date.now)();
+  const contagem: Record<SituacaoAnalise, number> = { sugerida: 0, sem_texto: 0, nao_suportado: 0, erro: 0 };
+  const lote: ReturnType<typeof linhaAnalise>[] = [];
+  const ocupadosPorPasta = new Map<string, Set<string>>();
+  const analisados: { doc: DocumentoParaAnalisar; a: AnaliseDocumento; ext: string; extracao: ResultadoExtracao; erro: string | null }[] = [];
+  let pendentes = 0;
+  for (const doc of docs) {
+    if ((d.agoraMs ?? Date.now)() - inicio > LIMITE_ANALISE.prazoMs) { pendentes++; continue; }
+    let extracao: ResultadoExtracao = { situacao: "nao_suportado", texto: null };
+    let erro: string | null = null;
+    const ext = doc.extensao.toLowerCase();
+    if ((EXTENSOES_COM_TEXTO as readonly string[]).includes(ext)) {
+      if ((doc.tamanho_bytes ?? 0) > LIMITE_ANALISE.maxBytes) erro = "arquivo_grande";
+      else {
+        try {
+          extracao = await extrairTexto(await l.cliente.baixar(doc.drive_id, LIMITE_ANALISE.maxBytes), ext, d.extratores);
+        } catch (e) {
+          erro = e instanceof ErroDrive && /arquivo_grande/.test(e.message) ? "arquivo_grande"
+            : e instanceof ErroDrive ? (e.status === 403 ? "sem_permissao_drive" : e.status === 404 ? "removido_no_drive" : "drive") : "leitura";
+        }
+      }
+    }
+    const a = analisarDocumento({
+      nome: doc.nome, pasta: doc.pasta, pastaNivel1: doc.pasta_nivel1, finalidade: doc.finalidade, texto: extracao.texto, clientes, cnpjsProprios,
+    });
+    analisados.push({ doc, a, ext, extracao, erro });
+  }
+  // Mesmo contrato, mesmo cliente (com as análises já gravadas dos outros arquivos do contrato).
+  const numeros = [...new Set(analisados.filter((x) => especieContrato(x.a.tipo, x.a.assunto) && x.a.numero).map((x) => x.a.numero!.valor))];
+  const noLote = new Set(analisados.map((x) => x.doc.documento_id));
+  const gravadas = numeros.length && d.analisesDeContratos
+    ? (await d.analisesDeContratos(numeros)).filter((g) => !noLote.has(g.documento_id))
+      .map((g) => ({ tipo: g.tipo, numero: g.campos?.numero ?? null, assunto: g.campos?.assunto ?? null, cliente: g.campos?.cliente ?? null }))
+    : [];
+  const unificados = unificarClientesDeContratos(analisados.map((x) => x.a), gravadas);
+  for (const [i, { doc, a: original, ext, extracao, erro }] of analisados.entries()) {
+    const u = unificados.get(i);
+    const a = u ? { ...original, cliente: u.cliente, justificativa: `${original.justificativa} ${u.nota.charAt(0).toUpperCase()}${u.nota.slice(1)}` } : original;
+    const chavePasta = `${doc.finalidade}|${doc.pasta}`;
+    const ocupados = ocupadosPorPasta.get(chavePasta) ?? new Set(doc.nomes_na_pasta.filter((n) => n !== doc.nome));
+    ocupadosPorPasta.set(chavePasta, ocupados);
+    const sugerido = montarNomePadrao(a, ext, ocupados);
+    ocupados.add(sugerido);
+    const situacao: SituacaoAnalise = erro && erro !== "arquivo_grande" ? "erro" : extracao.situacao === "texto" ? "sugerida" : extracao.situacao === "sem_texto" ? "sem_texto" : "nao_suportado";
+    contagem[situacao]++;
+    lote.push(linhaAnalise(doc, situacao, a, sugerido, erro));
+  }
+  if (lote.length) {
+    const g = await d.rpc("ged_gravar_analises", { p_lote: lote });
+    if (g.error) return json(500, { erro: "banco" });
+  }
+  d.log?.(`ged-analise: analisados=${lote.length} sugeridas=${contagem.sugerida} sem_texto=${contagem.sem_texto} nao_suportado=${contagem.nao_suportado} erro=${contagem.erro} pendentes=${pendentes}`);
+  return json(200, { analisados: lote.length, ...contagem, pendentes });
+}
