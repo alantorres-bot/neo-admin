@@ -124,6 +124,14 @@ Consistem.
       (imutável).
     - A Edge Function envia uma vez só. Recusado pelo Consistem vira "erro" e pode ser lançado de novo.
     - Resposta incerta para o lote; o operador confere no Consistem e "Resolve" com o código, ou que não foi criado.
+    - Desde 23/10/2026 o operador **escolhe quem lançar**: cada linha tem uma caixa de marcar, e todas começam marcadas.
+      Isso permite testar com uma pessoa e depois lançar o resto. O servidor lança só as linhas marcadas e confere quantidade
+      e total.
+    - **Cancelar** (só o gestor; migration 0523): o título lançado que foi **excluído no Consistem** passa a "cancelado".
+      - O motivo é obrigatório e fica gravado com quem cancelou e quando; nada é apagado.
+      - "Cancelado" deixa de contar como título ativo: o mês pode ser reaberto e a pessoa pode ser lançada de novo.
+      - O Neo Admin não exclui no Consistem: primeiro exclui lá, depois cancela aqui.
+      - Só vale para o VT; a folha continua sem cancelamento.
 
 ## 6. Saídas e automações
 - **Relatório do mês** para imprimir ou PDF (`/imprimir/rh/vale-transporte/<id>`): por empresa, com subtotais por empresa e por
