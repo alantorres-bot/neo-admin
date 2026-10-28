@@ -40,6 +40,25 @@ O servidor Next gasta ~160 ms de CPU por requisição, então o plano gratuito d
 - **Vercel Hobby** (grátis, sem cartão; `vercel.json` já fixa `gru1` = São Paulo): basta importar o repositório do GitHub e definir as duas variáveis `NEXT_PUBLIC_*`. **Atenção:** os termos do plano Hobby são para uso pessoal/não comercial.
 A chave pública (anon/publishable) do projeto novo é obtida com `npx supabase projects api-keys --project-ref chdszjpbtfpstjrqnmmm`. **Nunca** coloque a chave de serviço (`service_role`) na hospedagem.
 
+## 4.1 Publicar sempre a partir de um commit identificado (D-08, desde 28/10/2026)
+O `gcloud run deploy --source .` publica a **pasta onde for rodado**: branch não mesclado, alteração sem commit e arquivo não
+rastreado de outra sessão iam junto (o `.gcloudignore` não existe; vale só o `.gitignore`), e não havia como saber que código
+estava no ar. A partir de agora, **não rode o deploy à mão**; use:
+```
+node scripts/publicar.mjs plano    --commit <sha> [--funcoes nome1,nome2] [--sem-app]   # confere e mostra os comandos
+node scripts/publicar.mjs executar --commit <sha> [--funcoes nome1,nome2] [--sem-app]   # publica
+node scripts/publicar.mjs consultar                                                     # revisões no ar e o commit de cada uma
+```
+O script exige um commit que **já está em `origin/main`** (enviado e mesclado), extrai uma cópia limpa dele (`git worktree`,
+na pasta temporária), roda `npm ci` e `npm run verificar` nela e só então publica dali: Edge Functions com
+`--project-ref chdszjpbtfpstjrqnmmm` e o app no Cloud Run com a etiqueta `commit=<sha>` na revisão. Qualquer passo que falhe
+interrompe os seguintes; a cópia é removida no fim. Migrations continuam pela seção 2. Depois de publicar, anote aqui
+(data, commit, revisão). Reversão: `gcloud run services update-traffic neo-admin --region southamerica-east1
+--to-revisions <revisão anterior>=100`, ou `executar` com o commit anterior.
+
+| Data | Commit | Revisão Cloud Run | Funções | Quem |
+|---|---|---|---|---|
+
 ## 5. Virada (quando tudo acima estiver pronto)
 1. Combinar um horário sem uso. Avisar que as alterações feitas no sistema antigo depois do passo 2 não serão copiadas.
 2. `exportar` do projeto antigo (`uhujocnxvupsroijgtss`) e `importar --mesclar` no novo; `conferir`; repetir a cópia dos anexos.
