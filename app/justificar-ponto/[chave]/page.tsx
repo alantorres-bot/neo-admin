@@ -15,7 +15,7 @@ type LoteDoLink = {
 function Moldura({ children }: { children: React.ReactNode }) {
   return (
     <main className="min-h-svh bg-cabecalho p-3 sm:p-6">
-      <div className="mx-auto max-w-6xl overflow-hidden rounded-[3px] border border-grade bg-white shadow">
+      <div className="mx-auto max-w-7xl overflow-hidden rounded-[3px] border border-grade bg-white shadow">
         <div className="bg-marca px-5 py-3 text-white">
           <p className="font-condensada text-lg font-bold leading-tight">Neo Formas — Ponto</p>
           <p className="text-xs text-white/85">Justificativa das inconsistências do ponto</p>
@@ -46,7 +46,7 @@ export default async function PaginaJustificarPeloLink({ params }: PageProps<"/j
         <h1 className="text-xl font-semibold">{lote.setor} — {formatarData(lote.periodo_inicio)} a {formatarData(lote.periodo_fim)}</h1>
         {editavel ? (
           <p className="text-sm text-muted-foreground">
-            Escolha a justificativa de cada ocorrência, informe o seu nome e clique em &quot;Enviar justificativas&quot;{lote.prazo ? ` até ${formatarData(lote.prazo)}` : ""}.
+            Escolha a justificativa de cada ocorrência, descreva o que aconteceu, informe o seu nome e clique em &quot;Enviar justificativas&quot;{lote.prazo ? ` até ${formatarData(lote.prazo)}` : ""}.
             Dá para salvar e terminar depois pelo mesmo link. Atestado ou declaração: entregue direto ao RH.
           </p>
         ) : (

@@ -1,0 +1,379 @@
+{
+  "funcoes": [
+    {
+      "anon": true,
+      "args": "",
+      "nome": "fn_ged_pastas_raiz_imutavel",
+      "corpo_md5": "d287a2a2e7f05f8bcfcbf9ed858c9af3",
+      "service_role": true,
+      "authenticated": true,
+      "security_definer": false
+    },
+    {
+      "anon": false,
+      "args": "p_area text, p_areas_leitura text[]",
+      "nome": "ged_areas_validas",
+      "corpo_md5": "2cb0b2e65a3e9a9dfd14f8bd37258ffc",
+      "service_role": false,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_perfil uuid, p_drive_id text, p_nome text, p_drive_compartilhado_id text, p_area text, p_areas_leitura text[], p_area_operacao text",
+      "nome": "ged_cadastrar_raiz",
+      "corpo_md5": "6bc6abc92f60d61f469e6eae58ed94fd",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "",
+      "nome": "ged_chamar_indexacao",
+      "corpo_md5": "d0e3c463df7deb0974fa39a9f4567a62",
+      "service_role": false,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_state text, p_email text, p_sub text, p_escopos text[], p_refresh_token text",
+      "nome": "ged_concluir_conexao",
+      "corpo_md5": "68e5df542178e67ae683eae0705688b5",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_indexacao uuid, p_resumo jsonb, p_page_token text, p_erro text",
+      "nome": "ged_concluir_indexacao",
+      "corpo_md5": "117f53c1f667c98e3ff467df71d6a2c2",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_state text",
+      "nome": "ged_consumir_estado",
+      "corpo_md5": "ae9d6449835669489a0e212ce6243a3b",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "",
+      "nome": "ged_conta_configurada",
+      "corpo_md5": "14c607b962f421a3742f8754eb865487",
+      "service_role": false,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_documento uuid, p_decisao text, p_nome text, p_motivo text",
+      "nome": "ged_decidir_analise",
+      "corpo_md5": "290c02be0763e653941ae5028c140f1b",
+      "service_role": false,
+      "authenticated": true,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_raiz uuid, p_area text, p_areas_leitura text[], p_area_operacao text",
+      "nome": "ged_definir_areas_raiz",
+      "corpo_md5": "26a6252703248b45bd520fbd238734d2",
+      "service_role": false,
+      "authenticated": true,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_raiz uuid, p_situacao text",
+      "nome": "ged_definir_situacao_raiz",
+      "corpo_md5": "a6cffb0fe1b722bc50f96ce2d80cb2af",
+      "service_role": false,
+      "authenticated": true,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_perfil uuid, p_revogacao text",
+      "nome": "ged_desconectar",
+      "corpo_md5": "7d792e3e08a4485e6bc8622f9c63f8af",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_raiz uuid",
+      "nome": "ged_estado_indice",
+      "corpo_md5": "cd951ca487b512f65d0fc5f70fbbb744",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_lote jsonb",
+      "nome": "ged_gravar_analises",
+      "corpo_md5": "d126165f09327c6802958203d93b9a6e",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_indexacao uuid, p_pastas jsonb, p_documentos jsonb",
+      "nome": "ged_gravar_indice",
+      "corpo_md5": "d81082f81e923a3171de73f3a195548a",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "",
+      "nome": "ged_indexacoes_visiveis",
+      "corpo_md5": "40da987de99f8b0a29fb0870a38f98ba",
+      "service_role": false,
+      "authenticated": true,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_destino text",
+      "nome": "ged_iniciar_conexao",
+      "corpo_md5": "678ed9e668fae4b35f1b9c29d42a507e",
+      "service_role": false,
+      "authenticated": true,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_raiz uuid, p_tipo text, p_agendada boolean, p_usuario uuid",
+      "nome": "ged_iniciar_indexacao",
+      "corpo_md5": "99eae37ad5865db3c15cfc48972860e7",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_perfil uuid",
+      "nome": "ged_perfil_admin",
+      "corpo_md5": "838855b021748ea1b191621efaa3607e",
+      "service_role": false,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "",
+      "nome": "ged_perfil_admin_atual",
+      "corpo_md5": "8c21869363b3d5b8b5c57fc2e76c0c18",
+      "service_role": false,
+      "authenticated": true,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_raiz uuid",
+      "nome": "ged_pode_ler_raiz",
+      "corpo_md5": "07b4de33a49d18ae5ab8748b65f08639",
+      "service_role": false,
+      "authenticated": true,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_limite integer, p_documentos uuid[]",
+      "nome": "ged_proximos_para_analisar",
+      "corpo_md5": "5cc5ec93005c3056325aef6e330d64cb",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "",
+      "nome": "ged_raizes",
+      "corpo_md5": "5c9e8ec3bca3623c276ae9f6242e76c9",
+      "service_role": false,
+      "authenticated": true,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "",
+      "nome": "ged_refresh_token",
+      "corpo_md5": "0e84b37dd4f3b7f808924381a94c494e",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_perfil uuid, p_itens integer, p_resultado text",
+      "nome": "ged_registrar_consulta_metadados",
+      "corpo_md5": "949ffd0b5564a1950186f8508260a5a7",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_codigo text, p_state text",
+      "nome": "ged_registrar_erro_conexao",
+      "corpo_md5": "c79dfcd2fe912dce70b30fd1c77e3c61",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_perfil uuid, p_raiz text, p_itens integer, p_resultado text",
+      "nome": "ged_registrar_verificacao_raiz",
+      "corpo_md5": "fc3ba0bfd1879d12afd460063c72f437",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "",
+      "nome": "ged_situacao_conexao",
+      "corpo_md5": "7cc680226ab7cd5389b6847e365ee07f",
+      "service_role": false,
+      "authenticated": true,
+      "security_definer": true
+    },
+    {
+      "anon": false,
+      "args": "p_state text",
+      "nome": "ged_validar_estado",
+      "corpo_md5": "60333d9646bc0c38b0d3b94ec37fa301",
+      "service_role": true,
+      "authenticated": false,
+      "security_definer": true
+    }
+  ],
+  "tabelas": [
+    {
+      "rls": true,
+      "tabela": "ged_analises",
+      "anon_select": false,
+      "authenticated_select": true,
+      "authenticated_escrita": false
+    },
+    {
+      "rls": true,
+      "tabela": "ged_conexao",
+      "anon_select": false,
+      "authenticated_select": false,
+      "authenticated_escrita": false
+    },
+    {
+      "rls": true,
+      "tabela": "ged_conexao_estados",
+      "anon_select": false,
+      "authenticated_select": false,
+      "authenticated_escrita": false
+    },
+    {
+      "rls": true,
+      "tabela": "ged_documento_revisoes",
+      "anon_select": false,
+      "authenticated_select": true,
+      "authenticated_escrita": false
+    },
+    {
+      "rls": true,
+      "tabela": "ged_documentos",
+      "anon_select": false,
+      "authenticated_select": true,
+      "authenticated_escrita": false
+    },
+    {
+      "rls": true,
+      "tabela": "ged_indexacoes",
+      "anon_select": false,
+      "authenticated_select": false,
+      "authenticated_escrita": false
+    },
+    {
+      "rls": true,
+      "tabela": "ged_pastas",
+      "anon_select": false,
+      "authenticated_select": true,
+      "authenticated_escrita": false
+    },
+    {
+      "rls": true,
+      "tabela": "ged_pastas_raiz",
+      "anon_select": false,
+      "authenticated_select": false,
+      "authenticated_escrita": false
+    },
+    {
+      "rls": true,
+      "tabela": "ged_tipos",
+      "anon_select": false,
+      "authenticated_select": true,
+      "authenticated_escrita": false
+    },
+    {
+      "rls": true,
+      "tabela": "ged_trava",
+      "anon_select": false,
+      "authenticated_select": false,
+      "authenticated_escrita": false
+    }
+  ],
+  "politicas": [
+    {
+      "papeis": [
+        "authenticated"
+      ],
+      "tabela": "ged_analises",
+      "comando": "SELECT",
+      "politica": "ged_analises_ler"
+    },
+    {
+      "papeis": [
+        "authenticated"
+      ],
+      "tabela": "ged_documento_revisoes",
+      "comando": "SELECT",
+      "politica": "ged_documento_revisoes_ler"
+    },
+    {
+      "papeis": [
+        "authenticated"
+      ],
+      "tabela": "ged_documentos",
+      "comando": "SELECT",
+      "politica": "ged_documentos_ler"
+    },
+    {
+      "papeis": [
+        "authenticated"
+      ],
+      "tabela": "ged_pastas",
+      "comando": "SELECT",
+      "politica": "ged_pastas_ler"
+    },
+    {
+      "papeis": [
+        "authenticated"
+      ],
+      "tabela": "ged_tipos",
+      "comando": "SELECT",
+      "politica": "ged_tipos_ler"
+    }
+  ]
+}

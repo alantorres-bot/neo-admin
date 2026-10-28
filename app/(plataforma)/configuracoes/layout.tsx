@@ -11,7 +11,11 @@ export default async function LayoutConfiguracoes({ children }: LayoutProps<"/co
     { href: "/configuracoes/empresas", rotulo: "Empresas" },
     { href: "/configuracoes/contrapartes", rotulo: "Contrapartes e contatos" },
     ...(sessao.acesso.adminGeral
-      ? [{ href: "/configuracoes/usuarios", rotulo: "Usuários e permissões" }, { href: "/configuracoes/aplicativos", rotulo: "Aplicativos" }]
+      ? [
+          { href: "/configuracoes/usuarios", rotulo: "Usuários e permissões" },
+          { href: "/configuracoes/aplicativos", rotulo: "Aplicativos" },
+          { href: "/configuracoes/documentos", rotulo: "Google Drive (GED)" },
+        ]
       : []),
     ...(temAcessoAlgumaArea(sessao.acesso, sessao.areas, "operador") ? [{ href: "/configuracoes/importador", rotulo: "Importador" }] : []),
   ];
