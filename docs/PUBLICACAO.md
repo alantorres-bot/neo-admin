@@ -49,12 +49,27 @@ node scripts/publicar.mjs plano    --commit <sha> [--funcoes nome1,nome2] [--sem
 node scripts/publicar.mjs executar --commit <sha> [--funcoes nome1,nome2] [--sem-app]   # publica
 node scripts/publicar.mjs consultar                                                     # revisões no ar e o commit de cada uma
 ```
-O script exige um commit que **já está em `origin/main`** (enviado e mesclado), extrai uma cópia limpa dele (`git worktree`,
-na pasta temporária), roda `npm ci` e `npm run verificar` nela e só então publica dali: Edge Functions com
-`--project-ref chdszjpbtfpstjrqnmmm` e o app no Cloud Run com a etiqueta `commit=<sha>` na revisão. Qualquer passo que falhe
-interrompe os seguintes; a cópia é removida no fim. Migrations continuam pela seção 2. Depois de publicar, anote aqui
-(data, commit, revisão). Reversão: `gcloud run services update-traffic neo-admin --region southamerica-east1
---to-revisions <revisão anterior>=100`, ou `executar` com o commit anterior.
+O que o script garante, nesta ordem (qualquer falha interrompe os passos seguintes; a cópia é removida no fim):
+1. `origin/main` do clone é **igual ao main do GitHub agora** (`git ls-remote`, só leitura). O script **não faz `git fetch`**:
+   se diferir, rode `git fetch origin` você mesmo e repita. Sem acesso ao GitHub, não publica.
+2. O commit **já está em `origin/main`** (enviado e mesclado). Commit só local ou de branch não mesclado é recusado.
+   Um commit antigo da main é aceito (é assim que se volta para uma versão anterior).
+3. Cópia limpa do commit (`git worktree`, pasta temporária), conferida: HEAD = commit, nenhum arquivo rastreado alterado e
+   **nenhum `node_modules`** (pasta, junção ou link: o `npm ci` apagaria o destino de uma junção para outro clone).
+4. `npm ci` e `npm run verificar` na cópia; depois, de novo: HEAD = commit e nada rastreado alterado.
+5. Destino do Cloud Run conferido (`gcloud run services describe` com `--project=474748357673` fixo tem de devolver a URL
+   do neo-admin) antes de qualquer publicação.
+6. Publica da cópia: Edge Functions com `--project-ref chdszjpbtfpstjrqnmmm`; app com `--project` fixo, revisão
+   `neo-admin-c<sha12>-<AAAAMMDDhhmm UTC>` e etiqueta `commit=<sha12>`. `consultar` lista as revisões com o commit.
+
+Migrations continuam pela seção 2. Depois de publicar, anote aqui (data, commit, revisão).
+
+**Falha no meio (não há rollback automático).** Se as Edge Functions foram publicadas e o deploy do app falhou, o script para
+com "JÁ PUBLICADO antes da falha: …": as funções estão no commit novo e o app continua na revisão anterior. Conferir:
+`node scripts/publicar.mjs consultar` (app) e `npx supabase functions list --project-ref chdszjpbtfpstjrqnmmm` (versão e data
+de cada função). Recuperar: corrigir a causa e rodar `executar` de novo com o mesmo commit (as funções são republicadas iguais) ou, para voltar as funções, `executar --commit <anterior> --funcoes …
+--sem-app`. Reversão do app: `gcloud run services update-traffic neo-admin --project=474748357673
+--region=southamerica-east1 --to-revisions <revisão anterior>=100`, ou `executar` com o commit anterior.
 
 | Data | Commit | Revisão Cloud Run | Funções | Quem |
 |---|---|---|---|---|

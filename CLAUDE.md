@@ -83,9 +83,10 @@ docs/modulos/                -> uma especificação por módulo
 - **Publicação (D-08):** app e Edge Functions só saem por `node scripts/publicar.mjs executar --commit <sha>`, com commit já
   em `origin/main`; nunca `gcloud run deploy --source .` nem `supabase functions deploy` da pasta de trabalho
   (ver `docs/PUBLICACAO.md`, seção 4.1).
-- **Push:** várias sessões usam este clone. Antes de enviar, rode `git log @{u}..HEAD --format='%h %an %s%n%(trailers)'` e
-  envie só commits criados nesta sessão. Commit de outra sessão (ou sem trailer `Origem-Sessao:`) exige autorização
-  explícita do Alan para aquele push. Nunca `git pull --rebase` + push com commits alheios por cima: use um worktree próprio
+- **Push:** várias sessões usam este clone. Antes de enviar, rode `git fetch origin` e
+  `git log origin/main..HEAD --format='%h %an %s | %(trailers:key=Origem-Sessao,valueonly)'` (lista tudo o que ainda não está
+  na `main`, inclusive em branch novo sem upstream) e envie só commits criados nesta sessão. Commit de outra sessão (ou sem
+  trailer `Origem-Sessao:`, que só vale no último parágrafo da mensagem) exige autorização explícita do Alan para aquele push. Nunca `git pull --rebase` + push com commits alheios por cima: use um worktree próprio
   (`git worktree add`) a partir de `origin/<branch>`. Push e publicação são autorizações separadas.
 
 @AGENTS.md
