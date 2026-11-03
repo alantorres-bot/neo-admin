@@ -22,7 +22,7 @@ function abrirAnexo(caminho: string) {
 }
 
 /** Diálogo com motivo obrigatório (devolver ao líder, cancelar). */
-function ComMotivo({ rotulo, titulo, descricao, aoConfirmar, variante = "outline" }: {
+export function ComMotivo({ rotulo, titulo, descricao, aoConfirmar, variante = "outline" }: {
   rotulo: string; titulo: string; descricao: string; aoConfirmar: (motivo: string) => Promise<{ ok: boolean; erro?: string }>; variante?: "outline" | "destructive";
 }) {
   const [aberto, setAberto] = useState(false);
