@@ -3,6 +3,9 @@
 O e-mail da filial ao cliente (Faturamento Filial, Fase C) sai do Gmail de **quem o prepara** (ex.: minas@), e não da caixa
 do financeiro. Cada pessoa autoriza o próprio Gmail **uma vez**. O escopo é só `gmail.compose`: o Neo Admin **cria
 rascunhos** e nunca envia nem lê a caixa. Quem confere e envia é a pessoa, no Gmail.
+**Única exceção (0527, decisão do Alan em 04/11/2026):** o pedido do Portal do Líder **é enviado** do Gmail do líder ao
+e-mail interno do RH (só `@neoformas.com.br`), pela Edge Function `rh-ld-enviar-email`. O mesmo escopo `gmail.compose`
+já permite isso; nada vai a terceiros por esse caminho. Deploy: `npx supabase functions deploy rh-ld-enviar-email --project-ref chdszjpbtfpstjrqnmmm`.
 
 - O refresh token de cada pessoa fica no **Vault** do Supabase (cifrado), nunca em tabela nem no app. A tabela
   `gmail_contas` guarda só o e-mail, o id do segredo e as datas (migration 0153).

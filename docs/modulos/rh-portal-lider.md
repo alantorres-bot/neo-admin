@@ -4,7 +4,7 @@ Rotas:
 - `/lider` e `/lider/novo`: tela do líder, com login.
 - `/rh/portal_lider` e `/rh/portal_lider/<id>`: pedidos e líderes, para o RH.
 
-Migration `0526_rh_portal_lider.sql`. Fase 1, decidida em 04/11/2026.
+Migrations `0526_rh_portal_lider.sql` e `0527_rh_portal_lider_email.sql`; Edge Function `rh-ld-enviar-email`. Fase 1, decidida em 04/11/2026.
 
 ## Por quê
 Desde 30/10, as demandas de DP dos líderes chegam por e-mail ao Alan. São elas: férias, alteração de função ou salário, desligamento, atestado, contratação, bonificação e ponto. O portal reúne tudo numa tela por setor. Cada pedido vira pendência do RH na Fila do dia.
@@ -49,6 +49,17 @@ Status:
 - O atendimento move a pendência: Em andamento passa para em_andamento; Concluir conclui; Recusar ou o cancelamento pelo líder cancela.
 - Pela regra da Central (0092, `criado_por`), o líder também enxerga as pendências que ele mesmo abriu. Ele não enxerga as dos outros.
 
+## E-mail ao RH (0527)
+Decisão do Alan em 04/11/2026: todo pedido enviado pelo portal também vai **por e-mail** ao RH.
+- O e-mail **sai de fato**, sem passar por rascunho. Sai do **Gmail do próprio líder**, pela conexão "Conectar meu Gmail" (0153, escopo `gmail.compose`, que também permite enviar), e a resposta volta para ele.
+- O líder autoriza o Gmail uma vez. Enquanto não conecta, o portal mostra o aviso e o botão **Enviar ao RH** fica travado.
+- O destino é a lista **E-mail do RH** (`rh.portal_lider.email_rh`, começa com `alantorres@`), que o gestor do RH troca na tela. Só aceita endereços `@neoformas.com.br`, porque é comunicação interna: a regra 2 do projeto (nada vai a terceiros sem regra) continua valendo, e a Edge Function confere o domínio de novo.
+- Assunto: "Portal do Líder — <tipo> — <pessoa> (<setor>)".
+- Corpo: os dados do pedido e o link para responder no Neo Admin, terminando em "Atenciosamente," (regra 3).
+- O atestado vai anexado.
+- Um envio por pedido. O resultado fica em `email_enviado_em` ou `email_erro`.
+- Se falhar (Gmail desconectado, autorização expirada, falha do Google), o pedido continua gravado e na Fila do dia. O líder vê "Não enviado" e usa **Reenviar e-mail**.
+
 ## Anexo do atestado
 - O arquivo sobe pelo navegador para `anexos`, no caminho `rh.portal_lider/rh_ld_solicitacoes/<id>/…`.
 - Pelas políticas da 0526, o líder envia e lê só os anexos de pedidos do seu setor.
@@ -70,5 +81,5 @@ Status:
 - Saldo e prazo de férias calculados.
 - Advertência e termos para assinar (EPI, ficha de empregado).
 - Benefícios: combustível e plano de saúde.
-- E-mail ao líder quando o RH responde.
+- E-mail ao líder quando o RH responde (hoje ele vê a resposta no portal).
 - Envio automático ao escritório (AM DP).

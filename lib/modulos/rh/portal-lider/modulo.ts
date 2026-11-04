@@ -74,3 +74,18 @@ export function avisosDoPedido(tipo: Tipo, d: Record<string, unknown>, hoje: str
   }
   return avisos;
 }
+
+/** E-mail do pedido ao RH (sai do Gmail do líder, 0527). Termina em "Atenciosamente," sem assinatura (regra 3). */
+export function emailDoPedido(p: { tipo: Tipo; dados: Record<string, unknown>; pessoa: string; setor: string; link: string }): { assunto: string; corpo: string } {
+  const linhas = linhasDoPedido(p.tipo, p.dados).filter(([, v]) => v !== "—").map(([r, v]) => `${r}: ${v}`);
+  return {
+    assunto: `Portal do Líder — ${ROTULO_TIPO[p.tipo]} — ${p.pessoa} (${p.setor})`,
+    corpo: [
+      "Olá,", "",
+      `Segue pedido de ${ROTULO_TIPO[p.tipo].toLowerCase()} feito pelo Portal do Líder.`, "",
+      `Setor: ${p.setor}`, `${p.tipo === "contratacao" ? "Candidato" : "Funcionário"}: ${p.pessoa}`, ...linhas, "",
+      `Para responder no Neo Admin: ${p.link}`, "",
+      "Atenciosamente,",
+    ].join("\n"),
+  };
+}

@@ -8,7 +8,7 @@ export type Pessoa = { id: string; nome: string; funcao: string | null; data_adm
 export type LoteAberto = { tipo: "ponto" | "bonificacao"; id: string; rotulo: string; prazo: string | null; chave: string };
 export type Pedido = {
   id: string; tipo: Tipo; status: Status; dados: Record<string, unknown>; resposta: string | null; pessoa: string | null;
-  criado_em: string; atendido_em: string | null; anexos: number;
+  criado_em: string; atendido_em: string | null; anexos: number; email_enviado_em: string | null; email_erro: string | null;
 };
 
 export async function meusSetores(supabase: SupabaseClient): Promise<Setor[]> {
@@ -29,4 +29,13 @@ export async function lerPortal(supabase: SupabaseClient, setor: string) {
 export async function ehLider(sessao: { modulos: { codigo: string; ativo: boolean }[] }): Promise<boolean> {
   if (!sessao.modulos.some((m) => m.codigo === MODULO_PORTAL_LIDER && m.ativo)) return false;
   return (await meusSetores(await criarClienteServidor())).length > 0;
+}
+
+/** Gmail conectado de quem está logado (o pedido sai por e-mail dessa caixa) e o e-mail do RH que recebe (0527). */
+export async function lerEmail(supabase: SupabaseClient, userId: string): Promise<{ gmail: string | null; emailRh: string[] }> {
+  const [g, r] = await Promise.all([
+    supabase.from("gmail_contas").select("email").eq("perfil_id", userId).is("desconectado_em", null).maybeSingle(),
+    supabase.rpc("rh_ld_email_rh"),
+  ]);
+  return { gmail: (g.data?.email as string | undefined) ?? null, emailRh: (r.data ?? []) as string[] };
 }

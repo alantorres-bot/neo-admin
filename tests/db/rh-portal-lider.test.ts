@@ -108,6 +108,21 @@ describe("RH > Portal do Líder (0526)", () => {
     await expect(rpc(liderA, `update rh_ld_solicitacoes set status = 'concluida' where id = $1`, [outro])).resolves.toMatchObject({ affectedRows: 0 });
   });
 
+  it("e-mail ao RH (0527): só @neoformas, gestor troca, só a Edge registra o envio", async () => {
+    expect((await rpc(liderA, `select rh_ld_email_rh() as e`)).rows[0].e).toEqual(["alantorres@neoformas.com.br"]);
+    await expect(rpc(rhOperador, `select rh_ld_salvar_email_rh(array['rh@neoformas.com.br'])`)).rejects.toThrow();
+    await expect(rpc(rhGestor, `select rh_ld_salvar_email_rh(array['fora@gmail.com'])`)).rejects.toThrow(/neoformas/);
+    await rpc(rhGestor, `select rh_ld_salvar_email_rh(array[' RH@neoformas.com.br '])`);
+    expect((await rpc(liderA, `select rh_ld_email_rh() as e`)).rows[0].e).toEqual(["rh@neoformas.com.br"]);
+    await expect(rpc(liderA, `select rh_ld_registrar_email($1, 'x', null)`, [pedido])).rejects.toThrow();
+    await rpc("service", `select rh_ld_registrar_email($1, null, 'Gmail do líder não conectado.')`, [pedido]);
+    expect((await rpc(liderA, `select email_enviado_em, email_erro from rh_ld_pedidos($1) where id = $2`, [setorA, pedido])).rows[0])
+      .toEqual({ email_enviado_em: null, email_erro: "Gmail do líder não conectado." });
+    await rpc("service", `select rh_ld_registrar_email($1, 'msg-1', null)`, [pedido]);
+    const r = (await rpc(liderA, `select email_enviado_em is not null enviado, email_erro from rh_ld_pedidos($1) where id = $2`, [setorA, pedido])).rows[0];
+    expect(r).toEqual({ enviado: true, email_erro: null });
+  });
+
   it("líder removido perde o acesso", async () => {
     await rpc(rhGestor, `select rh_ld_definir_lideres($1, '{}'::uuid[])`, [setorA]);
     expect((await rpc(liderA, `select * from rh_ld_meus_setores()`)).rows).toEqual([]);

@@ -10,8 +10,8 @@ import { linhasDoPedido, MODULO_PORTAL_LIDER, ROTA_PORTAL_LIDER, ROTULO_STATUS, 
 import { formatarData, formatarDataHora } from "@/lib/nucleo/fila";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { lerPortal, meusSetores } from "./dados";
-import { AnexarArquivo, CancelarPedido } from "./formulario";
+import { lerEmail, lerPortal, meusSetores } from "./dados";
+import { AnexarArquivo, CancelarPedido, ConectarGmail, ReenviarEmail } from "./formulario";
 import { COR_STATUS } from "./status";
 
 export const metadata: Metadata = { title: "Portal do Líder" };
@@ -24,7 +24,7 @@ export default async function PaginaPortalLider({ searchParams }: PageProps<"/li
   if (!setores.length) notFound();
   const { setor: pedido } = await searchParams;
   const setor = setores.find((s) => s.id === pedido) ?? setores[0];
-  const { equipe, lotes, pedidos } = await lerPortal(supabase, setor.id);
+  const [{ equipe, lotes, pedidos }, { gmail }] = await Promise.all([lerPortal(supabase, setor.id), lerEmail(supabase, sessao.userId)]);
 
   return (
     <div className="space-y-6">
@@ -42,6 +42,12 @@ export default async function PaginaPortalLider({ searchParams }: PageProps<"/li
         </div>
         <Button render={<Link href={`${ROTA_PORTAL_LIDER}/novo?setor=${setor.id}`} />}>Novo pedido ao RH</Button>
       </div>
+
+      {!gmail && (
+        <p className="flex flex-wrap items-center gap-2 rounded-[3px] border border-amber-600 bg-amber-50 p-2 text-sm text-amber-800">
+          Todo pedido vai também por e-mail ao RH, da sua caixa do Gmail. Autorize o seu Gmail uma vez para poder enviar pedidos. <ConectarGmail />
+        </p>
+      )}
 
       <section className="space-y-2">
         <h2 className="text-lg font-semibold">Com você agora</h2>
@@ -61,7 +67,7 @@ export default async function PaginaPortalLider({ searchParams }: PageProps<"/li
         <h2 className="text-lg font-semibold">Pedidos ao RH</h2>
         <Table className="cartoes">
           <TableHeader>
-            <TableRow><TableHead>Enviado em</TableHead><TableHead>Pedido</TableHead><TableHead>Funcionário</TableHead><TableHead>Situação</TableHead><TableHead>Resposta do RH</TableHead><TableHead>Ações</TableHead></TableRow>
+            <TableRow><TableHead>Enviado em</TableHead><TableHead>Pedido</TableHead><TableHead>Funcionário</TableHead><TableHead>Situação</TableHead><TableHead>E-mail</TableHead><TableHead>Resposta do RH</TableHead><TableHead>Ações</TableHead></TableRow>
           </TableHeader>
           <TableBody>
             {pedidos.map((p) => (
@@ -74,15 +80,19 @@ export default async function PaginaPortalLider({ searchParams }: PageProps<"/li
                   </TableCell>
                   <TableCell>{p.pessoa}</TableCell>
                   <TableCell><Badge variant="outline" className={COR_STATUS[p.status]}>{ROTULO_STATUS[p.status]}</Badge></TableCell>
+                  <TableCell className="text-sm">
+                    {p.email_enviado_em ? `Enviado ${formatarDataHora(p.email_enviado_em)}` : p.status === "cancelada" ? "" : <span className="text-destructive">Não enviado{p.email_erro ? `: ${p.email_erro}` : ""}</span>}
+                  </TableCell>
                   <TableCell className="text-sm">{p.resposta}</TableCell>
                   <TableCell className="space-x-1 whitespace-nowrap">
                     {p.tipo === "atestado" && p.anexos === 0 && ["enviada", "em_andamento"].includes(p.status) && <AnexarArquivo pedido={p.id} />}
+                    {!p.email_enviado_em && p.status !== "cancelada" && gmail && <ReenviarEmail setor={setor.id} pedido={p.id} />}
                     {p.status === "enviada" && <CancelarPedido pedido={p.id} />}
                   </TableCell>
                 </TableRow>
 
             ))}
-            {!pedidos.length && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Nenhum pedido ainda.</TableCell></TableRow>}
+            {!pedidos.length && <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground">Nenhum pedido ainda.</TableCell></TableRow>}
           </TableBody>
         </Table>
       </section>

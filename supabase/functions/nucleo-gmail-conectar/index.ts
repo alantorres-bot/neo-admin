@@ -1,5 +1,5 @@
-// Edge Function do núcleo: "Conectar meu Gmail". Cada usuário autoriza o PRÓPRIO Gmail (escopo gmail.compose: só cria
-// rascunho; quem envia é a pessoa), para que e-mails como o da filial ao cliente saiam da caixa de quem os prepara.
+// Edge Function do núcleo: "Conectar meu Gmail". Cada usuário autoriza o PRÓPRIO Gmail (escopo gmail.compose: o sistema cria
+// rascunho e quem envia é a pessoa; única exceção: o pedido do Portal do Líder ao e-mail interno do RH, rh-ld-enviar-email), para que e-mails como o da filial ao cliente saiam da caixa de quem os prepara.
 //
 // Fluxo (o navegador passa por aqui duas vezes; por isso verify_jwt = false em config.toml e a segurança é o `state`):
 //  1) GET ?state=…            -> o app gerou o state (gmail_iniciar_conexao, com a sessão do usuário). Confere e manda ao Google.

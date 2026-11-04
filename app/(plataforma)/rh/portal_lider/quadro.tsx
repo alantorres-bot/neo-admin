@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import type { Status } from "@/lib/modulos/rh/portal-lider/modulo";
-import { atender, definirLideres, type Resultado } from "./acoes";
+import { Input } from "@/components/ui/input";
+import { atender, definirLideres, salvarEmailRh, type Resultado } from "./acoes";
 import type { Usuario } from "./dados";
 
 function useAcao() {
@@ -64,6 +65,19 @@ export function EditorLideres({ setor, lideres, usuarios, podeEditar }: { setor:
           {usuarios.filter((u) => !lideres.includes(u.id)).map((u) => <option key={u.id} value={u.id}>{u.nome} ({u.email})</option>)}
         </select>
       )}
+    </div>
+  );
+}
+
+/** Para quem vai, por e-mail, cada pedido do portal (só @neoformas.com.br; o gestor do RH troca). */
+export function EditorEmailRh({ emails, podeEditar }: { emails: string[]; podeEditar: boolean }) {
+  const { pendente, rodar } = useAcao();
+  const [texto, setTexto] = useState(emails.join(", "));
+  if (!podeEditar) return <p className="text-sm">{emails.join(", ") || "—"}</p>;
+  return (
+    <div className="flex max-w-xl gap-2">
+      <Input value={texto} onChange={(e) => setTexto(e.target.value)} aria-label="E-mail do RH" placeholder="rh@neoformas.com.br" />
+      <Button size="sm" disabled={pendente} onClick={() => rodar(() => salvarEmailRh(texto), "E-mail do RH salvo.")}>Salvar</Button>
     </div>
   );
 }

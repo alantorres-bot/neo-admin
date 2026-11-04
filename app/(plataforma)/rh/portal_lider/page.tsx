@@ -10,14 +10,16 @@ import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { COR_STATUS } from "../../lider/status";
 import { lerSetores } from "../ponto/dados";
 import { lerLideres, lerPedidos } from "./dados";
-import { EditorLideres } from "./quadro";
+import { EditorEmailRh, EditorLideres } from "./quadro";
 
 export const metadata: Metadata = { title: "Portal do Líder" };
 
 export default async function PaginaPedidosDoLider() {
   const sessao = await exigirSessao();
   const supabase = await criarClienteServidor();
-  const [pedidos, setores, { lideres, usuarios }] = await Promise.all([lerPedidos(supabase), lerSetores(supabase), lerLideres(supabase)]);
+  const [pedidos, setores, { lideres, usuarios }, emailRh] = await Promise.all([
+    lerPedidos(supabase), lerSetores(supabase), lerLideres(supabase), supabase.rpc("rh_ld_email_rh").then((r) => (r.data ?? []) as string[]),
+  ]);
   const ehGestor = temAcesso(sessao.acesso, "rh", "gestor");
 
   return (
@@ -42,6 +44,14 @@ export default async function PaginaPedidosDoLider() {
             {!pedidos.length && <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground">Nenhum pedido ainda.</TableCell></TableRow>}
           </TableBody>
         </Table>
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="text-lg font-semibold">E-mail do RH</h2>
+        <p className="text-sm text-muted-foreground">
+          Cada pedido também vai por e-mail para cá, enviado da caixa do Gmail do próprio líder (com o atestado anexado, se houver). Só e-mails @neoformas.com.br.
+        </p>
+        <EditorEmailRh emails={emailRh} podeEditar={ehGestor} />
       </section>
 
       <section className="space-y-2">
