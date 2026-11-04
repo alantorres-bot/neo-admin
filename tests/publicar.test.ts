@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   conferirAtualidade, conferirCommit, conferirCopia, conferirFuncoes, destinoCloudRunValido, executarPassos, montarPassos,
-  PROJETO_GCP, PROJETO_SUPABASE,
+  NUMERO_GCP, PROJETO_GCP, PROJETO_SUPABASE,
 } from "../scripts/publicar.mjs";
 
 // Repositórios de verdade: um "origin" nu, um clone com um commit mesclado e outro só local, e um 2º clone que avança o main.
@@ -111,9 +111,11 @@ describe("conferirCopia", () => {
 
 describe("destinoCloudRunValido", () => {
   it("só a URL do serviço neo-admin no projeto fixado", () => {
-    expect(destinoCloudRunValido(`https://neo-admin-${PROJETO_GCP}.southamerica-east1.run.app\n`)).toBe(true);
+    expect(destinoCloudRunValido(`https://neo-admin-${NUMERO_GCP}.southamerica-east1.run.app\n`)).toBe(true);
     expect(destinoCloudRunValido("https://neo-admin-111111111111.southamerica-east1.run.app")).toBe(false);
-    expect(destinoCloudRunValido(`https://outro-${PROJETO_GCP}.southamerica-east1.run.app`)).toBe(false);
+    expect(destinoCloudRunValido(`https://outro-${NUMERO_GCP}.southamerica-east1.run.app`)).toBe(false);
+    expect(destinoCloudRunValido("https://neo-admin-kncp4rahcq-rj.a.run.app\n")).toBe(true);
+    expect(destinoCloudRunValido("https://outro-kncp4rahcq-rj.a.run.app")).toBe(false);
     expect(destinoCloudRunValido("")).toBe(false);
   });
 });
