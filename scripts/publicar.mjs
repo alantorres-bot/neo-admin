@@ -19,7 +19,8 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const PROJETO_SUPABASE = "chdszjpbtfpstjrqnmmm"; // neo-admin-sp
-export const PROJETO_GCP = "474748357673"; // número do projeto do Cloud Run (URL neo-admin-474748357673…run.app)
+export const PROJETO_GCP = "neo-admin-neoformas"; // ID do projeto do Cloud Run (o gcloud run recusa o número no --project)
+export const NUMERO_GCP = "474748357673"; // número do mesmo projeto: só aparece na URL (neo-admin-474748357673…run.app)
 export const SERVICO = "neo-admin";
 export const REGIAO = "southamerica-east1";
 export const RAMO_PUBLICAVEL = "origin/main";
@@ -85,9 +86,14 @@ export function conferirCopia(copia, sha, { antesDoNpm = false } = {}) {
   return { ok: true };
 }
 
-/** O serviço que o gcloud enxerga com --project/--region fixos tem de ser o do Neo Admin (URL com o número do projeto). */
+/**
+ * O serviço que o gcloud enxerga com --project/--region fixos tem de ser o do Neo Admin. O `describe` devolve a URL curta
+ * (neo-admin-<hash>-rj.a.run.app; rj = southamerica-east1); a URL com o número do projeto também vale.
+ */
 export function destinoCloudRunValido(url) {
-  return new RegExp(`^https://${SERVICO}-${PROJETO_GCP}\\.${REGIAO}\\.run\\.app/?$`).test(url.trim());
+  const u = url.trim();
+  return new RegExp(`^https://${SERVICO}-${NUMERO_GCP}\\.${REGIAO}\\.run\\.app/?$`).test(u)
+    || new RegExp(`^https://${SERVICO}-[a-z0-9]+-rj\\.a\\.run\\.app/?$`).test(u);
 }
 
 const sufixoRevisao = (curto, agora) => `c${curto}-${agora.toISOString().slice(0, 16).replace(/\D/g, "")}`;

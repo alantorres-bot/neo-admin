@@ -57,7 +57,7 @@ O que o script garante, nesta ordem (qualquer falha interrompe os passos seguint
 3. Cópia limpa do commit (`git worktree`, pasta temporária), conferida: HEAD = commit, nenhum arquivo rastreado alterado e
    **nenhum `node_modules`** (pasta, junção ou link: o `npm ci` apagaria o destino de uma junção para outro clone).
 4. `npm ci` e `npm run verificar` na cópia; depois, de novo: HEAD = commit e nada rastreado alterado.
-5. Destino do Cloud Run conferido (`gcloud run services describe` com `--project=474748357673` fixo tem de devolver a URL
+5. Destino do Cloud Run conferido (`gcloud run services describe` com `--project=neo-admin-neoformas` fixo tem de devolver a URL
    do neo-admin) antes de qualquer publicação.
 6. Publica da cópia: Edge Functions com `--project-ref chdszjpbtfpstjrqnmmm`; app com `--project` fixo, revisão
    `neo-admin-c<sha12>-<AAAAMMDDhhmm UTC>` e etiqueta `commit=<sha12>`. `consultar` lista as revisões com o commit.
@@ -68,7 +68,7 @@ Migrations continuam pela seção 2. Depois de publicar, anote aqui (data, commi
 com "JÁ PUBLICADO antes da falha: …": as funções estão no commit novo e o app continua na revisão anterior. Conferir:
 `node scripts/publicar.mjs consultar` (app) e `npx supabase functions list --project-ref chdszjpbtfpstjrqnmmm` (versão e data
 de cada função). Recuperar: corrigir a causa e rodar `executar` de novo com o mesmo commit (as funções são republicadas iguais) ou, para voltar as funções, `executar --commit <anterior> --funcoes …
---sem-app`. Reversão do app: `gcloud run services update-traffic neo-admin --project=474748357673
+--sem-app`. Reversão do app: `gcloud run services update-traffic neo-admin --project=neo-admin-neoformas
 --region=southamerica-east1 --to-revisions <revisão anterior>=100`, ou `executar` com o commit anterior.
 
 | Data | Commit | Revisão Cloud Run | Funções | Quem |
