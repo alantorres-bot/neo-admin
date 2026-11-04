@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 import { CartoesApps } from "@/components/plataforma/cartoes-apps";
 import { FUSO } from "@/lib/nucleo/fila";
 import { montarMenu } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
+import { ehLider } from "../lider/dados";
 
 export const metadata: Metadata = { title: "Início" };
 
@@ -10,6 +12,8 @@ export const metadata: Metadata = { title: "Início" };
 export default async function PaginaInicio() {
   const sessao = await exigirSessao();
   const menu = montarMenu(sessao.areas, sessao.modulos, sessao.acesso, sessao.aplicativos);
+  // Líder sem área nenhuma (só o Portal do Líder): vai direto para o portal.
+  if (menu.length === 0 && (await ehLider(sessao))) redirect("/lider");
   const dataExtenso = new Intl.DateTimeFormat("pt-BR", { timeZone: FUSO, weekday: "long", day: "2-digit", month: "long", year: "numeric" }).format(new Date());
 
   return (

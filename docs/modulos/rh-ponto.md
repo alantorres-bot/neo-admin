@@ -119,6 +119,8 @@ justifica ocorrência por ocorrência num formulário. O RH ajusta no Control iD
   - **gestor** faz o mesmo e ainda cadastra setores, altera o prazo e cancela.
 - **Quem tem o link:** só o lote daquela chave, pelas funções do item 5.2, sem login. Risco aceito: quem receber o link
   encaminhado também preenche (por isso o nome e o IP ficam gravados, e o link fecha depois do envio).
+- **Portal do Líder** (`docs/modulos/rh-portal-lider.md`, 0526): o líder com login vê os lotes do seu setor que estão com ele e
+  abre este mesmo link. O link segue valendo sem login; o portal não muda o fluxo do ponto.
 
 ## 10. Pontos em aberto
 1. ~~Amostra original do relatório~~: recebida e calibrada em 21/10/2026.
