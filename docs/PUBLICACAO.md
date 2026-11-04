@@ -40,6 +40,40 @@ O servidor Next gasta ~160 ms de CPU por requisição, então o plano gratuito d
 - **Vercel Hobby** (grátis, sem cartão; `vercel.json` já fixa `gru1` = São Paulo): basta importar o repositório do GitHub e definir as duas variáveis `NEXT_PUBLIC_*`. **Atenção:** os termos do plano Hobby são para uso pessoal/não comercial.
 A chave pública (anon/publishable) do projeto novo é obtida com `npx supabase projects api-keys --project-ref chdszjpbtfpstjrqnmmm`. **Nunca** coloque a chave de serviço (`service_role`) na hospedagem.
 
+## 4.1 Publicar sempre a partir de um commit identificado (D-08, desde 28/10/2026)
+O `gcloud run deploy --source .` publica a **pasta onde for rodado**: branch não mesclado, alteração sem commit e arquivo não
+rastreado de outra sessão iam junto (o `.gcloudignore` não existe; vale só o `.gitignore`), e não havia como saber que código
+estava no ar. A partir de agora, **não rode o deploy à mão**; use:
+```
+node scripts/publicar.mjs plano    --commit <sha> [--funcoes nome1,nome2] [--sem-app]   # confere e mostra os comandos
+node scripts/publicar.mjs executar --commit <sha> [--funcoes nome1,nome2] [--sem-app]   # publica
+node scripts/publicar.mjs consultar                                                     # revisões no ar e o commit de cada uma
+```
+O que o script garante, nesta ordem (qualquer falha interrompe os passos seguintes; a cópia é removida no fim):
+1. `origin/main` do clone é **igual ao main do GitHub agora** (`git ls-remote`, só leitura). O script **não faz `git fetch`**:
+   se diferir, rode `git fetch origin` você mesmo e repita. Sem acesso ao GitHub, não publica.
+2. O commit **já está em `origin/main`** (enviado e mesclado). Commit só local ou de branch não mesclado é recusado.
+   Um commit antigo da main é aceito (é assim que se volta para uma versão anterior).
+3. Cópia limpa do commit (`git worktree`, pasta temporária), conferida: HEAD = commit, nenhum arquivo rastreado alterado e
+   **nenhum `node_modules`** (pasta, junção ou link: o `npm ci` apagaria o destino de uma junção para outro clone).
+4. `npm ci` e `npm run verificar` na cópia; depois, de novo: HEAD = commit e nada rastreado alterado.
+5. Destino do Cloud Run conferido (`gcloud run services describe` com `--project=474748357673` fixo tem de devolver a URL
+   do neo-admin) antes de qualquer publicação.
+6. Publica da cópia: Edge Functions com `--project-ref chdszjpbtfpstjrqnmmm`; app com `--project` fixo, revisão
+   `neo-admin-c<sha12>-<AAAAMMDDhhmm UTC>` e etiqueta `commit=<sha12>`. `consultar` lista as revisões com o commit.
+
+Migrations continuam pela seção 2. Depois de publicar, anote aqui (data, commit, revisão).
+
+**Falha no meio (não há rollback automático).** Se as Edge Functions foram publicadas e o deploy do app falhou, o script para
+com "JÁ PUBLICADO antes da falha: …": as funções estão no commit novo e o app continua na revisão anterior. Conferir:
+`node scripts/publicar.mjs consultar` (app) e `npx supabase functions list --project-ref chdszjpbtfpstjrqnmmm` (versão e data
+de cada função). Recuperar: corrigir a causa e rodar `executar` de novo com o mesmo commit (as funções são republicadas iguais) ou, para voltar as funções, `executar --commit <anterior> --funcoes …
+--sem-app`. Reversão do app: `gcloud run services update-traffic neo-admin --project=474748357673
+--region=southamerica-east1 --to-revisions <revisão anterior>=100`, ou `executar` com o commit anterior.
+
+| Data | Commit | Revisão Cloud Run | Funções | Quem |
+|---|---|---|---|---|
+
 ## 5. Virada (quando tudo acima estiver pronto)
 1. Combinar um horário sem uso. Avisar que as alterações feitas no sistema antigo depois do passo 2 não serão copiadas.
 2. `exportar` do projeto antigo (`uhujocnxvupsroijgtss`) e `importar --mesclar` no novo; `conferir`; repetir a cópia dos anexos.
