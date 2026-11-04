@@ -208,3 +208,14 @@ describe("resposta na mesma conversa (Faturamento Filial, Fase F)", () => {
     expect(r.threadId).toBe("t-9");
   });
 });
+
+describe("enviarMensagem (Portal do Líder → RH)", () => {
+  it("envia por messages.send e devolve o id", async () => {
+    const { enviarMensagem } = await import("../../../supabase/functions/_shared/gmail");
+    let chamada = "";
+    const buscar: Buscar = async (url) => { chamada = url; return resposta(200, { id: "m1", threadId: "t1" }); };
+    expect(await enviarMensagem(buscar, "tok", "MIME")).toEqual({ mensagemId: "m1", threadId: "t1" });
+    expect(chamada).toContain("/messages/send");
+    await expect(enviarMensagem(async () => resposta(403, {}), "tok", "MIME")).rejects.toThrow(/negou o envio/);
+  });
+});

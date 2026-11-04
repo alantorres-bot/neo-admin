@@ -1,5 +1,6 @@
-// Gmail: monta a mensagem (MIME) e cria RASCUNHO pela API. Nunca envia: o escopo pedido é gmail.compose e a única
-// chamada de escrita é `drafts.create`. Lógica pura (sem Deno, sem imports) para ser testada com o Vitest do projeto
+// Gmail: monta a mensagem (MIME) e cria RASCUNHO pela API (escopo gmail.compose). A única exceção que ENVIA é
+// `enviarMensagem` (messages.send), usada só pelo Portal do Líder para mandar o pedido ao e-mail interno do RH
+// (rh-ld-enviar-email, 0527, decisão do Alan em 04/11/2026). Lógica pura (sem Deno, sem imports) para ser testada com o Vitest do projeto
 // (lib/integracoes/gmail/gmail.test.ts) e usada pela Edge Function `rec-rascunho-gmail`.
 //
 // Credenciais (segredos de Edge Functions): GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, GMAIL_REFRESH_TOKEN, GMAIL_REMETENTE.
@@ -242,4 +243,25 @@ export async function criarRascunho(buscar: Buscar, accessToken: string, mime: s
     rascunhoId: j.id, mensagemId, threadId: j.message?.threadId,
     url: mensagemId ? `https://mail.google.com/mail/u/0/#drafts?compose=${mensagemId}` : "https://mail.google.com/mail/u/0/#drafts",
   };
+}
+
+const URL_ENVIO = "https://gmail.googleapis.com/upload/gmail/v1/users/me/messages/send?uploadType=media";
+
+/**
+ * `messages.send`: ENVIA a mensagem pela caixa de quem autorizou. Uso restrito: Portal do Líder → e-mail interno do RH
+ * (a Edge Function confere o destino @neoformas.com.br). Para terceiros, use sempre `criarRascunho`.
+ */
+export async function enviarMensagem(buscar: Buscar, accessToken: string, mime: string): Promise<{ mensagemId: string; threadId?: string }> {
+  let resp;
+  try {
+    resp = await buscar(URL_ENVIO, { method: "POST", headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "message/rfc822" }, body: codificador.encode(mime) });
+  } catch {
+    throw new GmailErro("Falha de rede ao falar com o Gmail.");
+  }
+  const texto = await resp.text();
+  if (resp.status === 401 || resp.status === 403) throw new GmailErro(`O Gmail negou o envio (HTTP ${resp.status}). Conecte o Gmail de novo.`, resp.status);
+  if (!resp.ok) throw new GmailErro(`O Gmail recusou o envio (HTTP ${resp.status}).`, resp.status);
+  const j = JSON.parse(texto) as { id?: string; threadId?: string };
+  if (!j.id) throw new GmailErro("O Gmail não devolveu o identificador da mensagem.");
+  return { mensagemId: j.id, threadId: j.threadId };
 }

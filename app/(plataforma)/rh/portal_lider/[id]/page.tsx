@@ -34,6 +34,7 @@ export default async function PaginaPedidoDoLider({ params }: PageProps<"/rh/por
       </h2>
       <p className="text-sm text-muted-foreground">
         Enviado por {pedido.autor ?? "—"} em {formatarDataHora(pedido.criado_em)}{pedido.atendido_em ? ` · atendido em ${formatarDataHora(pedido.atendido_em)}` : ""}
+        {" · "}{pedido.email_enviado_em ? `e-mail recebido em ${formatarDataHora(pedido.email_enviado_em)}` : `e-mail não enviado${pedido.email_erro ? ` (${pedido.email_erro})` : ""}`}
       </p>
       <dl className="grid max-w-xl grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
         {linhasDoPedido(pedido.tipo, pedido.dados).map(([r, v]) => (

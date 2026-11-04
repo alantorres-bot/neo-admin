@@ -34,3 +34,9 @@ export async function definirLideres(setor: string, perfis: string[]): Promise<R
   if (!uuid.safeParse(setor).success || !z.array(uuid).max(20).safeParse(perfis).success) return { ok: false, erro: "Dados inválidos." };
   return chamar("rh_ld_definir_lideres", { p_setor: setor, p_perfis: perfis }, "gestor");
 }
+
+export async function salvarEmailRh(texto: string): Promise<Resultado> {
+  const emails = texto.split(/[,;\s]+/).map((e) => e.trim()).filter(Boolean);
+  if (!emails.length || emails.length > 5) return { ok: false, erro: "Informe de 1 a 5 e-mails do RH." };
+  return chamar("rh_ld_salvar_email_rh", { p_emails: emails }, "gestor");
+}

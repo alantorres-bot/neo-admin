@@ -25,3 +25,14 @@ describe("Portal do Líder: formulário", () => {
       .toEqual(["Aviso prévio", "dispensado do cumprimento"]);
   });
 });
+
+describe("Portal do Líder: e-mail ao RH", () => {
+  it("monta assunto e corpo, terminando em Atenciosamente,", async () => {
+    const { emailDoPedido } = await import("./modulo");
+    const e = emailDoPedido({ tipo: "ferias", dados: { inicio: "2026-12-01", dias: 30, abono: false }, pessoa: "PESSOA 1", setor: "FABRICA", link: "https://x/rh/portal_lider/1" });
+    expect(e.assunto).toBe("Portal do Líder — Férias — PESSOA 1 (FABRICA)");
+    expect(e.corpo).toContain("Início: 01/12/2026");
+    expect(e.corpo).toContain("https://x/rh/portal_lider/1");
+    expect(e.corpo.endsWith("Atenciosamente,")).toBe(true);
+  });
+});

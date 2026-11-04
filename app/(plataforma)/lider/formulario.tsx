@@ -8,7 +8,8 @@ import { Input } from "@/components/ui/input";
 import { avisosDoPedido, MODULO_PORTAL_LIDER, ROTA_PORTAL_LIDER, ROTULO_TIPO, TIPOS, type Tipo } from "@/lib/modulos/rh/portal-lider/modulo";
 import { enviarAnexo } from "@/lib/nucleo/anexos";
 import { criarClienteNavegador } from "@/lib/supabase/navegador";
-import { cancelar, solicitar } from "./acoes";
+import { iniciarConexaoGmail } from "@/app/(plataforma)/financeiro/filial/acoes";
+import { cancelar, enviarEmail, solicitar } from "./acoes";
 
 type Campo = { chave: string; rotulo: string; tipo: "data" | "texto" | "numero" | "sim_nao" | "opcoes"; opcional?: boolean; opcoes?: [string, string][] };
 
@@ -62,7 +63,18 @@ function montarDados(tipo: Tipo, valores: Record<string, string>): Record<string
   return d;
 }
 
-export function NovoPedido({ setor, equipe, hoje }: { setor: string; equipe: { id: string; nome: string }[]; hoje: string }) {
+/** "Conectar meu Gmail": o pedido sai por e-mail da caixa do próprio líder (autoriza uma vez). */
+export function ConectarGmail() {
+  const [pendente, iniciar] = useTransition();
+  return (
+    <Button size="sm" variant="outline" disabled={pendente}
+      onClick={() => iniciar(async () => { const r = await iniciarConexaoGmail(window.location.href); if (r.ok) window.location.href = r.url; else toast.error(r.erro); })}>
+      Conectar meu Gmail
+    </Button>
+  );
+}
+
+export function NovoPedido({ setor, equipe, hoje, gmail, emailRh }: { setor: string; equipe: { id: string; nome: string }[]; hoje: string; gmail: string | null; emailRh: string[] }) {
   const router = useRouter();
   const [tipo, setTipo] = useState<Tipo>("ferias");
   const [pessoa, setPessoa] = useState("");
@@ -83,7 +95,9 @@ export function NovoPedido({ setor, equipe, hoje }: { setor: string; equipe: { i
       const a = await anexar(r.id, arquivo);
       if (!a.ok) toast.error(`Pedido enviado, mas o arquivo não subiu: ${a.erro} Use "Anexar" na lista de pedidos.`);
     }
-    toast.success("Pedido enviado ao RH.");
+    const e = await enviarEmail(setor, r.id);
+    if (e.ok) toast.success("Pedido enviado ao RH, também por e-mail.");
+    else toast.error(`Pedido gravado, mas o e-mail não saiu: ${e.erro} Use "Reenviar e-mail" na lista de pedidos.`);
     router.push(`${ROTA_PORTAL_LIDER}?setor=${setor}`);
   });
 
@@ -126,9 +140,16 @@ export function NovoPedido({ setor, equipe, hoje }: { setor: string; equipe: { i
       )}
       {avisos.map((a) => <p key={a} className="rounded-[3px] border border-amber-600 bg-amber-50 p-2 text-sm text-amber-800">{a}</p>)}
       {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
+      {gmail ? (
+        <p className="text-xs text-muted-foreground">O pedido fica no portal e vai também por e-mail, da sua caixa ({gmail}) para o RH ({emailRh.join(", ")}).</p>
+      ) : (
+        <p className="flex flex-wrap items-center gap-2 rounded-[3px] border border-amber-600 bg-amber-50 p-2 text-sm text-amber-800">
+          Todo pedido vai também por e-mail ao RH, da sua caixa do Gmail. Autorize o seu Gmail uma vez para enviar. <ConectarGmail />
+        </p>
+      )}
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={() => router.back()} disabled={pendente}>Voltar</Button>
-        <Button onClick={enviar} disabled={pendente}>{pendente ? "Enviando…" : "Enviar ao RH"}</Button>
+        <Button onClick={enviar} disabled={pendente || !gmail}>{pendente ? "Enviando…" : "Enviar ao RH"}</Button>
       </div>
     </div>
   );
@@ -155,6 +176,18 @@ export function CancelarPedido({ pedido }: { pedido: string }) {
     <Button variant="outline" size="sm" disabled={pendente}
       onClick={() => iniciar(async () => { const r = await cancelar(pedido); if (r.ok) { toast.success("Pedido cancelado."); router.refresh(); } else toast.error(r.erro); })}>
       Cancelar
+    </Button>
+  );
+}
+
+/** Quando o e-mail do pedido não saiu (Gmail desconectado, falha do Google…): tenta de novo. */
+export function ReenviarEmail({ setor, pedido }: { setor: string; pedido: string }) {
+  const router = useRouter();
+  const [pendente, iniciar] = useTransition();
+  return (
+    <Button variant="outline" size="sm" disabled={pendente}
+      onClick={() => iniciar(async () => { const r = await enviarEmail(setor, pedido); if (r.ok) { toast.success("E-mail enviado ao RH."); router.refresh(); } else toast.error(r.erro); })}>
+      {pendente ? "Enviando…" : "Reenviar e-mail"}
     </Button>
   );
 }
