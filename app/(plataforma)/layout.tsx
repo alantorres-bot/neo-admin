@@ -2,6 +2,7 @@ import { Casca } from "@/components/plataforma/casca";
 import { mostrarAtalhoDocumentos } from "@/lib/nucleo/ged/busca";
 import { montarMenu, temAcessoAlgumaArea } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
+import { ehLider } from "./lider/dados";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { sair } from "@/app/(auth)/login/acoes";
 import { Button } from "@/components/ui/button";
@@ -33,6 +34,7 @@ export default async function LayoutPlataforma({ children }: LayoutProps<"/">) {
   const gedAtivo = sessao.acesso.adminGeral && sessao.modulos.some((m) => m.codigo === "administrativo.ged" && m.ativo);
   const raizesGed = gedAtivo ? (await (await criarClienteServidor()).rpc("ged_raizes")).data as { situacao: string }[] | null : null;
   const mostrarDocumentos = mostrarAtalhoDocumentos(sessao.modulos, sessao.acesso.adminGeral, raizesGed);
+  const mostrarLider = await ehLider(sessao);
 
   return (
     <Casca
@@ -41,6 +43,7 @@ export default async function LayoutPlataforma({ children }: LayoutProps<"/">) {
       mostrarConfiguracoes={mostrarConfiguracoes}
       mostrarCentral={mostrarCentral}
       mostrarDocumentos={mostrarDocumentos}
+      mostrarLider={mostrarLider}
     >
       <RegistroAcesso />
       {children}
