@@ -140,7 +140,8 @@ function Table({ className, interativa = true, aoFiltrar, children, ...props }: 
       </table>
     </div>
   )
-  return interativa ? <Contexto.Provider value={valor}>{tabela}</Contexto.Provider> : tabela
+  // Não interativa também isola o contexto: dentro de outra grade (ex.: prévia num diálogo aberto de uma linha) não herda a de fora.
+  return <Contexto.Provider value={interativa ? valor : null}>{tabela}</Contexto.Provider>
 }
 
 function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
