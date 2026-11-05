@@ -162,6 +162,11 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
     - **Códigos** nos Parâmetros (`configuracoes` `rh.lancamento`), os **mesmos para a folha e o VT**:
       - **por tipo** (vale transporte, salário, férias, 13º 1ª, 13º 2ª, avulso): histórico, grupo e conta de fluxo, contas
         contábeis de débito e crédito. A conta contábil depende só do tipo.
+      - **centro de custo** por tipo (opcional; migration 0528, 05/11/2026): só quando a conta de débito exige centro no
+        Consistem (Cadastro dos Centros de Custo por Conta Contábil). O título inteiro vai num item de `listaCentroCustoContab`
+        (`contaContabil` = débito, `centroCusto`, `valor` = valor do título). Desde 11/2026 a **3303** exige; salário e 13º usam
+        **210104 (Expedição)**, decisão do Alan. O relatório do Consistem mostra 3303 só com 210102 Vendas e 210104 Expedição;
+        3203 (produção) e 3402 (administrativo) têm outros centros. Separar a conta por setor fica para decidir com o Aelson.
       - **categoria única** (6, a dos fornecedores-funcionários);
       - **portador** por **empregadora × forma** (FOPAG ou PIX), a conta que paga. Hoje:
         - PIX de Neo Formas e Oeste → conta da Oeste;

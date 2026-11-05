@@ -14,14 +14,17 @@ const SIGLA: Record<TipoTitulo, string> = { vt: "VT", salario: "SA", ferias: "FE
 
 /** Todos os códigos de um título. */
 export const CAMPOS_LANCAMENTO = ["codHistorico", "codPortador", "categoriaDoc", "grupoContaFluxoCaixa", "contaFluxoCaixa", "contaContabilDebito", "contaContabilCredito"] as const;
-export type CodigosLancamento = Record<(typeof CAMPOS_LANCAMENTO)[number], number>;
-export const ROTULO_CAMPO_LANCAMENTO: Record<keyof CodigosLancamento, string> = {
+/** `centroCusto`: só para conta de débito que exige centro de custo no Consistem (ex.: 3303 Salários, desde 11/2026). */
+export type CodigosLancamento = Record<(typeof CAMPOS_LANCAMENTO)[number], number> & { centroCusto?: string };
+export const ROTULO_CAMPO_LANCAMENTO: Record<(typeof CAMPOS_LANCAMENTO)[number], string> = {
   codHistorico: "Histórico", codPortador: "Portador", categoriaDoc: "Categoria do documento", grupoContaFluxoCaixa: "Grupo da conta de fluxo",
   contaFluxoCaixa: "Conta de fluxo", contaContabilDebito: "Conta contábil de débito", contaContabilCredito: "Conta contábil de crédito",
 };
 /** Os que dependem do tipo (o portador vem da tabela de portadores; a categoria é única). */
 export const CAMPOS_TIPO = ["codHistorico", "grupoContaFluxoCaixa", "contaFluxoCaixa", "contaContabilDebito", "contaContabilCredito"] as const;
-export type CodigosTipo = Record<(typeof CAMPOS_TIPO)[number], number>;
+export type CodigosTipo = Record<(typeof CAMPOS_TIPO)[number], number> & { centroCusto?: string };
+/** Código do centro de custo como o Consistem mostra (ex.: 210104); mesma regra do banco (0528). */
+export const CENTRO_CUSTO = /^[0-9A-Za-z][0-9A-Za-z.-]{0,29}$/;
 
 /** Forma de pagamento para o portador: FOPAG ou PIX (as formas antigas "pix_neo_…" contam como PIX). */
 export type FormaPortador = "fopag" | "pix";
@@ -45,6 +48,11 @@ export function lerCodigosTipo(json: unknown): CodigosTipo | null {
     const v = inteiroPositivo(o[k]);
     if (v === undefined) return null;
     cfg[k] = v;
+  }
+  const cc = typeof o.centroCusto === "string" ? o.centroCusto.trim() : "";
+  if (cc) {
+    if (!CENTRO_CUSTO.test(cc)) return null;
+    cfg.centroCusto = cc;
   }
   return cfg.contaContabilDebito === cfg.contaContabilCredito ? null : cfg;
 }
@@ -89,12 +97,17 @@ export const documento = (tipo: TipoTitulo, competencia: string) => `${SIGLA[tip
 /** Fornecedor = Nº do funcionário; vencimento = dia do pagamento; emissão/entrada = dia do lançamento. */
 export function montarTitulo(e: { tipo: TipoTitulo; codFornecedor: string; valor: number; competencia: string; dataPagamento: string; hoje: string; codigos: CodigosLancamento }): NovoLancamentoContaPagar {
   const c = e.codigos;
+  const valor = Math.round(e.valor * 100) / 100;
   return {
     codFornecedor: Number(e.codFornecedor), categoriaDoc: c.categoriaDoc, codDocumento: documento(e.tipo, e.competencia), codPortador: c.codPortador,
-    dataEmissao: e.hoje, dataEntrada: e.hoje, dataVencimento: e.dataPagamento, valorDocumento: Math.round(e.valor * 100) / 100,
+    dataEmissao: e.hoje, dataEntrada: e.hoje, dataVencimento: e.dataPagamento, valorDocumento: valor,
     codHistorico: c.codHistorico, complementoHistorico: complemento(e.tipo, e.competencia),
     grupoContaFluxoCaixa: c.grupoContaFluxoCaixa, contaFluxoCaixa: c.contaFluxoCaixa,
-    dadosContabilidade: { contaContabilDebito: c.contaContabilDebito, contaContabilCredito: c.contaContabilCredito, listaCentroCustoContab: [] },
+    dadosContabilidade: {
+      contaContabilDebito: c.contaContabilDebito, contaContabilCredito: c.contaContabilCredito,
+      // o título inteiro num centro só (sem rateio); o banco confere igual (rh_payload_confere, 0528)
+      listaCentroCustoContab: c.centroCusto ? [{ contaContabil: c.contaContabilDebito, centroCusto: c.centroCusto, valor }] : [],
+    },
   };
 }
 

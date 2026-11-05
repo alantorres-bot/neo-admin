@@ -24,7 +24,7 @@ export function FormParametrosLancamento({ parametros, vtLigado, folhaLigado, em
   const router = useRouter();
   const [categoria, setCategoria] = useState(parametros.categoriaDoc ? String(parametros.categoriaDoc) : "");
   const [tipos, setTipos] = useState<Record<string, Record<string, string>>>(Object.fromEntries(TIPOS_TITULO.map((t) => [t,
-    Object.fromEntries(CAMPOS_TIPO.map((k) => [k, parametros.tipos[t]?.[k] != null ? String(parametros.tipos[t]![k]) : ""]))])));
+    { ...Object.fromEntries(CAMPOS_TIPO.map((k) => [k, parametros.tipos[t]?.[k] != null ? String(parametros.tipos[t]![k]) : ""])), centroCusto: parametros.tipos[t]?.centroCusto ?? "" }])));
   const nomes = [...new Set([...empregadores, ...parametros.portadores.map((p) => p.empregador)])];
   const [portadores, setPortadores] = useState(nomes.flatMap((empregador) => FORMAS.map((forma) => {
     const p = parametros.portadores.find((x) => x.empregador === empregador && x.forma === forma);
@@ -131,10 +131,10 @@ export function FormParametrosLancamento({ parametros, vtLigado, folhaLigado, em
       <fieldset disabled={!editavel} className="space-y-5">
         <section className="space-y-2">
           <h3 className="text-sm font-bold">Códigos por tipo de pagamento</h3>
-          <p className="text-xs text-muted-foreground">Linha vazia = esse tipo ainda não é lançado (o botão recusa o mês que tiver esse tipo).</p>
+          <p className="text-xs text-muted-foreground">Linha vazia = esse tipo ainda não é lançado (o botão recusa o mês que tiver esse tipo). Centro de custo: só quando a conta de débito exigir no Consistem (o título inteiro vai nesse centro).</p>
           <Table interativa={false}>
             <TableHeader>
-              <TableRow><TableHead>Tipo</TableHead>{CAMPOS_TIPO.map((k) => <TableHead key={k}>{ROTULO_CAMPO_LANCAMENTO[k]}</TableHead>)}</TableRow>
+              <TableRow><TableHead>Tipo</TableHead>{CAMPOS_TIPO.map((k) => <TableHead key={k}>{ROTULO_CAMPO_LANCAMENTO[k]}</TableHead>)}<TableHead>Centro de custo</TableHead></TableRow>
             </TableHeader>
             <TableBody>
               {TIPOS_TITULO.map((t) => (
@@ -145,6 +145,9 @@ export function FormParametrosLancamento({ parametros, vtLigado, folhaLigado, em
                       <Input aria-label={`${ROTULO_TIPO[t]} — ${ROTULO_CAMPO_LANCAMENTO[k]}`} value={tipos[t][k]} onChange={(e) => mudarTipo(t, k, e.target.value)} inputMode="numeric" className="h-8 w-24" autoComplete="off" />
                     </TableCell>
                   ))}
+                  <TableCell>
+                    <Input aria-label={`${ROTULO_TIPO[t]} — Centro de custo`} value={tipos[t].centroCusto} onChange={(e) => mudarTipo(t, "centroCusto", e.target.value)} placeholder="se a conta exigir" className="h-8 w-28" autoComplete="off" />
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>

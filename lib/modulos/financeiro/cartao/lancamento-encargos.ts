@@ -59,7 +59,7 @@ export type NovoLancamentoContaPagar = {
   complementoHistorico: string;
   grupoContaFluxoCaixa: number;
   contaFluxoCaixa: number;
-  dadosContabilidade: { contaContabilDebito: number; contaContabilCredito: number; listaCentroCustoContab: never[] };
+  dadosContabilidade: { contaContabilDebito: number; contaContabilCredito: number; listaCentroCustoContab: { contaContabil: number; centroCusto: string; valor: number }[] };
 };
 
 export type TituloEncargo = { item: ItemALancar; complemento: string; payload: NovoLancamentoContaPagar };
