@@ -110,10 +110,42 @@ export function erroDeCompetencia(rel: Pick<Relacao, "competencia" | "natureza">
     + (rel.natureza === "decimo_terceiro" ? "" : " Só o 13º pode vir de um mês seguinte (antecipação).");
 }
 
+const LIGACOES_NOME = new Set(["DE", "DA", "DO", "DOS", "DAS", "E"]);
+/** Nomes sem acento, sem sufixo " - ..." (ex.: "- FÉRIAS 30 DIAS") e sem DE/DA/DOS/E. */
+const nomes = (n: string) => normalizar(n.split(" - ")[0]).split(" ").filter((x) => x && !LIGACOES_NOME.has(x));
+/** Até `max` letras de diferença (troca, falta ou sobra). */
+function parecidos(a: string, b: string, max = 2): boolean {
+  if (Math.abs(a.length - b.length) > max) return false;
+  let ant = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const atual = [i];
+    for (let j = 1; j <= b.length; j++) atual[j] = Math.min(ant[j] + 1, atual[j - 1] + 1, ant[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    ant = atual;
+  }
+  return ant[b.length] <= max;
+}
+
+/**
+ * O nome do relatório confere com o da folha? Primeiro nome igual e o 2º nome do mais curto presente no outro (igual ou com até 2 letras de diferença).
+ * Tolera nome abreviado, cortado ou com erro de digitação (GELSON PREREIRA × GELSON PEREIRA LIMA JUNIOR); pega código trocado
+ * entre pessoas (216 RODRIGO REGER × RIGUELSON JEAN, 10/2026).
+ */
+export function nomeConfere(doRelatorio: string, daFolha: string): boolean {
+  const [a, b] = [nomes(doRelatorio), nomes(daFolha)];
+  if (!a.length || !b.length || a[0] !== b[0]) return false;
+  if (a.length === 1 || b.length === 1) return true;
+  // o 2º nome do mais curto tem de estar no outro: JOSE PAULO DOS SANTOS × JOSE CANDIDO DOS SANTOS não confere
+  const [curto, longo] = a.length <= b.length ? [a, b] : [b, a];
+  const x = curto[1];
+  return longo.slice(1).some((y) => x === y || (x.length > 3 && y.length > 3 && parecidos(x, y)));
+}
+
 export type ItemCasavel = { id: string; nome: string; empregador: string; matricula_escritorio: string | null } & Record<Exclude<Natureza, "avulso">, number>;
 export type Casamento = {
   casados: { item_id: string; nome: string; codigo: string; atualCentavos: number; novoCentavos: number }[];
   semCadastro: PessoaRelacao[];
+  /** Casaram pelo código, mas o nome do relatório não confere com o da folha: não grava até o operador ligar à pessoa certa. */
+  divergentes: (PessoaRelacao & { item_id: string; nomeFolha: string })[];
   /** Códigos que estão em mais de uma pessoa da mesma empresa no cadastro: não grava em ninguém até corrigir (ou ligar à mão). */
   ambiguos: { codigo: string; nomes: string[] }[];
   /** Pessoas da mesma empresa com valor nessa natureza que não vieram no relatório (ficam como estão). */
@@ -129,16 +161,21 @@ export function casarRelacao(rel: Relacao, itens: readonly ItemCasavel[], ligaco
   const porId = new Map(itens.map((i) => [i.id, i]));
   const casados: Casamento["casados"] = [];
   const semCadastro: PessoaRelacao[] = [];
+  const divergentes: Casamento["divergentes"] = [];
   const usados = new Set<string>();
   for (const p of rel.pessoas) {
     const doCodigo = porCodigo.get(p.codigo);
-    const item = (ligacoes[p.codigo] && porId.get(ligacoes[p.codigo])) || (doCodigo?.length === 1 ? doCodigo[0] : undefined);
+    const ligado = ligacoes[p.codigo] ? porId.get(ligacoes[p.codigo]) : undefined;
+    const item = ligado || (doCodigo?.length === 1 ? doCodigo[0] : undefined);
     if (!item || usados.has(item.id)) { semCadastro.push(p); continue; }
+    // ligação à mão é a confirmação do operador; pelo código, o nome tem de conferir
+    if (!ligado && !nomeConfere(p.nome, item.nome)) { divergentes.push({ ...p, item_id: item.id, nomeFolha: item.nome }); continue; }
     usados.add(item.id);
     casados.push({ item_id: item.id, nome: item.nome, codigo: p.codigo, atualCentavos: centavos(item[rel.natureza]), novoCentavos: p.centavos });
   }
+  const emDuvida = new Set(divergentes.map((d) => d.item_id));
   const foraDoRelatorio = daEmpresa
-    .filter((i) => !usados.has(i.id) && i[rel.natureza] > 0)
+    .filter((i) => !usados.has(i.id) && !emDuvida.has(i.id) && i[rel.natureza] > 0)
     .map((i) => ({ item_id: i.id, nome: i.nome, atualCentavos: centavos(i[rel.natureza]) }));
-  return { casados, semCadastro, ambiguos, foraDoRelatorio };
+  return { casados, semCadastro, divergentes, ambiguos, foraDoRelatorio };
 }

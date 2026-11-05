@@ -75,6 +75,12 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
   - A competência tem de ser a da folha. Exceção (05/11/2026): o **13º de um mês seguinte** é aceito, para pagar o adiantamento
     junto com a folha atual (ex.: 1ª parcela de 11/2026 na folha de 10/2026). Folha Mensal e Férias de outro mês continuam recusadas.
   - Cada pessoa é casada pelo **código do escritório** (`rh_colaboradores.matricula_escritorio`).
+  - **O nome também tem de conferir** (05/11/2026): primeiro nome igual e o 2º nome do mais curto presente no outro (tolera
+    abreviação, nome cortado, sufixo " - FÉRIAS…" e até 2 letras de diferença). Se não conferir, a pessoa não grava e aparece em
+    "nome que não confere" para o operador ligar à pessoa certa. Motivo: em 10/2026 os códigos 215–219 estavam deslocados no
+    cadastro e o líquido de uma pessoa caiu em outra sem aviso.
+  - **Vários arquivos de uma vez** (as empresas e o 13º): uma prévia por arquivo e um botão grava todos, um por um. Se um falhar,
+    para ali e mostra o que já foi gravado. Mesma empresa e mesma coluna em dois arquivos: o segundo é recusado.
   - A soma das linhas tem de bater com o "Total da Empresa".
   - Quem não casar fica para o operador ligar ao cadastro (o código fica gravado para os meses seguintes).
   - A grade continua editável para o que não vier do escritório (avulsos).

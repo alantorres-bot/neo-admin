@@ -16,7 +16,7 @@ const SEM_PERMISSAO = "Somente operador do RH (ou acima) importa a folha do escr
 
 export type Previa = {
   arquivo: string; empresa: string; empregador: string; calculo: string; coluna: string; competencia: string; totalCentavos: number; pessoas: number;
-  casados: Casamento["casados"]; semCadastro: Casamento["semCadastro"]; ambiguos: Casamento["ambiguos"]; foraDoRelatorio: Casamento["foraDoRelatorio"];
+  casados: Casamento["casados"]; semCadastro: Casamento["semCadastro"]; divergentes: Casamento["divergentes"]; ambiguos: Casamento["ambiguos"]; foraDoRelatorio: Casamento["foraDoRelatorio"];
   /** Pessoas da folha (mesma empresa) que ainda não casaram: opções para ligar um código à mão. */
   candidatos: { item_id: string; nome: string; matricula: string | null }[];
 };
@@ -56,7 +56,7 @@ export async function previaRelacao(mesId: string, dados: FormData): Promise<{ o
     ok: true,
     previa: {
       arquivo: l.arquivo, empresa: r.empresa, empregador: r.empregador, calculo: r.calculo, coluna: ROTULO_NATUREZA[r.natureza], competencia: r.competencia,
-      totalCentavos: r.totalCentavos, pessoas: r.pessoas.length, casados: c.casados, semCadastro: c.semCadastro, ambiguos: c.ambiguos, foraDoRelatorio: c.foraDoRelatorio, candidatos: l.candidatos,
+      totalCentavos: r.totalCentavos, pessoas: r.pessoas.length, casados: c.casados, semCadastro: c.semCadastro, divergentes: c.divergentes, ambiguos: c.ambiguos, foraDoRelatorio: c.foraDoRelatorio, candidatos: l.candidatos,
     },
   };
 }
@@ -80,10 +80,11 @@ export async function aplicarRelacao(mesId: string, dados: FormData): Promise<{ 
     p_pessoas: r.pessoas.length, p_total: r.totalCentavos / 100,
     p_linhas: c.casados.map((x) => ({ item_id: x.item_id, valor: x.novoCentavos / 100 })),
     p_ligacoes: ligados.map((x) => ({ item_id: x.item_id, codigo: x.codigo })),
-    p_sem_cadastro: c.semCadastro.map((p) => ({ codigo: p.codigo, nome: p.nome, valor: p.centavos / 100 })),
+    p_sem_cadastro: [...c.semCadastro, ...c.divergentes].map((p) => ({ codigo: p.codigo, nome: p.nome, valor: p.centavos / 100 })),
   });
   if (error) return { ok: false, erro: error.code === "P0001" ? error.message : "Não foi possível gravar a importação." };
   revalidatePath(ROTA_FOLHA, "layout");
-  const fora = c.semCadastro.length ? ` ${c.semCadastro.length} pessoa(s) do arquivo ficaram de fora (sem cadastro na folha).` : "";
+  const nFora = c.semCadastro.length + c.divergentes.length;
+  const fora = nFora ? ` ${nFora} pessoa(s) do arquivo ficaram de fora (sem cadastro na folha ou nome que não confere).` : "";
   return { ok: true, aviso: `${r.empregador} · ${r.calculo}: ${data as number} valor(es) gravado(s) em ${ROTULO_NATUREZA[r.natureza]}.${fora}` };
 }
