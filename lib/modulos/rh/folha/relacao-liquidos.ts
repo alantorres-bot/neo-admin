@@ -69,12 +69,15 @@ export function interpretarRelacao(planilha: PlanilhaXls): { ok: true; relacao: 
   const colNome = cab.findIndex((c) => normalizar(c).startsWith("NOME DO EMPREGADO"));
   const colIdent = cab.findIndex((c) => normalizar(c) === "IDENTIDADE");
   const depoisDe = Math.max(colNome, colIdent);
+  // Desde 10/2026 o escritório põe "Data de pagamento" (número de série do Excel) depois do Valor: o valor fica antes dela.
+  const colData = cab.findIndex((c) => normalizar(c).startsWith("DATA DE PAGAMENTO"));
+  const antesDe = colData > depoisDe ? colData : Infinity;
 
   const pessoas: PessoaRelacao[] = [];
   let totalCentavos: number | null = null;
   for (const l of linhas) {
     if (!l) continue;
-    const ultimoNumero = [...l.entries()].filter(([i, c]) => i > depoisDe && typeof c === "number").pop()?.[1] as number | undefined;
+    const ultimoNumero = [...l.entries()].filter(([i, c]) => i > depoisDe && i < antesDe && typeof c === "number").pop()?.[1] as number | undefined;
     if (l.some((c) => normalizar(c).startsWith("TOTAL DA EMPRESA"))) {
       const n = [...l].reverse().find((c): c is number => typeof c === "number");
       if (n !== undefined) totalCentavos = centavos(n);
