@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { lerXls } from "@/lib/integracoes/importador/xls";
 import { xlsSintetico, type CelulaTeste } from "@/lib/integracoes/importador/xls.fixture";
-import { casarRelacao, erroDeCompetencia, interpretarRelacao, naturezaDoCalculo, type ItemCasavel } from "./relacao-liquidos";
+import { casarRelacao, erroDeCompetencia, interpretarRelacao, nomeConfere, naturezaDoCalculo, type ItemCasavel } from "./relacao-liquidos";
 
 /** Mesmo layout do relatório do escritório (colunas 0, 3, 11, 18/21, 24/25), com dados fictícios. */
 function relatorio(o: { cnpj?: string; calculo?: string; total?: number; pessoas?: [number, string, number][]; competencia?: number | string; dataPagamento?: boolean } = {}) {
@@ -75,10 +75,10 @@ describe("Relação Geral dos Líquidos", () => {
   it("casa pelo código do escritório dentro da empresa; ligação manual; quem ficou de fora", () => {
     const r = interpretarRelacao(relatorio());
     if (!r.ok) throw new Error(r.erro);
-    const item = (id: string, empregador: string, mat: string | null, liquido = 0): ItemCasavel => ({ id, nome: id.toUpperCase(), empregador, matricula_escritorio: mat, liquido, ferias_acrescimos: 0, decimo_terceiro: 0 });
-    const itens = [item("a", "NEO SERVIÇOS", "133", 100), item("b", "OESTE", "18"), item("c", "NEO SERVIÇOS", null), item("d", "NEO SERVIÇOS", "999", 50)];
+    const item = (id: string, empregador: string, mat: string | null, liquido = 0, nome = id.toUpperCase()): ItemCasavel => ({ id, nome, empregador, matricula_escritorio: mat, liquido, ferias_acrescimos: 0, decimo_terceiro: 0 });
+    const itens = [item("a", "NEO SERVIÇOS", "133", 100, "FULANO TAL"), item("b", "OESTE", "18"), item("c", "NEO SERVIÇOS", null), item("d", "NEO SERVIÇOS", "999", 50)];
     const c = casarRelacao(r.relacao, itens);
-    expect(c.casados).toEqual([{ item_id: "a", nome: "A", codigo: "133", atualCentavos: 10000, novoCentavos: 239859 }]);
+    expect(c.casados).toEqual([{ item_id: "a", nome: "FULANO TAL", codigo: "133", atualCentavos: 10000, novoCentavos: 239859 }]);
     expect(c.semCadastro.map((p) => p.codigo)).toEqual(["18", "207"]);   // o 18 da OESTE não serve para a NEO SERVIÇOS
     expect(c.foraDoRelatorio).toEqual([{ item_id: "d", nome: "D", atualCentavos: 5000 }]);
     expect(c.ambiguos).toEqual([]);
@@ -89,12 +89,38 @@ describe("Relação Geral dos Líquidos", () => {
   it("código repetido na mesma empresa não grava em ninguém (aponta); ligação à mão resolve", () => {
     const r = interpretarRelacao(relatorio());
     if (!r.ok) throw new Error(r.erro);
-    const item = (id: string, mat: string): ItemCasavel => ({ id, nome: id.toUpperCase(), empregador: "NEO SERVIÇOS", matricula_escritorio: mat, liquido: 0, ferias_acrescimos: 0, decimo_terceiro: 0 });
-    const itens = [item("x", "207"), item("y", "207"), item("a", "133")];
+    const item = (id: string, mat: string, nome = id.toUpperCase()): ItemCasavel => ({ id, nome, empregador: "NEO SERVIÇOS", matricula_escritorio: mat, liquido: 0, ferias_acrescimos: 0, decimo_terceiro: 0 });
+    const itens = [item("x", "207"), item("y", "207"), item("a", "133", "FULANO DE TAL")];
     const c = casarRelacao(r.relacao, itens);
     expect(c.ambiguos).toEqual([{ codigo: "207", nomes: ["X", "Y"] }]);
     expect(c.casados.map((k) => k.item_id)).toEqual(["a"]);
     expect(c.semCadastro.map((p) => p.codigo)).toEqual(["18", "207"]);
     expect(casarRelacao(r.relacao, itens, { "207": "y" }).casados.map((k) => [k.item_id, k.codigo])).toEqual([["a", "133"], ["y", "207"]]);
+  });
+
+  it("nome confere: tolera abreviado, cortado, sufixo e erro de digitação; recusa código trocado (casos reais de 10/2026)", () => {
+    for (const [rel, folha] of [
+      ["GELSON PEREIRA LIMA JUNIOR", "GELSON PREREIRA"], ["JOSE ADILSON DE  CARVALHO XAVIER", "JOSE ADILSON CARVALHO"],
+      ["VITOR TENORIO DOS SANTOS JUNIOR", "VITOR TENÓRIO JUNIOR"], ["WALDEMIR RODRIGUES PEREIRA JUNIOR", "WALDEMIR RODRIGUES PEREIRA - FÉRIAS 30 DIAS"],
+      ["BRUNA DOMINGOS RODRIGUES DE MORAES", "BRUNA DOMINGOS RODRIGUES"], ["JOSE PAULO DOS SANTOS DE LIMA", "JOSÉ PAULO DOS SANTOS"],
+      ["NARCIZA PEREIRA LIMA E SILVA", "NARCIZA PEREIRA"], ["RIGUELSON JEAN", "RIGUELSON"],
+    ]) expect(nomeConfere(rel, folha), `${rel} × ${folha}`).toBe(true);
+    for (const [rel, folha] of [
+      ["RODRIGO REGER DE ARRUDA", "RIGUELSON JEAN"], ["JOSE PAULO DOS SANTOS DE LIMA", "RODRIGO REGER DE ARRUDA"],
+      ["JOZIEL DE OLIVEIRA AMARAL", "JOSÉ PAULO DOS SANTOS"], ["MARCELO FRANCA DE QUEIROZ", "JOZIEL DE OLIVEIRA AMARAL"],
+      ["JOSE PAULO DOS SANTOS", "JOSE CANDIDO DOS SANTOS"],
+    ]) expect(nomeConfere(rel, folha), `${rel} × ${folha}`).toBe(false);
+  });
+
+  it("código casou mas o nome não confere: vai para divergentes (não grava); a ligação à mão confirma", () => {
+    const r = interpretarRelacao(relatorio());
+    if (!r.ok) throw new Error(r.erro);
+    const item = (id: string, mat: string, nome: string, liquido = 0): ItemCasavel => ({ id, nome, empregador: "NEO SERVIÇOS", matricula_escritorio: mat, liquido, ferias_acrescimos: 0, decimo_terceiro: 0 });
+    const itens = [item("a", "133", "FULANO DE TAL"), item("b", "18", "OUTRA PESSOA", 900), item("c", "207", "CICLANO SOUZA")];
+    const c = casarRelacao(r.relacao, itens);
+    expect(c.casados.map((k) => k.item_id)).toEqual(["a", "c"]);
+    expect(c.divergentes).toEqual([{ codigo: "18", nome: "BELTRANO SILVA", centavos: 511246, item_id: "b", nomeFolha: "OUTRA PESSOA" }]);
+    expect(c.foraDoRelatorio).toEqual([]);   // "b" está em dúvida, não "fora"
+    expect(casarRelacao(r.relacao, itens, { "18": "b" }).casados.map((k) => k.item_id)).toEqual(["a", "b", "c"]);
   });
 });
