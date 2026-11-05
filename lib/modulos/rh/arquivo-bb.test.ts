@@ -35,10 +35,11 @@ describe("arquivo do BB", () => {
     await folha.xlsx.load((await gerarArquivoBB(r.linhas, CABECALHO_FOLHA)).buffer as ArrayBuffer);
     expect(folha.getWorksheet("EXPORTA BB")!.getRow(1).values).toEqual([undefined, "CPF", "AG", "CONTA", "SALÁRIO"]);
   });
-  it("folha: 13º num arquivo, o resto (líquido + férias + avulso) no de salário", () => {
-    const i = { valor: 2511.37, decimo_terceiro: 370.76 };
-    expect(valorDaParte(i, "salario")).toBe(2140.61);
+  it("folha: um arquivo por parte — salário (líquido + férias), avulso e 13º", () => {
+    const i = { liquido: 2140.61, ferias_acrescimos: 100, avulso: 402.21, decimo_terceiro: 370.76 };
+    expect(valorDaParte(i, "salario")).toBe(2240.61);
+    expect(valorDaParte(i, "avulso")).toBe(402.21);
     expect(valorDaParte(i, "decimo")).toBe(370.76);
-    expect(valorDaParte({ valor: 3265.2, decimo_terceiro: 0 }, "decimo")).toBe(0);   // linhasBB deixa de fora quem fica com 0
+    expect(valorDaParte({ ...i, decimo_terceiro: 0 }, "decimo")).toBe(0);   // linhasBB deixa de fora quem fica com 0
   });
 });

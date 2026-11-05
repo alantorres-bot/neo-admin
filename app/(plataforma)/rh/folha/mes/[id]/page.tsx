@@ -8,6 +8,7 @@ import { rotuloMes } from "@/lib/modulos/rh/calendario";
 import { ROTULO_FORMA } from "@/lib/modulos/rh/colaboradores/modulo";
 import { titulosDoItem } from "@/lib/modulos/rh/folha/lancamento";
 import { ROTA_FOLHA } from "@/lib/modulos/rh/folha/modulo";
+import { PARTES_FOLHA, valorDaParte } from "@/lib/modulos/rh/arquivo-bb";
 import { codigosDoTitulo, contaPagadora, ROTULO_TIPO } from "@/lib/modulos/rh/lancamento";
 import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
@@ -42,8 +43,7 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
   const recibos = await lerRecibos(supabase, { competencia: mes.competencia });
   const naFolha = new Set(itens.map((i) => i.colaborador_id));
   const pix = itens.filter((i) => i.forma_pagamento !== "fopag" && i.valor > 0);
-  const temFopag = itens.some((i) => i.forma_pagamento === "fopag" && i.valor - i.decimo_terceiro > 0);
-  const temDecimoFopag = itens.some((i) => i.forma_pagamento === "fopag" && i.decimo_terceiro > 0);
+  const partesFopag = PARTES_FOLHA.filter((p) => itens.some((i) => i.forma_pagamento === "fopag" && valorDaParte(i, p) > 0));
   // Último lançamento de cada pessoa × tipo (o ativo, se houver; senão o erro mais recente).
   const ultimo = new Map<string, (typeof lancamentos)[number]>();
   for (const l of lancamentos) {
@@ -65,7 +65,7 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
           </p>
           {mes.reaberta_motivo && mes.status === "aberta" && <p className="text-sm text-amber-700">Reaberta em {quando(mes.reaberta_em)}: {mes.reaberta_motivo}</p>}
         </div>
-        <FluxoFolha id={mes.id} status={mes.status} podeOperar={podeOperar} ehGestor={ehGestor} temFopag={temFopag} temDecimoFopag={temDecimoFopag} />
+        <FluxoFolha id={mes.id} status={mes.status} podeOperar={podeOperar} ehGestor={ehGestor} partesFopag={partesFopag} />
       </div>
 
       {podeOperar && mes.status === "aberta" && (

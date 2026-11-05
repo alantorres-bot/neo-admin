@@ -20,14 +20,16 @@ export function linhasBB(itens: readonly ItemBB[]): { ok: true; linhas: LinhaBB[
 }
 
 /**
- * Folha: o 13º sai num arquivo (e borderô FOPAG) separado do salário (decisão do Alan, 05/11/2026).
- * "salario" = líquido + férias/acréscimos + avulso; "decimo" = 13º.
+ * Folha: um arquivo (e um borderô FOPAG) por parte (decisão do Alan, 05/11/2026): "salario" = líquido + férias/acréscimos,
+ * "avulso" = recibos avulsos, "decimo" = 13º.
  */
-export type ParteFolha = "salario" | "decimo";
-export const valorDaParte = (i: { valor: number; decimo_terceiro: number }, parte: ParteFolha) =>
-  Math.round((parte === "decimo" ? i.decimo_terceiro : i.valor - i.decimo_terceiro) * 100) / 100;
+export const PARTES_FOLHA = ["salario", "avulso", "decimo"] as const;
+export type ParteFolha = (typeof PARTES_FOLHA)[number];
+export const valorDaParte = (i: { liquido: number; ferias_acrescimos: number; avulso: number; decimo_terceiro: number }, parte: ParteFolha) =>
+  Math.round((parte === "decimo" ? i.decimo_terceiro : parte === "avulso" ? i.avulso : i.liquido + i.ferias_acrescimos) * 100) / 100;
+export const PREFIXO_PARTE: Record<ParteFolha, string> = { salario: "FOLHA", avulso: "AVULSO", decimo: "13º" };
 
-/** "VT 11-2026 - EXPORTA BB.xlsx" / "FOLHA 09-2026 - EXPORTA BB.xlsx" / "13º 10-2026 - EXPORTA BB.xlsx". */
+/** "VT 11-2026 - EXPORTA BB.xlsx" / "FOLHA 09-2026 - EXPORTA BB.xlsx" / "AVULSO 10-2026 …" / "13º 10-2026 - EXPORTA BB.xlsx". */
 export const nomeArquivoBB = (competencia: string, prefixo = "VT") => `${prefixo} ${competencia.slice(5, 7)}-${competencia.slice(0, 4)} - EXPORTA BB.xlsx`;
 
 export const CABECALHO_VT = ["CPF", "AGENCIA", "CONTA", "VALOR"] as const;
