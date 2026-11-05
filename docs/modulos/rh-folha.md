@@ -282,6 +282,9 @@ Antes, o RH fazia os recibos à mão em .xls (pasta `AVULSO`); foram analisados 
 **Na folha** (migration 0514):
 - `rh_fp_gravar_recibo` grava e soma no avulso da pessoa.
 - `rh_fp_cancelar_recibo` cancela com motivo; nada se apaga. Corrigir um recibo é substituí-lo: o antigo fica cancelado.
+- **Editar** (05/11/2026): o botão em cada recibo abre o formulário com as linhas gravadas (qualquer tipo, inclusive compra de
+  férias e início antes do registro) para mudar referências, valores e descontos. Gravar cria o recibo novo com `p_substitui`
+  (mesmo mês e período) e o antigo fica cancelado como "Substituído por um novo recibo".
 - Recibo de mês ainda não aberto entra quando o mês abrir.
 - Folha conferida ou aprovada não aceita mudança de recibo; o gestor reabre a folha.
 

@@ -2,7 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { FilePlus2, Printer, Repeat, XCircle } from "lucide-react";
+import { FilePlus2, Pencil, Printer, Repeat, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -20,6 +20,20 @@ import { EditorLinhas, linhaVazia, paraEntrada, PreviaRecibo, reaisC, SELECAO, t
 import type { PessoaRecibo, Recibo } from "../../dados";
 
 const br = (iso: string | null) => (iso ? iso.split("-").reverse().join("/") : "");
+const textoBr = (n: number, casas = 4) => n.toLocaleString("pt-BR", { maximumFractionDigits: casas, useGrouping: false });
+
+/** Linhas gravadas de um recibo → linhas do editor (o valor só vale para rubrica de forma "valor"; descrição só se foi mudada). */
+function linhasDoRecibo(r: Recibo, catalogo: ReadonlyMap<string, Rubrica>): LinhaEditavel[] {
+  return r.linhas.map((l) => {
+    const rub = catalogo.get(l.rubrica);
+    const porValor = rub?.forma === "valor";
+    return {
+      rubrica: l.rubrica, referencia: textoBr(l.referencia),
+      valor: porValor ? l.valor.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "",
+      descricao: porValor && l.descricao !== rub?.descricao ? l.descricao : "",
+    };
+  });
+}
 
 /** Recibos avulsos do mês: lista, novo recibo (assistente por tipo), recorrentes, cancelar e imprimir. */
 export function RecibosDoMes({ mesId, competencia, aberta, podeOperar, recibos, pessoas, rubricas, vigencias }: {
@@ -75,6 +89,7 @@ export function RecibosDoMes({ mesId, competencia, aberta, podeOperar, recibos, 
                 <TableCell className="text-right font-medium tabular-nums">{reaisC(Math.round(r.total * 100))}</TableCell>
                 <TableCell className="whitespace-nowrap">
                   <Button variant="ghost" size="sm" render={<a href={`/imprimir/rh/folha/recibo/${r.id}`} target="_blank" rel="noreferrer" />}><Printer /> Recibo</Button>
+                  {editavel && <NovoRecibo key={r.id} recibo={r} competencia={competencia} pessoas={pessoas} rubricas={rubricas} vigencias={vigencias} />}
                   {editavel && <Button variant="ghost" size="sm" onClick={() => { setCancelando(r); setMotivo(""); }}><XCircle /> Cancelar</Button>}
                 </TableCell>
               </TableRow>
@@ -97,25 +112,28 @@ export function RecibosDoMes({ mesId, competencia, aberta, podeOperar, recibos, 
   );
 }
 
-/** Assistente de novo recibo. Compra de férias / início antes do registro: pessoa + período (divide por mês). Recorrente / eventual: linhas livres. */
-function NovoRecibo({ competencia, pessoas, rubricas, vigencias }: { competencia: string; pessoas: PessoaRecibo[]; rubricas: Rubrica[]; vigencias: Vigencia[] }) {
+/**
+ * Assistente de novo recibo. Compra de férias / início antes do registro: pessoa + período (divide por mês). Recorrente / eventual: linhas livres.
+ * Com `recibo`: edição. Abre com as linhas gravadas (de qualquer tipo) e grava um recibo novo que substitui o antigo (o antigo fica cancelado).
+ */
+function NovoRecibo({ recibo, competencia, pessoas, rubricas, vigencias }: { recibo?: Recibo; competencia: string; pessoas: PessoaRecibo[]; rubricas: Rubrica[]; vigencias: Vigencia[] }) {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
   const [pendente, iniciar] = useTransition();
-  const [tipo, setTipo] = useState<TipoRecibo>("compra_ferias");
-  const [pessoaId, setPessoaId] = useState("");
-  const [salario, setSalario] = useState("");
-  const [funcao, setFuncao] = useState("");
-  const [insal, setInsal] = useState(0);
-  const [noturno, setNoturno] = useState(0);
-  const [atualizar, setAtualizar] = useState(true);
-  const [inicio, setInicio] = useState("");
-  const [fim, setFim] = useState("");
-  const [mes, setMes] = useState(competencia.slice(0, 7));
-  const [linhas, setLinhas] = useState<LinhaEditavel[]>([linhaVazia()]);
-  const [mensagem, setMensagem] = useState("");
-  const [erro, setErro] = useState<string>();
   const catalogo = useMemo(() => new Map(rubricas.map((r) => [r.codigo, r])), [rubricas]);
+  const [tipo, setTipo] = useState<TipoRecibo>(recibo?.tipo ?? "compra_ferias");
+  const [pessoaId, setPessoaId] = useState(recibo?.colaborador_id ?? "");
+  const [salario, setSalario] = useState(recibo?.salario ? recibo.salario.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "");
+  const [funcao, setFuncao] = useState(recibo?.funcao ?? "");
+  const [insal, setInsal] = useState(recibo?.insalubridade_pct ?? 0);
+  const [noturno, setNoturno] = useState(recibo?.adicional_noturno_pct ?? 0);
+  const [atualizar, setAtualizar] = useState(!recibo);
+  const [inicio, setInicio] = useState(recibo?.periodo_inicio ?? "");
+  const [fim, setFim] = useState(recibo?.periodo_fim ?? "");
+  const [mes, setMes] = useState((recibo?.competencia ?? competencia).slice(0, 7));
+  const [linhas, setLinhas] = useState<LinhaEditavel[]>(() => (recibo ? linhasDoRecibo(recibo, catalogo) : [linhaVazia()]));
+  const [mensagem, setMensagem] = useState(recibo?.mensagem ?? "");
+  const [erro, setErro] = useState<string>();
 
   const escolherPessoa = (id: string) => {
     setPessoaId(id);
@@ -125,7 +143,7 @@ function NovoRecibo({ competencia, pessoas, rubricas, vigencias }: { competencia
   };
   const sal = lerReais(salario);
   const dados = { salario: Number.isNaN(sal) ? 0 : sal, insalubridade_pct: insal, adicional_noturno_pct: noturno };
-  const porPeriodo = tipo === "compra_ferias" || tipo === "inicio_antes_registro";
+  const porPeriodo = !recibo && (tipo === "compra_ferias" || tipo === "inicio_antes_registro");
   const trechos = porPeriodo && inicio && fim ? dividirPorMes(inicio, fim) : [];
   const entrada = !porPeriodo ? paraEntrada(linhas.filter((l) => l.rubrica), catalogo) : null;
 
@@ -136,7 +154,7 @@ function NovoRecibo({ competencia, pessoas, rubricas, vigencias }: { competencia
     if (entrada && !entrada.ok) { setErro(entrada.erro); return; }
     const r = await gravarRecibos({
       tipo, colaboradorId: pessoaId, competencia: porPeriodo ? null : `${mes}-01`, inicio: inicio || null, fim: fim || null, salario: sal, funcao: funcao || null,
-      insalubridade_pct: insal as 0 | 10 | 20 | 40, adicional_noturno_pct: noturno, atualizarCadastro: atualizar, mensagem: mensagem || null, substitui: null,
+      insalubridade_pct: insal as 0 | 10 | 20 | 40, adicional_noturno_pct: noturno, atualizarCadastro: atualizar, mensagem: mensagem || null, substitui: recibo?.id ?? null,
       linhas: porPeriodo ? [] : linhas.filter((l) => l.rubrica).map((l) => {
         const e = paraEntrada([l], catalogo);
         const x = e.ok ? e.linhas[0] : null;
@@ -149,20 +167,22 @@ function NovoRecibo({ competencia, pessoas, rubricas, vigencias }: { competencia
 
   return (
     <Dialog open={aberto} onOpenChange={(v) => { setAberto(v); setErro(undefined); }}>
-      <DialogTrigger render={<Button size="sm" />}><FilePlus2 /> Novo recibo</DialogTrigger>
+      {recibo
+        ? <DialogTrigger render={<Button variant="ghost" size="sm" />}><Pencil /> Editar</DialogTrigger>
+        : <DialogTrigger render={<Button size="sm" />}><FilePlus2 /> Novo recibo</DialogTrigger>}
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-3xl">
         <DialogHeader>
-          <DialogTitle>Novo recibo avulso</DialogTitle>
+          <DialogTitle>{recibo ? `Editar recibo · ${recibo.nome}` : "Novo recibo avulso"}</DialogTitle>
           <DialogDescription>O cálculo segue as regras padronizadas (dias ÷ 30, horas ÷ 220, assiduidade e salário mínimo dos Parâmetros). Confira a prévia antes de gravar.</DialogDescription>
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="grid gap-1"><Label>Tipo</Label>
-            <select value={tipo} onChange={(e) => setTipo(e.target.value as TipoRecibo)} className={SELECAO}>
+            <select value={tipo} onChange={(e) => setTipo(e.target.value as TipoRecibo)} className={SELECAO} disabled={!!recibo}>
               {(["compra_ferias", "inicio_antes_registro", "eventual", "recorrente"] as const).map((t) => <option key={t} value={t}>{ROTULO_TIPO_RECIBO[t]}</option>)}
             </select>
           </div>
           <div className="grid gap-1"><Label>Funcionário</Label>
-            <select value={pessoaId} onChange={(e) => escolherPessoa(e.target.value)} className={SELECAO}>
+            <select value={pessoaId} onChange={(e) => escolherPessoa(e.target.value)} className={SELECAO} disabled={!!recibo}>
               <option value="">Escolha…</option>
               {pessoas.map((p) => <option key={p.id} value={p.id}>{p.nome} ({p.cod_fornecedor})</option>)}
             </select>
@@ -186,7 +206,10 @@ function NovoRecibo({ competencia, pessoas, rubricas, vigencias }: { competencia
           </div>
         ) : (
           <div className="space-y-2">
-            <div className="grid w-48 gap-1"><Label>Mês do recibo</Label><Input type="month" value={mes} onChange={(e) => setMes(e.target.value)} className="h-8" /></div>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="grid w-48 gap-1"><Label>Mês do recibo</Label><Input type="month" value={mes} onChange={(e) => setMes(e.target.value)} className="h-8" disabled={!!recibo} /></div>
+              {recibo?.periodo_inicio && <span className="pb-2 text-xs text-muted-foreground">Período {br(recibo.periodo_inicio)} a {br(recibo.periodo_fim)}</span>}
+            </div>
             <EditorLinhas linhas={linhas} mudar={setLinhas} rubricas={rubricas} />
           </div>
         )}
@@ -203,7 +226,7 @@ function NovoRecibo({ competencia, pessoas, rubricas, vigencias }: { competencia
           </div>
         )}
         {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
-        <div className="flex justify-end"><Button onClick={gravar} disabled={pendente}>{pendente ? "Gravando…" : porPeriodo && trechos.length > 1 ? `Gravar ${trechos.length} recibos` : "Gravar recibo"}</Button></div>
+        <div className="flex justify-end"><Button onClick={gravar} disabled={pendente}>{pendente ? "Gravando…" : recibo ? "Gravar alteração" : porPeriodo && trechos.length > 1 ? `Gravar ${trechos.length} recibos` : "Gravar recibo"}</Button></div>
       </DialogContent>
     </Dialog>
   );
