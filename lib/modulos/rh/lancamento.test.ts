@@ -48,6 +48,16 @@ describe("parâmetros dos títulos do RH no Consistem", () => {
     expect(documento("vt", "2027-01-01")).toBe("VT0127");
   });
 
+  it("centro de custo (conta que exige no Consistem): o título inteiro vai num item da lista; inválido recusa o tipo", () => {
+    const comCc = lerParametrosLancamento({ categoriaDoc: 6, tipos: { salario: { ...salario, centroCusto: " 1.1.01.01 " } }, portadores: [{ empregador: "OESTE", forma: "pix", codPortador: 40 }] });
+    const codigos = codigosDoTitulo(comCc, "salario", "OESTE", "pix")!;
+    expect(codigos.centroCusto).toBe("1.1.01.01");
+    expect(montarTitulo({ tipo: "salario", codFornecedor: "696", valor: 3703.754, competencia: "2026-10-01", dataPagamento: "2026-11-09", hoje: "2026-11-05", codigos }).dadosContabilidade)
+      .toEqual({ contaContabilDebito: 3101, contaContabilCredito: 2101, listaCentroCustoContab: [{ contaContabil: 3101, centroCusto: "1.1.01.01", valor: 3703.75 }] });
+    expect(lerCodigosTipo({ ...salario, centroCusto: "" })).toEqual(salario);
+    expect(lerCodigosTipo({ ...salario, centroCusto: "1.1 01" })).toBeNull();
+  });
+
   it("lê os códigos do título modelo (detalhe da API); ausentes ficam de fora", () => {
     expect(codigosDoModelo({ codHistorico: "3", codBanco: 91, categoriaDoc: 17, contaFluxoCaixa: "45", dadosContabilidade: { contaContabilDebito: 3101, contaContabilCredito: "0" } }))
       .toEqual({ codHistorico: 3, codPortador: 91, categoriaDoc: 17, contaFluxoCaixa: 45, contaContabilDebito: 3101 });

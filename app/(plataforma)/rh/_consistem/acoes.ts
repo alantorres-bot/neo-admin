@@ -34,9 +34,9 @@ export async function salvarParametrosLancamento(e: EntradaParametros): Promise<
   const tipos: Record<string, unknown> = {};
   for (const t of TIPOS_TITULO) {
     const linha = e.tipos[t] ?? {};
-    if (CAMPOS_TIPO.every((k) => !(linha[k] ?? "").trim())) continue;
-    const c = lerCodigosTipo(Object.fromEntries(CAMPOS_TIPO.map((k) => [k, (linha[k] ?? "").trim()])));
-    if (!c) return { ok: false, erro: `${ROTULO_TIPO[t]}: preencha todos os códigos com números inteiros (débito e crédito diferentes), ou deixe a linha vazia.` };
+    if ([...CAMPOS_TIPO, "centroCusto"].every((k) => !(linha[k] ?? "").trim())) continue;
+    const c = lerCodigosTipo({ ...Object.fromEntries(CAMPOS_TIPO.map((k) => [k, (linha[k] ?? "").trim()])), centroCusto: (linha.centroCusto ?? "").trim() });
+    if (!c) return { ok: false, erro: `${ROTULO_TIPO[t]}: preencha todos os códigos com números inteiros (débito e crédito diferentes) e o centro de custo só com letras, números e pontos (ex.: 210104), ou deixe a linha vazia.` };
     tipos[t] = c;
   }
   const portadores = [];
