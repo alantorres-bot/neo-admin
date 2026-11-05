@@ -30,7 +30,7 @@ function useAcao() {
 }
 
 /** Fluxo do mês: conferir (operador), aprovar e reabrir (gestor), arquivo do BB (gestor), relatório e marcar pago. */
-export function FluxoFolha({ id, status, podeOperar, ehGestor, temFopag }: { id: string; status: StatusFolha; podeOperar: boolean; ehGestor: boolean; temFopag: boolean }) {
+export function FluxoFolha({ id, status, podeOperar, ehGestor, temFopag, temDecimoFopag = false }: { id: string; status: StatusFolha; podeOperar: boolean; ehGestor: boolean; temFopag: boolean; temDecimoFopag?: boolean }) {
   const { pendente, rodar } = useAcao();
   const [motivo, setMotivo] = useState("");
   const [reabrindo, setReabrindo] = useState(false);
@@ -44,7 +44,10 @@ export function FluxoFolha({ id, status, podeOperar, ehGestor, temFopag }: { id:
         <Button size="sm" disabled={pendente} onClick={() => rodar(() => aprovarMes(id), "Folha aprovada.")}><CheckCircle2 /> Aprovar</Button>
       )}
       {(status === "aprovada" || status === "paga") && ehGestor && temFopag && (
-        <Button variant="outline" size="sm" render={<a href={`${ROTA_FOLHA}/mes/${id}/arquivo-bb`} />}><FileSpreadsheet /> Arquivo do BB</Button>
+        <Button variant="outline" size="sm" render={<a href={`${ROTA_FOLHA}/mes/${id}/arquivo-bb?parte=salario`} />}><FileSpreadsheet /> Arquivo do BB (salário)</Button>
+      )}
+      {(status === "aprovada" || status === "paga") && ehGestor && temDecimoFopag && (
+        <Button variant="outline" size="sm" render={<a href={`${ROTA_FOLHA}/mes/${id}/arquivo-bb?parte=decimo`} />}><FileSpreadsheet /> Arquivo do BB (13º)</Button>
       )}
       {status === "aprovada" && podeOperar && (
         <Button variant="outline" size="sm" disabled={pendente} onClick={() => rodar(() => marcarPaga(id), "Folha marcada como paga.")}><CheckCircle2 /> Marcar como paga</Button>

@@ -141,7 +141,8 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
    - **C5 FGTS consignado:** a guia é igual à soma dos descontos de consignado (Crédito do Trabalhador) no extrato. Os avisos de
      desconto parcial viram alerta, para avisar o funcionário.
    - **C6 VT × folha:** compara o desconto de VT no holerite com o VT pago no módulo de VT, por pessoa. Só aponta.
-7. **Arquivo do BB:** só no mês aprovado e só gestor.
+7. **Arquivo do BB:** só no mês aprovado e só gestor. Desde 05/11/2026 são **dois arquivos**, cada um para o seu borderô FOPAG:
+   **salário** (líquido + férias/acréscimos + avulso) e **13º**.
    - Uma linha por pessoa **FOPAG** com valor > 0; colunas `CPF | AG | CONTA | SALÁRIO`, iguais às da exportação de hoje.
    - Falta de CPF, agência ou conta bloqueia a geração.
    - Cada geração fica registrada.

@@ -42,7 +42,8 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
   const recibos = await lerRecibos(supabase, { competencia: mes.competencia });
   const naFolha = new Set(itens.map((i) => i.colaborador_id));
   const pix = itens.filter((i) => i.forma_pagamento !== "fopag" && i.valor > 0);
-  const temFopag = itens.some((i) => i.forma_pagamento === "fopag" && i.valor > 0);
+  const temFopag = itens.some((i) => i.forma_pagamento === "fopag" && i.valor - i.decimo_terceiro > 0);
+  const temDecimoFopag = itens.some((i) => i.forma_pagamento === "fopag" && i.decimo_terceiro > 0);
   // Último lançamento de cada pessoa × tipo (o ativo, se houver; senão o erro mais recente).
   const ultimo = new Map<string, (typeof lancamentos)[number]>();
   for (const l of lancamentos) {
@@ -64,7 +65,7 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
           </p>
           {mes.reaberta_motivo && mes.status === "aberta" && <p className="text-sm text-amber-700">Reaberta em {quando(mes.reaberta_em)}: {mes.reaberta_motivo}</p>}
         </div>
-        <FluxoFolha id={mes.id} status={mes.status} podeOperar={podeOperar} ehGestor={ehGestor} temFopag={temFopag} />
+        <FluxoFolha id={mes.id} status={mes.status} podeOperar={podeOperar} ehGestor={ehGestor} temFopag={temFopag} temDecimoFopag={temDecimoFopag} />
       </div>
 
       {podeOperar && mes.status === "aberta" && (
