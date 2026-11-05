@@ -99,6 +99,17 @@ export function interpretarRelacao(planilha: PlanilhaXls): { ok: true; relacao: 
   return { ok: true, relacao: { empresa, cnpj, empregador, calculo, natureza, competencia, pessoas, totalCentavos } };
 }
 
+/**
+ * O relatório tem de ser do mês da folha. Exceção: o 13º de um mês seguinte (adiantamento pago antes, junto com esta folha).
+ * Devolve o erro ou null.
+ */
+export function erroDeCompetencia(rel: Pick<Relacao, "competencia" | "natureza">, competenciaFolha: string, rotulo: (c: string) => string): string | null {
+  if (rel.competencia === competenciaFolha) return null;
+  if (rel.natureza === "decimo_terceiro" && rel.competencia > competenciaFolha) return null;
+  return `O arquivo é de ${rotulo(rel.competencia)}, e esta folha é de ${rotulo(competenciaFolha)}.`
+    + (rel.natureza === "decimo_terceiro" ? "" : " Só o 13º pode vir de um mês seguinte (antecipação).");
+}
+
 export type ItemCasavel = { id: string; nome: string; empregador: string; matricula_escritorio: string | null } & Record<Exclude<Natureza, "avulso">, number>;
 export type Casamento = {
   casados: { item_id: string; nome: string; codigo: string; atualCentavos: number; novoCentavos: number }[];

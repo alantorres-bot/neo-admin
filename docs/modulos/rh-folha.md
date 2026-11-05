@@ -72,6 +72,8 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
 - **Relação Geral dos Líquidos** (.xls do escritório): um arquivo por empresa e por cálculo. "Folha Mensal" preenche o
   **líquido**; o do 13º preenche o **13º**; o de férias, quando houver, preenche **férias/acréscimos**.
   - O arquivo é identificado pelo CNPJ e pela competência do cabeçalho.
+  - A competência tem de ser a da folha. Exceção (05/11/2026): o **13º de um mês seguinte** é aceito, para pagar o adiantamento
+    junto com a folha atual (ex.: 1ª parcela de 11/2026 na folha de 10/2026). Folha Mensal e Férias de outro mês continuam recusadas.
   - Cada pessoa é casada pelo **código do escritório** (`rh_colaboradores.matricula_escritorio`).
   - A soma das linhas tem de bater com o "Total da Empresa".
   - Quem não casar fica para o operador ligar ao cadastro (o código fica gravado para os meses seguintes).

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { lerXls } from "@/lib/integracoes/importador/xls";
-import { casarRelacao, interpretarRelacao, type Casamento, type Relacao } from "@/lib/modulos/rh/folha/relacao-liquidos";
+import { casarRelacao, erroDeCompetencia, interpretarRelacao, type Casamento, type Relacao } from "@/lib/modulos/rh/folha/relacao-liquidos";
 import { ROTA_FOLHA, ROTULO_NATUREZA } from "@/lib/modulos/rh/folha/modulo";
 import { rotuloMes } from "@/lib/modulos/rh/calendario";
 import { temAcesso } from "@/lib/nucleo/permissoes";
@@ -38,9 +38,8 @@ async function ler(mesId: string, dados: FormData, ligacoes: Record<string, stri
   const [mes, itens] = await Promise.all([lerMes(supabase, mesId), lerItens(supabase, mesId)]);
   if (!mes) return { ok: false, erro: "Mês não encontrado." };
   if (mes.status !== "aberta") return { ok: false, erro: "A folha deste mês não está aberta." };
-  if (r.relacao.competencia !== mes.competencia) {
-    return { ok: false, erro: `O arquivo é de ${rotuloMes(r.relacao.competencia)}, e esta folha é de ${rotuloMes(mes.competencia)}.` };
-  }
+  const erroMes = erroDeCompetencia(r.relacao, mes.competencia, rotuloMes);
+  if (erroMes) return { ok: false, erro: erroMes };
   const casamento = casarRelacao(r.relacao, itens, ligacoes);
   const usados = new Set(casamento.casados.map((c) => c.item_id));
   const candidatos = itens.filter((i) => i.empregador === r.relacao.empregador && !usados.has(i.id))

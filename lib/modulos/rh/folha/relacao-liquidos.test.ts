@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { lerXls } from "@/lib/integracoes/importador/xls";
 import { xlsSintetico, type CelulaTeste } from "@/lib/integracoes/importador/xls.fixture";
-import { casarRelacao, interpretarRelacao, naturezaDoCalculo, type ItemCasavel } from "./relacao-liquidos";
+import { casarRelacao, erroDeCompetencia, interpretarRelacao, naturezaDoCalculo, type ItemCasavel } from "./relacao-liquidos";
 
 /** Mesmo layout do relatório do escritório (colunas 0, 3, 11, 18/21, 24/25), com dados fictícios. */
 function relatorio(o: { cnpj?: string; calculo?: string; total?: number; pessoas?: [number, string, number][]; competencia?: number | string; dataPagamento?: boolean } = {}) {
@@ -61,6 +61,15 @@ describe("Relação Geral dos Líquidos", () => {
     expect(naturezaDoCalculo("13o Adiantamento")).toBe("decimo_terceiro");
     const r = interpretarRelacao(relatorio({ calculo: "13o Adiantamento", total: 1672.76, pessoas: [[28, "GENIVAL PEDRO DA SILVA", 1672.76]] }));
     expect(r.ok && { natureza: r.relacao.natureza, total: r.relacao.totalCentavos }).toEqual({ natureza: "decimo_terceiro", total: 167276 });
+  });
+
+  it("mês do arquivo: igual ao da folha; 13º de mês seguinte é aceito (antecipação); o resto é recusado", () => {
+    const rot = (c: string) => c.slice(0, 7);
+    expect(erroDeCompetencia({ competencia: "2026-10-01", natureza: "liquido" }, "2026-10-01", rot)).toBeNull();
+    expect(erroDeCompetencia({ competencia: "2026-11-01", natureza: "decimo_terceiro" }, "2026-10-01", rot)).toBeNull();
+    expect(erroDeCompetencia({ competencia: "2026-09-01", natureza: "decimo_terceiro" }, "2026-10-01", rot)).toMatch(/2026-09.*2026-10/);
+    expect(erroDeCompetencia({ competencia: "2026-11-01", natureza: "liquido" }, "2026-10-01", rot)).toMatch(/Só o 13º/);
+    expect(erroDeCompetencia({ competencia: "2026-11-01", natureza: "ferias_acrescimos" }, "2026-10-01", rot)).not.toBeNull();
   });
 
   it("casa pelo código do escritório dentro da empresa; ligação manual; quem ficou de fora", () => {
