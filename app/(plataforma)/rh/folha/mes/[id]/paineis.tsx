@@ -11,8 +11,11 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { ROTULO_FORMA, type FormaPagamento } from "@/lib/modulos/rh/colaboradores/modulo";
 import { ROTA_FOLHA } from "@/lib/modulos/rh/folha/modulo";
+import type { ParteFolha } from "@/lib/modulos/rh/arquivo-bb";
 import { aprovarMes, conferirMes, marcarPaga, marcarPix, reabrirMes, type Resultado } from "../acoes";
 import type { StatusFolha } from "../../dados";
+
+const ROTULO_PARTE: Record<ParteFolha, string> = { salario: "salário", avulso: "avulso", decimo: "13º" };
 
 const reais = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
@@ -30,7 +33,7 @@ function useAcao() {
 }
 
 /** Fluxo do mês: conferir (operador), aprovar e reabrir (gestor), arquivo do BB (gestor), relatório e marcar pago. */
-export function FluxoFolha({ id, status, podeOperar, ehGestor, temFopag }: { id: string; status: StatusFolha; podeOperar: boolean; ehGestor: boolean; temFopag: boolean }) {
+export function FluxoFolha({ id, status, podeOperar, ehGestor, partesFopag }: { id: string; status: StatusFolha; podeOperar: boolean; ehGestor: boolean; partesFopag: ParteFolha[] }) {
   const { pendente, rodar } = useAcao();
   const [motivo, setMotivo] = useState("");
   const [reabrindo, setReabrindo] = useState(false);
@@ -43,9 +46,9 @@ export function FluxoFolha({ id, status, podeOperar, ehGestor, temFopag }: { id:
       {status === "conferida" && ehGestor && (
         <Button size="sm" disabled={pendente} onClick={() => rodar(() => aprovarMes(id), "Folha aprovada.")}><CheckCircle2 /> Aprovar</Button>
       )}
-      {(status === "aprovada" || status === "paga") && ehGestor && temFopag && (
-        <Button variant="outline" size="sm" render={<a href={`${ROTA_FOLHA}/mes/${id}/arquivo-bb`} />}><FileSpreadsheet /> Arquivo do BB</Button>
-      )}
+      {(status === "aprovada" || status === "paga") && ehGestor && partesFopag.map((p) => (
+        <Button key={p} variant="outline" size="sm" render={<a href={`${ROTA_FOLHA}/mes/${id}/arquivo-bb?parte=${p}`} />}><FileSpreadsheet /> Arquivo do BB ({ROTULO_PARTE[p]})</Button>
+      ))}
       {status === "aprovada" && podeOperar && (
         <Button variant="outline" size="sm" disabled={pendente} onClick={() => rodar(() => marcarPaga(id), "Folha marcada como paga.")}><CheckCircle2 /> Marcar como paga</Button>
       )}

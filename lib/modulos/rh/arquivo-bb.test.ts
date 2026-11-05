@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CABECALHO_FOLHA, cpfBB, gerarArquivoBB, linhasBB, nomeArquivoBB, type ItemBB } from "./arquivo-bb";
+import { CABECALHO_FOLHA, cpfBB, gerarArquivoBB, linhasBB, nomeArquivoBB, valorDaParte, type ItemBB } from "./arquivo-bb";
 
 const item = (m: Partial<ItemBB>): ItemBB => ({ cod_fornecedor: "1", nome: "B", cpf: "071.225.481-12", agencia: "2764-2", conta: "98657-7", forma_pagamento: "fopag", valor: 198, ...m });
 
@@ -34,5 +34,12 @@ describe("arquivo do BB", () => {
     const folha = new Workbook();
     await folha.xlsx.load((await gerarArquivoBB(r.linhas, CABECALHO_FOLHA)).buffer as ArrayBuffer);
     expect(folha.getWorksheet("EXPORTA BB")!.getRow(1).values).toEqual([undefined, "CPF", "AG", "CONTA", "SALÁRIO"]);
+  });
+  it("folha: um arquivo por parte — salário (líquido + férias), avulso e 13º", () => {
+    const i = { liquido: 2140.61, ferias_acrescimos: 100, avulso: 402.21, decimo_terceiro: 370.76 };
+    expect(valorDaParte(i, "salario")).toBe(2240.61);
+    expect(valorDaParte(i, "avulso")).toBe(402.21);
+    expect(valorDaParte(i, "decimo")).toBe(370.76);
+    expect(valorDaParte({ ...i, decimo_terceiro: 0 }, "decimo")).toBe(0);   // linhasBB deixa de fora quem fica com 0
   });
 });
