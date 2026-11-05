@@ -4,7 +4,7 @@ import { xlsSintetico, type CelulaTeste } from "@/lib/integracoes/importador/xls
 import { casarRelacao, interpretarRelacao, naturezaDoCalculo, type ItemCasavel } from "./relacao-liquidos";
 
 /** Mesmo layout do relatório do escritório (colunas 0, 3, 11, 18/21, 24/25), com dados fictícios. */
-function relatorio(o: { cnpj?: string; calculo?: string; total?: number; pessoas?: [number, string, number][]; competencia?: number | string } = {}) {
+function relatorio(o: { cnpj?: string; calculo?: string; total?: number; pessoas?: [number, string, number][]; competencia?: number | string; dataPagamento?: boolean } = {}) {
   const pessoas = o.pessoas ?? [[133, "FULANO DE TAL", 2398.59], [18, "BELTRANO SILVA", 5112.46], [207, "CICLANO SOUZA", 1722.42]];
   const cel: CelulaTeste[] = [
     [0, 0, "Empresa:"], [0, 5, "NEO FORMAS SERVICOS DE MANUTEN"], [0, 20, "Página:  "], [0, 23, "1 / 1"],
@@ -16,6 +16,8 @@ function relatorio(o: { cnpj?: string; calculo?: string; total?: number; pessoas
     [9, 1, "Empregados"],
   ];
   pessoas.forEach(([cod, nome, valor], k) => cel.push([10 + k, 0, cod], [10 + k, 3, nome], [10 + k, 11, "29592550"], [10 + k, 24, valor]));
+  // Layout desde 10/2026: coluna "Data de pagamento" (data como número de série) depois do Valor.
+  if (o.dataPagamento) { cel.push([8, 28, "Data de pagamento"]); pessoas.forEach((_, k) => cel.push([10 + k, 28, 46331])); }
   const fim = 10 + pessoas.length;
   cel.push([fim, 3, `Empregados: ${pessoas.length}`], [fim, 18, "Total da Empresa:"], [fim, 21, o.total ?? pessoas.reduce((s, p) => s + p[2], 0)]);
   const r = lerXls(xlsSintetico(cel));
@@ -31,6 +33,13 @@ describe("Relação Geral dos Líquidos", () => {
     expect(r.relacao.pessoas).toEqual([
       { codigo: "133", nome: "FULANO DE TAL", centavos: 239859 }, { codigo: "18", nome: "BELTRANO SILVA", centavos: 511246 }, { codigo: "207", nome: "CICLANO SOUZA", centavos: 172242 },
     ]);
+  });
+
+  it("ignora a coluna Data de pagamento (layout de 10/2026): o valor é o líquido, não a data", () => {
+    const r = interpretarRelacao(relatorio({ dataPagamento: true }));
+    if (!r.ok) throw new Error(r.erro);
+    expect(r.relacao.pessoas.map((p) => p.centavos)).toEqual([239859, 511246, 172242]);
+    expect(r.relacao.totalCentavos).toBe(923347);
   });
 
   it("recusa soma diferente do total, empresa fora da folha, cálculo desconhecido e código repetido", () => {
