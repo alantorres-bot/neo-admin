@@ -72,7 +72,8 @@ export async function gravarRecibos(entrada: EntradaRecibo): Promise<Resultado> 
     if (error) return { ok: false, erro: mensagemDeErro(error) };
   }
   let gravados = 0, total = 0;
-  if (e.tipo === "compra_ferias" || e.tipo === "inicio_antes_registro") {
+  // Edição (substitui): grava as linhas como foram editadas, no mesmo mês, mesmo para compra de férias/início antes do registro.
+  if (!e.substitui && (e.tipo === "compra_ferias" || e.tipo === "inicio_antes_registro")) {
     if (!e.inicio || !e.fim) return { ok: false, erro: "Informe o período (início e fim)." };
     const trechos = dividirPorMes(e.inicio, e.fim);
     if (!trechos.length) return { ok: false, erro: "Período inválido: o fim tem de ser depois do início." };
@@ -103,7 +104,9 @@ export async function gravarRecibos(entrada: EntradaRecibo): Promise<Resultado> 
     gravados = 1; total = r.liquido;
   }
   revalidatePath(ROTA_FOLHA, "layout");
-  return { ok: true, aviso: `${gravados} recibo(s) gravado(s), total ${reais(total)}. O valor entrou no avulso da folha do mês.` };
+  return { ok: true, aviso: e.substitui
+    ? `Recibo alterado, novo líquido ${reais(total)}. O anterior ficou guardado como cancelado e o avulso da folha foi refeito.`
+    : `${gravados} recibo(s) gravado(s), total ${reais(total)}. O valor entrou no avulso da folha do mês.` };
 }
 
 export async function cancelarRecibo(id: string, motivo: string): Promise<Resultado> {
