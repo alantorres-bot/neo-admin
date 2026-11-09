@@ -47,7 +47,9 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
   const parametros = await searchParams;
 
   const supabase = await criarClienteServidor();
-  const f = await carregarFicha(supabase, id, primeiro(parametros.contato), { assinarLinks: true });
+  // ?parcelas= escolhe as parcelas da mensagem (envio individual ou conjunto); sem escolha, vão todas as que têm boleto.
+  const parcelasEscolhidas = [parametros.parcelas ?? []].flat().flatMap((v) => v.split(",")).filter((v) => UUID.test(v));
+  const f = await carregarFicha(supabase, id, primeiro(parametros.contato), { assinarLinks: true, parcelasEscolhidas });
   if (!f) notFound();
   const { parcelas, contato, contatos, boletoDaParcela, email, whatsapp } = f;
   // Antecipação parcial na AKF (migration 0113): o que já está na AKF e o que resta com a Neo.
@@ -56,16 +58,15 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
   const parcelasBoleto = parcelas.filter((p) => p.forma_pagamento === "boleto");
 
   // O envio pode ser registrado em qualquer parcela em aberto (aguardando, anterior à esteira ou já enviada: reenvio).
-  const parcelasEnvio = f.paraMensagem.map((p) => ({
+  const parcelasEnvio = f.candidatas.map((p) => ({
     id: p.id,
     rotulo: `${p.documento}${p.parcela !== "1" ? `/${p.parcela}` : ""} — vence ${formatarData(p.vencimento)} — ${formatarMoeda(centavos(p.valor))}`,
     temBoleto: boletoDaParcela.has(p.id),
   }));
-  // O rascunho vale para as parcelas da mensagem: as que aguardam envio; se não há, as demais em aberto (para reenviar o boleto).
-  const faltaBoleto = f.paraMensagem.some((p) => !boletoDaParcela.has(p.id));
+  // O rascunho leva as parcelas com boleto (as escolhidas, ou todas) entre as que aguardam envio; se não há, as demais em aberto (reenvio).
   let motivoSemRascunho: string | null = null;
-  if (f.paraMensagem.length === 0) motivoSemRascunho = "Todas as parcelas estão encerradas (pagas ou canceladas).";
-  else if (faltaBoleto) motivoSemRascunho = "Anexe o boleto de todas as parcelas da mensagem.";
+  if (f.candidatas.length === 0) motivoSemRascunho = "Todas as parcelas estão encerradas (pagas ou canceladas).";
+  else if (f.paraMensagem.length === 0) motivoSemRascunho = "Nenhuma parcela escolhida tem boleto anexado.";
   else if (!contato?.email) motivoSemRascunho = "O contato escolhido não tem e-mail cadastrado.";
   else if (!email) motivoSemRascunho = "O modelo de e-mail do boleto está desativado.";
 
@@ -291,6 +292,7 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
           </CardDescription>
           {contatos.length > 1 && (
             <form method="get" className="flex items-center gap-2 pt-1">
+              {parcelasEscolhidas.length > 0 && <input type="hidden" name="parcelas" value={parcelasEscolhidas.join(",")} />}
               <select name="contato" defaultValue={contato?.id} aria-label="Contato" className="h-8 rounded-lg border bg-background px-2 text-sm">
                 {contatos.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.finalidades.includes("boleto") ? " (boleto)" : ""}</option>)}
               </select>
@@ -300,9 +302,27 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
           {podeOperar && !contato && (
             <div className="pt-1"><DialogoContato contraparteId={f.base.contraparte_id} finalidadesIniciais={["boleto"]} rotuloBotao="Cadastrar contato" /></div>
           )}
+          {f.candidatas.length > 1 && (
+            <form method="get" className="space-y-1 pt-1">
+              {contato && <input type="hidden" name="contato" value={contato.id} />}
+              <p className="text-xs text-muted-foreground">Parcelas da mensagem (envie uma só ou várias juntas):</p>
+              <ul className="space-y-1">
+                {f.candidatas.map((p) => (
+                  <li key={p.id}>
+                    <label className="flex items-center gap-2 text-sm">
+                      <input type="checkbox" name="parcelas" value={p.id} className="size-4" defaultChecked={f.paraMensagem.some((m) => m.id === p.id)} disabled={!boletoDaParcela.has(p.id)} />
+                      <span>{p.documento}{p.parcela !== "1" ? `/${p.parcela}` : ""} — vence {formatarData(p.vencimento)} — {formatarMoeda(centavos(p.valor))}</span>
+                      {!boletoDaParcela.has(p.id) && <span className="text-xs text-muted-foreground">(sem boleto anexado)</span>}
+                    </label>
+                  </li>
+                ))}
+              </ul>
+              <Button type="submit" variant="secondary" size="sm">Montar mensagem com estas parcelas</Button>
+            </form>
+          )}
           {podeOperar && (
             <div className="pt-1">
-              <CriarRascunhoGmail tituloId={id} contatoId={contato?.id ?? null} desabilitadoPor={motivoSemRascunho} idsParcelas={f.paraMensagem.filter((p) => boletoDaParcela.has(p.id)).map((p) => p.id)} />
+              <CriarRascunhoGmail tituloId={id} contatoId={contato?.id ?? null} desabilitadoPor={motivoSemRascunho} idsParcelas={f.paraMensagem.map((p) => p.id)} />
             </div>
           )}
         </CardHeader>
@@ -313,13 +333,13 @@ export default async function PaginaBoleto({ params, searchParams }: PageProps<"
               <p className="text-xs text-muted-foreground">Assunto: {email.assunto}</p>
               <pre className="whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 font-sans text-sm">{email.corpo}</pre>
             </div>
-          ) : <p className="text-sm text-muted-foreground">Sem parcelas em aberto para montar o e-mail (ou o modelo foi desativado).</p>}
+          ) : <p className="text-sm text-muted-foreground">Sem parcela com boleto anexado para montar o e-mail (ou o modelo foi desativado).</p>}
           {whatsapp ? (
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2"><h3 className="text-sm font-medium">WhatsApp</h3><BotaoCopiar texto={whatsapp.corpo} rotulo="WhatsApp" /></div>
               <pre className="whitespace-pre-wrap rounded-lg border bg-muted/30 p-3 font-sans text-sm">{whatsapp.corpo}</pre>
             </div>
-          ) : <p className="text-sm text-muted-foreground">Sem parcelas em aberto para montar o WhatsApp (ou o modelo foi desativado).</p>}
+          ) : <p className="text-sm text-muted-foreground">Sem parcela com boleto anexado para montar o WhatsApp (ou o modelo foi desativado).</p>}
         </CardContent>
       </Card>
 

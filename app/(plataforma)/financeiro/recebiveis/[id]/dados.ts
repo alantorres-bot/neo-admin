@@ -43,7 +43,9 @@ export type Ficha = {
   nomesUsuarios: Map<string, string>;
   /** Parcelas que ainda esperam o envio do boleto. */
   aguardando: Parcela[];
-  /** Parcelas de BOLETO citadas na mensagem: as que aguardam envio; se não há, as demais em aberto. */
+  /** Parcelas de BOLETO que podem ir na mensagem: as que aguardam envio; se não há, as demais em aberto. */
+  candidatas: Parcela[];
+  /** As candidatas citadas na mensagem: só as com boleto anexado e, se a pessoa escolheu, só as escolhidas (envio individual ou conjunto). */
   paraMensagem: Parcela[];
   /** Parcelas pagas por TRANSFERÊNCIA citadas na mensagem de dados de pagamento (mesma regra). */
   paraDados: Parcela[];
@@ -69,7 +71,7 @@ export type Ficha = {
 
 const COLUNAS = "id, documento, parcela, emissao, vencimento, valor, valor_atualizado, dias_atraso, estagio, linha_digitavel, boleto_enviado_em, nota_fiscal, nota_saida_id, contraparte_id, data_pagamento, regua_pausada_ate, cedido, contestado, unidade, forma_pagamento, empresa_id";
 
-export async function carregarFicha(supabase: SupabaseClient, id: string, contatoPedido: string, opcoes: { assinarLinks: boolean }): Promise<Ficha | null> {
+export async function carregarFicha(supabase: SupabaseClient, id: string, contatoPedido: string, opcoes: { assinarLinks: boolean; parcelasEscolhidas?: string[] }): Promise<Ficha | null> {
   const { data: alvo } = await supabase.from("rec_vw_titulos").select(COLUNAS).eq("id", id).maybeSingle();
   if (!alvo) return null;
   const base = alvo as Parcela;
@@ -133,7 +135,9 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
     const aguardandoDaForma = daForma.filter((p) => p.estagio === "aguardando_boleto");
     return aguardandoDaForma.length > 0 ? aguardandoDaForma : daForma.filter((p) => !ENCERRADOS.includes(p.estagio));
   };
-  const paraMensagem = paraMensagemDe("boleto");
+  const candidatas = paraMensagemDe("boleto");
+  const escolhidas = opcoes.parcelasEscolhidas?.length ? new Set(opcoes.parcelasEscolhidas) : null;
+  const paraMensagem = candidatas.filter((p) => boletoDaParcela.has(p.id) && (!escolhidas || escolhidas.has(p.id)));
   const paraDados = paraMensagemDe("transferencia");
   const comoParcelas = (lista: Parcela[]): ParcelaMensagem[] => lista.map((p) => ({
     documento: p.documento, parcela: p.parcela, vencimento: p.vencimento, valorCentavos: centavos(p.valor), linhaDigitavel: p.linha_digitavel,
@@ -156,7 +160,7 @@ export async function carregarFicha(supabase: SupabaseClient, id: string, contat
   return {
     base, parcelas, nomeCliente, codigoErp: (cliente?.codigo_erp as string | null | undefined) ?? null, notaNumero,
     pedidos: (nota?.pedidos as string[] | undefined) ?? [], referencia, contatos, contato, boletoDaParcela, interacoes, nomesUsuarios,
-    aguardando, paraMensagem, paraDados, dadosPagamento, modeloDadosEmailId: (modeloDadosEmail?.id as string | undefined) ?? null, emailDados, whatsappDados,
+    aguardando, candidatas, paraMensagem, paraDados, dadosPagamento, modeloDadosEmailId: (modeloDadosEmail?.id as string | undefined) ?? null, emailDados, whatsappDados,
     modeloEmailId: (modeloEmail?.id as string | undefined) ?? null, email, whatsapp,
     totalCentavos: parcelas.reduce((s, p) => s + centavos(p.valor), 0),
     corteRegua: regra.reguaAPartirDe,
