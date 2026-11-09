@@ -214,22 +214,23 @@ export type ResultadoRascunho = { ok: true; url: string; anexos: number; aviso?:
 
 /**
  * Cria o rascunho do e-mail do boleto no Gmail, com os boletos em anexo. O texto é o mesmo que a ficha mostra.
- * 1) valida (parcelas da mensagem, todas com boleto, contato com e-mail); 2) grava a mensagem como `rascunho` com a sessão
+ * 1) valida (ao menos uma parcela com boleto, contato com e-mail); 2) grava a mensagem como `rascunho` com a sessão
  * do usuário (a RLS e o gatilho carimbam o autor); 3) a Edge Function `rec-rascunho-gmail` cria o rascunho (nunca envia).
  * Se o Gmail falhar, a mensagem é descartada para não ficar rascunho fantasma no Neo Admin.
  */
-export async function criarRascunhoGmail(tituloId: string, contatoId: string | null): Promise<ResultadoRascunho> {
+export async function criarRascunhoGmail(tituloId: string, contatoId: string | null, parcelasEscolhidas: string[] = []): Promise<ResultadoRascunho> {
   if (!uuid.safeParse(tituloId).success) return { ok: false, erro: "Título inválido." };
+  if (!parcelasEscolhidas.every((p) => uuid.safeParse(p).success)) return { ok: false, erro: "Parcela inválida." };
   if (contatoId !== null && !uuid.safeParse(contatoId).success) return { ok: false, erro: "Contato inválido." };
   const permissao = await exigirOperador();
   if (!permissao.ok) return permissao;
 
   const supabase = await criarClienteServidor();
-  const ficha = await carregarFicha(supabase, tituloId, contatoId ?? "", { assinarLinks: false });
+  const ficha = await carregarFicha(supabase, tituloId, contatoId ?? "", { assinarLinks: false, parcelasEscolhidas });
   if (!ficha) return { ok: false, erro: "Título não encontrado." };
-  // Vale também depois do envio registrado (reenvio): a mensagem usa as parcelas que aguardam envio ou, se não há, as demais em aberto.
-  if (ficha.paraMensagem.length === 0) return { ok: false, erro: "Todas as parcelas estão encerradas (pagas ou canceladas)." };
-  if (ficha.paraMensagem.some((p) => !ficha.boletoDaParcela.has(p.id))) return { ok: false, erro: "Anexe o boleto de todas as parcelas da mensagem." };
+  // Vale também depois do envio registrado (reenvio). A mensagem leva só as parcelas com boleto (e, se escolhidas, só essas).
+  if (ficha.candidatas.length === 0) return { ok: false, erro: "Todas as parcelas estão encerradas (pagas ou canceladas)." };
+  if (ficha.paraMensagem.length === 0) return { ok: false, erro: "Nenhuma parcela escolhida tem boleto anexado." };
   if (!ficha.contato?.email) return { ok: false, erro: "O contato escolhido não tem e-mail cadastrado." };
   if (!ficha.email || !ficha.modeloEmailId) return { ok: false, erro: "O modelo de e-mail do boleto está desativado." };
 

@@ -178,7 +178,7 @@ export function CriarRascunhoGmail({ tituloId, contatoId, desabilitadoPor, idsPa
 
   function criar() {
     iniciar(async () => {
-      const r = await criarRascunhoGmail(tituloId, contatoId);
+      const r = await criarRascunhoGmail(tituloId, contatoId, idsParcelas);
       if (r.ok) {
         setLink(r.url);
         toast.success(r.aviso ?? `Rascunho criado no Gmail, com ${r.anexos} ${r.anexos === 1 ? "anexo" : "anexos"}.`);
