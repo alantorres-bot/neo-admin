@@ -477,3 +477,6 @@ verify_jwt = false
 
 [functions.nucleo-apps-pendencias]
 verify_jwt = false
+
+[functions.fin-parcelamentos-sincronizar]
+verify_jwt = false

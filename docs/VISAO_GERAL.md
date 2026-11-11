@@ -13,7 +13,7 @@ uma rotina que hoje é feita em planilha, e-mail, ERP ou skill avulsa.
 | Financeiro | Intimações de cartório | Agente 01: intimações de protesto lidas do Gmail, título localizado no Consistem, vencimento alterado pela API com aprovação do gestor, adiantamento das custas lançado à mão e acompanhado até NF e consignação (ver `modulos/financeiro-intimacoes-cartorio.md`) | em construção |
 | Financeiro | Conciliação bancária | Extrato x lançamentos do ERP, pendências de baixa | 4 |
 | Financeiro | Fluxo de caixa | Previsão a partir de recebíveis, pagáveis e parcelamentos | 5 |
-| **Fiscal/Tributário** | Parcelamentos | Acordos (Receita, PGFN, SEFAZ/MT, PGE/MT), parcelas, risco de rescisão | 2 |
+| Financeiro | Gestão de Parcelamentos | Parcelamentos tributários (Receita, PGFN, SEFAZ/MT, PGE/MT) provisionados no Contas a Pagar do Consistem (P → C): classificação por regras, parcelas, vencimentos, guias, previsão e risco de rescisão (ver `modulos/financeiro-parcelamentos.md`; Fase 2 construída em 11/11/2026) | em construção |
 | Fiscal/Tributário | Análise de entradas | Conferência semanal de CFOP/CST/bases (CCESE735) | 4 |
 | Fiscal/Tributário | Créditos tributários (Fiscal Control) | Créditos (registro, validação, disponibilidade), razão imutável, apuração mensal com transporte de saldo, fechamento, consolidado anual, obrigações com recibo, documentos privados, conciliação e tarefas com o contador (ver `modulos/fiscal-creditos.md` e `fiscal-control/`; primeira versão em 22/10/2026, aguardando avaliação) | em construção |
 | Fiscal/Tributário | Notificações e guias | Notificações de órgãos, guias recebidas, prazos de resposta | 2 |

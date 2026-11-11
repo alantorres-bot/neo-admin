@@ -11,6 +11,7 @@ const DESCRICAO_PADRAO: Record<string, string> = {
   "financeiro.akf": "Títulos cedidos e antecipações na AKF.",
   "financeiro.contas-pagar": "Títulos e antecipações a fornecedor; autorização de pagamento.",
   "financeiro.intimacoes": "Intimações de protesto: vencimento do título e custas ao cartório.",
+  "financeiro.parcelamentos": "Parcelamentos de impostos: parcelas do Consistem, vencimentos e guias.",
 };
 
 export function CartoesApps({ menu }: { menu: MenuArea[] }) {
