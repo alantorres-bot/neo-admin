@@ -175,6 +175,55 @@ export function normalizarDetalheLancamento(r: Record<string, unknown>): Detalhe
   };
 }
 
+/**
+ * Detalhe para a Gestão de Parcelamentos (fin-parcelamentos-sincronizar, migration 0189): o mesmo GET, com o tipo (o P vira C
+ * pelo MESMO código quando a guia é lançada), o par grupo/conta de fluxo (a lista não traz) e o pagamento. Valores em centavos.
+ * Resposta sem o `codLancamento` pedido = o lançamento não existe mais no ERP.
+ */
+export type DetalheParcelamento =
+  | { codLancamento: string; encontrado: false }
+  | {
+    codLancamento: string; encontrado: true; tipo: string; grupo: number | null; conta: number | null; codFornecedor: string;
+    numDocumento: string; complemento: string; vencimento: string | null; valorDocumentoCentavos: number | null;
+    valorPagoCentavos: number | null; valorJurosCentavos: number | null; valorMultaCentavos: number | null;
+    dataPagamento: string | null; codBarras: string;
+  };
+
+export function normalizarDetalheParcelamento(codLancamento: string, r: Record<string, unknown>): DetalheParcelamento {
+  if (texto(r.codLancamento) !== codLancamento) return { codLancamento, encontrado: false };
+  const inteiro = (v: unknown) => (/^\d{1,4}$/.test(texto(v)) && Number(texto(v)) > 0 ? Number(texto(v)) : null);
+  return {
+    codLancamento, encontrado: true,
+    tipo: texto(r.tipoLancamento).toUpperCase(),
+    grupo: inteiro(r.grupoContaFluxoCaixa), conta: inteiro(r.contaFluxoCaixa),
+    codFornecedor: texto(r.codFornecedor), numDocumento: texto(r.codDocumento ?? r.numDocumento),
+    complemento: texto(r.complementoHistorico).replace(/;\s*$/, ""),
+    vencimento: paraDataIso(r.dataVencimento),
+    valorDocumentoCentavos: paraCentavos(r.valorDocumento), valorPagoCentavos: paraCentavos(r.valorPago),
+    valorJurosCentavos: paraCentavos(r.valorJuros), valorMultaCentavos: paraCentavos(r.valorMulta),
+    dataPagamento: paraDataIso(r.dataPagamento), codBarras: texto(r.codBarras),
+  };
+}
+
+/**
+ * Junta a lista dos P (filtro tipoLancamento) com as listas por fornecedor das regras (filtro codFornecedor): o mesmo
+ * lançamento vem nas duas; fica um só. Só P e C interessam aos parcelamentos (A, B e D ficam fora).
+ */
+export function juntarListasParcelamento(listas: readonly (readonly Record<string, unknown>[])[]): { lancamentos: LancamentoPagarApi[]; recusados: string[] } {
+  const porCodigo = new Map<string, LancamentoPagarApi>();
+  const recusados: string[] = [];
+  for (const lista of listas) for (const r of lista) {
+    const n = normalizarLancamentoPagar(r);
+    if (!n.ok) recusados.push(`${n.codLancamento || "?"}: ${n.motivo}`);
+    else if (n.lancamento.tipo === "P" || n.lancamento.tipo === "C") porCodigo.set(n.lancamento.codLancamento, n.lancamento);
+  }
+  return { lancamentos: [...porCodigo.values()], recusados };
+}
+
+/** Lançamento excluído no ERP: o detalhe responde HTTP 400 {"mensagem":"Lançamento não cadastrado!"} (visto em 11/11/2026). */
+export const lancamentoNaoCadastrado = (status: number | undefined, mensagem: string): boolean =>
+  status === 404 || (status === 400 && /n[aã]o cadastrad/i.test(mensagem));
+
 export type FornecedorApi = { codFornecedor: string; nome: string; nomeFantasia: string; documentoBruto: string; ativo: boolean; codCategoria: number | null };
 
 export function normalizarFornecedorApi(r: Record<string, unknown>): FornecedorApi | null {
