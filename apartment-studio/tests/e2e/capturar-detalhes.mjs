@@ -1,7 +1,8 @@
 /**
  * Fotos de perto dos itens que têm foto de referência (rack, cadeira, eletros, marcenaria, espelho do banheiro),
  * para conferir lado a lado com as fotos do Alan. Salva em tests/e2e/capturas/detalhes/.
- * Uso: npm run build && node tests/e2e/capturar-detalhes.mjs [nome...]   (sem nomes: todas)
+ * Uso: npm run build && node tests/e2e/capturar-detalhes.mjs [nome...] [--nitido]   (sem nomes: todas)
+ * --nitido: 2× de resolução, em capturas/detalhes-nitido/ (imagens que vão para o Alan).
  */
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
@@ -12,7 +13,8 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "../..");
-const saida = join(raiz, "tests/e2e/capturas/detalhes");
+const nitido = process.argv.includes("--nitido");
+const saida = join(raiz, "tests/e2e/capturas", nitido ? "detalhes-nitido" : "detalhes");
 mkdirSync(saida, { recursive: true });
 const PORTA = 5183;
 
@@ -26,11 +28,13 @@ const DETALHES = {
   "cadeira": { de: [258, 318, 98], para: [318, 222, 44], mover: { "jan-cadeira-1": [318, 215, 0] }, esconder: ["sala-luminaria"] },
   "cadeira-costas": { de: [378, 132, 98], para: [318, 222, 50], mover: { "jan-cadeira-1": [318, 215, 0] }, esconder: ["sala-luminaria", "sala-rack", "sala-tv", "sala-soundbar"] },
   "mesa-cadeiras": { de: [338, 398, 118], para: [226, 470, 55] },
-  "geladeira": { de: [205, 468, 125], para: [48, 480, 105] },
+  "geladeira": { de: [222, 474, 100], para: [48, 484, 94], esconder: ["jan-mesa", "jan-cadeira-1", "jan-cadeira-2", "jan-cadeira-3", "jan-cadeira-4"] },
   "lava-e-seca": { de: [118, 262, 112], para: [108, 100, 62] },
   "micro-ondas": { de: [160, 400, 168], para: [30, 418, 172] },
   "lava-loucas": { de: [150, 345, 82], para: [45, 311, 46] },
   "cozinha-geral": { de: [318, 372, 158], para: [30, 300, 118] },
+  // mesmo ponto de vista da foto de referência (lá a cozinha é espelhada): da mesa, olhando a bancada até a janela
+  "cozinha-referencia": { de: [166, 516, 152], para: [22, 262, 112] },
   "banheiro-espelho": { de: [574, 412, 148], para: [581, 520, 128] },
   "banheiro-geral": { de: [640, 408, 160], para: [540, 505, 95] },
 };
@@ -47,7 +51,7 @@ try {
     await new Promise((r) => setTimeout(r, 250));
   }
   const browser = await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
-  const context = await browser.newContext({ viewport: { width: 1100, height: 800 }, deviceScaleFactor: 1 });
+  const context = await browser.newContext({ viewport: { width: 1100, height: 800 }, deviceScaleFactor: nitido ? 2 : 1 });
   const page = await context.newPage();
   page.on("console", (m) => m.type() === "error" && erros.push(m.text()));
   page.on("pageerror", (e) => erros.push(String(e)));
