@@ -14,6 +14,8 @@ const eslintConfig = defineConfig([
     "next-env.d.ts",
     // Edge Functions rodam em Deno, fora do projeto Next
     "supabase/functions/**",
+    // Apartment Studio 3D: projeto Vite independente, com configuração própria
+    "apartment-studio/**",
   ]),
 ]);
 
