@@ -78,7 +78,7 @@ function ListaEstrutura() {
       <ul className="lista compacta">
         {planta.paredes.map((p) => (
           <li key={p.id} className={selecao?.tipo === "parede" && selecao.id === p.id ? "selecionado" : ""}>
-            <button className="item" onClick={() => selecionar({ tipo: "parede", id: p.id })}>
+            <button className="item" data-teste={`parede-${p.id}`} onClick={() => selecionar({ tipo: "parede", id: p.id })}>
               <span className="item-nome">{nomeParede(planta, p)}</span>
             </button>
           </li>

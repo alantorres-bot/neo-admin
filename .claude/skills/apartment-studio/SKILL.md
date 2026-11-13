@@ -13,6 +13,14 @@ Antes de mexer, leia:
 - `apartment-studio/docs/ANALISE_PLANTA.md` — leitura da planta, cotas reais × estimadas, pendências.
 - `apartment-studio/docs/ARQUITETURA.md` — modelo de dados, pastas, etapas e o que já existe.
 
+## Estado da planta (atualizar quando mudar)
+
+- Planta real lida em `src/modelo/plantaReal.ts`, imagem em `public/referencia/planta-apartamento.webp`.
+- Cotas da planta = **vão interno**; escala 0,772 cm/px; origem no canto externo superior esquerdo.
+- Cada cota escrita está em `planta.cotas` ligada a duas faces de parede; `conferirCotas()` e o teste
+  garantem que continuam batendo. Ao mexer em parede, rode os testes: cota divergente = rever a mudança.
+- Pendências com o Alan: ver seção "Dúvidas" de `docs/ANALISE_PLANTA.md`.
+
 ## Princípios inegociáveis
 
 1. **Nunca inventar medida como se fosse real.** Toda medida do modelo é `Medida { valor (cm), origem }`,

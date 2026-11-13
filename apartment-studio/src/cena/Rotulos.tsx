@@ -6,7 +6,7 @@
 import { useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useApp } from "../estado/store";
-import { areaPoligono, centroide, comprimento, extremos, pontosAmbiente } from "../modelo/geometria";
+import { areaPoligono, centroide, comprimento, conferirCotas, extremos, pontosAmbiente } from "../modelo/geometria";
 import { M } from "./util";
 
 const registro = new Map<string, { el: HTMLElement; pos: THREE.Vector3 }>();
@@ -44,6 +44,7 @@ export function CamadaRotulos() {
   const cotas = useApp((s) => s.visao.cotas);
   const camera = useApp((s) => s.visao.camera);
   const selecionar = useApp((s) => s.selecionar);
+  const selecaoParede = useApp((s) => (s.selecao?.tipo === "parede" ? s.selecao.id : null));
   if (!cotas || camera === "interna") return null;
 
   const ambientes = planta.ambientes.map((amb) => {
@@ -57,22 +58,16 @@ export function CamadaRotulos() {
     };
   });
 
+  const conferidas = camera === "superior" ? conferirCotas(planta) : [];
+  // comprimento de eixo só da parede selecionada (as cotas da planta já cobrem o resto)
   const paredes =
-    camera === "superior"
-      ? planta.paredes.flatMap((p) => {
-          const [a, b] = extremos(planta, p);
-          const L = comprimento(a, b);
-          if (L < 60) return [];
-          const va = planta.vertices.find((x) => x.id === p.a)!;
-          const vb = planta.vertices.find((x) => x.id === p.b)!;
-          return [{
-            p,
-            meio: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
-            L,
-            estimada: va.origem === "estimada" || vb.origem === "estimada",
-            cota: va.origem === "cota" && vb.origem === "cota",
-          }];
-        })
+    camera === "superior" && selecaoParede
+      ? planta.paredes
+          .filter((p) => p.id === selecaoParede)
+          .map((p) => {
+            const [a, b] = extremos(planta, p);
+            return { p, meio: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, L: comprimento(a, b) };
+          })
       : [];
 
   return (
@@ -91,15 +86,24 @@ export function CamadaRotulos() {
           </span>
         </div>
       ))}
-      {paredes.map(({ p, meio, L, estimada, cota }) => (
+      {conferidas.map(({ cota, confere, modelo }) => (
         <span
-          key={`cota-${p.id}-${meio.x}-${meio.y}`}
-          ref={registrar(`cota-${p.id}`, [M(meio.x), 0.1, M(meio.y)])}
-          className={`rotulo-cota ${estimada ? "estimada" : cota ? "real" : ""}`}
-          onClick={() => selecionar({ tipo: "parede", id: p.id })}
+          key={`cota-${cota.id}-${cota.rotulo.x}`}
+          ref={registrar(`cota-${cota.id}`, [M(cota.rotulo.x), 0.1, M(cota.rotulo.y)])}
+          className={`rotulo-cota ${cota.situacao === "a-confirmar" ? "duvida" : confere ? "real" : "erro"}`}
+          title={`${cota.descricao}${cota.obs ? ` — ${cota.obs}` : ""}${!confere && Number.isFinite(modelo) ? ` (modelo: ${(modelo / 100).toFixed(2)})` : ""}`}
         >
-          {estimada ? "≈" : ""}
-          {Math.round(L)}
+          {cota.texto}
+        </span>
+      ))}
+      {paredes.map(({ p, meio, L }) => (
+        <span
+          key={`eixo-${p.id}-${meio.x}-${meio.y}`}
+          ref={registrar(`eixo-${p.id}`, [M(meio.x), 0.3, M(meio.y)])}
+          className="rotulo-cota eixo"
+          title="Comprimento pelo eixo da parede"
+        >
+          eixo {Math.round(L)}
         </span>
       ))}
     </div>

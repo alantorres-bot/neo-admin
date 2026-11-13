@@ -22,12 +22,14 @@ React 19 + TypeScript + Vite · Three.js + React Three Fiber + Drei · Zustand �
 
 ```
 src/
-  modelo/      tipos.ts (modelo paramétrico), geometria.ts (funções puras + testes), plantaInicial.ts
+  modelo/      tipos.ts (modelo paramétrico), geometria.ts (funções puras + testes),
+               plantaReal.ts (leitura da planta + cotas conferidas)
   estado/      store.ts (Zustand: projeto, histórico, seleção, visão), persistencia.ts (IndexedDB)
   cena/        Cena (Canvas, sol, terreno), Paredes, Aberturas, Ambientes, Cameras, Referencia, Rotulos
   ui/          BarraFerramentas, PainelLateral, PainelPropriedades, PainelReferencia, campos, nomes
 tests/e2e/     verificar-visual.mjs (Playwright)
 docs/          ANALISE_PLANTA.md, ARQUITETURA.md
+public/referencia/planta-apartamento.webp   imagem original da planta (decalque calibrado)
 ```
 
 ## Modelo de dados (resumo)
@@ -36,7 +38,9 @@ docs/          ANALISE_PLANTA.md, ARQUITETURA.md
 - `Planta`: `vertices` (x, y) → `paredes` ligam 2 vértices (espessura, altura própria opcional) →
   `aberturas` pertencem a uma parede (posição do centro a partir do vértice `a`, largura, altura, peitoril)
   → `ambientes` são polígonos de vértices. Mover um vértice move todas as paredes e pisos ligados.
-- `referencia`: imagem da planta (dataURL) + escala calibrada (cm/px) + posição/rotação/opacidade.
+- `referencia`: imagem da planta (URL ou dataURL) + escala calibrada (cm/px) + posição/rotação/opacidade.
+- `cotas`: cotas escritas na planta, cada uma ligada a duas faces de parede (ou vértice). `conferirCotas()`
+  mede no modelo e acusa divergência — qualquer edição que quebre uma cota aparece em vermelho.
 - `Projeto`: planta + `moveis` (tipo já definido para a Etapa 4, com campos para GLB, loja e preço).
 - A cena 3D é **derivada** do modelo: nunca se edita malha diretamente.
 
@@ -44,8 +48,8 @@ docs/          ANALISE_PLANTA.md, ARQUITETURA.md
 
 | Etapa | Escopo | Situação |
 |---|---|---|
-| 1 | Skill + análise da planta | Skill criada. **Planta real pendente** (modelo provisório) |
-| 2 | Geometria 3D paramétrica | Feita: paredes, portas, janelas, porta de correr, vãos, pisos, teto, guarda-corpo; edição de medidas |
+| 1 | Skill + análise da planta | Feita: planta lida (escala 0,772 cm/px, cotas de vão interno), ver ANALISE_PLANTA.md |
+| 2 | Geometria 3D paramétrica | Feita sobre a planta real: 14/16 cotas conferidas, 2 a confirmar; paredes, portas, janelas, porta de correr, shaft, guarda-corpo, pisos, teto; edição de medidas |
 | 3 | Navegação e câmeras | Feita: perspectiva orbital 360°, planta (ortográfica), andar por dentro (WASD), paredes inteiras/recortadas/ocultas, teto, sol por hora, luzes artificiais básicas |
 | 4 | Editor de móveis e biblioteca | A fazer |
 | 5 | Materiais, texturas e iluminação realista | A fazer (hoje: cores e PBR básico) |
@@ -63,4 +67,5 @@ docs/          ANALISE_PLANTA.md, ARQUITETURA.md
   O `<Html>` do drei cria uma raiz React por rótulo e falhou com React 19 (erro de `removeChild`).
 - Paredes com aberturas = trechos de caixa (sem CSG): mais leve e previsível.
 - Teto com face só para baixo: visto de fora fica invisível (efeito "casa de bonecas"); por dentro aparece.
-- Sombras desligadas na vista de planta (legibilidade).
+- Sombras desligadas e paredes escuras na vista de planta (legibilidade, como desenho técnico).
+- Projeto salvo com a planta provisória antiga é substituído automaticamente pela planta real ao abrir.

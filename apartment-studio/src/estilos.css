@@ -153,3 +153,12 @@ button, input, select { font: inherit; color: inherit; }
   .painel-esq { top: auto; bottom: 56px; height: 40%; width: calc(100% - 24px); }
   .painel-dir { display: none; }
 }
+
+.cotas li { gap: 6px; padding: 4px 6px; font-size: 12.5px; }
+.marca-cota { display: grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; font-size: 11px; font-weight: 700; flex: none; }
+.marca-cota.ok { background: #e3f5ea; color: #1d7a45; }
+.marca-cota.duvida { background: var(--alerta-claro); color: var(--alerta); }
+.marca-cota.erro { background: #fdecef; color: var(--perigo); }
+.rotulo-cota.duvida { color: var(--alerta); border-color: #f1d6ae; border-style: dashed; }
+.rotulo-cota.erro { color: var(--perigo); border-color: #f3b8c2; }
+.rotulo-cota.eixo { background: var(--acento); color: #fff; border-color: var(--acento); }

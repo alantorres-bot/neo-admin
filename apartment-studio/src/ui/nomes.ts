@@ -19,17 +19,35 @@ export const NOME_TIPO_AMBIENTE: Record<TipoAmbiente, string> = {
   outro: "Outro",
 };
 
-/** Nome amigável da parede a partir dos ambientes que ela separa. */
+/** Ponto sobre o segmento a–b (tolerância em cm). */
+function noSegmento(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }, tol = 1) {
+  const L = Math.hypot(b.x - a.x, b.y - a.y);
+  if (L === 0) return false;
+  const cruz = Math.abs((b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x)) / L;
+  const t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / (L * L);
+  return cruz <= tol && t >= -tol / L && t <= 1 + tol / L;
+}
+
+/** Nome amigável da parede a partir dos ambientes que ela separa (arestas sobre a parede). */
 export function nomeParede(planta: Planta, parede: Parede): string {
-  const nomes = planta.ambientes
+  if (parede.nome) return parede.nome;
+  const m = new Map(planta.vertices.map((v) => [v.id, v]));
+  const a = m.get(parede.a);
+  const b = m.get(parede.b);
+  const nomes = !a || !b ? [] : planta.ambientes
     .filter((amb) => {
       const n = amb.poligono.length;
       return amb.poligono.some((id, i) => {
-        const prox = amb.poligono[(i + 1) % n];
-        return (id === parede.a && prox === parede.b) || (id === parede.b && prox === parede.a);
+        const p = m.get(id);
+        const q = m.get(amb.poligono[(i + 1) % n]);
+        if (!p || !q) return false;
+        // aresta do ambiente sobreposta à parede (com comprimento útil)
+        const ini = noSegmento(p, a, b) ? p : noSegmento(a, p, q) ? a : null;
+        const fim = noSegmento(q, a, b) ? q : noSegmento(b, p, q) ? b : null;
+        return !!ini && !!fim && Math.hypot(fim.x - ini.x, fim.y - ini.y) > 20 && noSegmento(ini, a, b) && noSegmento(fim, a, b);
       });
     })
-    .map((a) => a.nome);
+    .map((x) => x.nome);
   if (parede.tipo === "guarda-corpo") return `Guarda-corpo${nomes[0] ? ` · ${nomes[0]}` : ""}`;
   if (nomes.length === 0) return `Parede ${parede.a}–${parede.b}`;
   if (nomes.length === 1) return `${nomes[0]} · externa`;

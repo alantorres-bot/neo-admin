@@ -1,5 +1,5 @@
 /** Funções puras de geometria do modelo (cm). Testadas em geometria.test.ts. */
-import type { Abertura, Ambiente, Parede, Planta, Vertice } from "./tipos";
+import type { Abertura, Ambiente, CotaPlanta, Parede, Planta, RefCota, Vertice } from "./tipos";
 
 export interface Ponto {
   x: number;
@@ -266,4 +266,46 @@ export function pontoDeVista(poligono: Ponto[], recuo = 45): { x: number; y: num
   }
   const voltar = Math.max(0, melhor.tras - recuo);
   return { x: c.x - melhor.dx * voltar, y: c.y - melhor.dy * voltar, dx: melhor.dx, dy: melhor.dy };
+}
+
+/** Coordenada (no eixo) de uma referência de cota: face de parede ortogonal ao eixo, ou vértice. */
+export function coordenadaRef(planta: Planta, ref: RefCota, eixo: "x" | "y"): number {
+  const m = mapaVertices(planta);
+  if ("vertice" in ref) {
+    const v = m.get(ref.vertice);
+    if (!v) throw new Error(`Vértice ${ref.vertice} inexistente`);
+    return v[eixo];
+  }
+  const parede = planta.paredes.find((p) => p.id === ref.parede);
+  if (!parede) throw new Error(`Parede ${ref.parede} inexistente`);
+  const [a, b] = extremos(planta, parede);
+  if (Math.abs(a[eixo] - b[eixo]) > 0.5) throw new Error(`Parede ${parede.id} não é ortogonal ao eixo ${eixo}`);
+  const centro = (a[eixo] + b[eixo]) / 2;
+  const meia = parede.espessura.valor / 2;
+  return ref.face === "+" ? centro + meia : centro - meia;
+}
+
+/** Valor da cota medido no modelo atual (cm). */
+export function medirCota(planta: Planta, cota: CotaPlanta): number {
+  return Math.abs(coordenadaRef(planta, cota.b, cota.eixo) - coordenadaRef(planta, cota.a, cota.eixo));
+}
+
+export interface ConferenciaCota {
+  cota: CotaPlanta;
+  modelo: number;
+  diferenca: number; // modelo − planta, cm
+  confere: boolean;
+}
+
+export function conferirCotas(planta: Planta, tolerancia = 1): ConferenciaCota[] {
+  return (planta.cotas ?? []).map((cota) => {
+    let modelo = NaN;
+    try {
+      modelo = medirCota(planta, cota);
+    } catch {
+      /* referência quebrada após edição */
+    }
+    const diferenca = modelo - cota.valor;
+    return { cota, modelo, diferenca, confere: Number.isFinite(modelo) && Math.abs(diferenca) <= tolerancia };
+  });
 }

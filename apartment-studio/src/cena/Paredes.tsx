@@ -31,7 +31,9 @@ function ParedeMesh({ planta, parede }: { planta: Planta; parede: Parede }) {
       ? geo.trechos
       : recortarTrechos(geo.trechos, modoEfetivo === "recortadas" ? ALTURA_RECORTE : ALTURA_OCULTA);
 
-  const cor = selecionada ? COR_SELECAO : parede.tipo === "guarda-corpo" ? "#e9e6e0" : (parede.cor ?? "#f3f0ea");
+  // na vista de planta, paredes escuras como no desenho técnico
+  const corBase = camera === "superior" ? (parede.tipo === "guarda-corpo" ? "#8a8d92" : "#4b4e53") : parede.tipo === "guarda-corpo" ? "#e9e6e0" : (parede.cor ?? "#f3f0ea");
+  const cor = selecionada ? COR_SELECAO : corBase;
 
   const aoClicar = (e: ThreeEvent<MouseEvent>) => {
     e.stopPropagation();

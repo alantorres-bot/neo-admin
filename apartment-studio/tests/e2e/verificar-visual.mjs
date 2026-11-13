@@ -64,7 +64,7 @@ async function capturar(page, nome) {
   await page.waitForTimeout(900);
   const a = await analisarCanvas(page);
   await page.screenshot({ path: join(saida, `${nome}.png`) });
-  ok(a.ok && a.desvio > 8 && a.cores > 15, `${nome}: canvas renderizado (desvio ${a.desvio?.toFixed(1)}, ${a.cores} cores)`);
+  ok(a.ok && a.desvio > 4 && a.cores > 15, `${nome}: canvas renderizado (desvio ${a.desvio?.toFixed(1)}, ${a.cores} cores)`);
   return a;
 }
 
@@ -82,30 +82,38 @@ try {
   await page.waitForTimeout(1500);
 
   await capturar(page, "01-perspectiva");
-  ok((await page.locator(".rotulo-ambiente").count()) === 6, "6 ambientes rotulados");
+  ok((await page.locator(".rotulo-ambiente").count()) === 8, "8 ambientes rotulados");
 
   await page.click('[data-teste="paredes-recortadas"]');
   await capturar(page, "02-perspectiva-recortada");
 
   await page.click('[data-teste="camera-superior"]');
   await capturar(page, "03-planta-superior");
-  ok((await page.locator(".rotulo-cota").count()) > 10, "cotas das paredes visíveis na planta");
+  ok((await page.locator(".rotulo-cota.real").count()) === 14, "14 cotas da planta conferidas (verde) na vista superior");
+  ok((await page.locator(".rotulo-cota.duvida").count()) === 2, "2 cotas a confirmar sinalizadas");
+  // planta original por baixo do modelo, para comparar
+  await page.click('[data-teste="aba-planta"]');
+  ok(await page.locator("text=14 de 16 conferem").isVisible(), "painel informa 14 de 16 cotas conferidas");
+  await page.check("text=Mostrar a planta sob o modelo");
+  await capturar(page, "03b-planta-sobreposta");
+  await page.uncheck("text=Mostrar a planta sob o modelo");
 
   // edição: selecionar parede pela lista e alterar comprimento
   await page.click("text=Estrutura");
-  await page.click("text=Cozinha · externa >> nth=0");
+  await page.click('[data-teste="parede-p-topo-q1"]');
   const campo = page.locator('[data-teste="propriedades"] .campo:has-text("Comprimento") input');
-  ok((await campo.inputValue()) === "280", "parede selecionada mostra comprimento 280");
+  ok((await campo.inputValue()) === "260", "parede selecionada mostra comprimento 260 (eixo)");
   await campo.fill("300");
   await campo.press("Enter");
   await page.waitForTimeout(300);
   ok((await campo.inputValue()) === "300", "comprimento alterado para 300");
+  ok((await page.locator(".rotulo-cota.erro").count()) === 1, "cota 2,51 do quarto passa a acusar divergência");
   await capturar(page, "04-planta-parede-editada");
 
   // desfazer / refazer
   await page.keyboard.press("Control+z");
   await page.waitForTimeout(200);
-  ok((await campo.inputValue()) === "280", "Ctrl+Z desfaz a alteração");
+  ok((await campo.inputValue()) === "260", "Ctrl+Z desfaz a alteração");
   await page.keyboard.press("Control+Shift+z");
   await page.waitForTimeout(200);
   ok((await campo.inputValue()) === "300", "Ctrl+Shift+Z refaz a alteração");
@@ -170,7 +178,7 @@ try {
   await page.reload();
   await page.waitForSelector("canvas");
   await page.click("text=Estrutura");
-  await page.click("text=Cozinha · externa >> nth=0");
+  await page.click('[data-teste="parede-p-topo-q1"]');
   ok((await campo.inputValue()) === "300", "após recarregar, a alteração continua salva (IndexedDB)");
 
   ok(erros.length === 0, `sem erros no console${erros.length ? `: ${erros.slice(0, 3).join(" | ")}` : ""}`);

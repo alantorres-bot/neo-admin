@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useApp } from "../estado/store";
-import { calibrarEscala, comprimento } from "../modelo/geometria";
+import { calibrarEscala, comprimento, conferirCotas } from "../modelo/geometria";
 import type { ReferenciaPlanta } from "../modelo/tipos";
 import { CampoNumero } from "./campos";
 
@@ -12,7 +12,7 @@ export function PainelReferencia() {
   const calibracao = useApp((s) => s.calibracao);
   const definirCalibracao = useApp((s) => s.definirCalibracao);
   const definirVisao = useApp((s) => s.definirVisao);
-  const restaurar = useApp((s) => s.restaurarPlantaProvisoria);
+  const restaurar = useApp((s) => s.restaurarPlantaOriginal);
   const [cota, setCota] = useState("");
 
   const alterarRef = (rotulo: string, p: Partial<ReferenciaPlanta>) =>
@@ -66,6 +66,8 @@ export function PainelReferencia() {
 
   return (
     <div className="ref">
+      <ConferenciaCotas />
+
       {provisoria && (
         <div className="aviso">
           <strong>Planta provisória.</strong> O modelo atual é um layout genérico de 2 quartos com medidas
@@ -149,8 +151,38 @@ export function PainelReferencia() {
 
       <h3 className="secao">Modelo</h3>
       <button className="botao secundario" onClick={restaurar}>
-        Restaurar planta provisória
+        Restaurar planta original
       </button>
+      <p className="dica">Desfaz todas as correções de medida e volta à leitura original da planta.</p>
     </div>
+  );
+}
+
+function ConferenciaCotas() {
+  const planta = useApp((s) => s.projeto.planta);
+  const lista = conferirCotas(planta);
+  if (lista.length === 0) return null;
+  const ok = lista.filter((c) => c.confere && c.cota.situacao === "confirmada").length;
+  return (
+    <>
+      <h3 className="secao">Cotas da planta</h3>
+      <p className="dica">
+        {ok} de {lista.length} conferem com o modelo (tolerância 1 cm). Medidas lidas como vão interno.
+      </p>
+      <ul className="lista compacta cotas" data-teste="lista-cotas">
+        {lista.map(({ cota, modelo, diferenca, confere }) => (
+          <li key={cota.id} title={cota.obs ?? ""}>
+            <span className={`marca-cota ${cota.situacao === "a-confirmar" ? "duvida" : confere ? "ok" : "erro"}`}>
+              {cota.situacao === "a-confirmar" ? "?" : confere ? "✓" : "!"}
+            </span>
+            <span className="item-nome">{cota.descricao}</span>
+            <span className="item-valor">
+              {cota.texto}
+              {!confere && Number.isFinite(modelo) ? ` → ${(modelo / 100).toFixed(2).replace(".", ",")} (${diferenca > 0 ? "+" : ""}${diferenca.toFixed(0)})` : ""}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

@@ -4,14 +4,16 @@ import {
   areaPoligono,
   calibrarEscala,
   comprimentoParede,
+  conferirCotas,
   definirComprimento,
+  medirCota,
   distanciaAteBorda,
   pontoDeVista,
   recortarTrechos,
   trechosParede,
   validarPlanta,
 } from "./geometria";
-import { criarPlantaProvisoria } from "./plantaInicial";
+import { criarPlantaReal } from "./plantaReal";
 import type { Medida } from "./tipos";
 
 const m = (valor: number): Medida => ({ valor, origem: "estimada" });
@@ -24,11 +26,10 @@ describe("área", () => {
     const p = [{ x: 0, y: 0 }, { x: 0, y: 400 }, { x: 300, y: 400 }, { x: 300, y: 0 }];
     expect(areaPoligono(p)).toBe(120_000);
   });
-  it("sala em L da planta provisória", () => {
-    const planta = criarPlantaProvisoria();
-    const sala = planta.ambientes.find((a) => a.id === "amb-sala")!;
-    // 450 × 400 + 170 × 80 = 180.000 + 13.600 cm²
-    expect(areaAmbienteM2(planta, sala)).toBeCloseTo(19.36, 2);
+  it("quarto principal pelo eixo: 260 × 402 cm", () => {
+    const planta = criarPlantaReal();
+    const q1 = planta.ambientes.find((a) => a.id === "amb-quarto1")!;
+    expect(areaAmbienteM2(planta, q1)).toBeCloseTo(10.452, 3);
   });
 });
 
@@ -72,35 +73,64 @@ describe("trechos de parede", () => {
   });
 });
 
-describe("planta provisória", () => {
+describe("planta real", () => {
   it("é coerente (sem erros nem avisos)", () => {
-    expect(validarPlanta(criarPlantaProvisoria())).toEqual([]);
+    expect(validarPlanta(criarPlantaReal())).toEqual([]);
   });
 
-  it("todas as medidas estão marcadas como estimadas", () => {
-    const p = criarPlantaProvisoria();
-    expect(p.provisoria).toBe(true);
-    expect(p.vertices.every((v) => v.origem === "estimada")).toBe(true);
-    expect(p.paredes.every((x) => x.espessura.origem === "estimada")).toBe(true);
-    expect(p.aberturas.every((a) => [a.posicao, a.largura, a.altura, a.peitoril].every((x) => x.origem === "estimada"))).toBe(true);
+  it("todas as cotas confirmadas da planta batem com o modelo (±0,5 cm)", () => {
+    const planta = criarPlantaReal();
+    const confirmadas = planta.cotas!.filter((c) => c.situacao === "confirmada");
+    expect(confirmadas.length).toBe(14);
+    for (const c of confirmadas) {
+      expect({ id: c.id, valor: Math.round(medirCota(planta, c) * 10) / 10 }).toEqual({ id: c.id, valor: c.valor });
+    }
   });
 
-  it("validação acusa abertura maior que a parede", () => {
-    const p = criarPlantaProvisoria();
-    p.aberturas[0].largura = m(900);
-    expect(validarPlanta(p).some((x) => x.ref === p.aberturas[0].id)).toBe(true);
+  it("cotas a confirmar ficam sinalizadas, sem forçar o modelo", () => {
+    const lista = conferirCotas(criarPlantaReal());
+    const duvidas = lista.filter((c) => c.cota.situacao === "a-confirmar").map((c) => c.cota.texto);
+    expect(duvidas.sort()).toEqual(["1,32", "2,52"]);
+  });
+
+  it("8 ambientes da planta", () => {
+    expect(criarPlantaReal().ambientes.map((a) => a.nome)).toEqual([
+      "Varanda",
+      "Cozinha e área de serviço",
+      "Sala de estar",
+      "Sala de jantar",
+      "Corredor",
+      "Banheiro",
+      "Quarto 2",
+      "Quarto principal",
+    ]);
+  });
+
+  it("nenhuma medida está marcada como cota sem ser escrita na planta", () => {
+    const p = criarPlantaReal();
+    expect(p.vertices.some((v) => v.origem === "cota")).toBe(false);
+    expect(p.aberturas.every((a) => a.largura.origem === "estimada" && a.altura.origem === "estimada")).toBe(true);
+    expect(p.peDireito.origem).toBe("estimada");
+  });
+
+  it("alterar a parede da sala desfaz a conferência da cota da sala", () => {
+    const p = criarPlantaReal();
+    const mexida = { ...p, vertices: p.vertices.map((v) => (v.id === "W2a" || v.id === "W2b" ? { ...v, x: v.x + 10 } : v)) };
+    const sala = conferirCotas(mexida).find((c) => c.cota.id === "c-sala-larg")!;
+    expect(sala.confere).toBe(false);
+    expect(sala.diferenca).toBeCloseTo(10, 5);
   });
 });
 
 describe("edição", () => {
   it("alterar comprimento move o vértice final e marca como manual", () => {
-    const p = criarPlantaProvisoria();
-    const nova = definirComprimento(p, "p-coz-frente", 300);
-    const parede = nova.paredes.find((x) => x.id === "p-coz-frente")!;
+    const p = criarPlantaReal();
+    const nova = definirComprimento(p, "p-topo-q1", 300);
+    const parede = nova.paredes.find((x) => x.id === "p-topo-q1")!;
     expect(comprimentoParede(nova, parede)).toBeCloseTo(300, 5);
-    expect(nova.vertices.find((v) => v.id === "B")!.origem).toBe("manual");
+    expect(nova.vertices.find((v) => v.id === "R0")!.origem).toBe("manual");
     // modelo original intocado
-    expect(p.vertices.find((v) => v.id === "B")!.x).toBe(280);
+    expect(p.vertices.find((v) => v.id === "R0")!.x).toBe(918);
   });
 
   it("calibração: cota de 350 cm medindo 700 px = 0,5 cm/px", () => {

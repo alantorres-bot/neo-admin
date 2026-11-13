@@ -27,6 +27,8 @@ export interface Parede {
   a: string; // id do vértice inicial
   b: string; // id do vértice final
   tipo: TipoParede;
+  /** Nome próprio (shaft, pilar…); sem nome, a interface deriva dos ambientes vizinhos. */
+  nome?: string;
   espessura: Medida;
   /** Altura própria (guarda-corpo, mureta). Sem valor = pé-direito do projeto. */
   altura?: Medida;
@@ -91,7 +93,28 @@ export interface ReferenciaPlanta {
   calibracao?: { cotaCm: number; medidoPx: number };
 }
 
+/** Referência de uma cota: face de parede (lado "-" = menor coordenada, "+" = maior) ou vértice. */
+export type RefCota = { parede: string; face: "-" | "+" } | { vertice: string };
+
+/** Cota escrita na planta, conferida automaticamente contra o modelo. */
+export interface CotaPlanta {
+  id: string;
+  /** Texto como aparece na planta (ex.: "2,40"). */
+  texto: string;
+  valor: number; // cm
+  descricao: string;
+  eixo: "x" | "y";
+  a: RefCota;
+  b: RefCota;
+  /** Onde desenhar o rótulo na vista de planta (cm). */
+  rotulo: { x: number; y: number };
+  /** "confirmada" = interpretação segura; "a-confirmar" = não está claro a que trecho a cota se refere. */
+  situacao: "confirmada" | "a-confirmar";
+  obs?: string;
+}
+
 export interface Planta {
+  nome?: string;
   peDireito: Medida;
   vertices: Vertice[];
   paredes: Parede[];
@@ -100,6 +123,7 @@ export interface Planta {
   /** true enquanto o modelo não foi conferido com a planta real do apartamento. */
   provisoria: boolean;
   referencia?: ReferenciaPlanta;
+  cotas?: CotaPlanta[];
 }
 
 /** Preparado para a Etapa 4 (editor de móveis). */

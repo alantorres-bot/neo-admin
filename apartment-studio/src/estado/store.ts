@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { criarProjetoInicial } from "../modelo/plantaInicial";
+import { criarPlantaReal, criarProjetoReal } from "../modelo/plantaReal";
 import type { Planta, Projeto, Selecao } from "../modelo/tipos";
 import type { Ponto } from "../modelo/geometria";
 import { carregarProjeto, salvarProjeto } from "./persistencia";
@@ -37,13 +37,13 @@ interface EstadoApp {
   selecionar: (s: Selecao) => void;
   definirVisao: (v: Partial<Visao>) => void;
   definirCalibracao: (c: Partial<EstadoApp["calibracao"]>) => void;
-  restaurarPlantaProvisoria: () => void;
+  restaurarPlantaOriginal: () => void;
 }
 
 const LIMITE_HISTORICO = 100;
 
 export const useApp = create<EstadoApp>((set, get) => ({
-  projeto: criarProjetoInicial(),
+  projeto: criarProjetoReal(),
   passado: [],
   futuro: [],
   selecao: null,
@@ -63,7 +63,8 @@ export const useApp = create<EstadoApp>((set, get) => ({
   inicializar: async () => {
     try {
       const salvo = await carregarProjeto();
-      if (salvo) set({ projeto: salvo, salvoEm: salvo.atualizadoEm });
+      // projetos salvos com a planta provisória (antes de receber a planta real) são substituídos
+      if (salvo && !salvo.planta.provisoria) set({ projeto: salvo, salvoEm: salvo.atualizadoEm });
     } catch (e) {
       console.warn("Não foi possível ler o projeto salvo:", e);
     }
@@ -108,9 +109,8 @@ export const useApp = create<EstadoApp>((set, get) => ({
   definirVisao: (v) => set({ visao: { ...get().visao, ...v } }),
   definirCalibracao: (c) => set({ calibracao: { ...get().calibracao, ...c } }),
 
-  restaurarPlantaProvisoria: () => {
-    const ref = get().projeto.planta.referencia;
-    get().alterarPlanta("Restaurar planta provisória", () => ({ ...criarProjetoInicial().planta, referencia: ref }));
+  restaurarPlantaOriginal: () => {
+    get().alterarPlanta("Restaurar planta original", () => criarPlantaReal());
   },
 }));
 

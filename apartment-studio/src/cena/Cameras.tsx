@@ -18,10 +18,10 @@ export function Cameras() {
 function CameraPerspectiva() {
   const planta = useApp((s) => s.projeto.planta);
   const e = enquadramento(planta);
-  const d = e.raio * 2.1;
+  const d = e.raio * 2.3;
   return (
     <>
-      <PerspectiveCamera makeDefault fov={45} position={[e.cx + d * 0.55, d * 0.85, e.cz + d * 0.85]} near={0.05} far={300} />
+      <PerspectiveCamera makeDefault fov={45} position={[e.cx + d * 0.3, d * 1.05, e.cz + d * 0.8]} near={0.05} far={300} />
       <OrbitControls
         makeDefault
         target={[e.cx, 0.6, e.cz]}
@@ -39,8 +39,9 @@ function CameraSuperior() {
   const planta = useApp((s) => s.projeto.planta);
   const e = enquadramento(planta);
   const { size } = useThree();
-  const margem = 1.25;
-  const zoom = Math.min(size.width / (e.larg * margem), size.height / (e.prof * margem));
+  // desconta os painéis laterais (≈ 2 × 312 px) para a planta caber na área livre
+  const livreL = size.width > 900 ? size.width - 640 : size.width;
+  const zoom = Math.min(livreL / (e.larg * 1.12), (size.height - 90) / (e.prof * 1.12));
   return (
     <>
       <OrthographicCamera makeDefault position={[e.cx, 40, e.cz + 0.0001]} zoom={zoom} near={0.1} far={200} />
