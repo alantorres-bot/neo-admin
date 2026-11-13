@@ -171,6 +171,9 @@ Pedido do Alan (13/11/2026): cozinha e guarda-roupa da suíte detalhados para or
 - O caderno vai para terceiros: sem nome, endereço ou nome do edifício. Textos neutros ("cliente", não "você").
 - PDF leve: nada de texto com contorno nem hachura em padrão (pesavam 6 MB); fundo branco atrás do texto e cor chapada.
 - Números em texto corrido com vírgula decimal (`fmt`); milhar com ponto.
+- Página publicada do caderno: https://claude.ai/artifact/DPLCsCxLucQiXsRitLuGT8 (privada; capacidade `downloads`).
+  Gerar com `node scripts/gerar-marcenaria.mjs --pagina=<arquivo>` e republicar na mesma URL sem `capabilities`.
+  Ao mudar qualquer medida, regenerar PDF, planilha **e** página, e subir a revisão (`REVISAO` em `caderno.ts`).
 
 ## Verificação (obrigatória ao fim de cada etapa)
 

@@ -14,12 +14,17 @@ export const REVISAO = "00";
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const dec = (v: number, casas = 2) => v.toFixed(casas).replace(".", ",");
 
-const CSS = `
+/** Regras só da impressão (página A3 e corpo do documento). */
+const CSS_IMPRESSAO = `
 @page{size:420mm 297mm;margin:0}
-*{box-sizing:border-box}
 html,body{margin:0;padding:0;background:#fff}
-body{font-family:"Liberation Sans",Arial,Helvetica,sans-serif;color:#111;font-size:2.9mm;line-height:1.35;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.prancha{position:relative;width:420mm;height:297mm;padding:7mm;page-break-after:always;break-after:page;overflow:hidden;background:#fff}
+body{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+`;
+
+/** Estilos das pranchas: valem na impressão e na página publicada (lá, prefixados para não vazar). */
+export const CSS_PRANCHAS = `
+*{box-sizing:border-box}
+.prancha{position:relative;width:420mm;height:297mm;padding:7mm;page-break-after:always;break-after:page;overflow:hidden;background:#fff;font-family:"Liberation Sans",Arial,Helvetica,sans-serif;color:#111;font-size:2.9mm;line-height:1.35}
 .prancha>.moldura{position:absolute;inset:7mm;border:0.45mm solid #111;pointer-events:none}
 .prancha>.area{position:absolute;left:10mm;right:10mm;top:10mm;bottom:23mm;display:flex;flex-direction:column;gap:2.5mm;overflow:hidden}
 .carimbo{position:absolute;left:7mm;right:7mm;bottom:7mm;height:13mm;border-top:0.45mm solid #111;display:grid;grid-template-columns:1.25fr 2fr 0.55fr 0.5fr 0.5fr 0.45fr;font-size:2.5mm}
@@ -197,7 +202,17 @@ export function dadosDaPlanilha(mc: Marcenaria, data: string): Planilha {
   };
 }
 
-export function gerarCaderno(o: OpcoesCaderno = {}): { html: string; pranchas: { cod: string; titulo: string }[]; planilha: Planilha } {
+export interface Caderno {
+  html: string;
+  pranchas: { cod: string; titulo: string }[];
+  planilha: Planilha;
+  /** Para a página publicada: estilos das pranchas e o HTML de cada folha. */
+  css: string;
+  folhas: { cod: string; titulo: string; escala: string; html: string }[];
+  resumo: { modulos: number; pecas: number; areaM2: number; peDireito: number; data: string; revisao: string };
+}
+
+export function gerarCaderno(o: OpcoesCaderno = {}): Caderno {
   const mc = criarMarcenaria();
   const data = o.data ?? "13/11/2026";
   const img = (nome: string, legenda: string) => (o.imagens?.[nome] ? `<figure><img src="${o.imagens[nome]}" alt="${esc(legenda)}"><figcaption>${esc(legenda)}</figcaption></figure>` : `<figure><figcaption>${esc(legenda)} (imagem não gerada)</figcaption></figure>`);
@@ -443,6 +458,14 @@ ${LEGENDA}
 <p>${mc.modulos.length} módulos · ${totalPecas} peças de MDF · ${dec(totalArea, 1)} m² de chapa (área líquida) · ${dec(fitas.reduce((a, f) => a + f.metros, 0), 0)} m de fita de borda · ${nPortas} portas e ${nGavetas} gavetas.</p></div></div>`,
   };
   const todas = [capa, ...pranchas];
-  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Caderno de marcenaria</title><style>${CSS}</style></head><body>${DEFS_HACHURAS}${todas.map((p, i) => folha(p, i + 1, todas.length, data)).join("\n")}</body></html>`;
-  return { html, pranchas: todas.map((p) => ({ cod: p.cod, titulo: p.titulo })), planilha: dadosDaPlanilha(mc, data) };
+  const folhas = todas.map((p, i) => ({ cod: p.cod, titulo: p.titulo, escala: p.escala, html: folha(p, i + 1, todas.length, data) }));
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Caderno de marcenaria</title><style>${CSS_IMPRESSAO}${CSS_PRANCHAS}</style></head><body>${DEFS_HACHURAS}${folhas.map((f) => f.html).join("\n")}</body></html>`;
+  return {
+    html,
+    pranchas: todas.map((p) => ({ cod: p.cod, titulo: p.titulo })),
+    planilha: dadosDaPlanilha(mc, data),
+    css: CSS_PRANCHAS,
+    folhas,
+    resumo: { modulos: mc.modulos.length, pecas: totalPecas, areaM2: Math.round(totalArea * 10) / 10, peDireito: pd, data, revisao: REVISAO },
+  };
 }

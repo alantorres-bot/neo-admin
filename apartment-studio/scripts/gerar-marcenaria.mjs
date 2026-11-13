@@ -1,7 +1,8 @@
 /**
  * Gera o caderno de marcenaria (docs/marcenaria): HTML, PDF em A3 paisagem e os dados da planilha.
- * Uso: node scripts/gerar-marcenaria.mjs [--previa] [--so=C-02,C-03]
+ * Uso: node scripts/gerar-marcenaria.mjs [--previa] [--so=C-02,C-03] [--pagina=caminho.html]
  *   --previa: salva também um PNG de cada prancha em docs/marcenaria/previa/ (para conferência visual).
+ *   --pagina: grava a página publicável (Artifact do Claude), com o PDF e a planilha embutidos.
  * As imagens 3D vêm de docs/marcenaria/imagens (geradas por tests/e2e/capturar-detalhes.mjs marc-* …).
  */
 import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync, rmSync } from "node:fs";
@@ -154,4 +155,21 @@ if (previa) {
 }
 await page.pdf({ path: join(saida, "caderno-marcenaria.pdf"), width: "420mm", height: "297mm", printBackground: true, preferCSSPageSize: true });
 await browser.close();
+// ---------------------------------------------------------------- página publicável (opcional)
+const pagina = opcao("pagina");
+if (pagina) {
+  const { paginaDoCaderno } = await import("./pagina-marcenaria.mjs");
+  const destino = pagina.startsWith("/") ? pagina : join(raiz, pagina);
+  writeFileSync(
+    destino,
+    paginaDoCaderno({
+      css: resultado.css,
+      folhas: resultado.folhas,
+      resumo: resultado.resumo,
+      pdfBase64: readFileSync(join(saida, "caderno-marcenaria.pdf")).toString("base64"),
+      xlsxBase64: readFileSync(join(saida, "planilha-marcenaria.xlsx")).toString("base64"),
+    }),
+  );
+  console.log(`Página: ${destino}`);
+}
 console.log(`Caderno: ${resultado.pranchas.length} pranchas → ${join(saida, "caderno-marcenaria.pdf")} · planilha → ${join(saida, "planilha-marcenaria.xlsx")}`);

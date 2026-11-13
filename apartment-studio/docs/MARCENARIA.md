@@ -11,6 +11,7 @@ três marceneiros e comparar orçamentos dos mesmos móveis.
 | `docs/marcenaria/caderno-marcenaria.pdf` | 28 pranchas em A3 paisagem: capa e índice, notas gerais, plantas, elevações externas e internas, cortes, detalhamento de cada módulo (com balões e lista de peças), imagens 3D, quantitativos, quadro de orçamento e pendências |
 | `docs/marcenaria/planilha-marcenaria.xlsx` | Abas: Leia-me, Orçamento (para o marceneiro preencher), Módulos, Peças, Ferragens, Ferragens por módulo, Materiais, Aparelhos, Pendências |
 | `docs/marcenaria/imagens/*.jpg` | Imagens 3D usadas no caderno |
+| Página publicada (privada) | https://claude.ai/artifact/DPLCsCxLucQiXsRitLuGT8 — as mesmas pranchas, ajustadas à tela do celular, com ampliação por folha e botões para baixar o PDF e a planilha |
 
 ## Como gerar de novo
 
@@ -20,7 +21,11 @@ node tests/e2e/capturar-detalhes.mjs marc-cozinha-frontal cozinha-referencia mar
   marc-suite-frontal marc-suite-guarda-roupa marc-suite-canto marc-suite-ponte --formato=jpg --escala=1.5 --saida=docs/marcenaria/imagens
 npm run marcenaria            # PDF + XLSX (+ HTML, que não vai para o repositório)
 node scripts/gerar-marcenaria.mjs --previa [--so=C-02,G-07]   # PNG de cada prancha em docs/marcenaria/previa/
+node scripts/gerar-marcenaria.mjs --pagina=<caminho>.html     # página publicável (PDF e planilha embutidos)
 ```
+
+Para atualizar a página publicada: gerar com `--pagina` e publicar o arquivo na mesma URL, **sem** passar `capabilities`
+(a página usa `downloads`; omitir mantém). O CSS das pranchas entra prefixado (`.v-papel`) para não vazar para a moldura.
 
 As imagens só precisam ser refeitas quando o 3D mudar. O gerador carrega o TypeScript pelo Vite (`ssrLoadModule`),
 imprime o PDF com o Chromium do Playwright e grava a planilha com um escritor próprio (`scripts/xlsx.mjs`, sem dependências).
