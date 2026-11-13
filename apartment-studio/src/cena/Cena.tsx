@@ -8,6 +8,7 @@ import { Aberturas } from "./Aberturas";
 import { Ambientes } from "./Ambientes";
 import { Cameras } from "./Cameras";
 import { Ceu } from "./Ceu";
+import { Exportador } from "./Exportador";
 import { condicaoDeLuz, misturar } from "./luz";
 import { LuzDasJanelas, LuzesDaCasa } from "./Luzes";
 import { luzDoDiaNosTecidos } from "./materiais";
@@ -171,6 +172,7 @@ export function Cena() {
       <MarcadoresCalibracao />
       <ProjetorRotulos />
       {realismo && <Realismo />}
+      <Exportador />
     </Canvas>
   );
 }

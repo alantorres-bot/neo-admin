@@ -3,6 +3,7 @@ import { areaAmbienteM2 } from "../modelo/geometria";
 import { PainelMoveis } from "./PainelMoveis";
 import { vistaDoAmbiente } from "./PainelPropriedades";
 import { PainelReferencia } from "./PainelReferencia";
+import { PainelVersoes } from "./PainelVersoes";
 import { nomeAbertura, nomeParede } from "./nomes";
 
 const ABAS: { id: AbaPainel; rotulo: string }[] = [
@@ -10,6 +11,7 @@ const ABAS: { id: AbaPainel; rotulo: string }[] = [
   { id: "moveis", rotulo: "Móveis" },
   { id: "estrutura", rotulo: "Estrutura" },
   { id: "planta", rotulo: "Planta" },
+  { id: "versoes", rotulo: "Versões" },
 ];
 
 export function PainelLateral() {
@@ -37,6 +39,7 @@ export function PainelLateral() {
         {aba === "moveis" && <PainelMoveis />}
         {aba === "estrutura" && <ListaEstrutura />}
         {aba === "planta" && <PainelReferencia />}
+        {aba === "versoes" && <PainelVersoes />}
       </div>
     </aside>
   );

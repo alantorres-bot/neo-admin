@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { itemCatalogo } from "../catalogo/catalogo";
-import { ambienteDoPonto, extensoesParede, retanguloParede } from "./geometria";
+import { acabamentoDaFaixa, ambienteDoPonto, COR_PAREDE_PADRAO, extensoesParede, extremos, retanguloParede } from "./geometria";
 import { cantosMovel, conflitosDoMovel, conflitosDoProjeto, encaixar, envolvente, folgaFrontal, frenteDoMovel, setorPorta, sobreposicao } from "./moveis";
-import { criarProjetoBase } from "./projetoBase";
+import { AZUL_MARINHO, criarProjetoBase } from "./projetoBase";
 
 const quadrado = (x: number, y: number, l: number) => [
   { x, y },
@@ -136,6 +136,20 @@ describe("projeto-base do Alan", () => {
     expect(micro.elevacao).toBeGreaterThanOrEqual(nicho.elevacao + 1.5);
     expect(micro.elevacao + micro.altura).toBeLessThanOrEqual(nicho.elevacao + nicho.altura - 1.5);
     expect(micro.largura).toBeLessThanOrEqual(nicho.largura - 4);
+  });
+
+  it("parede atrás do sofá em azul-marinho só do lado da sala (opção A do Alan); o resto continua off-white", () => {
+    const divisoria = projeto.planta.paredes.find((p) => p.id === "p-coz-sala")!;
+    expect(acabamentoDaFaixa(divisoria, "esquerda", "amb-sala")).toEqual({ cor: AZUL_MARINHO, revestimento: "pintura" });
+    expect(acabamentoDaFaixa(divisoria, "direita", "amb-cozinha").cor).toBe(COR_PAREDE_PADRAO);
+    // é a parede em que o sofá encosta: o sofá fica do lado da sala, a até 2 cm da face dela
+    const sofa = envolvente(cantosMovel(projeto.moveis.find((m) => m.id === "sala-sofa")!));
+    const face = extremos(projeto.planta, divisoria)[0].x + divisoria.espessura.valor / 2;
+    expect(sofa.x0 - face).toBeGreaterThanOrEqual(0);
+    expect(sofa.x0 - face).toBeLessThanOrEqual(2);
+    // nenhuma outra parede pintada, fora o azulejo do banheiro
+    const pintadas = projeto.planta.paredes.filter((p) => p.acabamentos?.some((a) => a.revestimento !== "azulejo")).map((p) => p.id);
+    expect(pintadas).toEqual(["p-coz-sala"]);
   });
 
   it("vistas apontam para ambientes existentes", () => {

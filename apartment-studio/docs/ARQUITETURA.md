@@ -25,11 +25,16 @@ npm run artefato && node tests/e2e/verificar-artefato.mjs   # página única pub
 - Endereço: https://claude.ai/artifact/VUR55xAmwntHzhc96f3que (privada; só o Alan abre).
 - `npm run artefato` gera `dist-artefato/apartment-studio.html`: CSS, JavaScript e a imagem da planta embutidos
   (≈1,8 MB). O Claude publica esse arquivo com a ferramenta Artifact, sempre no mesmo endereço
-  (de outra conversa: ler o artefato primeiro e passar `url`), mantendo `capabilities: {db: {}}`.
+  (de outra conversa: ler o artefato primeiro e passar `url`). Capacidades declaradas: `db` (salvar na conta) e
+  `downloads` (entregar a imagem exportada ao aparelho, com confirmação). Ao republicar, não passe `capabilities`:
+  as duas são mantidas; passar só uma apagaria a outra.
 - **Salvamento**: na página publicada o projeto vai para o banco de dados da própria página, documento
   `projetos/principal` (`{ app, base, atualizadoEm, projeto }`, ≈30 KB; limite 256 KiB), e continua indo
   para o IndexedDB como reserva. Abre primeiro o que está no navegador e, quando o banco responde, fica
   valendo o mais recente. Cópias de segurança em `copias/<data>`. Fora da página publicada só o IndexedDB.
+- **Versões da decoração**: um documento por versão em `versoes/<id>` (`{ app, nome, criadaEm, versao }`,
+  ≈ 40 KB com a miniatura) e, no navegador, a chave `versao:<id>`. Ao abrir, a lista do aparelho é juntada com a
+  da conta (vale a alterada por último) e o que faltar de um lado é copiado para o outro.
 - O Claude lê o projeto atual do Alan com a ferramenta ArtifactData (`get`, coleção `projetos`,
   documento `principal`): é assim que se enxerga o que ele mudou no app antes de propor alterações.
 - A imagem importada pelo usuário (data URI) não vai para o banco; a planta original é referenciada pelo
@@ -50,23 +55,27 @@ src/
                geometria.ts (cont.) lados da parede, faixas de face por ambiente, pintura/revestimento, linha de visão
                moveis.ts           área ocupada, conflitos (parede, porta, outro móvel), encaixe ao arrastar
                mobilia.ts          móveis do Alan posicionados em cm + vistas por ambiente
-               projetoBase.ts      junta planta + mobília + vistas; BASE_ATUAL identifica a revisão
+               projetoBase.ts      junta planta + mobília + vistas + pintura escolhida; BASE_ATUAL identifica a revisão
+               versoes.ts          versões nomeadas da decoração (criar, abrir, duplicar, renomear, juntar) — pura, testada
   catalogo/    formas.ts           formas paramétricas (peças em cm a partir de L × P × A e opções)
                catalogo.ts         biblioteca (78 itens em 5 categorias), paleta do projeto, cores por parte, luz de cada item
                luzes.ts            luzes que os móveis emitem (plafon, pendente, abajur, fitas de LED) e "o ambiente tem luz de teto?"
-  estado/      store.ts            Zustand: projeto, histórico, seleção, visão, painel
-               persistencia.ts     IndexedDB (navegador)
-               nuvem.ts            banco de dados da página publicada (capacidade db do Artifact)
+  estado/      store.ts            Zustand: projeto, histórico, versões, seleção, visão, painel
+               persistencia.ts     IndexedDB (navegador): projeto e versões
+               nuvem.ts            banco de dados da página publicada (capacidade db do Artifact): projeto e versões
+               arquivos.ts         entregar um arquivo gerado (capacidade downloads na página; link fora dela)
   cena/        Cena, Paredes, Aberturas, Ambientes, Moveis, Cameras, Referencia, Rotulos, materiais
                luz.ts              luz conforme a hora (sol, céu, difusa, noite) — pura, testada
                Luzes.tsx           luzes dos móveis e claridade das janelas · Ceu.tsx céu e horizonte vistos pelas janelas
                PosProcesso.tsx     acabamento realista da imagem + vigia de desempenho (desempenho.ts)
                geometriaParede.ts  faces da parede agrupadas por material (pintura por lado, topo, rodapé) — pura, testada
                Espelho.tsx         espelho que reflete o ambiente (areaEspelho.ts junta as portas num espelho só)
+               exportar.ts         tamanho e nome da imagem exportada (puro, testado) · Exportador.tsx desenha em alta resolução
   ui/          BarraFerramentas, PainelLateral, PainelMoveis, PainelPropriedades, PropMovel, Vistas, …
                acabamentos.tsx     paletas de tons prontos, nomes de acabamento/revestimento/piso, seletor de cor
+               PainelVersoes.tsx   aba Versões: versões guardadas, exportar imagem e histórico da visita
 scripts/       gerar-artefato.mjs  página única para publicar
-tests/e2e/     verificar-visual.mjs (68 verificações), verificar-artefato.mjs (celular), capturar-ambientes.mjs (galeria),
+tests/e2e/     verificar-visual.mjs (93 verificações), verificar-artefato.mjs (celular, 21), capturar-ambientes.mjs (galeria),
                capturar-detalhes.mjs (item de perto, para comparar com a foto), medir-desempenho.mjs
 docs/          ARQUITETURA.md, ANALISE_PLANTA.md, PREFERENCIAS.md
 docs/referencias/   fotos enviadas pelo Alan (reduzidas) + LEIAME.md com o que cada uma mostra
@@ -115,7 +124,7 @@ versão nova (uma cópia da sua fica guardada) ou manter a sua.
 | 3 | Navegação e câmeras | Feita: 3D orbital, planta, por dentro (teclado e toque), vistas por ambiente |
 | 4 | Editor de móveis e biblioteca | **Feita**: 76 itens; adicionar, selecionar, arrastar com encaixe, girar, redimensionar em cm, cores, duplicar, excluir, travar; avisos de conflito; apartamento montado com as coisas do Alan; rack, cadeira, eletros, cozinha e banheiro conferidos de perto com as fotos dele (`docs/referencias/`) |
 | 5 | Materiais, texturas e iluminação realista | **Feita** (ver "Luz e materiais"): hora do dia com sol entrando pelas janelas, noite com as luzes da casa e fitas de LED, sombreamento de cantos, espelhos que refletem, materiais com relevo e brilho, rodapé, portas e esquadrias; troca de acabamento e cor de cada parte do móvel, pintura por face de parede ou por ambiente, revestimentos e piso pela interface. Não entrou: foto com traçado de raios (fica com as "imagens fotorrealistas" previstas para depois) |
-| 6 | Persistência, versões e exportação | Parcial: salvamento automático (navegador e conta), desfazer/refazer, aviso de base nova. Faltam versões nomeadas e exportar imagem |
+| 6 | Persistência, versões e exportação | **Feita** (ver "Versões e exportação"): salvamento automático (navegador e conta), desfazer/refazer, histórico da visita com volta a qualquer passo, versões nomeadas (salvar, abrir, duplicar, renomear, excluir) e exportação de imagem até 4K |
 
 ## Luz e materiais (Etapa 5)
 
@@ -162,6 +171,24 @@ trama e brilho aveludado, inox escovado, pedra e louça polidas, LED que apaga q
 espelho à vista). Trocar a combinação de luzes (acender, anoitecer, entrar na vista por dentro) recompila os
 materiais na primeira vez — um instante de preparo, depois fica guardado. O tempo por quadro medido aqui é de um
 navegador sem placa de vídeo: vale para comparar antes/depois, não como previsão do celular.
+
+## Versões e exportação (Etapa 6)
+
+**Versões** (`modelo/versoes.ts`, aba Versões): uma versão é uma cópia do projeto inteiro — planta, pintura, móveis e
+vistas — com nome, data e uma miniatura da cena. Abrir uma versão troca o projeto em edição por uma cópia dela
+(entra no histórico: Ctrl+Z desfaz) e não prende o projeto à versão; a lista marca qual é "a que está aberta"
+comparando a decoração. Limite de 30 versões. A imagem de planta importada pelo usuário não entra na versão.
+A exclusão pede confirmação na própria lista (a página publicada não pode usar `confirm`).
+
+**Histórico** (`voltarNoHistorico`): lista os passos desta visita; voltar para antes de um passo desfaz também os
+seguintes, que ficam disponíveis para refazer. O histórico não é guardado: o que deve ficar, salva-se como versão.
+
+**Exportar imagem** (`cena/exportar.ts`, `Exportador.tsx`): a cena é redimensionada por um instante para o tamanho
+pedido (o canvas continua do mesmo tamanho na tela), desenhada duas vezes — a segunda já com o sombreamento no
+tamanho novo — e devolvida em JPEG. Formatos: como na tela, 16:9, 1:1 e 9:16; lado maior de 1920, 2560 ou 3840
+pontos (4K só em computador; nunca acima do que a placa desenha). A prévia abre por cima de tudo (portal na página)
+com a imagem embutida. Salvar: na página publicada, pela capacidade `downloads` (o aparelho pede confirmação;
+a página nunca baixa sozinha); fora dela, download comum. Sem como salvar, a prévia orienta a tocar e segurar.
 
 ## Decisões técnicas
 

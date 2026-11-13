@@ -63,8 +63,8 @@ vermelho = divergente após edição, tracejado = a confirmar).
 |---|---|---|
 | Portas, batentes e guarnições | Madeira com veio, um pouco mais escura que os armários de madeira da cozinha; maçaneta de alavanca cromada; guarnição de 6 cm | **informado pelo Alan** (cor); tom exato, maçaneta e largura da guarnição estimados |
 | Esquadrias (janelas e porta da varanda) | Alumínio branco | fotos do decorado (banheiro e área de serviço) |
-| Paredes do banheiro | Azulejo branco 60 × 30 até o teto | decorado: box azulejado até o teto; no trecho da pia lá é meia parede |
-| Rodapé | Branco, 7 cm, nas paredes pintadas | padrão — conferir |
+| Paredes do banheiro | Azulejo branco até o teto (formato 60 × 30 estimado) | **confirmado pelo Alan**; no decorado o trecho da pia é meia parede |
+| Rodapé | Branco (altura de 7 cm estimada), nas paredes pintadas | cor **confirmada pelo Alan** |
 | Piso | Porcelanato claro 60 × 60 | cor da planta; formato estimado |
 | Vista pelas janelas | Céu e uma linha de prédios ao longe | cenário genérico: o andar e a vista real não são conhecidos |
 | Sol | Arco de leste a oeste pelo lado da varanda | o norte não foi informado (pergunta 4) |

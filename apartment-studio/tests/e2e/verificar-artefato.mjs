@@ -32,6 +32,12 @@ for (const tema of ["light", "dark"]) {
   const context = await browser.newContext({ viewport: { width: 390, height: 780 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true, colorScheme: tema });
   await context.route("**fonts.googleapis.com**", (r) => r.abort()); // sem internet no teste: cai nas fontes do sistema
   const page = await context.newPage();
+  // capacidade "downloads" da página publicada, simulada: guarda o que a página pediu para salvar
+  await page.addInitScript(() => {
+    window.__salvos = [];
+    const downloads = { save: async (p) => (window.__salvos.push({ nome: p.filename, blob: p.data instanceof Blob, bytes: p.data.size }), { status: "saved" }) };
+    window.claude = { use: async (nome) => (nome === "downloads" ? Object.freeze(downloads) : null) };
+  });
   const erros = [];
   page.on("pageerror", (e) => erros.push(String(e)));
   await page.goto(pathToFileURL(arquivo).href);
@@ -93,6 +99,35 @@ for (const tema of ["light", "dark"]) {
     await page.evaluate(() => document.querySelector('[data-teste="alternar-realismo"]').click());
     await page.locator("#hora-sol").fill("10");
     await page.waitForTimeout(800);
+    // Etapa 6 no celular: aba Versões e exportação pela capacidade de salvar arquivos da página publicada
+    await page.tap('[data-teste="aba-versoes"]');
+    await page.waitForTimeout(400);
+    await page.fill("#versao-nome", "Teste no celular");
+    await page.tap('[data-teste="versao-salvar"]');
+    await page.waitForTimeout(500);
+    ok((await page.locator(".versoes .versao").count()) === 1 && (await page.locator(".versao-miniatura").first().isVisible()), "versão salva pelo celular aparece na lista, com miniatura");
+    ok((await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)), "aba Versões sem rolagem horizontal no celular");
+    await page.screenshot({ path: join(saida, "celular-versoes.png") });
+    await page.selectOption("#imagem-formato", "tela");
+    await page.tap('[data-teste="imagem-gerar"]');
+    await page.waitForSelector('[data-teste="imagem-previa"] img', { timeout: 90_000 });
+    const previa = await page.evaluate(async () => {
+      const i = document.querySelector('[data-teste="imagem-previa"] img');
+      await i.decode();
+      return { w: i.naturalWidth, h: i.naturalHeight, embutida: i.src.startsWith("data:image/jpeg"), cabe: i.getBoundingClientRect().right <= window.innerWidth + 1 };
+    });
+    ok(previa.h === 1920 && previa.w < previa.h && previa.embutida && previa.cabe, `imagem em pé no celular, como na tela (${previa.w} × ${previa.h}), e a prévia cabe na tela`);
+    await page.screenshot({ path: join(saida, "celular-previa-imagem.png") });
+    let baixou = false;
+    page.once("download", () => (baixou = true));
+    await page.tap('[data-teste="imagem-salvar"]');
+    await page.waitForTimeout(600);
+    const salvos = await page.evaluate(() => window.__salvos);
+    ok(salvos.length === 1 && /^apartamento-.*\.jpg$/.test(salvos[0].nome) && salvos[0].blob && salvos[0].bytes > 20_000, `salvar passa pela confirmação do aparelho (${salvos[0]?.nome}, ${Math.round((salvos[0]?.bytes ?? 0) / 1024)} KB)`);
+    ok(!baixou, "a página publicada não baixa nada por conta própria");
+    ok((await page.locator(".previa-aviso").innerText()).includes("entregue"), "aviso de imagem entregue ao aparelho");
+    await page.tap('[data-teste="imagem-fechar"]');
+    await page.tap('[data-teste="aba-versoes"]');
     // planta embutida: liga o decalque e confere que a imagem carregou
     const carregou = await page.evaluate(
       () =>

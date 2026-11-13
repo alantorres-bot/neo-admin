@@ -78,7 +78,7 @@ const contarMoveis = (page) => page.locator('.painel-esq [data-teste^="movel-"]'
 try {
   await esperarServidor();
   const browser = await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1, acceptDownloads: true });
   const page = await context.newPage();
   const erros = [];
   page.on("console", (m) => m.type() === "error" && erros.push(m.text()));
@@ -233,32 +233,41 @@ try {
       return total() - antes;
     });
 
-  // pintar só a parede de trás do sofá, do lado da sala
+  // a parede de trás do sofá abre azul-marinho só do lado da sala (opção A, escolhida pelo Alan)
+  const azulSoDaSala = (p) => p.acabamentos?.length === 1 && p.acabamentos[0].ambiente === "amb-sala" && p.acabamentos[0].cor === "#1c2444";
   await page.click('[data-teste="vista-v-sala"]');
   await page.waitForTimeout(900);
-  const azulAntes = await fracaoAzul();
-  await page.click('[data-teste="aba-estrutura"]');
-  await page.click('[data-teste="parede-p-coz-sala"]');
-  await page.click(`${P} [data-teste="face-amb-sala"] button[aria-label="Azul-marinho"]`);
-  await page.waitForTimeout(400);
   let pSofa = await paredeSofa();
-  ok(pSofa.acabamentos?.length === 1 && pSofa.acabamentos[0].ambiente === "amb-sala" && pSofa.acabamentos[0].cor === "#1c2444", "parede do sofá pintada de azul-marinho só do lado da sala");
-  await page.keyboard.press("Escape");
+  ok(azulSoDaSala(pSofa) && (pSofa.acabamentos[0].revestimento ?? "pintura") === "pintura", "o projeto abre com a parede do sofá azul-marinho só do lado da sala");
+  const azulBase = await fracaoAzul();
+  ok(azulBase > 0.08, `a parede azul aparece na sala (${(azulBase * 100).toFixed(1)}% da imagem)`);
   await capturar(page, "11-sala-parede-azul");
-  const azulDepois = await fracaoAzul();
-  ok(azulDepois > azulAntes + 0.04, `a parede azul aparece na imagem (${(azulAntes * 100).toFixed(1)}% → ${(azulDepois * 100).toFixed(1)}% de azul)`);
   await page.click('[data-teste="vista-v-cozinha"]');
   await page.waitForTimeout(900);
   ok((await fracaoAzul()) < 0.02, "do lado da cozinha a mesma parede continua clara");
-  // revestimento e volta ao padrão
+  // voltar ao padrão, pintar de novo e revestir pela interface
+  await page.click('[data-teste="vista-v-sala"]');
+  await page.click('[data-teste="aba-estrutura"]');
   await page.click('[data-teste="parede-p-coz-sala"]');
+  await page.click(`${P} [data-teste="face-amb-sala"] >> text=Voltar ao padrão`);
+  await page.keyboard.press("Escape");
+  await page.waitForTimeout(900);
+  ok((await paredeSofa()).acabamentos === undefined, "voltar ao padrão remove o acabamento da face");
+  const semAzul = await fracaoAzul();
+  ok(semAzul < azulBase - 0.04, `sem a pintura, o azul some da imagem (${(azulBase * 100).toFixed(1)}% → ${(semAzul * 100).toFixed(1)}%)`);
+  await page.click('[data-teste="parede-p-coz-sala"]');
+  await page.click(`${P} [data-teste="face-amb-sala"] button[aria-label="Azul-marinho"]`);
+  await page.waitForTimeout(300);
+  ok(azulSoDaSala(await paredeSofa()), "pintar de novo de azul-marinho, só do lado da sala");
   await page.selectOption(`${P} [data-teste="face-amb-sala"] select`, "tijolinho");
   await page.waitForTimeout(300);
   pSofa = await paredeSofa();
   ok(pSofa.acabamentos[0].revestimento === "tijolinho" && pSofa.acabamentos[0].cor === "#1c2444", "trocar para tijolinho mantém a cor escolhida");
-  await page.click(`${P} [data-teste="face-amb-sala"] >> text=Voltar ao padrão`);
+  await page.keyboard.press("Escape");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("Control+z");
   await page.waitForTimeout(300);
-  ok((await paredeSofa()).acabamentos === undefined, "voltar ao padrão remove o acabamento da face");
+  pSofa = await paredeSofa();
+  ok(azulSoDaSala(pSofa) && pSofa.acabamentos[0].revestimento === undefined, "três Ctrl+Z devolvem a parede à pintura azul do projeto");
 
   // pintar um ambiente inteiro e trocar o piso
   await page.click('[data-teste="aba-ambientes"]');
@@ -271,10 +280,12 @@ try {
     return {
       piso: pl.ambientes.find((a) => a.id === "amb-quarto2"),
       faces: pl.paredes.flatMap((p) => (p.acabamentos ?? []).filter((a) => a.ambiente === "amb-quarto2").map((a) => `${p.id}:${a.cor}`)),
-      outros: pl.paredes.flatMap((p) => (p.acabamentos ?? []).filter((a) => a.ambiente !== "amb-quarto2" && a.ambiente !== "amb-banheiro")).length,
+      // fora o que já vem no projeto: azulejo do banheiro e a parede azul da sala
+      outros: pl.paredes.flatMap((p) => (p.acabamentos ?? []).filter((a) => !["amb-quarto2", "amb-banheiro", "amb-sala"].includes(a.ambiente))).length,
+      sala: pl.paredes.flatMap((p) => (p.acabamentos ?? []).filter((a) => a.ambiente === "amb-sala")).length,
     };
   });
-  ok(q2.faces.length >= 4 && q2.faces.every((f) => f.endsWith("#7d8a74")) && q2.outros === 0, `quarto 2 pintado de verde em ${q2.faces.length} paredes, sem vazar para os vizinhos`);
+  ok(q2.faces.length >= 4 && q2.faces.every((f) => f.endsWith("#7d8a74")) && q2.outros === 0 && q2.sala === 1, `quarto 2 pintado de verde em ${q2.faces.length} paredes, sem vazar para os vizinhos`);
   ok(q2.piso.pisoMaterial === "madeira" && q2.piso.piso === "#c79f72", "piso do quarto 2 trocado para madeira");
   await page.click('[data-teste="vista-v-quarto2"]');
   await capturar(page, "12-quarto2-verde-madeira");
@@ -355,6 +366,103 @@ try {
   await capturar(page, "15-banheiro-simples");
   await page.click('[data-teste="alternar-realismo"]');
 
+  // ------------------------------------------------------------------ versões, histórico e exportação (Etapa 6)
+  const versoes = () => estado(() => window.__estudio.getState().versoes.map((v) => ({ id: v.id, nome: v.nome, miniatura: (v.miniatura ?? "").slice(0, 22) })));
+  const sofaX = () => estado(() => window.__estudio.getState().projeto.moveis.find((m) => m.id === "sala-sofa").x);
+  await page.click('[data-teste="vista-v-sala"]');
+  await page.waitForTimeout(900);
+  await page.click('[data-teste="aba-versoes"]');
+  ok((await page.locator(".versoes .versao").count()) === 0, "nenhuma versão guardada no começo");
+  await page.fill("#versao-nome", "Como combinamos");
+  await page.click('[data-teste="versao-salvar"]');
+  await page.waitForTimeout(400);
+  let vs = await versoes();
+  ok(vs.length === 1 && vs[0].nome === "Como combinamos" && vs[0].miniatura.startsWith("data:image/jpeg"), "versão salva com nome e miniatura da cena");
+  ok((await page.locator(".versao.aberta").count()) === 1, 'a versão recém-salva aparece como "a que está aberta"');
+  const idA = vs[0].id;
+  // muda a decoração (sofá 60 cm para o lado) e guarda outra versão, sem nome
+  const xAntes = await sofaX();
+  await estado(() => {
+    const s = window.__estudio.getState();
+    s.alterarMovel("sala-sofa", "Mover sofá", { x: s.projeto.moveis.find((m) => m.id === "sala-sofa").x + 60 });
+  });
+  await page.waitForTimeout(400);
+  ok((await page.locator(".versao.aberta").count()) === 0, "depois de mexer, nenhuma versão é igual ao que está aberto");
+  await page.click('[data-teste="versao-salvar"]');
+  await page.waitForTimeout(400);
+  vs = await versoes();
+  ok(vs.length === 2 && /^Versão 1 — \d{2}\/\d{2} \d{2}h\d{2}$/.test(vs[0].nome), `versão sem nome ganha número, dia e hora ("${vs[0]?.nome}")`);
+  // abrir a primeira devolve a decoração; Ctrl+Z desfaz a abertura
+  await page.click(`[data-teste="versao-${idA}"] [data-teste="versao-abrir"]`);
+  await page.waitForTimeout(400);
+  ok((await sofaX()) === xAntes, "abrir a versão antiga devolve o sofá ao lugar");
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(300);
+  ok((await sofaX()) === xAntes + 60, "Ctrl+Z desfaz a abertura da versão");
+  // renomear, duplicar e excluir (com confirmação na própria lista)
+  await page.click(`[data-teste="versao-${idA}"] [data-teste="versao-renomear"]`);
+  await page.fill(`[data-teste="versao-${idA}"] input`, "Parede azul");
+  await page.keyboard.press("Enter");
+  await page.click(`[data-teste="versao-${idA}"] [data-teste="versao-duplicar"]`);
+  await page.waitForTimeout(400);
+  vs = await versoes();
+  ok(vs.length === 3 && vs.some((v) => v.nome === "Parede azul") && vs.some((v) => v.nome === "Parede azul (cópia)"), "renomear e duplicar versões");
+  const idCopia = vs.find((v) => v.nome === "Parede azul (cópia)").id;
+  await page.click(`[data-teste="versao-${idCopia}"] [data-teste="versao-excluir"]`);
+  ok((await versoes()).length === 3, "excluir pede confirmação antes de apagar");
+  await page.click(`[data-teste="versao-${idCopia}"] [data-teste="versao-excluir-sim"]`);
+  await page.waitForTimeout(300);
+  ok((await versoes()).length === 2, "versão excluída depois da confirmação");
+  await page.locator(".painel-esq").screenshot({ path: join(saida, "16-aba-versoes.png") });
+
+  // histórico: voltar para antes de um passo desfaz também os que vieram depois
+  const passos = await estado(() => window.__estudio.getState().passado.map((p) => p.rotulo));
+  const iMover = passos.lastIndexOf("Mover sofá");
+  ok(iMover >= 0 && (await page.locator(".historico li").count()) === Math.min(40, passos.length), `histórico lista os ${passos.length} passos desta visita`);
+  await page.click(`[data-teste="historico-${iMover}"]`);
+  await page.waitForTimeout(300);
+  ok((await sofaX()) === xAntes && (await estado(() => window.__estudio.getState().passado.length)) === iMover, "voltar no histórico devolve o sofá e encurta a lista");
+  await page.keyboard.press("Control+Shift+z");
+  await page.waitForTimeout(300);
+  ok((await sofaX()) === xAntes + 60, "o passo desfeito pelo histórico pode ser refeito");
+  await page.keyboard.press("Control+z");
+
+  // exportar: imagem do tamanho pedido, cena de volta ao tamanho da tela, arquivo com nome da vista
+  const telaAntes = await estado(() => {
+    const c = document.querySelector(".palco canvas");
+    return [c.width, c.height];
+  });
+  await page.selectOption("#imagem-formato", "paisagem");
+  await page.selectOption("#imagem-qualidade", "alta");
+  await page.click('[data-teste="imagem-gerar"]');
+  await page.waitForSelector('[data-teste="imagem-previa"] img', { timeout: 90_000 });
+  const imagem = await page.evaluate(async () => {
+    const i = document.querySelector('[data-teste="imagem-previa"] img');
+    await i.decode();
+    const t = document.createElement("canvas");
+    t.width = 160;
+    t.height = 90;
+    const g = t.getContext("2d");
+    g.drawImage(i, 0, 0, 160, 90);
+    const d = g.getImageData(0, 0, 160, 90).data;
+    const cores = new Set();
+    for (let k = 0; k < d.length; k += 4) cores.add(`${d[k] >> 3},${d[k + 1] >> 3},${d[k + 2] >> 3}`);
+    return { w: i.naturalWidth, h: i.naturalHeight, cores: cores.size };
+  });
+  ok(imagem.w === 1920 && imagem.h === 1080, `imagem exportada em 1920 × 1080 (${imagem.w} × ${imagem.h})`);
+  ok(imagem.cores > 40, `a imagem exportada tem a cena desenhada (${imagem.cores} cores)`);
+  await page.screenshot({ path: join(saida, "17-imagem-exportada.png") });
+  const [arquivo] = await Promise.all([page.waitForEvent("download"), page.click('[data-teste="imagem-salvar"]')]);
+  ok(/^apartamento-sala-\d{4}-\d{2}-\d{2}-\d{2}h\d{2}\.jpg$/.test(arquivo.suggestedFilename()), `arquivo salvo com o nome da vista e a data (${arquivo.suggestedFilename()})`);
+  await page.click('[data-teste="imagem-fechar"]');
+  await page.waitForTimeout(600);
+  const telaDepois = await estado(() => {
+    const c = document.querySelector(".palco canvas");
+    return [c.width, c.height];
+  });
+  ok(telaDepois[0] === telaAntes[0] && telaDepois[1] === telaAntes[1], "depois de exportar, a cena volta ao tamanho da tela");
+  await capturar(page, "18-depois-de-exportar");
+
   // ------------------------------------------------------------------ planta de referência: importar e calibrar
   await page.click('[data-teste="camera-superior"]');
   const dataUrl = await page.evaluate(() => {
@@ -393,6 +501,8 @@ try {
   await page.click('[data-teste="aba-moveis"]');
   await page.click('[data-teste="movel-jan-mesa"]');
   ok((await campo(page, "Largura").inputValue()) === "140", "após recarregar, a mesa alterada continua salva (IndexedDB)");
+  const guardadas = await estado(() => window.__estudio.getState().versoes.map((v) => v.nome).sort());
+  ok(guardadas.length === 2 && guardadas[0] === "Parede azul", `após recarregar, as versões continuam guardadas (${guardadas.join(", ")})`);
 
   // ------------------------------------------------------------------ banco da página publicada (simulado)
   // Na página publicada o projeto vai para o banco da própria página; aqui um banco falso em memória
@@ -401,15 +511,23 @@ try {
   const comBanco = async (ctx) => {
     await ctx.exposeFunction("__bancoLer", (c) => cofre.get(c) ?? null);
     await ctx.exposeFunction("__bancoGravar", (c, json) => void cofre.set(c, json));
+    await ctx.exposeFunction("__bancoApagar", (c) => void cofre.delete(c));
+    await ctx.exposeFunction("__bancoListar", (colecao) => [...cofre.keys()].filter((k) => k.startsWith(`${colecao}/`)));
     await ctx.addInitScript(() => {
+      const foto = (caminho, j) => ({ id: caminho.split("/").pop(), exists: j !== null, data: () => (j === null ? undefined : Object.freeze(JSON.parse(j))) });
       const doc = (caminho) => ({
-        get: async () => {
-          const j = await window.__bancoLer(caminho);
-          return { exists: j !== null, data: () => (j === null ? undefined : Object.freeze(JSON.parse(j))) };
-        },
+        get: async () => foto(caminho, await window.__bancoLer(caminho)),
         set: async (d) => window.__bancoGravar(caminho, JSON.stringify(d)),
+        delete: async () => window.__bancoApagar(caminho),
       });
-      window.claude = { use: async (nome) => (nome === "db" ? Object.freeze({ doc }) : null) };
+      const collection = (colecao) => ({
+        get: async () => {
+          const docs = [];
+          for (const caminho of await window.__bancoListar(colecao)) docs.push(foto(caminho, await window.__bancoLer(caminho)));
+          return { docs, size: docs.length, empty: docs.length === 0 };
+        },
+      });
+      window.claude = { use: async (nome) => (nome === "db" ? Object.freeze({ doc, collection }) : null) };
     });
   };
   const abrir = async () => {
@@ -433,9 +551,25 @@ try {
   ok(!!gravado && JSON.parse(gravado).projeto.moveis.some((m) => m.id === "jan-mesa" && m.altura === 78), "banco da página: alteração gravada no documento do projeto");
   ok(!!gravado && gravado.length < 200_000 && !gravado.includes("data:image"), `banco da página: documento enxuto (${Math.round((gravado?.length ?? 0) / 1024)} KB de 256)`);
   ok((await a.pg.locator('.salvo[title*="conta"]').count()) === 1, 'indicador mostra "salvo na conta"');
+  // versões também vão para a conta: uma por documento, em versoes/<id>
+  await a.pg.keyboard.press("Escape");
+  await a.pg.click('[data-teste="aba-versoes"]');
+  await a.pg.fill("#versao-nome", "Mesa mais alta");
+  await a.pg.click('[data-teste="versao-salvar"]');
+  await a.pg.click('[data-teste="versao-salvar"]');
+  await a.pg.waitForTimeout(1200);
+  const docsVersao = () => [...cofre.keys()].filter((k) => k.startsWith("versoes/"));
+  ok(docsVersao().length === 2 && docsVersao().every((k) => cofre.get(k).length < 200_000), `banco da página: cada versão num documento próprio (${docsVersao().map((k) => Math.round(cofre.get(k).length / 1024) + " KB").join(", ")})`);
+  const idApagar = await a.pg.evaluate(() => window.__estudio.getState().versoes.find((v) => v.nome !== "Mesa mais alta").id);
+  await a.pg.click(`[data-teste="versao-${idApagar}"] [data-teste="versao-excluir"]`);
+  await a.pg.click(`[data-teste="versao-${idApagar}"] [data-teste="versao-excluir-sim"]`);
+  await a.pg.waitForTimeout(800);
+  ok(docsVersao().length === 1, "banco da página: versão excluída some também da conta");
   await a.ctx.close();
   const b = await abrir(); // outro aparelho: armazenamento do navegador vazio
   ok((await campo(b.pg, "Altura").inputValue()) === "78", "outro aparelho abre o projeto salvo na conta");
+  const noOutro = await b.pg.evaluate(() => window.__estudio.getState().versoes.map((v) => v.nome));
+  ok(noOutro.length === 1 && noOutro[0] === "Mesa mais alta", "outro aparelho encontra as versões guardadas na conta");
   await b.ctx.close();
 
   const unicos = [...new Set(erros)];

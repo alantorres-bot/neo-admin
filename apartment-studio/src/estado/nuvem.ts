@@ -3,21 +3,30 @@
  * (capacidade `db`), que fica na conta do dono e vale em qualquer aparelho. Fora de uma página
  * publicada (npm run dev) `window.claude` não existe e tudo aqui devolve "indisponível".
  *
- * Um documento só: `projetos/principal` = { app, base, atualizadoEm, projeto }. Limite da plataforma:
- * 256 KiB por documento — por isso a imagem da planta importada pelo usuário (data URI) não vai junto.
+ * O projeto em edição é um documento só: `projetos/principal` = { app, base, atualizadoEm, projeto }.
+ * Cada versão nomeada da decoração é um documento em `versoes/<id>`. Limite da plataforma: 256 KiB por
+ * documento — por isso a imagem da planta importada pelo usuário (data URI) não vai junto.
  */
 import type { Projeto } from "../modelo/tipos";
+import { versaoValida, type Versao } from "../modelo/versoes";
 
 interface Instantaneo {
+  id?: string;
   exists: boolean;
   data(): Record<string, unknown> | undefined;
 }
 interface Documento {
   get(): Promise<Instantaneo>;
   set(dados: Record<string, unknown>): Promise<void>;
+  delete(): Promise<void>;
+}
+interface Colecao {
+  get(): Promise<{ docs: Instantaneo[] }>;
 }
 interface Banco {
   doc(caminho: string): Documento;
+  /** Só existe no banco de verdade (nos testes antigos o banco simulado tem apenas `doc`). */
+  collection?(caminho: string): Colecao;
 }
 
 const DOC_PROJETO = "projetos/principal";
@@ -113,4 +122,53 @@ export async function salvarCopiaNaNuvem(projeto: Projeto): Promise<void> {
   const db = await banco();
   if (!db || somenteLeitura) return;
   await db.doc(`copias/${new Date().toISOString()}`).set(corpo(projeto));
+}
+
+// ------------------------------------------------------------------------------ versões da decoração
+const COLECAO_VERSOES = "versoes";
+
+/** Versões guardadas na conta (lista vazia fora da página publicada). */
+export async function listarVersoesNaNuvem(): Promise<Versao[]> {
+  const db = await banco();
+  if (!db?.collection) return [];
+  const foto = await db.collection(COLECAO_VERSOES).get();
+  const versoes: Versao[] = [];
+  for (const d of foto.docs) {
+    const corpo = d.data()?.versao;
+    // os dados chegam congelados: clona antes de entrar no estado do app
+    if (versaoValida(corpo)) versoes.push(JSON.parse(JSON.stringify(corpo)) as Versao);
+  }
+  return versoes;
+}
+
+/** Guarda (ou atualiza) uma versão na conta. Devolve true quando ficou salva lá. */
+export async function gravarVersaoNaNuvem(versao: Versao): Promise<boolean> {
+  const db = await banco();
+  if (!db || somenteLeitura) return false;
+  const json = JSON.stringify(versao);
+  if (json.length > LIMITE_BYTES) {
+    // grande demais com a miniatura: tenta sem ela antes de desistir
+    const { miniatura: _fora, ...semMiniatura } = versao;
+    if (JSON.stringify(semMiniatura).length > LIMITE_BYTES) return false;
+    return gravarVersaoNaNuvem(semMiniatura);
+  }
+  try {
+    await db.doc(`${COLECAO_VERSOES}/${versao.id}`).set({ app: "apartment-studio", nome: versao.nome, criadaEm: versao.criadaEm, versao: JSON.parse(json) });
+    return true;
+  } catch (e) {
+    const codigo = (e as { code?: string })?.code;
+    if (codigo === "revoked" || codigo === "not_granted") somenteLeitura = true;
+    console.warn("Não foi possível salvar a versão no banco da página:", e);
+    return false;
+  }
+}
+
+export async function apagarVersaoNaNuvem(id: string): Promise<void> {
+  const db = await banco();
+  if (!db || somenteLeitura) return;
+  try {
+    await db.doc(`${COLECAO_VERSOES}/${id}`).delete();
+  } catch (e) {
+    console.warn("Não foi possível apagar a versão no banco da página:", e);
+  }
 }

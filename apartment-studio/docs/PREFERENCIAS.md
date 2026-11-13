@@ -69,10 +69,10 @@ escrivaninha, guarda-roupa, duas banquetas na varanda), marcada como **sugestão
 | Suíte | Carvalho claro, portas cinza, espelho, puxadores de alumínio | `#d9c9ae`, `#9c9891` |
 | Paredes / piso | Off-white / porcelanato cinza claro (como na planta) | `#f3f0ea` / `#d3d0cb` |
 | **Portas** (folha, batente e guarnição) | **Madeira, um pouco mais escura que os armários de madeira da cozinha** — informação do Alan (13/11) | `#b78f66` (≈ 16% mais escura que a madeira clara `#cfae86`); tom aproximado, sem foto |
-| Rodapé e esquadrias | Branco (esquadrias como no decorado; rodapé a conferir) | `#f6f4ef` / `#eceae6` |
+| Rodapé e esquadrias | Branco (rodapé confirmado pelo Alan em 13/11; esquadrias como no decorado) | `#f6f4ef` / `#eceae6` |
 | Azulejo do banheiro | Branco, 60 × 30 | `#f4f3ef` |
 | Luzes | Quentes (plafons, fitas de LED, luminária de piso) | `#ffd9a8` a `#ffe6c4` |
-| Em aberto | Parede azul-marinho (sofá ou remos) | `#1c2444` |
+| **Parede atrás do sofá** | **Azul-marinho, só do lado da sala** — opção A, escolhida pelo Alan (13/11). A parede dos remos fica off-white | `#1c2444` |
 
 Preferências declaradas: madeira clara combinando com branco ou outra cor; **armário de cima maior e o de baixo
 menor** ("gerando essa diferença"); nada de granito escuro salpicado na cozinha.
@@ -120,7 +120,7 @@ Parede lateral: 3,87 m do shaft até a parede da porta (cota). Profundidade da b
 
 **Banheiro (2,40 × 1,20 m)**
 - Armário de espelho como no decorado: do vidro do box até a parede (1,46 m), sobre o vaso e a pia. Fica a 1,20 m do piso, acima da caixa acoplada. **Altura de 90 cm confirmada pelo Alan (13/11).**
-- Paredes azulejadas de branco até o teto (como o box do decorado) e fita de LED quente sob o espelho — acabamento adotado na Etapa 5, trocável.
+- Paredes azulejadas de branco até o teto (como o box do decorado) — **confirmado pelo Alan (13/11)** — e fita de LED quente sob o espelho.
 - A planta mostra um shaft ao lado do box (≈92 × 25 cm): o box fica com ≈89 × 95 cm.
 - Vaso entre o box e o gabinete, com ≈37 cm do eixo até o vidro do box.
 - Janela na parede externa, ao lado da pia (na foto de referência ela fica dentro do box).
@@ -137,12 +137,12 @@ Parede lateral: 3,87 m do shaft até a parede da porta (cota). Profundidade da b
 4. Cama da suíte: é a de casal padrão (138 × 188) mesmo? Vai levar a sua ou comprar?
 5. Fotos que ainda não vieram para esta conversa: sofá, luminária, cortina, quadro, prateleira, remos, guarda-roupa (estilo e modelo) e a mesa. Enviar, se quiser que eu confira os detalhes como fiz com o rack e a cadeira.
 6. Quarto 2: qual será o uso (hóspedes, escritório)?
-7. Parede azul-marinho: **atrás do sofá (opção A) ou atrás dos remos (opção B)?** As duas foram mostradas ao Alan em imagem (13/11); por enquanto as paredes seguem off-white. Aplicar: tocar na parede e escolher o tom no lado certo.
+7. ~~Parede azul-marinho~~ — respondida: **opção A, atrás do sofá** (ver abaixo).
 8. Pendentes da planta: cotas 2,52 e 1,32, pé-direito, norte (ver `ANALISE_PLANTA.md`).
 9. Medidas reais da cadeira (a foto não tem cotas; usei 47 × 47 × 86 cm).
 10. Portas: o tom exato da madeira (usei um aproximado). Uma foto de uma porta resolve; a de entrada é igual às internas?
 11. Tom das luzes: adotei quente (≈2700 K) em toda a casa.
-12. Rodapé: branco, de madeira como as portas, ou do mesmo porcelanato do piso?
 
-Respondidas: painel lateral da geladeira — **manter**; armário de espelho com 90 cm — **sim**; portas —
-**de madeira, um pouco mais escura que os armários da cozinha** (Alan, 13/11).
+Respondidas pelo Alan em 13/11: painel lateral da geladeira — **manter**; armário de espelho com 90 cm — **sim**;
+portas — **de madeira, um pouco mais escura que os armários da cozinha**; parede azul-marinho — **opção A, atrás
+do sofá** (só do lado da sala); rodapé — **branco**; banheiro azulejado de branco até o teto — **sim**.

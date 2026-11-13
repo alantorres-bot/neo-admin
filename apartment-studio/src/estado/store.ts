@@ -4,12 +4,13 @@ import { centroide, pontosAmbiente, type Ponto } from "../modelo/geometria";
 import { criarPlantaReal } from "../modelo/plantaReal";
 import { BASE_ATUAL, criarProjetoBase } from "../modelo/projetoBase";
 import type { Movel, Planta, Projeto, Selecao } from "../modelo/tipos";
-import { banco, carregarDaNuvem, salvarCopiaNaNuvem, salvarNaNuvem } from "./nuvem";
-import { carregarProjeto, salvarCopia, salvarProjeto } from "./persistencia";
+import { criarVersao, duplicarVersao, juntarVersoes, LIMITE_VERSOES, ordenarVersoes, projetoDaVersao, renomearVersao, type Versao } from "../modelo/versoes";
+import { apagarVersaoNaNuvem, banco, carregarDaNuvem, gravarVersaoNaNuvem, listarVersoesNaNuvem, salvarCopiaNaNuvem, salvarNaNuvem } from "./nuvem";
+import { apagarVersao, carregarProjeto, gravarVersao, listarVersoes, salvarCopia, salvarProjeto } from "./persistencia";
 
 export type ModoCamera = "perspectiva" | "superior" | "interna";
 export type ModoParedes = "inteiras" | "recortadas" | "ocultas";
-export type AbaPainel = "ambientes" | "moveis" | "estrutura" | "planta";
+export type AbaPainel = "ambientes" | "moveis" | "estrutura" | "planta" | "versoes";
 
 export interface Visao {
   camera: ModoCamera;
@@ -48,6 +49,8 @@ interface EstadoApp {
   novaBase: boolean;
   /** O modo realista foi desligado sozinho porque o aparelho ficou lento (mostra um aviso). */
   avisoLento: boolean;
+  /** Versões nomeadas da decoração, das mais recentes para as mais antigas. */
+  versoes: Versao[];
   painel: { aba: AbaPainel; aberto: boolean };
   /** Pontos clicados durante a calibração da imagem da planta (cm, no plano). */
   calibracao: { ativa: boolean; pontos: Ponto[] };
@@ -71,6 +74,22 @@ interface EstadoApp {
   definirCalibracao: (c: Partial<EstadoApp["calibracao"]>) => void;
   restaurarPlantaOriginal: () => void;
   adotarBase: () => Promise<void>;
+  /** Volta ao estado de antes do passo `indice` do histórico (0 = o mais antigo); os passos desfeitos podem ser refeitos. */
+  voltarNoHistorico: (indice: number) => void;
+  /** Guarda a decoração atual como uma versão com nome. Devolve o id, ou null quando o limite foi atingido. */
+  salvarVersao: (nome?: string, miniatura?: string) => string | null;
+  /** A decoração da versão vira o projeto em edição (dá para desfazer). */
+  abrirVersao: (id: string) => void;
+  duplicarVersao: (id: string) => void;
+  renomearVersao: (id: string, nome: string) => void;
+  excluirVersao: (id: string) => void;
+}
+
+/** Guarda a versão no navegador e na conta; falha de um dos dois não impede o outro. */
+function guardarVersao(versao: Versao) {
+  void Promise.allSettled([gravarVersao(versao), gravarVersaoNaNuvem(versao)]).then(([local, nuvem]) => {
+    if (local.status === "rejected" && !(nuvem.status === "fulfilled" && nuvem.value)) console.error("Falha ao guardar a versão:", local.reason);
+  });
 }
 
 const LIMITE_HISTORICO = 100;
@@ -103,6 +122,7 @@ export const useApp = create<EstadoApp>((set, get) => ({
   salvoOnde: null,
   novaBase: false,
   avisoLento: false,
+  versoes: [],
   painel: { aba: "ambientes", aberto: telaLarga },
   calibracao: { ativa: false, pontos: [] },
 
@@ -122,9 +142,28 @@ export const useApp = create<EstadoApp>((set, get) => ({
       console.warn("Não foi possível ler o projeto salvo neste navegador:", e);
     }
     set({ carregado: true });
+    // versões guardadas neste navegador
+    let versoesLocais: Versao[] = [];
+    try {
+      versoesLocais = await listarVersoes();
+      set({ versoes: ordenarVersoes(versoesLocais) });
+    } catch (e) {
+      console.warn("Não foi possível ler as versões guardadas neste navegador:", e);
+    }
     // 2) banco da página publicada (chega depois): vale o mais recente
     try {
       if (!(await banco())) return;
+      // versões: junta as do aparelho com as da conta e completa o que faltar de cada lado
+      try {
+        const daConta = await listarVersoesNaNuvem();
+        const idsConta = new Set(daConta.map((v) => v.id));
+        const idsLocais = new Set(versoesLocais.map((v) => v.id));
+        set({ versoes: juntarVersoes(get().versoes, daConta) });
+        for (const v of versoesLocais) if (!idsConta.has(v.id)) void gravarVersaoNaNuvem(v);
+        for (const v of daConta) if (!idsLocais.has(v.id)) void gravarVersao(v).catch(() => undefined);
+      } catch (e) {
+        console.warn("Não foi possível ler as versões guardadas na página:", e);
+      }
       const remoto = await carregarDaNuvem();
       const { projeto: atual, passado } = get();
       const mexeuNestaVisita = passado.length > 0;
@@ -235,6 +274,56 @@ export const useApp = create<EstadoApp>((set, get) => ({
       console.warn("Não foi possível guardar a cópia do projeto atual:", e);
     }
     set({ projeto: criarProjetoBase(), passado: [], futuro: [], selecao: null, novaBase: false });
+  },
+
+  voltarNoHistorico: (indice) => {
+    const { passado, futuro, projeto } = get();
+    const alvo = passado[indice];
+    if (!alvo) return;
+    // os passos desfeitos vão para "refazer", na ordem em que seriam refeitos
+    const desfeitos: Passo[] = [];
+    for (let i = indice; i < passado.length; i++) desfeitos.push({ projeto: i + 1 < passado.length ? passado[i + 1].projeto : projeto, rotulo: passado[i].rotulo });
+    set({ projeto: alvo.projeto, passado: passado.slice(0, indice), futuro: [...desfeitos, ...futuro], selecao: null });
+  },
+
+  salvarVersao: (nome, miniatura) => {
+    const { projeto, versoes } = get();
+    if (versoes.length >= LIMITE_VERSOES) return null;
+    const versao = criarVersao(projeto, nome, versoes, new Date(), miniatura);
+    set({ versoes: ordenarVersoes([versao, ...versoes]) });
+    guardarVersao(versao);
+    return versao.id;
+  },
+
+  abrirVersao: (id) => {
+    const versao = get().versoes.find((v) => v.id === id);
+    if (!versao) return;
+    get().alterarProjeto(`Abrir a versão "${versao.nome}"`, (p) => projetoDaVersao(versao, p, BASE_ATUAL, new Date()));
+    set({ selecao: null, novaBase: false });
+  },
+
+  duplicarVersao: (id) => {
+    const { versoes } = get();
+    const original = versoes.find((v) => v.id === id);
+    if (!original || versoes.length >= LIMITE_VERSOES) return;
+    const copia = duplicarVersao(original, versoes, new Date());
+    set({ versoes: ordenarVersoes([copia, ...versoes]) });
+    guardarVersao(copia);
+  },
+
+  renomearVersao: (id, nome) => {
+    const { versoes } = get();
+    const original = versoes.find((v) => v.id === id);
+    if (!original) return;
+    const nova = renomearVersao(original, nome, new Date());
+    if (nova === original) return;
+    set({ versoes: versoes.map((v) => (v.id === id ? nova : v)) });
+    guardarVersao(nova);
+  },
+
+  excluirVersao: (id) => {
+    set({ versoes: get().versoes.filter((v) => v.id !== id) });
+    void Promise.allSettled([apagarVersao(id), apagarVersaoNaNuvem(id)]);
   },
 }));
 

@@ -111,9 +111,10 @@ Antes de mexer, leia:
 - Endereço fixo: https://claude.ai/artifact/VUR55xAmwntHzhc96f3que. Depois de qualquer mudança validada:
   `npm run artefato && node tests/e2e/verificar-artefato.mjs` e republicar
   `dist-artefato/apartment-studio.html` com a ferramenta Artifact **nesse mesmo endereço** (em conversa nova:
-  `action: "read"` no endereço e depois publicar com `url`). Não passar `capabilities` de novo (o `db` é mantido).
+  `action: "read"` no endereço e depois publicar com `url`). Não passar `capabilities` de novo: `db` (salvar na
+  conta) e `downloads` (salvar a imagem exportada) são mantidas — passar só uma apagaria a outra.
 - Antes de mudar o layout a pedido do Alan, leia o projeto dele: ArtifactData `get`, coleção `projetos`,
-  documento `principal`. Se ele alterou algo no app (`alteradoPeloUsuario`), respeite o que ele fez e combine
+  documento `principal`; as versões que ele guardou ficam na coleção `versoes` (uma por documento). Se ele alterou algo no app (`alteradoPeloUsuario`), respeite o que ele fez e combine
   como aplicar a mudança — a base nova só entra para ele quando aceitar o aviso "há uma versão nova".
 - Regras de página publicada que valem para a interface: cores só por tokens (tema claro e escuro), sem
   `alert/confirm/prompt`, sem download por link, tudo embutido (scripts externos só de CDN permitido).
@@ -138,6 +139,19 @@ Antes de mexer, leia:
   Espelho de verdade só à vista (`haParedeEntre`); efeitos novos entram atrás do botão Realista.
 - O estado do app fica acessível nos testes com `?teste` na URL: `window.__estudio` (store) e `window.__cena`
   (cena do React Three Fiber, sempre atual).
+
+## Versões e exportação (Etapa 6)
+
+- **Decisão de decoração do Alan** (pintura, móvel, posição) entra no projeto-base: pintura em `projetoBase.ts`
+  (`pintar`), móveis em `mobilia.ts`; depois aumente `BASE_ATUAL`. Hoje: parede atrás do sofá azul-marinho só do
+  lado da sala (opção A), rodapé branco, banheiro azulejado, portas em madeira.
+- **Versões** são cópias do projeto inteiro com nome (`modelo/versoes.ts`); guardadas no navegador e na conta.
+  Para comparar opções para o Alan, prefira gerar imagens das opções (como foi feito com a parede azul) e deixar
+  que ele salve versões no app.
+- **Exportar imagem**: `Exportador.tsx` redimensiona a cena, desenha e devolve. Não use download por link na página
+  publicada — só `salvarArquivo` (`estado/arquivos.ts`), que passa pela capacidade `downloads`.
+- O que abre por cima de tudo (prévia, avisos de tela inteira) vai num portal em `document.body`: os painéis criam
+  o próprio contexto de empilhamento e escondem o que fica dentro deles.
 
 ## Verificação (obrigatória ao fim de cada etapa)
 
