@@ -10,6 +10,7 @@ Projeto independente do Neo Admin: fica em `apartment-studio/` (Vite + React + T
 próprio. Não usa nada do Neo Admin e o Neo Admin não o enxerga (excluído do `tsconfig`, ESLint e Docker da raiz).
 
 Antes de mexer, leia:
+- `apartment-studio/docs/PREFERENCIAS.md` — o que o Alan já tem, o que vai comprar, paleta e decisões por ambiente.
 - `apartment-studio/docs/ANALISE_PLANTA.md` — leitura da planta, cotas reais × estimadas, pendências.
 - `apartment-studio/docs/ARQUITETURA.md` — modelo de dados, pastas, etapas e o que já existe.
 
@@ -65,16 +66,22 @@ Antes de mexer, leia:
   160 cm, arrastar para olhar, WASD/setas para andar).
 - Seleção: clique seleciona parede/abertura/ambiente/móvel; painel de propriedades edita em cm.
 
-## Móveis e decoração (Etapa 4+)
+## Móveis e decoração
 
-- Catálogo em `src/catalogo/` com dimensões reais de mercado (L × P × A em cm) e categoria. Medidas de
-  referência: sofá 3 lug. 210×90×85; cama casal 138×188 (queen 158×198, king 193×203); criado 45×35×55;
-  guarda-roupa P 60; mesa jantar 4 lug. 120×80×75; banqueta altura assento 65 (bancada 90) ou 75 (bar 105);
-  geladeira 70×70×185; fogão 4 bocas 50×60×85; bancada cozinha P 60, A 90; box 80–90 de largura.
+- Catálogo em `src/catalogo/catalogo.ts` (itens) e `formas.ts` (formas paramétricas puras, frente em +z).
+  Medidas de referência: sofá 3 lug. 210×90×85; cama casal 138×188 (queen 158×198, king 193×203);
+  criado 45×35×55; guarda-roupa P 57–60; mesa jantar 4 lug. 120×80×75; banqueta assento 65 (bancada 90);
+  geladeira 70×73×185; cooktop 58×51; forno 60; bancada cozinha P 60–62, A 90; box 80–95 de largura.
+- Mobília do Alan em `src/modelo/mobilia.ts`: centro `x, y` em cm, `rotacao` em graus (0 = frente para
+  baixo na planta, 90 = para a direita, 180 = para cima, 270 = para a esquerda), `elevacao` do piso.
+  Toda mudança pedida pelo Alan entra ali **e** em `docs/PREFERENCIAS.md`; depois **aumente `BASE_ATUAL`**
+  em `projetoBase.ts` para o app oferecer a versão nova a quem já tem projeto salvo.
+- Antes de posicionar, calcule com as faces internas das paredes (tabela no topo de `mobilia.ts`) e rode
+  `npm test`: o teste "nenhum móvel atravessa parede, invade giro de porta ou se sobrepõe a outro" tem que
+  passar. Peças do mesmo conjunto planejado usam o mesmo `grupo`.
 - Circulação mínima: 60 cm ao lado da cama, 80–90 cm em passagem principal, 75 cm na frente de armário.
-  Avisar (sem impedir) quando o móvel colide com parede, porta (raio de giro) ou outro móvel.
-- Móvel = `{ id, catalogoId, posicao (cm), rotacao (graus), dimensoes (cm), material, ambienteId }`.
-  Preparado para `modelo: { tipo: 'primitivo' | 'gltf', url }`, `loja`, `preco` (orçamento futuro).
+  Quando a medida real não permitir o que foi pedido, diga isso ao Alan com os números — não ajuste calado.
+- Planta de venda desenha móveis menores que o real: nunca copie o tamanho do móvel do desenho.
 
 ## Materiais e iluminação
 
@@ -98,6 +105,7 @@ Antes de mexer, leia:
 ## Verificação (obrigatória ao fim de cada etapa)
 
 1. `npm run typecheck && npm test` em `apartment-studio/`.
-2. `npm run build && npm run e2e` — abre o app no Chromium (Playwright), tira screenshots de cada câmera,
-   confere que o canvas não está em branco e que não há erro no console. Olhe os PNGs gerados.
+2. `npm run build && npm run e2e` — abre o app no Chromium (Playwright), confere câmeras, cotas, editor de
+   móveis, persistência e console. Depois `node tests/e2e/capturar-ambientes.mjs --limpo` e **olhe os PNGs**
+   de cada ambiente (e `--celular` quando mexer na interface).
 3. Atualize `docs/ARQUITETURA.md` (o que mudou) e `docs/ANALISE_PLANTA.md` (se mexeu em medida).

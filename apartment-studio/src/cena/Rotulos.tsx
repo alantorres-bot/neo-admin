@@ -3,7 +3,8 @@
  * a camada DOM fica fora do Canvas e um projetor dentro do Canvas reposiciona os
  * elementos a cada quadro. Evita uma raiz React por rótulo (conflito com React 19).
  */
-import { useFrame, useThree } from "@react-three/fiber";
+import { useEffect } from "react";
+import { invalidate, useFrame, useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { useApp } from "../estado/store";
 import { areaPoligono, centroide, comprimento, conferirCotas, extremos, pontosAmbiente } from "../modelo/geometria";
@@ -45,6 +46,10 @@ export function CamadaRotulos() {
   const camera = useApp((s) => s.visao.camera);
   const selecionar = useApp((s) => s.selecionar);
   const selecaoParede = useApp((s) => (s.selecao?.tipo === "parede" ? s.selecao.id : null));
+  // a cena só redesenha sob demanda: pede um quadro para posicionar os rótulos novos
+  useEffect(() => {
+    invalidate();
+  });
   if (!cotas || camera === "interna") return null;
 
   const ambientes = planta.ambientes.map((amb) => {

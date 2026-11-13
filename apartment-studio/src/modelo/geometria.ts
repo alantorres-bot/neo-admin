@@ -90,14 +90,15 @@ export interface Trecho {
 
 /**
  * Divide a parede em trechos cheios, deixando os vãos das aberturas.
- * u vai de 0 (vértice a) a L (vértice b); as pontas são estendidas em `extensao`
- * (meia espessura) para fechar os cantos entre paredes.
+ * u vai de 0 (vértice a) a L (vértice b); as pontas são estendidas em `extensao` (início) e
+ * `extensaoFim` para fechar os cantos entre paredes (ver extensoesParede).
  */
 export function trechosParede(
   L: number,
   altura: number,
   aberturas: Pick<Abertura, "posicao" | "largura" | "altura" | "peitoril">[],
   extensao = 0,
+  extensaoFim = extensao,
 ): Trecho[] {
   const vaos = aberturas
     .map((ab) => {
@@ -121,7 +122,7 @@ export function trechosParede(
     }
     cursor = Math.max(cursor, vao.u1);
   }
-  if (L + extensao > cursor) trechos.push({ u0: cursor, u1: L + extensao, v0: 0, v1: altura });
+  if (L + extensaoFim > cursor) trechos.push({ u0: cursor, u1: L + extensaoFim, v0: 0, v1: altura });
   return trechos.filter((t) => t.u1 - t.u0 > 0.01 && t.v1 - t.v0 > 0.01);
 }
 
@@ -308,4 +309,88 @@ export function conferirCotas(planta: Planta, tolerancia = 1): ConferenciaCota[]
     const diferenca = modelo - cota.valor;
     return { cota, modelo, diferenca, confere: Number.isFinite(modelo) && Math.abs(diferenca) <= tolerancia };
   });
+}
+
+/** Distância do ponto p ao segmento a–b e posição relativa t (0 = a, 1 = b). */
+export function distanciaAoSegmento(p: Ponto, a: Ponto, b: Ponto): { d: number; t: number } {
+  const L2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+  if (L2 === 0) return { d: comprimento(p, a), t: 0 };
+  const t = ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / L2;
+  const tc = Math.max(0, Math.min(1, t));
+  return { d: comprimento(p, { x: a.x + tc * (b.x - a.x), y: a.y + tc * (b.y - a.y) }), t };
+}
+
+function colineares(a1: Ponto, b1: Ponto, a2: Ponto, b2: Ponto): boolean {
+  const L1 = comprimento(a1, b1);
+  const L2 = comprimento(a2, b2);
+  if (L1 === 0 || L2 === 0) return false;
+  const cruz = ((b1.x - a1.x) * (b2.y - a2.y) - (b1.y - a1.y) * (b2.x - a2.x)) / (L1 * L2);
+  return Math.abs(cruz) < 0.02;
+}
+
+/**
+ * Quanto estender cada ponta da parede para fechar o encontro com as vizinhas (cm): [início, fim].
+ * - ponta livre, ou que morre no meio de outra parede (T): 0 — ela já termina dentro da outra;
+ * - canto em L (as duas terminam no mesmo ponto): meia espessura da outra, para preencher o quadrado do canto;
+ * - ponta sobre uma linha contínua formada por duas paredes alinhadas: 0.
+ */
+export function extensoesParede(planta: Planta, parede: Parede): [number, number] {
+  const [a, b] = extremos(planta, parede);
+  const calc = (p: Ponto): number => {
+    const tocam: { a: Ponto; b: Ponto; esp: number; noMeio: boolean }[] = [];
+    for (const outra of planta.paredes) {
+      if (outra.id === parede.id) continue;
+      const [oa, ob] = extremos(planta, outra);
+      const { d, t } = distanciaAoSegmento(p, oa, ob);
+      if (d > 1) continue;
+      const L = comprimento(oa, ob);
+      const noMeio = t * L > 1 && (1 - t) * L > 1;
+      tocam.push({ a: oa, b: ob, esp: outra.espessura.valor, noMeio });
+    }
+    if (tocam.length === 0 || tocam.some((o) => o.noMeio)) return 0;
+    const transversais = tocam.filter((o) => !colineares(a, b, o.a, o.b));
+    // duas transversais alinhadas entre si formam uma linha contínua: a ponta já está embutida
+    for (let i = 0; i < transversais.length; i++) {
+      for (let j = i + 1; j < transversais.length; j++) {
+        if (colineares(transversais[i].a, transversais[i].b, transversais[j].a, transversais[j].b)) return 0;
+      }
+    }
+    return transversais.reduce((m, o) => Math.max(m, o.esp / 2), 0);
+  };
+  return [calc(a), calc(b)];
+}
+
+/** Retângulo (4 cantos, cm) ocupado pela parede em planta, já com as extensões dos encontros. */
+export function retanguloParede(planta: Planta, parede: Parede): Ponto[] {
+  const [a, b] = extremos(planta, parede);
+  const L = comprimento(a, b) || 1;
+  const ux = (b.x - a.x) / L;
+  const uy = (b.y - a.y) / L;
+  const [e0, e1] = extensoesParede(planta, parede);
+  const h = parede.espessura.valor / 2;
+  const p0 = { x: a.x - ux * e0, y: a.y - uy * e0 };
+  const p1 = { x: b.x + ux * e1, y: b.y + uy * e1 };
+  // normal (−uy, ux)
+  return [
+    { x: p0.x - uy * h, y: p0.y + ux * h },
+    { x: p1.x - uy * h, y: p1.y + ux * h },
+    { x: p1.x + uy * h, y: p1.y - ux * h },
+    { x: p0.x + uy * h, y: p0.y - ux * h },
+  ];
+}
+
+/** Ponto dentro de polígono (ray casting). */
+export function pontoNoPoligono(p: Ponto, poligono: Ponto[]): boolean {
+  let dentro = false;
+  for (let i = 0, j = poligono.length - 1; i < poligono.length; j = i++) {
+    const a = poligono[i];
+    const b = poligono[j];
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) dentro = !dentro;
+  }
+  return dentro;
+}
+
+/** Ambiente que contém o ponto (cm), se houver. */
+export function ambienteDoPonto(planta: Planta, p: Ponto): Ambiente | undefined {
+  return planta.ambientes.find((amb) => pontoNoPoligono(p, pontosAmbiente(planta, amb)));
 }

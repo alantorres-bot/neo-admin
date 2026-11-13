@@ -48,12 +48,14 @@ vermelho = divergente após edição, tracejado = a confirmar).
 | Varanda lateral / pilar | 18,5 cm | estimada | trecho mais grosso na imagem (estrutura/shaft) |
 | Parede hall/banheiro | 18 cm | estimada | trecho mais grosso na imagem (estrutura/shaft) |
 | Guarda-corpo da varanda | 110 cm de altura, 4 cm | estimada | traço fino na planta |
-| Nicho/shaft da área de serviço | 22 × 68 cm | estimada | retângulo ao lado do tanque |
+| Shaft da área de serviço | 22 × 65 cm | estimada | retângulo no canto da janela; o comprimento sai da cota 3,87 |
+| Shaft do banheiro | ≈ 92 × 25 cm | estimada | retângulo ao lado do box, medido na imagem |
+| Pontos de ar-condicionado | 3 (sala, quarto 2, suíte) | estimada | símbolo rosa de floco de neve na planta; posição medida na imagem |
 | Divisória cozinha/sala | termina em y = 316 cm | estimada | medida na imagem |
 | Alturas de porta | 210 cm | estimada | padrão |
 | Janelas dos quartos | 120 cm de altura, peitoril 100 | estimada | larguras medidas: 124 e 123,5 |
 | Janela do banheiro | 55 × 60, peitoril 150 | estimada | largura medida |
-| Abertura área de serviço → varanda | 65 cm, tratada como janela (100 × peitoril 110) | estimada | **confirmar se é janela ou porta** |
+| Janela área de serviço → varanda | 65 cm de largura (100 × peitoril 110) | estimada | é janela: o Alan pediu a pedra da bancada "abaixo da janela" |
 
 ## 4. Portas e aberturas (larguras medidas na imagem calibrada)
 
@@ -79,18 +81,19 @@ vermelho = divergente após edição, tracejado = a confirmar).
 
 A planta não traz áreas escritas. Se o contrato ou o memorial informar a área privativa, dá para conferir.
 
-## 6. Ainda não modelado (entra na Etapa 4: móveis e equipamentos)
+## 6. Mobiliário
 
-Mobiliário da planta humanizada: sofá, rack/painel de TV, mesa redonda com 4 cadeiras, bancada da
-cozinha com cooktop e cuba, geladeira, tanque, cama de solteiro + escrivaninha (quarto 2), cama de casal +
-criados (quarto principal), armários embutidos (quarto 2 reto; quarto principal em L), box, vaso, gabinete.
-Marcações rosa da planta (prováveis pontos de ar-condicionado) também ficam para depois.
+O mobiliário genérico da planta humanizada foi substituído pelas coisas do Alan e pela marcenaria pedida
+(ver `PREFERENCIAS.md` e `src/modelo/mobilia.ts`). Ficaram como sugestão da planta: cama de solteiro,
+escrivaninha e guarda-roupa do quarto 2, duas banquetas na varanda e os três aparelhos de ar-condicionado
+nos pontos indicados. A planta desenha os móveis menores que o real (a cama de casal aparece com ≈1,58 m
+de comprimento); no modelo eles têm medida de mercado.
 
 ## 7. Dúvidas para o Alan
 
 1. A cota **2,52** (abaixo do quarto 2) se refere a qual trecho?
 2. A cota **1,32** (ao lado da porta de entrada) se refere a qual trecho?
-3. A abertura da **área de serviço para a varanda** (≈ 65 cm) é janela ou porta?
-4. **Pé-direito** real (memorial descritivo)?
-5. Onde fica o **norte** (para a posição real do sol)?
-6. As marcações rosa (quarto 2, quarto principal, parede da TV) são pontos de ar-condicionado?
+3. **Pé-direito** real (memorial descritivo)? Define a altura do guarda-roupa, do armário-ponte e dos aéreos.
+4. Onde fica o **norte** (para a posição real do sol)?
+5. As marcações rosa (quarto 2, suíte, parede da TV) foram lidas como pontos de ar-condicionado — confirmar com a construtora.
+6. Shafts da cozinha e do banheiro: conferir as medidas no local.

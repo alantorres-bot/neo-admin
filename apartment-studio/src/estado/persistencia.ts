@@ -7,10 +7,17 @@ const CHAVE_ATUAL = "projeto:principal";
 
 export async function carregarProjeto(): Promise<Projeto | undefined> {
   const p = await get<Projeto>(CHAVE_ATUAL, banco);
-  if (!p || p.versaoModelo !== 1) return undefined;
+  if (!p || p.versaoModelo !== 2 || !Array.isArray(p.moveis)) return undefined;
   return p;
 }
 
 export async function salvarProjeto(projeto: Projeto): Promise<void> {
   await set(CHAVE_ATUAL, projeto, banco);
+}
+
+/** Cópia de segurança antes de trocar o projeto salvo por uma base nova. */
+export async function salvarCopia(projeto: Projeto): Promise<string> {
+  const chave = `copia:${new Date().toISOString()}`;
+  await set(chave, projeto, banco);
+  return chave;
 }

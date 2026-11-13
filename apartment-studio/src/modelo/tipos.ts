@@ -51,6 +51,8 @@ export interface Abertura {
   /** Porta de giro: lado da dobradiça e para que lado da parede abre. */
   dobradica?: "inicio" | "fim";
   abrePara?: "esquerda" | "direita";
+  /** Quanto a folha aparece aberta no desenho, em graus (padrão 75; 0 = fechada). */
+  aberta?: number;
 }
 
 export type TipoAmbiente =
@@ -126,28 +128,68 @@ export interface Planta {
   cotas?: CotaPlanta[];
 }
 
-/** Preparado para a Etapa 4 (editor de móveis). */
+/** Situação do item no inventário do Alan (docs/PREFERENCIAS.md). */
+export type Situacao = "tenho" | "comprar" | "sob-medida" | "sugestao";
+
+/**
+ * Móvel, eletrodoméstico ou objeto posicionado no apartamento.
+ * Referencial próprio: largura ao longo do eixo x local, profundidade no eixo z local,
+ * FRENTE apontando para +z local. Com rotacao = 0 a frente aponta para +y da planta (para baixo no desenho);
+ * rotação positiva = anti-horária vista de cima (90 → frente para +x; 180 → para −y; 270 → para −x).
+ */
 export interface Movel {
   id: string;
+  /** Item do catálogo (src/catalogo/catalogo.ts) que define a forma e os acabamentos. */
   catalogoId: string;
   nome: string;
-  posicao: { x: number; y: number; z: number }; // cm
-  rotacao: number; // graus em torno do eixo vertical
-  dimensoes: { largura: number; profundidade: number; altura: number }; // cm
-  cor?: string;
-  ambienteId?: string;
-  modelo?: { tipo: "primitivo" } | { tipo: "gltf"; url: string };
+  /** Centro da base, em cm, nas coordenadas da planta. */
+  x: number;
+  y: number;
+  /** Altura da base em relação ao piso, cm (0 = no chão; aéreos, quadros e prateleiras têm elevação). */
+  elevacao: number;
+  /** Graus, anti-horário visto de cima. */
+  rotacao: number;
+  largura: number; // cm
+  profundidade: number; // cm
+  altura: number; // cm
+  /** Cores que substituem as do catálogo, por parte ("frente", "corpo", "tampo"…). */
+  cores?: Record<string, string>;
+  /** Acabamentos que substituem os do catálogo, por parte ("madeira", "liso", "pedra"…). */
+  acabamentos?: Record<string, string>;
+  /** Parâmetros da forma (portas, gavetas, tipo…) que substituem os do catálogo. */
+  opcoes?: Record<string, number | string | boolean>;
+  /** Peças do mesmo conjunto (ex.: "cozinha") podem se sobrepor sem gerar aviso. */
+  grupo?: string;
+  situacao?: Situacao;
+  obs?: string;
+  travado?: boolean;
+  /** Evolução futura: modelo 3D importado, loja e preço. */
+  modelo?: { tipo: "gltf"; url: string };
   loja?: { nome?: string; url?: string; preco?: number };
+}
+
+/** Ponto de vista interno salvo (botões de perspectiva por ambiente). Medidas em cm. */
+export interface Vista {
+  id: string;
+  nome: string;
+  ambienteId?: string;
+  de: { x: number; y: number; altura: number };
+  para: { x: number; y: number; altura: number };
 }
 
 export interface Projeto {
   id: string;
   nome: string;
-  versaoModelo: 1;
+  versaoModelo: 2;
+  /** Revisão do projeto-base feita pelo Claude (src/modelo/projetoBase.ts). */
+  base: string;
+  /** true depois que o Alan altera algo no app; controla a adoção automática de uma base nova. */
+  alteradoPeloUsuario?: boolean;
   criadoEm: string;
   atualizadoEm: string;
   planta: Planta;
   moveis: Movel[];
+  vistas: Vista[];
 }
 
 export type Selecao =
@@ -155,4 +197,5 @@ export type Selecao =
   | { tipo: "abertura"; id: string }
   | { tipo: "ambiente"; id: string }
   | { tipo: "vertice"; id: string }
+  | { tipo: "movel"; id: string }
   | null;

@@ -109,7 +109,8 @@ function AberturaMesh({ planta, ab }: { planta: Planta; ab: Abertura }) {
     const lado = ab.abrePara === "direita" ? -1 : 1; // lado da parede (eixo local z)
     const naInicial = ab.dobradica !== "fim";
     const xDobradica = naInicial ? -W / 2 : W / 2;
-    const rot = naInicial ? -lado * ANGULO_PORTA : lado * ANGULO_PORTA;
+    const angulo = ab.aberta === undefined ? ANGULO_PORTA : (ab.aberta * Math.PI) / 180;
+    const rot = naInicial ? -lado * angulo : lado * angulo;
     conteudo = (
       <>
         {/* batentes */}

@@ -4,24 +4,40 @@ import type { Abertura, Ambiente, Medida, Parede, Planta, TipoAbertura, TipoAmbi
 import { CampoMedida, CampoNumero, SeloOrigem } from "./campos";
 import { NOME_TIPO_ABERTURA, NOME_TIPO_AMBIENTE, nomeAbertura, nomeParede } from "./nomes";
 import { fmtM2 } from "./PainelLateral";
+import { PropMovel } from "./PropMovel";
 
 export function PainelPropriedades() {
   const selecao = useApp((s) => s.selecao);
   const planta = useApp((s) => s.projeto.planta);
+  const moveis = useApp((s) => s.projeto.moveis);
+  const selecionar = useApp((s) => s.selecionar);
 
   let corpo: React.ReactNode = <Geral planta={planta} />;
+  let temSelecao = false;
   if (selecao?.tipo === "parede") {
     const p = planta.paredes.find((x) => x.id === selecao.id);
     if (p) corpo = <PropParede planta={planta} parede={p} />;
+    temSelecao = !!p;
   } else if (selecao?.tipo === "abertura") {
     const a = planta.aberturas.find((x) => x.id === selecao.id);
     if (a) corpo = <PropAbertura planta={planta} ab={a} />;
+    temSelecao = !!a;
   } else if (selecao?.tipo === "ambiente") {
     const a = planta.ambientes.find((x) => x.id === selecao.id);
     if (a) corpo = <PropAmbiente planta={planta} amb={a} />;
+    temSelecao = !!a;
+  } else if (selecao?.tipo === "movel") {
+    const m = moveis.find((x) => x.id === selecao.id);
+    if (m) corpo = <PropMovel movel={m} />;
+    temSelecao = !!m;
   }
   return (
-    <aside className="painel painel-dir" data-teste="propriedades">
+    <aside className={`painel painel-dir ${temSelecao ? "com-selecao" : "sem-selecao"}`} data-teste="propriedades" aria-label="Propriedades">
+      {temSelecao && (
+        <button className="fechar" onClick={() => selecionar(null)} aria-label="Fechar propriedades" title="Fechar (Esc)">
+          ×
+        </button>
+      )}
       {corpo}
     </aside>
   );
@@ -179,6 +195,9 @@ function PropAbertura({ planta, ab }: { planta: Planta; ab: Abertura }) {
           <button className="botao secundario" onClick={() => alterar("Inverter abertura", { abrePara: ab.abrePara === "direita" ? "esquerda" : "direita" })}>
             Abrir para o outro lado
           </button>
+          <button className="botao secundario" onClick={() => alterar("Abrir/fechar porta", { aberta: ab.aberta === 0 ? 75 : 0 })}>
+            {ab.aberta === 0 ? "Mostrar aberta" : "Mostrar fechada"}
+          </button>
         </div>
       )}
       {problemas.length > 0 && (
@@ -197,6 +216,11 @@ function PropAbertura({ planta, ab }: { planta: Planta; ab: Abertura }) {
       </button>
     </>
   );
+}
+
+/** Primeira vista salva do ambiente (ou nenhuma: a câmera escolhe um ponto no fundo do cômodo). */
+export function vistaDoAmbiente(ambienteId: string): string | null {
+  return useApp.getState().projeto.vistas.find((v) => v.ambienteId === ambienteId)?.id ?? null;
 }
 
 function PropAmbiente({ planta, amb }: { planta: Planta; amb: Ambiente }) {
@@ -241,7 +265,7 @@ function PropAmbiente({ planta, amb }: { planta: Planta; amb: Ambiente }) {
         <input type="color" value={amb.piso ?? "#cccccc"} onChange={(e) => alterar("Cor do piso", { piso: e.target.value })} />
       </label>
       <p className="dica">Materiais e texturas (madeira, porcelanato, mármore) entram na Etapa 5.</p>
-      <button className="botao" onClick={() => definirVisao({ camera: "interna", ambienteInterno: amb.id })}>
+      <button className="botao" onClick={() => definirVisao({ camera: "interna", ambienteInterno: amb.id, vistaId: vistaDoAmbiente(amb.id) })}>
         Entrar neste ambiente
       </button>
     </>

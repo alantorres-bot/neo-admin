@@ -11,7 +11,7 @@
  * - Portas e janelas: largura e posição medidas na imagem calibrada ("estimada");
  *   alturas e peitoris não aparecem na planta ("estimada", padrão de mercado).
  */
-import type { Abertura, Ambiente, CotaPlanta, Medida, OrigemMedida, Parede, Planta, Projeto, RefCota, Vertice } from "./tipos";
+import type { Abertura, Ambiente, CotaPlanta, Medida, OrigemMedida, Parede, Planta, RefCota, Vertice } from "./tipos";
 
 export const ESCALA_CM_POR_PX = 0.772;
 const ORIGEM_PX = { x: 169, y: 80 };
@@ -31,8 +31,10 @@ const ESP = {
 export function criarPlantaReal(): Planta {
   const vertices: Vertice[] = [
     // varanda
+    v("VAt", 9.25, 0),
     v("VA0", 9.25, 5),
     v("VA1", 9.25, 70.5),
+    v("PVt", 404.75, 0),
     v("PV0", 404.75, 5),
     v("PV1", 404.75, 70.5),
     // cozinha / área de serviço
@@ -58,6 +60,8 @@ export function criarPlantaReal(): Planta {
     v("BT1", 658, 402.5),
     v("BB0", 405, 531),
     v("BB1", 658, 531),
+    v("BS0", 405, 513.5, "estimada"),
+    v("BS1", 506, 513.5, "estimada"),
   ];
 
   const parede = (id: string, a: string, b: string, espessura: Medida, extra?: Partial<Parede>): Parede => ({
@@ -75,8 +79,8 @@ export function criarPlantaReal(): Planta {
       nome: "Guarda-corpo da varanda",
       altura: est(110, "altura usual de guarda-corpo — conferir"),
     }),
-    parede("p-var-esq", "VA0", "VA1", ESP.pilar(), { nome: "Varanda · lateral esquerda" }),
-    parede("p-var-dir", "PV0", "PV1", ESP.pilar(), { nome: "Varanda · pilar direito" }),
+    parede("p-var-esq", "VAt", "VA1", ESP.pilar(), { nome: "Varanda · lateral esquerda" }),
+    parede("p-var-dir", "PVt", "PV1", ESP.pilar(), { nome: "Varanda · pilar direito" }),
     parede("p-serv-varanda", "K0", "D0", ESP.interna()),
     parede("p-sala-varanda", "D0", "PV1", ESP.interna()),
     parede("p-coz-esq", "K0", "K1", ESP.externa()),
@@ -87,6 +91,9 @@ export function criarPlantaReal(): Planta {
     parede("p-banho-corredor", "BT0", "BT1", ESP.interna()),
     parede("p-banho-ext", "BT1", "BB1", ESP.divQ1()),
     parede("p-fundo-banho", "BB0", "BB1", ESP.externa()),
+    parede("p-shaft-banho", "BS0", "BS1", est(25, "shaft ao lado do box, medido na imagem (≈ 92 × 25 cm) — conferir"), {
+      nome: "Shaft do banheiro (ao lado do box)",
+    }),
     parede("p-sala-q2", "W2a", "W2b", ESP.interna()),
     parede("p-q2-corredor", "W2b", "B2R", ESP.interna()),
     parede("p-q2-q1", "W3a", "W3b", ESP.divQ1()),
@@ -120,9 +127,9 @@ export function criarPlantaReal(): Planta {
   const ZERO = () => est(0);
 
   const aberturas: Abertura[] = [
-    ab("j-servico", "p-serv-varanda", "janela", 119.3, 65, est(100, "não consta na planta"), est(110, "não consta na planta"), {}),
+    ab("j-servico", "p-serv-varanda", "janela", 119.3, 65, est(100, "não consta na planta"), est(110, "não consta na planta — a pedra da bancada fica abaixo dela")),
     ab("pt-varanda", "p-sala-varanda", "porta-correr", 120.6, 153, PORTA_H(), ZERO()),
-    ab("pt-entrada", "p-fundo-jantar", "porta", 337, 92, PORTA_H(), ZERO(), { dobradica: "fim", abrePara: "direita" }),
+    ab("pt-entrada", "p-fundo-jantar", "porta", 337, 92, PORTA_H(), ZERO(), { dobradica: "fim", abrePara: "direita", aberta: 0 }),
     ab("pt-banheiro", "p-banho-corredor", "porta", 210.7, 73, PORTA_H(), ZERO(), { dobradica: "fim", abrePara: "esquerda" }),
     ab("j-banheiro", "p-banho-ext", "janela", 65, 55, est(60, "não consta na planta"), est(150, "não consta na planta")),
     ab("pt-quarto2", "p-q2-corredor", "porta", 201.3, 82.6, PORTA_H(), ZERO(), { dobradica: "fim", abrePara: "direita" }),
@@ -131,14 +138,14 @@ export function criarPlantaReal(): Planta {
     ab("j-quarto1", "p-topo-q1", "janela", 136.4, 123.5, est(120, "não consta na planta"), est(100, "não consta na planta")),
   ];
 
-  const PISO = "#d3d0cb"; // porcelanato cinza claro, como na imagem
+  const PISO = "#c6c2bb"; // porcelanato cinza claro, como na imagem
   const ambientes: Ambiente[] = [
-    { id: "amb-varanda", nome: "Varanda", tipo: "varanda", poligono: ["VA0", "PV0", "PV1", "VA1"], piso: "#bdb9b3", externo: true },
+    { id: "amb-varanda", nome: "Varanda", tipo: "varanda", poligono: ["VA0", "PV0", "PV1", "VA1"], piso: "#b3aea7", externo: true },
     { id: "amb-cozinha", nome: "Cozinha e área de serviço", tipo: "cozinha", poligono: ["K0", "D0", "D1", "KB", "K1"], piso: PISO },
     { id: "amb-sala", nome: "Sala de estar", tipo: "sala", poligono: ["D0", "PV1", "W2b", "X1", "D1"], piso: PISO },
     { id: "amb-jantar", nome: "Sala de jantar", tipo: "jantar", poligono: ["D1", "X1", "BT0", "BB0", "KB"], piso: PISO },
     { id: "amb-corredor", nome: "Corredor", tipo: "circulacao", poligono: ["W2b", "B2R", "BT1", "BT0", "X1"], piso: PISO },
-    { id: "amb-banheiro", nome: "Banheiro", tipo: "banheiro", poligono: ["BT0", "BT1", "BB1", "BB0"], piso: "#dedbd6" },
+    { id: "amb-banheiro", nome: "Banheiro", tipo: "banheiro", poligono: ["BT0", "BT1", "BB1", "BB0"], piso: "#d2cec7" },
     { id: "amb-quarto2", nome: "Quarto 2", tipo: "quarto", poligono: ["W2a", "W3a", "B2R", "W2b"], piso: PISO },
     { id: "amb-quarto1", nome: "Quarto principal", tipo: "quarto", poligono: ["W3a", "R0", "R1", "W3b"], piso: PISO },
   ];
@@ -211,18 +218,5 @@ export function criarPlantaReal(): Planta {
       visivel: false,
       calibracao: { cotaCm: 386, medidoPx: 498 },
     },
-  };
-}
-
-export function criarProjetoReal(): Projeto {
-  const agora = new Date().toISOString();
-  return {
-    id: "principal",
-    nome: "Meu apartamento",
-    versaoModelo: 1,
-    criadoEm: agora,
-    atualizadoEm: agora,
-    planta: criarPlantaReal(),
-    moveis: [],
   };
 }

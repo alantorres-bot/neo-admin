@@ -1,33 +1,42 @@
-import { useState } from "react";
-import { useApp } from "../estado/store";
+import { useApp, type AbaPainel } from "../estado/store";
 import { areaAmbienteM2 } from "../modelo/geometria";
+import { PainelMoveis } from "./PainelMoveis";
+import { vistaDoAmbiente } from "./PainelPropriedades";
 import { PainelReferencia } from "./PainelReferencia";
 import { nomeAbertura, nomeParede } from "./nomes";
 
-type Aba = "ambientes" | "estrutura" | "planta";
+const ABAS: { id: AbaPainel; rotulo: string }[] = [
+  { id: "ambientes", rotulo: "Ambientes" },
+  { id: "moveis", rotulo: "Móveis" },
+  { id: "estrutura", rotulo: "Estrutura" },
+  { id: "planta", rotulo: "Planta" },
+];
 
 export function PainelLateral() {
-  const [aba, setAba] = useState<Aba>("ambientes");
+  const { aba, aberto } = useApp((s) => s.painel);
+  const definirPainel = useApp((s) => s.definirPainel);
   return (
-    <aside className="painel painel-esq">
-      <nav className="abas">
-        <button className={aba === "ambientes" ? "ativo" : ""} onClick={() => setAba("ambientes")}>
-          Ambientes
-        </button>
-        <button className={aba === "estrutura" ? "ativo" : ""} onClick={() => setAba("estrutura")}>
-          Estrutura
-        </button>
-        <button className={aba === "planta" ? "ativo" : ""} onClick={() => setAba("planta")} data-teste="aba-planta">
-          Planta
-        </button>
+    <aside className={`painel painel-esq ${aberto ? "" : "fechado"}`} aria-label="Projeto">
+      <nav className="abas" role="tablist">
+        {ABAS.map((a) => (
+          <button
+            key={a.id}
+            role="tab"
+            aria-selected={aba === a.id}
+            className={aba === a.id ? "ativo" : ""}
+            data-teste={`aba-${a.id}`}
+            // no celular, tocar na aba aberta recolhe o painel para ver o apartamento inteiro
+            onClick={() => definirPainel({ aba: a.id, aberto: aba === a.id ? !aberto : true })}
+          >
+            {a.rotulo}
+          </button>
+        ))}
       </nav>
       <div className="painel-corpo">
         {aba === "ambientes" && <ListaAmbientes />}
+        {aba === "moveis" && <PainelMoveis />}
         {aba === "estrutura" && <ListaEstrutura />}
         {aba === "planta" && <PainelReferencia />}
-      </div>
-      <div className="painel-rodape">
-        <p className="dica">Móveis e materiais chegam nas próximas etapas.</p>
       </div>
     </aside>
   );
@@ -49,15 +58,14 @@ function ListaAmbientes() {
               <span className="item-nome">{a.nome}</span>
               <span className="item-valor">≈ {fmtM2(areaAmbienteM2(planta, a))}</span>
             </button>
-            {!a.externo || a.tipo === "varanda" ? (
-              <button
-                className="entrar"
-                title="Entrar neste ambiente (vista interna)"
-                onClick={() => definirVisao({ camera: "interna", ambienteInterno: a.id })}
-              >
-                Entrar
-              </button>
-            ) : null}
+            <button
+              className="entrar"
+              title="Entrar neste ambiente (vista interna)"
+              data-teste={`entrar-${a.id}`}
+              onClick={() => definirVisao({ camera: "interna", ambienteInterno: a.id, vistaId: vistaDoAmbiente(a.id) })}
+            >
+              Entrar
+            </button>
           </li>
         ))}
       </ul>

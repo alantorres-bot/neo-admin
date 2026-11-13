@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
-import type { ThreeEvent } from "@react-three/fiber";
+import { invalidate, type ThreeEvent } from "@react-three/fiber";
 import { useApp } from "../estado/store";
 import { M } from "./util";
 
@@ -15,7 +15,7 @@ export function Referencia() {
 
   const textura = useMemo(() => {
     if (!ref) return null;
-    const t = new THREE.TextureLoader().load(ref.imagem);
+    const t = new THREE.TextureLoader().load(ref.imagem, () => invalidate());
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 8;
     return t;
