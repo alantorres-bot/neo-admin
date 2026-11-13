@@ -11,6 +11,10 @@ próprio. Não usa nada do Neo Admin e o Neo Admin não o enxerga (excluído do 
 
 Antes de mexer, leia:
 - `apartment-studio/docs/PREFERENCIAS.md` — o que o Alan já tem, o que vai comprar, paleta e decisões por ambiente.
+- `apartment-studio/docs/referencias/` — fotos que o Alan enviou (rack com cotas, cadeira, eletros, cozinha de
+  referência, decorado do prédio) e, no `LEIAME.md`, o que cada uma mostra. **Olhe a foto antes de mexer no item.**
+  Foto nova do Alan: guarde uma cópia reduzida ali (sem interface de aplicativo, nomes de pessoas ou do prédio)
+  e registre no LEIAME — os anexos de uma conversa não aparecem nas outras.
 - `apartment-studio/docs/ANALISE_PLANTA.md` — leitura da planta, cotas reais × estimadas, pendências.
 - `apartment-studio/docs/ARQUITETURA.md` — modelo de dados, pastas, etapas e o que já existe.
 
@@ -120,4 +124,7 @@ Antes de mexer, leia:
 2. `npm run build && npm run e2e` — abre o app no Chromium (Playwright), confere câmeras, cotas, editor de
    móveis, persistência e console. Depois `node tests/e2e/capturar-ambientes.mjs --limpo` e **olhe os PNGs**
    de cada ambiente (e `--celular` quando mexer na interface).
+   Mexeu num item que tem foto? `node tests/e2e/capturar-detalhes.mjs [nome]` tira a foto de perto (rack, cadeira,
+   eletros, cozinha, banheiro) — compare lado a lado com `docs/referencias/`. Para um item novo, acrescente uma
+   linha em `DETALHES` no script (câmera `de → para` em cm; `esconder` e `mover` tiram coisas da frente).
 3. Atualize `docs/ARQUITETURA.md` (o que mudou) e `docs/ANALISE_PLANTA.md` (se mexeu em medida).

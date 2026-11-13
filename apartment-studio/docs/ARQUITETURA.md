@@ -15,6 +15,7 @@ npm run dev            # http://localhost:5180
 npm test               # regras de geometria, móveis e catálogo (Vitest)
 npm run build && npm run e2e                      # verificação visual e funcional no Chromium
 node tests/e2e/capturar-ambientes.mjs --limpo     # galeria de perspectivas (use --celular / --escuro / --nitido)
+node tests/e2e/capturar-detalhes.mjs [nome...]    # fotos de perto dos itens com foto de referência (docs/referencias)
 npm run artefato && node tests/e2e/verificar-artefato.mjs   # página única publicável + teste em tela de celular
 ```
 
@@ -55,8 +56,10 @@ src/
   cena/        Cena, Paredes, Aberturas, Ambientes, Moveis, Cameras, Referencia, Rotulos, materiais
   ui/          BarraFerramentas, PainelLateral, PainelMoveis, PainelPropriedades, PropMovel, Vistas, …
 scripts/       gerar-artefato.mjs  página única para publicar
-tests/e2e/     verificar-visual.mjs (41 verificações), verificar-artefato.mjs, capturar-ambientes.mjs (galeria)
+tests/e2e/     verificar-visual.mjs (41 verificações), verificar-artefato.mjs, capturar-ambientes.mjs (galeria),
+               capturar-detalhes.mjs (item de perto, para comparar com a foto)
 docs/          ARQUITETURA.md, ANALISE_PLANTA.md, PREFERENCIAS.md
+docs/referencias/   fotos enviadas pelo Alan (reduzidas) + LEIAME.md com o que cada uma mostra
 public/referencia/planta-apartamento.webp   imagem original da planta (decalque calibrado)
 ```
 
@@ -83,7 +86,13 @@ versão nova (uma cópia da sua fica guardada) ou manter a sua.
 - `formas.ts` gera peças (`caixa`, `cilindro`, `esfera`, `cone`, `onda`, `plano`) no referencial do móvel:
   x ∈ [−L/2, L/2], y ∈ [0, A], z ∈ [−P/2, P/2], **frente em +z**. Redimensionar recalcula as peças.
   Teste garante que as peças cabem na caixa do móvel (exceto as marcadas `fora`: puxadores, torneiras…).
+- Opções do `armario` usadas para chegar perto das fotos: `cava` (puxador cava: rebaixo escuro no topo da
+  frente), `ripado` (portas de ripas), `nichoCentral` (vão aberto com fundo e prateleira), `recuoCorpo` (corpo
+  mais estreito que o tampo), `estiloPes: "palito"` (pés inclinados nas pontas e retos sob o nicho), `moldura`
+  e `soleira` (quadro aparente em volta das frentes).
 - `catalogo.ts` liga cada item a uma forma, medidas padrão e partes coloríveis (cor + acabamento).
+- Conferência com fotos: `main.tsx` expõe o estado em `window.__estudio` **só** com `?teste` na URL; o script
+  `capturar-detalhes.mjs` usa isso para apontar a câmera para um item (na página publicada não há o parâmetro).
 - `materiais.ts` cria materiais e texturas por código (madeira com veio, granilite, granito, palhinha,
   arte do quadro, remos); sem arquivos de imagem.
 
@@ -94,7 +103,7 @@ versão nova (uma cópia da sua fica guardada) ou manter a sua.
 | 1 | Skill + análise da planta | Feita |
 | 2 | Geometria 3D paramétrica | Feita: 14/16 cotas conferidas, 2 a confirmar |
 | 3 | Navegação e câmeras | Feita: 3D orbital, planta, por dentro (teclado e toque), vistas por ambiente |
-| 4 | Editor de móveis e biblioteca | **Feita**: 76 itens; adicionar, selecionar, arrastar com encaixe, girar, redimensionar em cm, cores, duplicar, excluir, travar; avisos de conflito; apartamento montado com as coisas do Alan |
+| 4 | Editor de móveis e biblioteca | **Feita**: 76 itens; adicionar, selecionar, arrastar com encaixe, girar, redimensionar em cm, cores, duplicar, excluir, travar; avisos de conflito; apartamento montado com as coisas do Alan; rack, cadeira, eletros, cozinha e banheiro conferidos de perto com as fotos dele (`docs/referencias/`) |
 | 5 | Materiais, texturas e iluminação realista | Parcial: acabamentos e texturas por código, luz ambiente com reflexo, porcelanato, estofado arredondado, plafons. Falta: troca de acabamento pela interface, cores de parede, oclusão de ambiente, luminárias reais |
 | 6 | Persistência, versões e exportação | Parcial: salvamento automático (navegador e conta), desfazer/refazer, aviso de base nova. Faltam versões nomeadas e exportar imagem |
 

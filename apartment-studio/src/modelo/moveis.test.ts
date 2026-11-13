@@ -103,6 +103,41 @@ describe("projeto-base do Alan", () => {
     expect(c.some((x) => x.tipo === "parede")).toBe(true);
   });
 
+  it("armário de espelho do banheiro vai do vidro do box à parede, cobrindo o vaso e a pia", () => {
+    const caixa = (id: string) => envolvente(cantosMovel(projeto.moveis.find((m) => m.id === id)!));
+    const espelho = caixa("ban-armario-espelho");
+    const box = caixa("ban-box");
+    for (const id of ["ban-vaso", "ban-gabinete"]) {
+      expect(caixa(id).x0, id).toBeGreaterThanOrEqual(espelho.x0);
+      expect(caixa(id).x1, id).toBeLessThanOrEqual(espelho.x1);
+    }
+    // começa logo depois do vidro do box (folga de até 3 cm) e fica acima do vaso e da bancada
+    expect(espelho.x0 - box.x1).toBeGreaterThanOrEqual(0);
+    expect(espelho.x0 - box.x1).toBeLessThanOrEqual(3);
+    const m = projeto.moveis.find((x) => x.id === "ban-armario-espelho")!;
+    expect(m.elevacao).toBeGreaterThanOrEqual(110);
+    expect(m.elevacao + m.altura).toBeLessThanOrEqual(projeto.planta.peDireito.valor - 30);
+  });
+
+  it("aéreos da cozinha: madeira embaixo, faixa verde e aéreo off-white até o teto, sem vão nem sobreposição", () => {
+    const m = (id: string) => projeto.moveis.find((x) => x.id === id)!;
+    const madeira = m("coz-aereo-madeira");
+    const nicho = m("coz-nicho-micro");
+    const faixa = m("coz-faixa-verde");
+    const superior = m("coz-aereo-superior");
+    expect(madeira.elevacao + madeira.altura).toBeCloseTo(faixa.elevacao, 5);
+    expect(nicho.elevacao + nicho.altura).toBeCloseTo(faixa.elevacao, 5);
+    expect(faixa.elevacao + faixa.altura).toBeCloseTo(superior.elevacao, 5);
+    expect(superior.elevacao + superior.altura).toBeCloseTo(projeto.planta.peDireito.valor, 5);
+    // o de cima é maior que o de baixo (pedido do Alan)
+    expect(superior.altura).toBeGreaterThan(madeira.altura);
+    // o micro-ondas cabe no nicho
+    const micro = m("coz-microondas");
+    expect(micro.elevacao).toBeGreaterThanOrEqual(nicho.elevacao + 1.5);
+    expect(micro.elevacao + micro.altura).toBeLessThanOrEqual(nicho.elevacao + nicho.altura - 1.5);
+    expect(micro.largura).toBeLessThanOrEqual(nicho.largura - 4);
+  });
+
   it("vistas apontam para ambientes existentes", () => {
     const ids = new Set(projeto.planta.ambientes.map((a) => a.id));
     expect(projeto.vistas.every((v) => v.ambienteId && ids.has(v.ambienteId))).toBe(true);

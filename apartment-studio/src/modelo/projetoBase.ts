@@ -7,7 +7,7 @@ import { criarMobilia, criarVistas } from "./mobilia";
 import { criarPlantaReal } from "./plantaReal";
 import type { Projeto } from "./tipos";
 
-export const BASE_ATUAL = "2026-11-13.1";
+export const BASE_ATUAL = "2026-11-13.2";
 
 export function criarProjetoBase(): Projeto {
   const agora = new Date().toISOString();

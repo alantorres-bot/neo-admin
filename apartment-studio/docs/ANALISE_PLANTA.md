@@ -55,7 +55,7 @@ vermelho = divergente após edição, tracejado = a confirmar).
 | Alturas de porta | 210 cm | estimada | padrão |
 | Janelas dos quartos | 120 cm de altura, peitoril 100 | estimada | larguras medidas: 124 e 123,5 |
 | Janela do banheiro | 55 × 60, peitoril 150 | estimada | largura medida |
-| Janela área de serviço → varanda | 65 cm de largura (100 × peitoril 110) | estimada | é janela: o Alan pediu a pedra da bancada "abaixo da janela" |
+| Janela área de serviço → varanda | 65 cm de largura (100 × peitoril 110) | estimada | é janela: o Alan pediu a pedra da bancada "abaixo da janela". Largura medida na planta (≈63 cm, à direita, encostada na divisória). A foto do decorado confirma a posição e um peitoril ≈25–30 cm acima do tanque; nela a janela parece um pouco mais larga — **medir no local** |
 
 ## 4. Portas e aberturas (larguras medidas na imagem calibrada)
 
@@ -80,6 +80,9 @@ vermelho = divergente após edição, tracejado = a confirmar).
 | **Total** | | **≈ 44,7 m²** pelo eixo |
 
 A planta não traz áreas escritas. Se o contrato ou o memorial informar a área privativa, dá para conferir.
+O anúncio do decorado fala em unidades de 48 a 64 m² (2 e 3 quartos): esta planta, de 2 quartos, é coerente com
+a menor — os ≈44,7 m² pelo eixo viram ≈47–48 m² com paredes externas de obra (14–19 cm, mais grossas que os
+10 cm lidos na imagem).
 
 ## 6. Mobiliário
 
@@ -97,3 +100,4 @@ de comprimento); no modelo eles têm medida de mercado.
 4. Onde fica o **norte** (para a posição real do sol)?
 5. As marcações rosa (quarto 2, suíte, parede da TV) foram lidas como pontos de ar-condicionado — confirmar com a construtora.
 6. Shafts da cozinha e do banheiro: conferir as medidas no local.
+7. Largura e peitoril da janela da área de serviço (define a pedra e o frontão sob ela).

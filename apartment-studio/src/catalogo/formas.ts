@@ -85,24 +85,35 @@ const armario: Forma = ({ L, P, A }, o) => {
   const pecas: Peca[] = [];
   const pes = num(o.pes, 0);
   const rodape = num(o.rodape, 0);
-  const tampo = o.tampo ? 4 : 0;
+  const tampo = o.tampo ? num(o.espessuraTampo, 4) : 0;
   const moldura = num(o.moldura, 0);
   const nicho = num(o.nichoCentral, 0);
+  const recuo = num(o.recuoCorpo, 0); // corpo mais estreito que o tampo (aba do tampo de cada lado)
   const y0 = Math.max(pes, rodape);
   const y1 = A - tampo;
-  const x0 = -L / 2;
-  const x1 = L / 2;
+  const x0 = -L / 2 + recuo;
+  const x1 = L / 2 - recuo;
   const z0 = -P / 2;
   const z1 = P / 2;
   const zf = z1 - ESP_FRENTE; // plano onde as frentes começam
+  const comNicho = !o.aberto && nicho > 0 && nicho < x1 - x0 - 20;
 
   if (rodape > 0) pecas.push(cx(x0, x1, 0, rodape, z0, z1 - 6, "rodape"));
   if (pes > 0) {
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        const px = sx * (L / 2 - 7);
-        const pz = sz * (P / 2 - 6);
-        pecas.push(cx(px - 2.2, px + 2.2, 0, pes, pz - 2.2, pz + 2.2, "pes"));
+    for (const sz of [-1, 1]) {
+      const pz = sz * (P / 2 - 6);
+      for (const sx of [-1, 1]) {
+        const px = sx * ((x1 - x0) / 2 - 8);
+        if (o.estiloPes === "palito") {
+          // pé palito: abre para fora na base
+          pecas.push({ g: "caixa", p: [px, pes / 2, pz], s: [4, pes + 1.4, 4], r: [0, 0, sx * 16], slot: "pes", fora: true });
+        } else {
+          pecas.push(cx(px - 2.2, px + 2.2, 0, pes, pz - 2.2, pz + 2.2, "pes"));
+        }
+      }
+      // com nicho central, dois pés retos sob as divisórias
+      if (comNicho && o.estiloPes === "palito") {
+        for (const sx of [-1, 1]) pecas.push(cx(sx * (nicho / 2) - 1.8, sx * (nicho / 2) + 1.8, 0, pes, pz - 1.8, pz + 1.8, "pes"));
       }
     }
   }
@@ -123,8 +134,24 @@ const armario: Forma = ({ L, P, A }, o) => {
       pecas.push(cx(x0 + e, x1 - e, y - 1, y + 1, z0 + 1, z1 - 1, "corpo"));
     }
   } else {
-    pecas.push(cx(x0, x1, y0, y1, z0, zf, "corpo"));
-    const fy0 = y0 + FOLGA;
+    if (comNicho) {
+      // corpo só atrás das portas; o nicho do meio é aberto de verdade: fundo, base, topo e prateleira
+      const e = 1.8;
+      const ym = (y0 + y1) / 2;
+      pecas.push(
+        cx(x0, -nicho / 2, y0, y1, z0, zf, "corpo"),
+        cx(nicho / 2, x1, y0, y1, z0, zf, "corpo"),
+        cx(-nicho / 2, nicho / 2, y0, y1, z0, z0 + 1.2, "nicho"),
+        cx(-nicho / 2, nicho / 2, y0, y0 + e, z0, z1 - 0.5, "corpo"),
+        cx(-nicho / 2, nicho / 2, y1 - e, y1, z0, z1 - 0.5, "corpo"),
+        cx(-nicho / 2, nicho / 2, ym - 0.9, ym + 0.9, z0 + 1.2, z1 - 1.5, "corpo"),
+      );
+    } else {
+      pecas.push(cx(x0, x1, y0, y1, z0, zf, "corpo"));
+    }
+    const soleira = num(o.soleira, 0); // travessa de baixo aparente: as frentes começam acima dela
+    if (soleira > 0) pecas.push(cx(x0, x1, y0, y0 + soleira, zf, z1, "corpo"));
+    const fy0 = y0 + soleira + FOLGA;
     const fy1 = y1 - FOLGA;
     const fx0 = x0 + moldura;
     const fx1 = x1 - moldura;
@@ -137,12 +164,18 @@ const armario: Forma = ({ L, P, A }, o) => {
     const puxador = typeof o.puxador === "string" ? o.puxador : "nenhum";
     const alto = A >= 170;
 
-    const frente = (xa: number, xb: number, ya: number, yb: number) => {
+    const frente = (xa: number, xb: number, ya: number, ybOriginal: number) => {
+      // puxador cava: a frente termina um pouco abaixo e deixa um rebaixo escuro no topo
+      const cava = o.cava && ybOriginal - ya > 12 ? 2.4 : 0;
+      const yb = ybOriginal - cava;
+      if (cava > 0) pecas.push(cx(xa + FOLGA, xb - FOLGA, yb, ybOriginal, zf, zf + 0.5, "cava"));
       if (o.ripado) {
         pecas.push(cx(xa + FOLGA, xb - FOLGA, ya, yb, zf, zf + 0.6, "interior"));
-        const n = Math.max(2, Math.floor((yb - ya) / 3.7));
+        const n = Math.max(2, Math.floor((yb - ya) / 3.8));
         const passo = (yb - ya) / n;
-        for (let i = 0; i < n; i++) pecas.push(cx(xa + FOLGA, xb - FOLGA, ya + i * passo + 0.6, ya + (i + 1) * passo - 0.6, zf, z1, slotFrente));
+        for (let i = 0; i < n; i++) pecas.push(cx(xa + FOLGA, xb - FOLGA, ya + i * passo, ya + (i + 1) * passo - 1.5, zf, z1, slotFrente));
+        // montantes verticais nas pontas da porta ripada
+        pecas.push(cx(xa + FOLGA, xa + FOLGA + 2.2, ya, yb, zf, z1 - 0.3, slotFrente), cx(xb - FOLGA - 2.2, xb - FOLGA, ya, yb, zf, z1 - 0.3, slotFrente));
       } else {
         pecas.push(cx(xa + FOLGA, xb - FOLGA, ya, yb, zf, z1, slotFrente));
       }
@@ -151,7 +184,7 @@ const armario: Forma = ({ L, P, A }, o) => {
     if (gavetas > 0) {
       // gavetas empilhadas, a de baixo um pouco mais alta
       const pesos = Array.from({ length: gavetas }, (_, i) => 1 + 0.22 * i); // de cima para baixo
-      const total = pesos.reduce((s, p) => s + p, 0);
+      const total = pesos.reduce((soma, peso) => soma + peso, 0);
       let topo = fy1;
       pesos.forEach((peso) => {
         const h = ((fy1 - fy0) * peso) / total;
@@ -163,16 +196,12 @@ const armario: Forma = ({ L, P, A }, o) => {
       });
     } else if (portas > 0) {
       // com nicho central (rack): portas só nas laterais
-      const regioes: [number, number, number][] = nicho > 0 && nicho < fx1 - fx0 - 20
+      const regioes: [number, number, number][] = comNicho
         ? [
             [fx0, -nicho / 2, Math.max(1, Math.floor(portas / 2))],
             [nicho / 2, fx1, Math.max(1, Math.floor(portas / 2))],
           ]
         : [[fx0, fx1, portas]];
-      if (regioes.length === 2) {
-        pecas.push(cx(-nicho / 2, nicho / 2, fy0, fy1, zf, zf + 0.4, "interior"));
-        pecas.push(cx(-nicho / 2, nicho / 2, (fy0 + fy1) / 2 - 0.9, (fy0 + fy1) / 2 + 0.9, zf, z1 - 0.5, slotFrente));
-      }
       for (const [ra, rb, n] of regioes) {
         const w = (rb - ra) / n;
         for (let i = 0; i < n; i++) {
@@ -194,7 +223,7 @@ const armario: Forma = ({ L, P, A }, o) => {
       }
     }
   }
-  if (tampo > 0) pecas.push(cx(x0 - 1, x1 + 1, y1, A, z0, z1 + 1, "tampo"));
+  if (tampo > 0) pecas.push(recuo > 0 ? cx(-L / 2, L / 2, y1, A, z0, z1, "tampo") : cx(x0 - 1, x1 + 1, y1, A, z0, z1 + 1, "tampo"));
   return pecas;
 };
 
@@ -301,22 +330,27 @@ const mesa: Forma = ({ L, P, A }, o) => {
 };
 
 const cadeira: Forma = ({ L, P, A }, o) => {
-  const hs = Math.round(A * 0.5); // altura do assento
+  const hs = Math.round(A * 0.52); // altura do assento
   const x = L / 2 - 3;
   const zf = P / 2 - 4;
-  const zt = -P / 2 + 3.5;
+  const zt = -P / 2 + 4;
   const encosto = typeof o.encosto === "string" ? o.encosto : "palhinha";
+  const hEnc = Math.min(32, A * 0.36); // altura do quadro do encosto
+  const yEnc = A - hEnc / 2;
   return [
-    cx(-x - 1.7, -x + 1.7, 0, hs, zf - 2, zf + 2, "madeira"),
-    cx(x - 1.7, x + 1.7, 0, hs, zf - 2, zf + 2, "madeira"),
-    cx(-x - 1.7, -x + 1.7, 0, A - 2, zt - 2.2, zt + 2.2, "madeira"),
-    cx(x - 1.7, x + 1.7, 0, A - 2, zt - 2.2, zt + 2.2, "madeira"),
-    cx(-L / 2 + 1, L / 2 - 1, hs - 2.5, hs, -P / 2 + 2, P / 2 - 1, "madeira"),
-    cx(-x - 1.5, -x + 1.5, hs - 9, hs - 4, zt, zf, "madeira"),
-    cx(x - 1.5, x + 1.5, hs - 9, hs - 4, zt, zf, "madeira"),
-    cx(-L / 2 + 3, L / 2 - 3, hs, hs + 4, -P / 2 + 6, P / 2 - 2, "assento", { arred: 1.8 }),
-    cx(-L / 2 + 1, L / 2 - 1, A - 30, A, zt - 1.5, zt + 1.5, "madeira"),
-    cx(-L / 2 + 5, L / 2 - 5, A - 26, A - 4, zt - 1.9, zt + 1.9, encosto === "madeira" ? "madeira" : encosto === "estofado" ? "assento" : "encosto"),
+    // pés da frente e de trás (os de trás sobem até o encosto)
+    cx(-x - 1.9, -x + 1.9, 0, hs - 2, zf - 2, zf + 2, "madeira"),
+    cx(x - 1.9, x + 1.9, 0, hs - 2, zf - 2, zf + 2, "madeira"),
+    cx(-x - 1.9, -x + 1.9, 0, A - hEnc * 0.55, zt - 2.2, zt + 2.2, "madeira"),
+    cx(x - 1.9, x + 1.9, 0, A - hEnc * 0.55, zt - 2.2, zt + 2.2, "madeira"),
+    // travessas laterais e bandeja do assento
+    cx(-x - 1.6, -x + 1.6, hs - 9, hs - 4.5, zt, zf, "madeira"),
+    cx(x - 1.6, x + 1.6, hs - 9, hs - 4.5, zt, zf, "madeira"),
+    cx(-L / 2 + 0.5, L / 2 - 0.5, hs - 3, hs - 0.5, -P / 2 + 3, P / 2 - 0.5, "madeira"),
+    cx(-L / 2 + 2, L / 2 - 2, hs - 0.5, hs + 4, -P / 2 + 5, P / 2 - 1.5, "assento", { arred: 2 }),
+    // encosto: quadro de madeira com painel, levemente inclinado para trás, apoiado na frente dos montantes
+    { g: "caixa", p: [0, yEnc, zt + 3.6], s: [L, hEnc, 2.6], r: [-9, 0, 0], slot: "madeira", arred: 1 },
+    { g: "caixa", p: [0, yEnc, zt + 3.6], s: [L - 7, hEnc - 7, 3.2], r: [-9, 0, 0], slot: encosto === "madeira" ? "madeira" : encosto === "estofado" ? "assento" : "encosto" },
   ];
 };
 
@@ -385,7 +419,8 @@ const eletro: Forma = ({ L, P, A }, o) => {
           cx(x0 + 0.3, x1 - 0.3, 3, corte - 0.5, z1 - ep, z1, "corpo"),
           cx(x0 + 0.3, x1 - 0.3, corte + 0.5, A - 0.3, z1 - ep, z1, "corpo"),
           cx(x0 + 2, x1 - 2, corte - 0.5, corte + 0.5, z1 - ep, z1 - 1.5, "painel"),
-          cx(-3.5, 3.5, A * 0.77, A * 0.85, z1, z1 + 0.3, "painel", { fora: true }),
+          // visor vertical na porta de cima
+          cx(-3.2, 3.2, A * 0.75, A * 0.865, z1, z1 + 0.3, "painel", { fora: true }),
         );
       }
       return pecas;
@@ -425,16 +460,21 @@ const eletro: Forma = ({ L, P, A }, o) => {
     case "lavaloucas":
       return [
         cx(x0, x1, 0, A, z0, z1 - 2, "corpo"),
-        cx(x0 + 0.3, x1 - 0.3, 0.3, A * 0.8, z1 - 2, z1, "corpo"),
-        cx(x0 + 0.3, x1 - 0.3, A * 0.81, A - 0.3, z1 - 2, z1, "painel"),
-        cx(-L * 0.18, L * 0.18, A * 0.84, A * 0.9, z1, z1 + 0.6, "detalhe", { fora: true }),
+        cx(x0 + 0.3, x1 - 0.3, 0.3, A * 0.82, z1 - 2, z1, "corpo"),
+        cx(x0 + 0.3, x1 - 0.3, A * 0.83, A - 0.3, z1 - 2, z1, "painel"),
+        cx(-L * 0.2, L * 0.2, A * 0.86, A * 0.93, z1, z1 + 0.6, "detalhe", { fora: true }),
+        cx(x0 + 0.3, x1 - 0.3, A * 0.115, A * 0.127, z1, z1 + 0.2, "painel", { fora: true }),
       ];
     case "lavadora":
       return [
         cx(x0, x1, 0, A, z0, z1 - 1, "corpo"),
-        cx(x0 + 1, x1 - 1, A * 0.86, A - 1, z1 - 1, z1, "painel"),
-        { g: "cilindro", p: [0, A * 0.45, z1], s: [L * 0.7, 3, L * 0.7], r: [90, 0, 0], slot: "detalhe", fora: true },
-        { g: "cilindro", p: [0, A * 0.45, z1 + 0.4], s: [L * 0.54, 3, L * 0.54], r: [90, 0, 0], slot: "vidro", fora: true },
+        cx(x0 + 1, x1 - 1, A * 0.87, A - 1, z1 - 1, z1, "painel"),
+        cx(-L * 0.12, L * 0.12, A * 0.9, A * 0.955, z1, z1 + 0.2, "vidro", { fora: true }),
+        { g: "cilindro", p: [0, A * 0.47, z1], s: [L * 0.78, 3, L * 0.78], r: [90, 0, 0], slot: "detalhe", fora: true },
+        { g: "cilindro", p: [0, A * 0.47, z1 + 0.4], s: [L * 0.6, 3, L * 0.6], r: [90, 0, 0], slot: "vidro", fora: true },
+        // gaveta do sabão em cima à esquerda e tampa redonda do filtro embaixo à direita
+        cx(-L * 0.43, -L * 0.16, A * 0.895, A * 0.96, z1, z1 + 0.3, "detalhe", { fora: true }),
+        { g: "cilindro", p: [L * 0.33, A * 0.1, z1 - 0.3], s: [L * 0.17, 1, L * 0.17], r: [90, 0, 0], slot: "detalhe", fora: true },
       ];
     case "ar":
       return [cx(x0, x1, 0, A, z0, z1, "corpo"), cx(x0 + 4, x1 - 4, 2, 5, z1, z1 + 0.3, "detalhe", { fora: true })];

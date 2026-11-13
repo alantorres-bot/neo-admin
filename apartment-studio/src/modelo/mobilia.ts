@@ -36,14 +36,14 @@ export function criarMobilia(): Movel[] {
     it("coz-frontao", "frontao", "Frontão granilite", 10.5, 293.5, 90, { ...coz, ...dim(309, 1, 65) }),
     it("coz-cuba", "cuba-inox", "Cuba inox 50 × 40", 42, 377, 90, { ...coz, elevacao: 89.6 }),
     it("coz-aereo-superior", "armario-aereo", "Aéreo superior off-white (até o teto)", 28, 293.5, 90, { ...coz, ...dim(309, 36, 62), opcoes: { portas: 4 } }),
-    it("coz-faixa-verde", "peca-marcenaria", "Faixa verde entre os aéreos", 24, 293.5, 90, { ...coz, ...dim(309, 28, 5), elevacao: 193, cores: { principal: PALETA.verdeSalvia } }),
-    it("coz-aereo-madeira", "aereo-madeira", "Aéreo inferior em madeira clara", 26, 262, 90, { ...coz, ...dim(246, 32, 38), opcoes: { portas: 5 } }),
-    it("coz-nicho-micro", "nicho", "Nicho do micro-ondas", 30, 416.5, 90, { ...coz, ...dim(63, 40, 38) }),
+    it("coz-faixa-verde", "peca-marcenaria", "Faixa verde sob o aéreo superior", 28, 293.5, 90, { ...coz, ...dim(309, 36, 8), elevacao: 190, cores: { principal: PALETA.verdeSalvia } }),
+    it("coz-aereo-madeira", "aereo-madeira", "Aéreo inferior em madeira clara", 26, 262, 90, { ...coz, ...dim(246, 32, 35), opcoes: { portas: 5 } }),
+    it("coz-nicho-micro", "nicho", "Nicho do micro-ondas", 30, 416.5, 90, { ...coz, ...dim(63, 40, 35) }),
     it("coz-microondas", "microondas", "Micro-ondas Midea", 30.5, 416.5, 90, { grupo: "cozinha", situacao: "tenho", elevacao: 157, obs: "Medidas típicas (46 × 35 × 27); conferir o modelo." }),
     it("coz-depurador", "depurador", "Depurador slim", 28, 251, 90, { grupo: "cozinha", situacao: "comprar" }),
     it("coz-led", "fita-led", "Fita de LED sob o aéreo", 13.25, 262, 90, { ...coz, ...dim(246, 2.5, 0.6), elevacao: 154.3 }),
     // torre da geladeira
-    it("coz-painel-geladeira", "peca-marcenaria", "Painel lateral da torre", 47.5, 449.5, 90, { ...coz, ...dim(3, 75, 260) }),
+    it("coz-painel-geladeira", "peca-marcenaria", "Painel lateral da torre", 47.5, 449.5, 90, { ...coz, ...dim(3, 75, 260), obs: "Off-white, como o aéreo de cima. Na foto de referência não há painel: o aéreo passa direto por cima da geladeira." }),
     it("coz-aereo-geladeira", "armario-aereo", "Armário sobre a geladeira", 46, 488.5, 90, { ...coz, ...dim(75, 72, 62), opcoes: { portas: 2 } }),
     it("coz-geladeira", "geladeira", "Geladeira LG (freezer embaixo)", 49.5, 488.5, 90, { grupo: "cozinha", situacao: "tenho", obs: "Medidas típicas (70 × 73 × 185); conferir o modelo." }),
     // =================================================================== COZINHA — pedra sob a janela
@@ -68,7 +68,7 @@ export function criarMobilia(): Movel[] {
     it("sala-sofa", "sofa-retratil", "Sofá bege retrátil 2,30 m", 217, 201, 90, { situacao: "tenho", obs: "Profundidade estimada (100 cm fechado). Aberto avança 50–70 cm." }),
     it("sala-quadro", "quadro", "Quadro", 168.5, 201, 90, { situacao: "tenho" }),
     it("sala-cortina", "cortina", "Cortina cinza", 277, 78, 0, { situacao: "tenho", ...dim(216, 8, 255), obs: "A atual cobre tudo; será cortada. Vai da divisória até a frente da prateleira (que encosta na parede da sacada)." }),
-    it("sala-rack", "rack-ripado", "Rack nogueira com portas ripadas", 388, 200, 270, { situacao: "tenho" }),
+    it("sala-rack", "rack-ripado", "Rack nogueira com portas ripadas", 388, 200, 270, { situacao: "tenho", obs: "Medidas do desenho do fabricante: 175 × 38 × 50,2 cm; nicho central de 55 cm." }),
     it("sala-tv", "tv-55", 'TV 55"', 405, 200, 270, { situacao: "tenho" }),
     it("sala-soundbar", "soundbar", "Soundbar", 386, 200, 270, { situacao: "tenho", elevacao: 50.2 }),
     it("sala-prateleira", "prateleira", "Prateleira de parede a parede", 396.5, 189, 270, { situacao: "tenho", ...dim(230, 21, 4), elevacao: 185, opcoes: { objetos: true }, obs: "Será cortada para 2,30 m." }),
@@ -81,8 +81,8 @@ export function criarMobilia(): Movel[] {
     it("ban-vaso", "vaso-sanitario", "Vaso com caixa acoplada", 542, 495, 180, { situacao: "comprar" }),
     it("ban-gabinete", "gabinete", "Gabinete branco com tampo de granito", 614, 502.5, 180, { grupo: "banheiro-gabinete", situacao: "sob-medida" }),
     it("ban-cuba", "cuba-oval", "Cuba oval de embutir", 614, 500, 180, { grupo: "banheiro-gabinete", situacao: "comprar" }),
-    it("ban-armario-espelho", "armario-espelho", "Armário de espelho", 614, 519.5, 180, { grupo: "banheiro-gabinete", situacao: "sob-medida" }),
-    it("ban-led", "fita-led", "Fita de LED sob o espelho", 614, 520, 180, { grupo: "banheiro-gabinete", situacao: "sob-medida", ...dim(76, 2.5, 0.6), elevacao: 119.2 }),
+    it("ban-armario-espelho", "armario-espelho", "Armário de espelho (do box à parede)", 581, 519.5, 180, { grupo: "banheiro-gabinete", situacao: "sob-medida", ...dim(146, 13, 90), opcoes: { portas: 4, espelho: true }, obs: "Como na foto do decorado: cobre o vaso e a pia. Largura = do vidro do box até a parede; altura estimada pela foto." }),
+    it("ban-led", "fita-led", "Fita de LED sob o espelho", 581, 520, 180, { grupo: "banheiro-gabinete", situacao: "sob-medida", ...dim(142, 2.5, 0.6), elevacao: 119.2 }),
 
     // ============================================================================================= SUÍTE
     it("sui-gr-coluna", "peca-marcenaria", "Coluna do guarda-roupa", 884.5, 252, 270, { ...suite, ...dim(10, 57, 260), ...carvalho }),
