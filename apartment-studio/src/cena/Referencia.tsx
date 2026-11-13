@@ -2,7 +2,15 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { invalidate, type ThreeEvent } from "@react-three/fiber";
 import { useApp } from "../estado/store";
+import { IMAGEM_PLANTA_ORIGINAL } from "../modelo/plantaReal";
 import { M } from "./util";
+
+/** Endereço real da imagem: arquivo do app ou, na página publicada, a imagem embutida. */
+function enderecoImagem(imagem: string): string {
+  if (imagem !== IMAGEM_PLANTA_ORIGINAL) return imagem;
+  const embutida = (globalThis as { __PLANTA_ORIGINAL__?: string }).__PLANTA_ORIGINAL__;
+  return embutida ?? `${import.meta.env.BASE_URL}referencia/planta-apartamento.webp`;
+}
 
 /**
  * Imagem da planta como "decalque" sob o modelo, em escala real (cm por pixel calibrado).
@@ -15,7 +23,7 @@ export function Referencia() {
 
   const textura = useMemo(() => {
     if (!ref) return null;
-    const t = new THREE.TextureLoader().load(ref.imagem, () => invalidate());
+    const t = new THREE.TextureLoader().load(enderecoImagem(ref.imagem), () => invalidate());
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 8;
     return t;

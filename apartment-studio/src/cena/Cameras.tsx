@@ -27,7 +27,7 @@ function CameraPerspectiva() {
   const { size } = useThree();
   // em tela estreita (celular em pé) afasta mais para caber a largura do apartamento
   const proporcao = areaLivre(size.width) / Math.max(1, size.height);
-  const d = e.raio * (proporcao < 0.9 ? 3.4 : 2.3);
+  const d = e.raio * (proporcao < 0.9 ? 3.9 : 2.3);
   return (
     <>
       <PerspectiveCamera makeDefault fov={45} position={[e.cx + d * 0.3, d * 1.05, e.cz + d * 0.8]} near={0.05} far={300} />

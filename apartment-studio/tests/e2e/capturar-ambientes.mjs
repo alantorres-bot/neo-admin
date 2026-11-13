@@ -15,7 +15,8 @@ const raiz = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const celular = process.argv.includes("--celular");
 const escuro = process.argv.includes("--escuro");
 const limpo = process.argv.includes("--limpo"); // sem painéis, só a cena
-const saida = join(raiz, "tests/e2e/capturas", celular ? "celular" : "ambientes");
+const nitido = process.argv.includes("--nitido"); // 2× para imagens que vão para o Alan
+const saida = join(raiz, "tests/e2e/capturas", celular ? "celular" : nitido ? "perspectivas" : "ambientes");
 mkdirSync(saida, { recursive: true });
 const PORTA = 5182;
 
@@ -30,8 +31,8 @@ try {
   }
   const browser = await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
   const context = await browser.newContext({
-    viewport: celular ? { width: 390, height: 780 } : { width: 1440, height: 900 },
-    deviceScaleFactor: celular ? 2 : 1,
+    viewport: celular ? { width: 390, height: 780 } : nitido ? { width: 1280, height: 800 } : { width: 1440, height: 900 },
+    deviceScaleFactor: celular || nitido ? 2 : 1,
     hasTouch: celular,
     colorScheme: escuro ? "dark" : "light",
   });
@@ -41,20 +42,32 @@ try {
   await page.goto(`http://localhost:${PORTA}/`);
   await page.waitForSelector("canvas");
   await page.waitForTimeout(2500);
-  if (limpo) await page.addStyleTag({ content: ".painel,.faixa-inferior,.vistas,.andar,.camada-rotulos{display:none!important}" });
+  if (limpo) await page.addStyleTag({ content: ".painel,.faixa-inferior,.vistas,.andar,.camada-rotulos,.barra{display:none!important}" });
+  if (limpo) {
+    // sem painéis sobra espaço: aproxima a câmera para o apartamento ocupar o quadro
+    await page.waitForTimeout(600);
+    const c = await page.locator("canvas").boundingBox();
+    await page.mouse.move(c.x + c.width / 2, c.y + c.height / 2);
+    for (let i = 0; i < 5; i++) {
+      await page.mouse.wheel(0, -260);
+      await page.waitForTimeout(120);
+    }
+  }
+  // clique por script: funciona mesmo com a barra escondida no modo --limpo
+  const clicar = (teste) => page.evaluate((t) => document.querySelector(`[data-teste="${t}"]`).click(), teste);
   const foto = async (nome) => {
     await page.waitForTimeout(1200);
     await page.screenshot({ path: join(saida, `${nome}${escuro ? "-escuro" : ""}.png`) });
   };
   await foto("00-3d");
-  await page.click('[data-teste="paredes-recortadas"]');
+  await clicar("paredes-recortadas");
   await foto("01-3d-paredes-baixas");
-  await page.click('[data-teste="camera-superior"]');
+  await clicar("camera-superior");
   await foto("02-planta");
-  await page.click('[data-teste="paredes-inteiras"]');
+  await clicar("paredes-inteiras");
   const vistas = await page.evaluate(() => [...document.querySelectorAll(".vistas button")].map((b) => b.getAttribute("data-teste")));
   for (const v of vistas) {
-    await page.evaluate((sel) => document.querySelector(`[data-teste="${sel}"]`).click(), v);
+    await clicar(v);
     await foto(`10-${v.replace("vista-v-", "")}`);
   }
   await browser.close();

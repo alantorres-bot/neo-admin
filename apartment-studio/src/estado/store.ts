@@ -4,6 +4,7 @@ import { centroide, pontosAmbiente, type Ponto } from "../modelo/geometria";
 import { criarPlantaReal } from "../modelo/plantaReal";
 import { BASE_ATUAL, criarProjetoBase } from "../modelo/projetoBase";
 import type { Movel, Planta, Projeto, Selecao } from "../modelo/tipos";
+import { banco, carregarDaNuvem, salvarCopiaNaNuvem, salvarNaNuvem } from "./nuvem";
 import { carregarProjeto, salvarCopia, salvarProjeto } from "./persistencia";
 
 export type ModoCamera = "perspectiva" | "superior" | "interna";
@@ -38,6 +39,8 @@ interface EstadoApp {
   visao: Visao;
   carregado: boolean;
   salvoEm: string | null;
+  /** Onde o último salvamento ficou: na conta (banco da página publicada) ou só neste navegador. */
+  salvoOnde: "conta" | "aparelho" | null;
   /** Existe um projeto-base mais novo do que o salvo neste navegador (e há alterações locais). */
   novaBase: boolean;
   painel: { aba: AbaPainel; aberto: boolean };
@@ -91,22 +94,39 @@ export const useApp = create<EstadoApp>((set, get) => ({
   },
   carregado: false,
   salvoEm: null,
+  salvoOnde: null,
   novaBase: false,
   painel: { aba: "ambientes", aberto: telaLarga },
   calibracao: { ativa: false, pontos: [] },
 
   inicializar: async () => {
+    // Projeto salvo: da mesma base, usa; de base antiga, usa só se o Alan alterou algo (e avisa).
+    const aplicar = (salvo: Projeto | undefined, onde: "conta" | "aparelho") => {
+      if (!salvo) return false;
+      if (salvo.base !== BASE_ATUAL && !salvo.alteradoPeloUsuario) return false;
+      naoSalvar = salvo;
+      set({ projeto: salvo, salvoEm: salvo.atualizadoEm, salvoOnde: onde, novaBase: salvo.base !== BASE_ATUAL, passado: [], futuro: [] });
+      return true;
+    };
+    // 1) este navegador (rápido): a cena já abre com ele
     try {
-      const salvo = await carregarProjeto();
-      if (salvo) {
-        if (salvo.base === BASE_ATUAL) set({ projeto: salvo, salvoEm: salvo.atualizadoEm });
-        // base nova e nada alterado aqui: adota a nova direto; com alterações locais, mantém e avisa
-        else if (salvo.alteradoPeloUsuario) set({ projeto: salvo, salvoEm: salvo.atualizadoEm, novaBase: true });
-      }
+      aplicar(await carregarProjeto(), "aparelho");
     } catch (e) {
-      console.warn("Não foi possível ler o projeto salvo:", e);
+      console.warn("Não foi possível ler o projeto salvo neste navegador:", e);
     }
     set({ carregado: true });
+    // 2) banco da página publicada (chega depois): vale o mais recente
+    try {
+      if (!(await banco())) return;
+      const remoto = await carregarDaNuvem();
+      const { projeto: atual, passado } = get();
+      const mexeuNestaVisita = passado.length > 0;
+      const localMaisNovo = !!atual.alteradoPeloUsuario && (!remoto || atual.atualizadoEm > remoto.atualizadoEm);
+      if (remoto && !mexeuNestaVisita && !localMaisNovo) aplicar(remoto, "conta");
+      else if (mexeuNestaVisita || localMaisNovo) void salvarNaNuvem(get().projeto).then((ok) => ok && set({ salvoOnde: "conta" }));
+    } catch (e) {
+      console.warn("Não foi possível ler o projeto salvo na página:", e);
+    }
   },
 
   alterarProjeto: (rotulo, fn) => {
@@ -201,8 +221,9 @@ export const useApp = create<EstadoApp>((set, get) => ({
   restaurarPlantaOriginal: () => get().alterarPlanta("Restaurar planta original", () => criarPlantaReal()),
 
   adotarBase: async () => {
+    const antigo = get().projeto;
     try {
-      await salvarCopia(get().projeto);
+      await Promise.allSettled([salvarCopia(antigo), salvarCopiaNaNuvem(antigo)]);
     } catch (e) {
       console.warn("Não foi possível guardar a cópia do projeto atual:", e);
     }
@@ -210,17 +231,23 @@ export const useApp = create<EstadoApp>((set, get) => ({
   },
 }));
 
-// Salvamento automático (IndexedDB), 600 ms após a última alteração.
+/** Projeto recém-carregado do armazenamento: não precisa ser gravado de volta. */
+let naoSalvar: Projeto | null = null;
+
+// Salvamento automático, 700 ms após a última alteração: neste navegador (IndexedDB) e,
+// na página publicada, também no banco da página.
 let temporizador: ReturnType<typeof setTimeout> | undefined;
 useApp.subscribe((estado, anterior) => {
-  if (!estado.carregado || estado.projeto === anterior.projeto) return;
+  if (!estado.carregado || estado.projeto === anterior.projeto || estado.projeto === naoSalvar) return;
   clearTimeout(temporizador);
   temporizador = setTimeout(async () => {
-    try {
-      await salvarProjeto(useApp.getState().projeto);
-      useApp.setState({ salvoEm: new Date().toISOString() });
-    } catch (e) {
-      console.error("Falha ao salvar o projeto:", e);
+    const projeto = useApp.getState().projeto;
+    const [local, nuvem] = await Promise.allSettled([salvarProjeto(projeto), salvarNaNuvem(projeto)]);
+    const naConta = nuvem.status === "fulfilled" && nuvem.value;
+    if (local.status === "rejected" && !naConta) {
+      console.error("Falha ao salvar o projeto:", local.reason);
+      return;
     }
-  }, 600);
+    useApp.setState({ salvoEm: new Date().toISOString(), salvoOnde: naConta ? "conta" : "aparelho" });
+  }, 700);
 });

@@ -14,8 +14,24 @@ npm install
 npm run dev            # http://localhost:5180
 npm test               # regras de geometria, móveis e catálogo (Vitest)
 npm run build && npm run e2e                      # verificação visual e funcional no Chromium
-node tests/e2e/capturar-ambientes.mjs --limpo     # galeria de perspectivas (use --celular / --escuro)
+node tests/e2e/capturar-ambientes.mjs --limpo     # galeria de perspectivas (use --celular / --escuro / --nitido)
+npm run artefato && node tests/e2e/verificar-artefato.mjs   # página única publicável + teste em tela de celular
 ```
+
+## Página publicada (abre no celular)
+
+- Endereço: https://claude.ai/artifact/VUR55xAmwntHzhc96f3que (privada; só o Alan abre).
+- `npm run artefato` gera `dist-artefato/apartment-studio.html`: CSS, JavaScript e a imagem da planta embutidos
+  (≈1,3 MB). O Claude publica esse arquivo com a ferramenta Artifact, sempre no mesmo endereço
+  (de outra conversa: ler o artefato primeiro e passar `url`), mantendo `capabilities: {db: {}}`.
+- **Salvamento**: na página publicada o projeto vai para o banco de dados da própria página, documento
+  `projetos/principal` (`{ app, base, atualizadoEm, projeto }`, ≈30 KB; limite 256 KiB), e continua indo
+  para o IndexedDB como reserva. Abre primeiro o que está no navegador e, quando o banco responde, fica
+  valendo o mais recente. Cópias de segurança em `copias/<data>`. Fora da página publicada só o IndexedDB.
+- O Claude lê o projeto atual do Alan com a ferramenta ArtifactData (`get`, coleção `projetos`,
+  documento `principal`): é assim que se enxerga o que ele mudou no app antes de propor alterações.
+- A imagem importada pelo usuário (data URI) não vai para o banco; a planta original é referenciada pelo
+  marcador `@planta-original`.
 
 ## Stack
 
@@ -34,10 +50,12 @@ src/
   catalogo/    formas.ts           formas paramétricas (peças em cm a partir de L × P × A e opções)
                catalogo.ts         biblioteca (76 itens em 5 categorias), paleta do projeto, cores por parte
   estado/      store.ts            Zustand: projeto, histórico, seleção, visão, painel
-               persistencia.ts     IndexedDB
+               persistencia.ts     IndexedDB (navegador)
+               nuvem.ts            banco de dados da página publicada (capacidade db do Artifact)
   cena/        Cena, Paredes, Aberturas, Ambientes, Moveis, Cameras, Referencia, Rotulos, materiais
   ui/          BarraFerramentas, PainelLateral, PainelMoveis, PainelPropriedades, PropMovel, Vistas, …
-tests/e2e/     verificar-visual.mjs (36 verificações), capturar-ambientes.mjs (galeria)
+scripts/       gerar-artefato.mjs  página única para publicar
+tests/e2e/     verificar-visual.mjs (41 verificações), verificar-artefato.mjs, capturar-ambientes.mjs (galeria)
 docs/          ARQUITETURA.md, ANALISE_PLANTA.md, PREFERENCIAS.md
 public/referencia/planta-apartamento.webp   imagem original da planta (decalque calibrado)
 ```
@@ -78,7 +96,7 @@ versão nova (uma cópia da sua fica guardada) ou manter a sua.
 | 3 | Navegação e câmeras | Feita: 3D orbital, planta, por dentro (teclado e toque), vistas por ambiente |
 | 4 | Editor de móveis e biblioteca | **Feita**: 76 itens; adicionar, selecionar, arrastar com encaixe, girar, redimensionar em cm, cores, duplicar, excluir, travar; avisos de conflito; apartamento montado com as coisas do Alan |
 | 5 | Materiais, texturas e iluminação realista | Parcial: acabamentos e texturas por código, luz ambiente com reflexo, porcelanato, estofado arredondado, plafons. Falta: troca de acabamento pela interface, cores de parede, oclusão de ambiente, luminárias reais |
-| 6 | Persistência, versões e exportação | Parcial: salvamento automático, desfazer/refazer, aviso de base nova. Faltam versões nomeadas e exportar imagem |
+| 6 | Persistência, versões e exportação | Parcial: salvamento automático (navegador e conta), desfazer/refazer, aviso de base nova. Faltam versões nomeadas e exportar imagem |
 
 ## Decisões técnicas
 

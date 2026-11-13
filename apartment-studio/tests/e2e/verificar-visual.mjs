@@ -236,6 +236,50 @@ try {
   await page.click('[data-teste="movel-jan-mesa"]');
   ok((await campo(page, "Largura").inputValue()) === "140", "após recarregar, a mesa alterada continua salva (IndexedDB)");
 
+  // ------------------------------------------------------------------ banco da página publicada (simulado)
+  // Na página publicada o projeto vai para o banco da própria página; aqui um banco falso em memória
+  // confere a lógica: grava após a alteração e outro aparelho (contexto novo) abre o que foi salvo.
+  const cofre = new Map();
+  const comBanco = async (ctx) => {
+    await ctx.exposeFunction("__bancoLer", (c) => cofre.get(c) ?? null);
+    await ctx.exposeFunction("__bancoGravar", (c, json) => void cofre.set(c, json));
+    await ctx.addInitScript(() => {
+      const doc = (caminho) => ({
+        get: async () => {
+          const j = await window.__bancoLer(caminho);
+          return { exists: j !== null, data: () => (j === null ? undefined : Object.freeze(JSON.parse(j))) };
+        },
+        set: async (d) => window.__bancoGravar(caminho, JSON.stringify(d)),
+      });
+      window.claude = { use: async (nome) => (nome === "db" ? Object.freeze({ doc }) : null) };
+    });
+  };
+  const abrir = async () => {
+    const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
+    await comBanco(ctx);
+    const pg = await ctx.newPage();
+    pg.on("pageerror", (e) => erros.push(String(e)));
+    await pg.goto(URL_APP);
+    await pg.waitForSelector("canvas");
+    await pg.waitForTimeout(1500);
+    await pg.click('[data-teste="aba-moveis"]');
+    await pg.click('[data-teste="movel-jan-mesa"]');
+    return { ctx, pg };
+  };
+  const a = await abrir();
+  ok(!cofre.has("projetos/principal"), "banco da página: nada é gravado antes de o usuário alterar algo");
+  await campo(a.pg, "Altura").fill("78");
+  await campo(a.pg, "Altura").press("Enter");
+  await a.pg.waitForTimeout(1500);
+  const gravado = cofre.get("projetos/principal");
+  ok(!!gravado && JSON.parse(gravado).projeto.moveis.some((m) => m.id === "jan-mesa" && m.altura === 78), "banco da página: alteração gravada no documento do projeto");
+  ok(!!gravado && gravado.length < 200_000 && !gravado.includes("data:image"), `banco da página: documento enxuto (${Math.round((gravado?.length ?? 0) / 1024)} KB de 256)`);
+  ok((await a.pg.locator('.salvo[title*="conta"]').count()) === 1, 'indicador mostra "salvo na conta"');
+  await a.ctx.close();
+  const b = await abrir(); // outro aparelho: armazenamento do navegador vazio
+  ok((await campo(b.pg, "Altura").inputValue()) === "78", "outro aparelho abre o projeto salvo na conta");
+  await b.ctx.close();
+
   const unicos = [...new Set(erros)];
   ok(unicos.length === 0, `sem erros no console${unicos.length ? `: ${unicos.slice(0, 3).join(" | ")}` : ""}`);
   await browser.close();

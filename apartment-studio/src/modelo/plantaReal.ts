@@ -13,6 +13,8 @@
  */
 import type { Abertura, Ambiente, CotaPlanta, Medida, OrigemMedida, Parede, Planta, RefCota, Vertice } from "./tipos";
 
+/** Marcador da imagem original da planta; a cena resolve para o arquivo ou para a imagem embutida. */
+export const IMAGEM_PLANTA_ORIGINAL = "@planta-original";
 export const ESCALA_CM_POR_PX = 0.772;
 const ORIGEM_PX = { x: 169, y: 80 };
 
@@ -207,7 +209,7 @@ export function criarPlantaReal(): Planta {
     provisoria: false,
     cotas,
     referencia: {
-      imagem: `${import.meta.env.BASE_URL}referencia/planta-apartamento.webp`,
+      imagem: IMAGEM_PLANTA_ORIGINAL,
       larguraPx: 1536,
       alturaPx: 864,
       cmPorPx: ESCALA_CM_POR_PX,

@@ -102,6 +102,18 @@ Antes de mexer, leia:
 - IndexedDB (idb-keyval): projeto salvo automaticamente; histórico desfazer/refazer por snapshots do estado
   (limite ~100); versões nomeadas = cópia do projeto. Imagem da planta guardada como Blob/dataURL no projeto.
 
+## Página publicada (o Alan usa no celular)
+
+- Endereço fixo: https://claude.ai/artifact/VUR55xAmwntHzhc96f3que. Depois de qualquer mudança validada:
+  `npm run artefato && node tests/e2e/verificar-artefato.mjs` e republicar
+  `dist-artefato/apartment-studio.html` com a ferramenta Artifact **nesse mesmo endereço** (em conversa nova:
+  `action: "read"` no endereço e depois publicar com `url`). Não passar `capabilities` de novo (o `db` é mantido).
+- Antes de mudar o layout a pedido do Alan, leia o projeto dele: ArtifactData `get`, coleção `projetos`,
+  documento `principal`. Se ele alterou algo no app (`alteradoPeloUsuario`), respeite o que ele fez e combine
+  como aplicar a mudança — a base nova só entra para ele quando aceitar o aviso "há uma versão nova".
+- Regras de página publicada que valem para a interface: cores só por tokens (tema claro e escuro), sem
+  `alert/confirm/prompt`, sem download por link, tudo embutido (scripts externos só de CDN permitido).
+
 ## Verificação (obrigatória ao fim de cada etapa)
 
 1. `npm run typecheck && npm test` em `apartment-studio/`.

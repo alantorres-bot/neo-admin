@@ -22,6 +22,7 @@ export function BarraFerramentas() {
   const podeRefazer = useApp((s) => s.futuro.length > 0);
   const ultimo = useApp((s) => s.passado.at(-1)?.rotulo);
   const salvoEm = useApp((s) => s.salvoEm);
+  const salvoOnde = useApp((s) => s.salvoOnde);
 
   useEffect(() => {
     const kd = (e: KeyboardEvent) => {
@@ -121,7 +122,7 @@ export function BarraFerramentas() {
         <button onClick={refazer} disabled={!podeRefazer} title="Refazer (Ctrl+Shift+Z)" aria-label="Refazer" data-teste="refazer">
           ↷
         </button>
-        <span className="salvo" title="O projeto fica salvo neste navegador">
+        <span className="salvo" title={salvoOnde === "conta" ? "Salvo na sua conta: vale em qualquer aparelho" : "O projeto fica salvo neste navegador"}>
           {salvoEm ? `Salvo ${new Date(salvoEm).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}` : "Salva sozinho"}
         </span>
       </div>

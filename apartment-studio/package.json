@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "e2e": "node tests/e2e/verificar-visual.mjs"
+    "e2e": "node tests/e2e/verificar-visual.mjs",
+    "artefato": "node scripts/gerar-artefato.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
