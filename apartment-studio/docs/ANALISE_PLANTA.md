@@ -61,7 +61,7 @@ vermelho = divergente após edição, tracejado = a confirmar).
 
 | Elemento | Adotado | De onde veio |
 |---|---|---|
-| Portas e batentes | Brancos, com maçaneta de alavanca e guarnição de 6 cm | padrão de entrega; no decorado as esquadrias são brancas |
+| Portas, batentes e guarnições | Madeira com veio, um pouco mais escura que os armários de madeira da cozinha; maçaneta de alavanca cromada; guarnição de 6 cm | **informado pelo Alan** (cor); tom exato, maçaneta e largura da guarnição estimados |
 | Esquadrias (janelas e porta da varanda) | Alumínio branco | fotos do decorado (banheiro e área de serviço) |
 | Paredes do banheiro | Azulejo branco 60 × 30 até o teto | decorado: box azulejado até o teto; no trecho da pia lá é meia parede |
 | Rodapé | Branco, 7 cm, nas paredes pintadas | padrão — conferir |

@@ -1,4 +1,5 @@
 import { useApp } from "../estado/store";
+import { COR_PORTA_PADRAO } from "../catalogo/catalogo";
 import { COR_PISO_PADRAO } from "../cena/Ambientes";
 import {
   acabamentoDaFaixa,
@@ -12,8 +13,8 @@ import {
   pintarAmbiente,
   validarPlanta,
 } from "../modelo/geometria";
-import type { Abertura, Ambiente, MaterialPiso, Medida, Parede, Planta, Revestimento, TipoAbertura, TipoAmbiente } from "../modelo/tipos";
-import { COR_DO_REVESTIMENTO, EscolhaDeCor, NOME_PISO, NOME_REVESTIMENTO, TONS_PAREDE, TONS_PISO, TONS_PORTA } from "./acabamentos";
+import type { Abertura, AcabamentoPorta, Ambiente, MaterialPiso, Medida, Parede, Planta, Revestimento, TipoAbertura, TipoAmbiente } from "../modelo/tipos";
+import { COR_DO_REVESTIMENTO, EscolhaDeCor, NOME_ACABAMENTO_PORTA, NOME_PISO, NOME_REVESTIMENTO, TONS_PAREDE, TONS_PISO, TONS_PORTA } from "./acabamentos";
 import { CampoMedida, CampoNumero, SeloOrigem } from "./campos";
 import { NOME_TIPO_ABERTURA, NOME_TIPO_AMBIENTE, nomeAbertura, nomeParede } from "./nomes";
 import { fmtM2 } from "./PainelLateral";
@@ -235,6 +236,7 @@ function PropAbertura({ planta, ab }: { planta: Planta; ab: Abertura }) {
     alterar(`Alterar ${rotulo.toLowerCase()}`, { [campo]: m });
 
   const problemas = validarPlanta(planta).filter((p) => p.ref === ab.id);
+  const acabamentoPorta: AcabamentoPorta = ab.acabamento ?? "madeira";
 
   return (
     <>
@@ -257,8 +259,29 @@ function PropAbertura({ planta, ab }: { planta: Planta; ab: Abertura }) {
       </p>
       {ab.tipo === "porta" && (
         <>
-          <h3 className="secao">Cor da porta</h3>
-          <EscolhaDeCor tons={TONS_PORTA} valor={ab.cor ?? TONS_PORTA[0].cor} rotulo="porta" aoEscolher={(cor) => alterar("Cor da porta", { cor })} />
+          <h3 className="secao">Acabamento da porta</h3>
+          <label className="campo">
+            <span className="campo-rotulo">Folha, batente e guarnição</span>
+            <select
+              id="porta-acabamento"
+              value={acabamentoPorta}
+              // trocar o acabamento volta para o tom padrão dele
+              onChange={(e) => alterar("Acabamento da porta", { acabamento: e.target.value as AcabamentoPorta, cor: undefined })}
+            >
+              {Object.entries(NOME_ACABAMENTO_PORTA).map(([k, v]) => (
+                <option key={k} value={k}>
+                  {v}
+                </option>
+              ))}
+            </select>
+          </label>
+          <EscolhaDeCor
+            tons={TONS_PORTA[acabamentoPorta]}
+            valor={ab.cor ?? COR_PORTA_PADRAO[acabamentoPorta]}
+            id="porta-cor"
+            rotulo="porta"
+            aoEscolher={(cor) => alterar("Cor da porta", { acabamento: acabamentoPorta, cor })}
+          />
         </>
       )}
       {ab.tipo === "porta" && (

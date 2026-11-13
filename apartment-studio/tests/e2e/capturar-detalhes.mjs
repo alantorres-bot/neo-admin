@@ -38,6 +38,9 @@ const DETALHES = {
   // mesmo ponto de vista da foto de referência (lá a cozinha é espelhada): da mesa, olhando a bancada até a janela
   "cozinha-referencia": { de: [166, 516, 152], para: [22, 262, 112] },
   "banheiro-espelho": { de: [574, 412, 148], para: [581, 520, 128] },
+  // portas: do começo do corredor (quarto 2 à esquerda, banheiro à direita, suíte ao fundo) e a de entrada, fechada
+  "portas-corredor": { de: [418, 352, 150], para: [650, 352, 105] },
+  "porta-entrada": { de: [300, 400, 150], para: [337, 531, 105], esconder: ["jan-mesa", "jan-cadeira-1", "jan-cadeira-2", "jan-cadeira-3", "jan-cadeira-4"] },
   "banheiro-geral": { de: [640, 408, 160], para: [540, 505, 95] },
 };
 
@@ -48,7 +51,9 @@ const semRealismo = process.argv.includes("--sem-realismo");
 const sufixo = `${hora !== null ? `-${String(hora).replace(".", "h")}${Number.isInteger(hora) ? "h" : ""}` : ""}${luzes ? "-luzes" : ""}${semRealismo ? "-simples" : ""}`;
 const pedidos = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const nomes = pedidos.length ? pedidos : Object.keys(DETALHES);
-const servidor = spawn("npx", ["vite", "preview", "--port", String(PORTA), "--strictPort"], { cwd: raiz, stdio: "pipe" });
+// O Vite é iniciado direto pelo Node (e não por "npx"): assim `servidor.kill()` encerra o servidor de verdade,
+// em vez de deixar um processo órfão ocupando a porta.
+const servidor = spawn(process.execPath, [join(raiz, "node_modules/vite/bin/vite.js"), "preview", "--port", String(PORTA), "--strictPort"], { cwd: raiz, stdio: "pipe" });
 const erros = [];
 try {
   for (let i = 0; i < 60; i++) {

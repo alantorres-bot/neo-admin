@@ -4,7 +4,7 @@
  */
 import type { Acabamento } from "../catalogo/formas";
 import { PALETA } from "../catalogo/catalogo";
-import type { MaterialPiso, Revestimento } from "../modelo/tipos";
+import type { AcabamentoPorta, MaterialPiso, Revestimento } from "../modelo/tipos";
 
 export interface Tom {
   nome: string;
@@ -64,14 +64,25 @@ export const TONS_LUZ: Tom[] = [
   { nome: "Fria (6000 K)", cor: "#eaf2ff" },
 ];
 
-export const TONS_PORTA: Tom[] = [
-  { nome: "Branca (padrão)", cor: "#f2f0eb" },
-  { nome: "Off-white", cor: PALETA.offWhite },
-  { nome: "Madeira clara", cor: PALETA.madeiraClara },
-  { nome: "Nogueira", cor: PALETA.nogueira },
-  { nome: "Grafite", cor: PALETA.grafite },
-  { nome: "Preta", cor: PALETA.preto },
-];
+export const NOME_ACABAMENTO_PORTA: Record<AcabamentoPorta, string> = { madeira: "Madeira", pintura: "Pintada" };
+
+/** Tons de porta para cada acabamento; o primeiro é o padrão dele. */
+export const TONS_PORTA: Record<AcabamentoPorta, Tom[]> = {
+  madeira: [
+    { nome: "Madeira (padrão)", cor: PALETA.madeiraPorta },
+    { nome: "Madeira clara", cor: PALETA.madeiraClara },
+    { nome: "Mel", cor: PALETA.madeiraMel },
+    { nome: "Freijó", cor: "#8f6a4a" },
+    { nome: "Nogueira", cor: PALETA.nogueira },
+  ],
+  pintura: [
+    { nome: "Branca", cor: "#f2f0eb" },
+    { nome: "Off-white", cor: PALETA.offWhite },
+    { nome: "Cinza", cor: PALETA.cinzaPorta },
+    { nome: "Grafite", cor: PALETA.grafite },
+    { nome: "Preta", cor: PALETA.preto },
+  ],
+};
 
 /** Acabamentos que se pode escolher para uma parte de móvel (vidro, espelho e luz não entram: são da peça). */
 export const NOME_ACABAMENTO: Partial<Record<Acabamento, string>> = {

@@ -23,7 +23,9 @@ const saida = join(raiz, "tests/e2e/capturas", celular ? "celular" : nitido ? "p
 mkdirSync(saida, { recursive: true });
 const PORTA = 5182;
 
-const servidor = spawn("npx", ["vite", "preview", "--port", String(PORTA), "--strictPort"], { cwd: raiz, stdio: "pipe" });
+// O Vite é iniciado direto pelo Node (e não por "npx"): assim `servidor.kill()` encerra o servidor de verdade,
+// em vez de deixar um processo órfão ocupando a porta.
+const servidor = spawn(process.execPath, [join(raiz, "node_modules/vite/bin/vite.js"), "preview", "--port", String(PORTA), "--strictPort"], { cwd: raiz, stdio: "pipe" });
 const erros = [];
 try {
   for (let i = 0; i < 60; i++) {

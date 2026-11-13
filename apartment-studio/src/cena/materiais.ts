@@ -344,6 +344,20 @@ function criar(cor: string, acab: Acabamento, ru: number, rv: number, girar: boo
   }
 }
 
+const realcados = new WeakMap<THREE.Material, THREE.Material>();
+
+/** O mesmo material com um realce azulado de seleção por cima: a cor escolhida continua à vista. */
+export function materialRealcado(material: THREE.Material): THREE.Material {
+  let m = realcados.get(material);
+  if (!m) {
+    const copia = (material as THREE.MeshStandardMaterial).clone();
+    copia.emissive = new THREE.Color("#5b9dff");
+    copia.emissiveIntensity = 0.25;
+    realcados.set(material, (m = copia));
+  }
+  return m;
+}
+
 // ------------------------------------------------------------------------------------ paredes
 
 /** Textura de revestimento de parede; as faces usam coordenadas em metros, então `repeat` = 1 / tamanho real. */

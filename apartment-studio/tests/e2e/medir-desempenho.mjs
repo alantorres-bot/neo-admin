@@ -14,7 +14,9 @@ const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const PORTA = 5184;
-const servidor = spawn("npx", ["vite", "preview", "--port", String(PORTA), "--strictPort"], { cwd: raiz, stdio: "pipe" });
+// O Vite é iniciado direto pelo Node (e não por "npx"): assim `servidor.kill()` encerra o servidor de verdade,
+// em vez de deixar um processo órfão ocupando a porta.
+const servidor = spawn(process.execPath, [join(raiz, "node_modules/vite/bin/vite.js"), "preview", "--port", String(PORTA), "--strictPort"], { cwd: raiz, stdio: "pipe" });
 try {
   for (let i = 0; i < 60; i++) {
     try {

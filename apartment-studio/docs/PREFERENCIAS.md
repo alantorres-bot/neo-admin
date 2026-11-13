@@ -68,7 +68,8 @@ escrivaninha, guarda-roupa, duas banquetas na varanda), marcada como **sugestão
 | Banheiro | Branco, granito cinza salpicado, puxadores pretos | `#f1efeb`, `#6f6c69` |
 | Suíte | Carvalho claro, portas cinza, espelho, puxadores de alumínio | `#d9c9ae`, `#9c9891` |
 | Paredes / piso | Off-white / porcelanato cinza claro (como na planta) | `#f3f0ea` / `#d3d0cb` |
-| Portas, batentes, rodapé e esquadrias | Branco (como no decorado) | `#f2f0eb` / `#f6f4ef` / `#eceae6` |
+| **Portas** (folha, batente e guarnição) | **Madeira, um pouco mais escura que os armários de madeira da cozinha** — informação do Alan (13/11) | `#b78f66` (≈ 16% mais escura que a madeira clara `#cfae86`); tom aproximado, sem foto |
+| Rodapé e esquadrias | Branco (esquadrias como no decorado; rodapé a conferir) | `#f6f4ef` / `#eceae6` |
 | Azulejo do banheiro | Branco, 60 × 30 | `#f4f3ef` |
 | Luzes | Quentes (plafons, fitas de LED, luminária de piso) | `#ffd9a8` a `#ffe6c4` |
 | Em aberto | Parede azul-marinho (sofá ou remos) | `#1c2444` |
@@ -139,7 +140,9 @@ Parede lateral: 3,87 m do shaft até a parede da porta (cota). Profundidade da b
 7. Parede azul-marinho: **atrás do sofá (opção A) ou atrás dos remos (opção B)?** As duas foram mostradas ao Alan em imagem (13/11); por enquanto as paredes seguem off-white. Aplicar: tocar na parede e escolher o tom no lado certo.
 8. Pendentes da planta: cotas 2,52 e 1,32, pé-direito, norte (ver `ANALISE_PLANTA.md`).
 9. Medidas reais da cadeira (a foto não tem cotas; usei 47 × 47 × 86 cm).
-10. Portas internas e de entrada: brancas mesmo? (adotei branco; a cor troca tocando na porta).
+10. Portas: o tom exato da madeira (usei um aproximado). Uma foto de uma porta resolve; a de entrada é igual às internas?
 11. Tom das luzes: adotei quente (≈2700 K) em toda a casa.
+12. Rodapé: branco, de madeira como as portas, ou do mesmo porcelanato do piso?
 
-Respondidas: painel lateral da geladeira — **manter**; armário de espelho com 90 cm — **sim** (Alan, 13/11).
+Respondidas: painel lateral da geladeira — **manter**; armário de espelho com 90 cm — **sim**; portas —
+**de madeira, um pouco mais escura que os armários da cozinha** (Alan, 13/11).

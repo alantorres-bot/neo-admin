@@ -129,6 +129,8 @@ Antes de mexer, leia:
 - **Parede**: pintura e revestimento ficam em `Parede.acabamentos`, por lado e por ambiente (`definirAcabamento`,
   `pintarAmbiente`). "Atrás do sofá" = parede `p-coz-sala`, lado da sala; "atrás dos remos" = `p-fundo-jantar`,
   lado do jantar. Nunca pinte `Parede.cor` para isso: ela vale para as duas faces.
+- **Portas** são de madeira, um pouco mais escura que os armários de madeira da cozinha (o Alan informou; o tom
+  exato não tem foto). O padrão fica em `COR_PORTA_PADRAO` (catalogo.ts); não volte para branco.
 - **Acabamento novo de móvel**: `Acabamento` em formas.ts + `criar()` em materiais.ts + nome em `ui/acabamentos.tsx`.
 - **Desempenho**: a cena precisa rodar no celular. Antes e depois de mexer no desenho, rode
   `node tests/e2e/medir-desempenho.mjs` (referência: ≈ 460 chamadas na vista 3D, ≈ 440 por dentro). Peças de um

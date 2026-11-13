@@ -66,7 +66,7 @@ src/
   ui/          BarraFerramentas, PainelLateral, PainelMoveis, PainelPropriedades, PropMovel, Vistas, …
                acabamentos.tsx     paletas de tons prontos, nomes de acabamento/revestimento/piso, seletor de cor
 scripts/       gerar-artefato.mjs  página única para publicar
-tests/e2e/     verificar-visual.mjs (62 verificações), verificar-artefato.mjs (celular), capturar-ambientes.mjs (galeria),
+tests/e2e/     verificar-visual.mjs (68 verificações), verificar-artefato.mjs (celular), capturar-ambientes.mjs (galeria),
                capturar-detalhes.mjs (item de perto, para comparar com a foto), medir-desempenho.mjs
 docs/          ARQUITETURA.md, ANALISE_PLANTA.md, PREFERENCIAS.md
 docs/referencias/   fotos enviadas pelo Alan (reduzidas) + LEIAME.md com o que cada uma mostra
@@ -149,6 +149,10 @@ Cada face é dividida pelo ambiente para o qual está voltada (`faixasDaFace`), 
 revestimento próprios (`Parede.acabamentos`: pintura, azulejo, cimento queimado, tijolinho). Rodapé de 7 cm nas
 faces internas pintadas (não no banheiro nem em face revestida). Selecionada, a parede ganha só um realce: a cor
 escolhida continua à vista. Pisos: porcelanato, madeira em réguas ou cimento, com cor (`Ambiente.pisoMaterial`).
+
+**Portas** (`Aberturas.tsx`): folha, batente e guarnição no mesmo acabamento — madeira com veio (padrão, como as
+portas do apartamento; `COR_PORTA_PADRAO` no catálogo) ou pintada (`Abertura.acabamento` e `.cor`). A folha gira
+na face interna do batente; maçaneta de alavanca dos dois lados.
 
 **Móveis**: as peças de cada móvel são unidas numa malha por material. Madeira com relevo do veio, estofado com
 trama e brilho aveludado, inox escovado, pedra e louça polidas, LED que apaga quando as luzes estão apagadas.

@@ -22,7 +22,9 @@ const PORTA = 5181;
 // "?teste" expõe o estado do app para conferência (window.__estudio e window.__cena) — ver main.tsx
 const URL_APP = `http://localhost:${PORTA}/?teste`;
 
-const servidor = spawn("npx", ["vite", "preview", "--port", String(PORTA), "--strictPort"], { cwd: raiz, stdio: "pipe" });
+// O Vite é iniciado direto pelo Node (e não por "npx"): assim `servidor.kill()` encerra o servidor de verdade,
+// em vez de deixar um processo órfão ocupando a porta.
+const servidor = spawn(process.execPath, [join(raiz, "node_modules/vite/bin/vite.js"), "preview", "--port", String(PORTA), "--strictPort"], { cwd: raiz, stdio: "pipe" });
 const falhas = [];
 const ok = (cond, msg) => {
   console.log(`${cond ? "✔" : "✘"} ${msg}`);
@@ -284,6 +286,27 @@ try {
     return { material: pl.ambientes.find((a) => a.id === "amb-quarto2").pisoMaterial, faces: pl.paredes.flatMap((p) => (p.acabamentos ?? []).filter((a) => a.ambiente === "amb-quarto2")).length };
   });
   ok(q2volta.material === undefined && q2volta.faces === 0, "dois Ctrl+Z desfazem o piso e a pintura do quarto");
+
+  // portas: de madeira por padrão; dá para pintar e voltar
+  const portaEntrada = () => estado(() => window.__estudio.getState().projeto.planta.aberturas.find((a) => a.id === "pt-entrada"));
+  await page.click('[data-teste="aba-estrutura"]');
+  await page.click('[data-teste="abertura-pt-entrada"]');
+  ok((await page.locator("#porta-acabamento").inputValue()) === "madeira", "portas saem em madeira por padrão");
+  ok(await page.locator(`${P} button[aria-label="Madeira (padrão)"]`).evaluate((b) => b.getAttribute("aria-pressed") === "true"), "o tom padrão da porta aparece marcado");
+  await page.selectOption("#porta-acabamento", "pintura");
+  await page.click(`${P} [aria-label="Cor: porta"] button[aria-label="Grafite"]`);
+  await page.waitForTimeout(300);
+  let pt = await portaEntrada();
+  ok(pt.acabamento === "pintura" && pt.cor === "#3b3e42", "porta de entrada pintada de grafite");
+  await page.keyboard.press("Escape");
+  await page.click('[data-teste="vista-v-mesa"]');
+  await capturar(page, "11b-porta-pintada");
+  await page.keyboard.press("Control+z");
+  await page.keyboard.press("Control+z");
+  await page.waitForTimeout(300);
+  pt = await portaEntrada();
+  ok(pt.acabamento === undefined && pt.cor === undefined, "dois Ctrl+Z devolvem a porta à madeira padrão");
+  await capturar(page, "11c-porta-madeira");
 
   // acabamento e cor de uma parte do móvel
   await page.click('[data-teste="aba-moveis"]');

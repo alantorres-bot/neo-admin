@@ -58,6 +58,9 @@ export interface AcabamentoParede {
 
 export type TipoAbertura = "porta" | "porta-correr" | "janela" | "vao";
 
+/** Porta em madeira aparente (com veio) ou pintada (lisa). */
+export type AcabamentoPorta = "madeira" | "pintura";
+
 export interface Abertura {
   id: string;
   paredeId: string;
@@ -73,7 +76,9 @@ export interface Abertura {
   abrePara?: "esquerda" | "direita";
   /** Quanto a folha aparece aberta no desenho, em graus (padrão 75; 0 = fechada). */
   aberta?: number;
-  /** Cor da folha da porta (padrão: branca). */
+  /** Acabamento da porta — folha, batente e guarnição (padrão: madeira, como as portas do apartamento). */
+  acabamento?: AcabamentoPorta;
+  /** Cor da porta (padrão: a do acabamento — ver COR_PORTA_PADRAO no catálogo). */
   cor?: string;
 }
 

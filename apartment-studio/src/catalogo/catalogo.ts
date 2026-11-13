@@ -3,7 +3,7 @@
  * com dimensões padrão de mercado em cm e as partes coloríveis ("slots") com cor e acabamento.
  * Medidas de referência: ver .claude/skills/apartment-studio/SKILL.md.
  */
-import type { Movel } from "../modelo/tipos";
+import type { AcabamentoPorta, Movel } from "../modelo/tipos";
 import type { Acabamento, Opcoes } from "./formas";
 
 export type Categoria = "sala" | "quartos" | "cozinha" | "banheiro" | "decoracao";
@@ -60,6 +60,9 @@ export const PALETA = {
   offWhite: "#e2ddd0",
   madeiraClara: "#cfae86",
   madeiraMel: "#c59b6d",
+  // portas do apartamento: madeira "um pouco mais escura que os armários da cozinha" (Alan, 13/11) —
+  // ≈ 16% mais escura que a madeira clara dos aéreos; tom aproximado, sem foto
+  madeiraPorta: "#b78f66",
   nogueira: "#6d5a46",
   nogueiraEscura: "#2a1f18",
   madeiraMedia: "#7a5236",
@@ -88,6 +91,9 @@ export const PALETA = {
  * e para a casa acesa à noite ficar, na média, mais escura que de dia (conferido em verificar-artefato.mjs).
  */
 export const FORCA_PLAFON = 3.2;
+
+/** Cor de uma porta que não teve a cor trocada, conforme o acabamento dela. */
+export const COR_PORTA_PADRAO: Record<AcabamentoPorta, string> = { madeira: PALETA.madeiraPorta, pintura: "#f2f0eb" };
 
 const S = (rotulo: string, cor: string, acabamento: Acabamento = "liso"): SlotCor => ({ rotulo, cor, acabamento });
 
