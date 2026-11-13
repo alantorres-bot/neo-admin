@@ -86,7 +86,7 @@ Parede lateral: 3,87 m do shaft até a parede da porta (cota). Profundidade da b
 |---|---|---|
 | Fechamento do canto + gaveteiro | 82 cm | 3 gavetas |
 | Cocção | 60 cm | Cooktop sobre forno de embutir |
-| Lava-louças | 61 cm | Electrolux em nicho elevado, gaveta embaixo |
+| Lava-louças | 61 cm | Electrolux **alinhada com o forno** (mesma base, a 16 cm do piso): régua embaixo e gaveta rasa em cima — pedido do Alan em 13/11 (antes ficava em nicho elevado, com gaveta embaixo) |
 | Pia | 70 cm | Cuba inox 50 × 40, 2 portas |
 | Armário | 36 cm | 1 porta |
 | Torre da geladeira | 78 cm | Painel off-white de 3 cm + vão de 75 cm; armário em cima. **Painel mantido — decisão do Alan (13/11)** |
@@ -94,7 +94,7 @@ Parede lateral: 3,87 m do shaft até a parede da porta (cota). Profundidade da b
 - **Pedra sob a janela** (pedido do Alan): 1,28 × 0,65 m, do shaft até a divisória da sala; embaixo, tanque (cuba 50 × 40) e a lava e seca encostada na divisória.
 - **Shaft no canto do L** (pedido do Alan para considerar): ≈22 × 65 cm na minha leitura da planta; a bancada contorna.
 - Aéreos em dois níveis: superior off-white 62 cm até o teto (4 portas); inferior madeira clara **35 cm**, recuado; **faixa verde de 8 cm** entre eles (como na referência; antes eram 38 + 5); nicho aberto de madeira com o micro-ondas perto da geladeira; fita de LED; frontão granilite de 65 cm.
-- Diferenças em relação à foto de referência: lá o aéreo de cima passa direto por cima da geladeira, **sem painel lateral** (aqui o painel off-white de 3 cm fica — decisão do Alan em 13/11); lá a lava-louças é de piso, de 45 cm (a do Alan é a compacta, em nicho elevado).
+- Diferenças em relação à foto de referência: lá o aéreo de cima passa direto por cima da geladeira, **sem painel lateral** (aqui o painel off-white de 3 cm fica — decisão do Alan em 13/11); lá a lava-louças é de piso, de 45 cm (a do Alan é a compacta, embutida na mesma altura do forno).
 - **Iluminação como na referência (Etapa 5):** duas fitas de LED embutidas no teto, de 2,90 m, paralelas à bancada (a 12 e a 52 cm da frente dela), mais a fita sob o aéreo de madeira. Tom quente. Com elas a cozinha não tem plafon.
 - Em relação ao primeiro desenho da outra conversa (escala errada): saiu um armário de 55 cm e o de 2 portas virou gaveteiro, porque a parede real tem 3,87 m e não 4,74 m.
 
@@ -154,3 +154,6 @@ O Alan pediu o projeto executivo da cozinha e do guarda-roupa para orçar com ma
 da cozinha, o tipo de puxador cava, o número de portas do aéreo superior, o puxador das portas de espelho e se os
 complementos da suíte (ponte, painel, cabeceira, criados) entram no orçamento. Continuam em aberto as perguntas 1, 3 e 4
 da seção 6 (modelos dos aparelhos, forno e cooktop, cama) e o pé-direito — todas mudam medidas do caderno.
+
+Em 13/11 o Alan pediu a **lava-louças e o forno alinhados**: a lava-louças desceu 10 cm (base a 16 cm, como o forno) e a
+gaveta que ficava embaixo dela passou para cima. O forno não sobe porque o cooktop fica sobre ele. Não voltar ao nicho elevado.

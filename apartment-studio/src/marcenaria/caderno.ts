@@ -1,6 +1,7 @@
 /** Caderno de marcenaria: monta o documento (HTML para impressão em A3 paisagem) e os dados da planilha. */
 import { BASE_ATUAL } from "../modelo/projetoBase";
 import { cartaoModulo, tabelaDePecas, textoDasFerragens } from "./cartoes";
+import { CHAPA, estimativaDeChapas, lotesDoGrupo, type LinhaChapa } from "./chapas";
 import { CSS_DESENHO, DEFS_HACHURAS, Desenho, fmt } from "./desenho";
 import { FERRAGENS, LOTES, PADROES, criarMarcenaria, listaDePecas, resumoDeFerragens, resumoDeFitas, resumoDeMateriais, todasAsPecas, type Marcenaria } from "./projeto";
 import type { Prancha } from "./pranchas-cozinha";
@@ -9,7 +10,16 @@ import { CORTES_SUITE, cortesSuite, elevacaoSuiteA, elevacaoSuiteB, plantaSuite 
 import type { Modulo } from "./tipos";
 import { desenharCorte } from "./vistas";
 
-export const REVISAO = "00";
+export const REVISAO = "01";
+
+/** Histórico de revisões (aparece na capa). */
+export const REVISOES: { rev: string; data: string; texto: string }[] = [
+  { rev: "00", data: "13/11/2026", texto: "Emissão inicial." },
+  { rev: "01", data: "13/11/2026", texto: "Lava-louças alinhada com o forno: mesma base, régua embaixo e gaveta rasa em cima (M3); frente de cima do M2 na mesma linha. Estimativa de chapas na prancha Q-01 e na planilha." },
+];
+
+const chapasDe = (lista: LinhaChapa[], padrao: string, esp: number) => lista.find((l) => l.padrao === padrao && l.esp === esp)?.chapas ?? 0;
+const somaChapas = (lista: LinhaChapa[]) => lista.reduce((t, l) => t + l.chapas, 0);
 
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 const dec = (v: number, casas = 2) => v.toFixed(casas).replace(".", ",");
@@ -179,6 +189,8 @@ export interface Planilha {
   aparelhos: (string | number)[][];
   pendencias: (string | number)[][];
   lotes: (string | number)[][];
+  /** Estimativa de chapas: padrão, espessura, área, chapas (tudo), aproveitamento, A + B, A, B, C. */
+  chapas: (string | number)[][];
 }
 
 export function dadosDaPlanilha(mc: Marcenaria, data: string): Planilha {
@@ -199,6 +211,12 @@ export function dadosDaPlanilha(mc: Marcenaria, data: string): Planilha {
     aparelhos: mc.aparelhos.map((a) => [a.nome, a.situacao, a.medida.join(" × "), vaoTexto(a.vao), a.onde, a.pontos, a.atencao]),
     pendencias: mc.pendencias.map((p) => [p.cod, p.onde, p.tipo, p.afetaPreco ? "sim" : "não", p.texto]),
     lotes: LOTES.map((l) => [l.cod, l.grupo, l.nome, l.opcional ? "opcional" : "obrigatório", mc.modulos.filter((m) => m.lote === l.cod).map((m) => m.cod).join(", "), nomeLote.get(l.cod) ? "" : ""]),
+    chapas: (() => {
+      const tudo = estimativaDeChapas(mc);
+      const ab = estimativaDeChapas(mc, [...lotesDoGrupo("A"), ...lotesDoGrupo("B")]);
+      const [a, b, c] = ["A", "B", "C"].map((g) => estimativaDeChapas(mc, lotesDoGrupo(g)));
+      return tudo.map((l) => [PADROES[l.padrao].nome, l.esp, l.areaM2, l.chapas, l.aproveitamento, chapasDe(ab, l.padrao, l.esp), chapasDe(a, l.padrao, l.esp), chapasDe(b, l.padrao, l.esp), chapasDe(c, l.padrao, l.esp)]);
+    })(),
   };
 }
 
@@ -221,6 +239,8 @@ export function gerarCaderno(o: OpcoesCaderno = {}): Caderno {
   const fitas = resumoDeFitas(mc);
   const ferragens = resumoDeFerragens(mc.modulos);
   const pd = mc.peDireito;
+  const chapasTudo = estimativaDeChapas(mc);
+  const chapasAB = estimativaDeChapas(mc, [...lotesDoGrupo("A"), ...lotesDoGrupo("B")]);
   const totalArea = materiais.reduce((a, r) => a + r.areaM2, 0);
   const totalPecas = materiais.reduce((a, r) => a + r.pecas, 0);
   const nPortas = mc.modulos.reduce((a, m) => a + m.solidos.filter((x) => x.classe === "porta").length, 0);
@@ -359,11 +379,11 @@ ${img("marc-suite-guarda-roupa", "Vista a partir da janela: armário-ponte, colu
     "Quantitativos · materiais, fitas e ferragens",
     "—",
     `<div class="colunas c23 texto" style="flex:1;min-height:0"><div>
-<h2>Chapas de MDF (área líquida das peças)</h2>
-<table class="t"><thead><tr><th>Cor</th><th>Material</th><th class="n">Peças</th><th class="n">Área (m²)</th></tr></thead><tbody>
-${materiais.map((r) => `<tr><td><span class="amg" style="background:${PADROES[r.padrao].cor}"></span></td><td><b>MDF ${fmt(r.esp)} mm</b> · ${esc(PADROES[r.padrao].nome)}</td><td class="n">${r.pecas}</td><td class="n">${dec(r.areaM2)}</td></tr>`).join("")}
-<tr class="total"><td></td><td>Total</td><td class="n">${totalPecas}</td><td class="n">${dec(totalArea)}</td></tr></tbody></table>
-<p class="sub" style="margin-top:1mm">Área líquida, sem perdas de corte. Para estimar chapas (2.750 × 1.840 mm ≈ 5,06 m²), acrescentar a perda do plano de corte de cada marceneiro.</p>
+<h2>Chapas de MDF (área líquida e estimativa de chapas)</h2>
+<table class="t"><thead><tr><th>Cor</th><th>Material</th><th class="n">Peças</th><th class="n">Área (m²)</th><th class="n">Chapas<br>A + B</th><th class="n">Chapas<br>A + B + C</th></tr></thead><tbody>
+${materiais.map((r) => `<tr><td><span class="amg" style="background:${PADROES[r.padrao].cor}"></span></td><td><b>MDF ${fmt(r.esp)} mm</b> · ${esc(PADROES[r.padrao].nome)}</td><td class="n">${r.pecas}</td><td class="n">${dec(r.areaM2)}</td><td class="n">${chapasDe(chapasAB, r.padrao, r.esp) || "—"}</td><td class="n"><b>${chapasDe(chapasTudo, r.padrao, r.esp)}</b></td></tr>`).join("")}
+<tr class="total"><td></td><td>Total</td><td class="n">${totalPecas}</td><td class="n">${dec(totalArea)}</td><td class="n">${somaChapas(chapasAB)}</td><td class="n">${somaChapas(chapasTudo)}</td></tr></tbody></table>
+<p class="sub" style="margin-top:1mm">Peças e área: todos os lotes. Chapas inteiras de ${fmt(CHAPA.comp)} × ${fmt(CHAPA.larg)} mm pelo plano de corte de referência (refilo de ${CHAPA.refilo} mm, serra de ${CHAPA.serra} mm, veio respeitado nos madeirados). A + B = cozinha e guarda-roupa; A + B + C inclui os complementos da suíte. É estimativa: o plano de corte do marceneiro pode variar em uma chapa por material, e contratar os lotes em separado aumenta a soma. Detalhe por lote na planilha, aba Chapas.</p>
 <h2 style="margin-top:3mm">Fitas de borda</h2>
 <table class="t"><thead><tr><th>Cor</th><th>Padrão</th><th>Tipo</th><th class="n">Metros</th></tr></thead><tbody>
 ${fitas.map((f) => `<tr><td><span class="amg" style="background:${PADROES[f.padrao].cor}"></span></td><td>${esc(PADROES[f.padrao].nome)}</td><td>${f.tipo}</td><td class="n">${dec(f.metros, 1)}</td></tr>`).join("")}
@@ -454,8 +474,10 @@ ${LEGENDA}
 <h3>Códigos dos módulos</h3>
 <p><b>Cozinha:</b> M1 a M5 armários de baixo · RA rodapé · PG painel da geladeira · AG armário sobre a geladeira · AS aéreo superior · FV faixa verde · AM aéreo de madeira · NM nicho do micro-ondas · T1 módulo do tanque.<br>
 <b>Suíte:</b> G2 guarda-roupa de espelho · G4 guarda-roupa de portas cinza + canto · CO coluna · AP armário-ponte · PJ painel lateral · CB cabeceira · CR1 e CR2 criados.</p>
+<h3>Revisões</h3>
+<table class="t"><tbody>${REVISOES.map((r) => `<tr><td class="c"><b>${r.rev}</b></td><td class="n">${r.data}</td><td>${esc(r.texto)}</td></tr>`).join("")}</tbody></table>
 <h3>Totais de referência</h3>
-<p>${mc.modulos.length} módulos · ${totalPecas} peças de MDF · ${dec(totalArea, 1)} m² de chapa (área líquida) · ${dec(fitas.reduce((a, f) => a + f.metros, 0), 0)} m de fita de borda · ${nPortas} portas e ${nGavetas} gavetas.</p></div></div>`,
+<p>${mc.modulos.length} módulos · ${totalPecas} peças de MDF · ${dec(totalArea, 1)} m² de chapa (área líquida) · ${somaChapas(chapasAB)} chapas para a cozinha e o guarda-roupa (${somaChapas(chapasTudo)} com os complementos) · ${dec(fitas.reduce((a, f) => a + f.metros, 0), 0)} m de fita de borda · ${nPortas} portas e ${nGavetas} gavetas.</p></div></div>`,
   };
   const todas = [capa, ...pranchas];
   const folhas = todas.map((p, i) => ({ cod: p.cod, titulo: p.titulo, escala: p.escala, html: folha(p, i + 1, todas.length, data) }));

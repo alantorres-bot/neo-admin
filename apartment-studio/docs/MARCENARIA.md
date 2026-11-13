@@ -78,6 +78,22 @@ Caixa em MDF 15 mm branco TX; frentes e peças aparentes em 18 mm no padrão; fu
 5. **Portas de espelho**: puxador barra furando o espelho, ou perfil na borda.
 6. **Complementos da suíte** (armário-ponte, painel, cabeceira, criados): entraram como lotes opcionais C1–C4.
 
+7. **Lava-louças alinhada com o forno** (pedido do Alan, revisão 01): mesma base a 160 mm; a gaveta do M3 passou de baixo
+   para cima (frente de 109 mm com cava). Confirmar se quer a gaveta ou frente fixa, como no M2.
+
+## Estimativa de chapas
+
+`chapas.ts` encaixa as peças em chapas de 2.750 × 1.840 mm (corte guilhotinado, refilo de 10 mm, serra de 4 mm, veio
+respeitado em madeira clara e carvalho) e devolve a quantidade por padrão e espessura, no total e por grupo de lotes.
+Aparece na prancha Q-01 e na aba Chapas da planilha. É heurística: um otimizador de corte pode economizar uma chapa.
+
+## Revisões
+
+| Rev. | Data | O que mudou |
+|---|---|---|
+| 00 | 13/11/2026 | Emissão inicial |
+| 01 | 13/11/2026 | Lava-louças alinhada com o forno (M2 e M3); estimativa de chapas |
+
 ## Pendências que mudam o orçamento
 
 Pé-direito (2.600 estimado), medidas do shaft, modelos dos aparelhos (todos com medida típica) e padrões de MDF sem

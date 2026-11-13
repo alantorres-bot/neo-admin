@@ -3,7 +3,7 @@
  *   dist-artefato/apartment-studio.html  → conteúdo da página (sem <html>/<head>/<body>: a publicação envolve)
  *   dist-artefato/teste.html             → o mesmo conteúdo dentro de um esqueleto, para testar localmente
  * Tudo embutido: CSS, JavaScript e a imagem da planta. Fontes: Google Fonts (único host de fonte permitido).
- * Uso: npm run artefato
+ * Uso: npm run artefato [-- --titulo="título atual da página publicada"]
  */
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
@@ -27,7 +27,12 @@ const codigo = readFileSync(join(build, "assets", js[0]), "utf8").replaceAll("</
 const estilo = readFileSync(join(build, "assets", css[0]), "utf8");
 const planta = readFileSync(join(raiz, "public/referencia/planta-apartamento.webp")).toString("base64");
 
-const pagina = `<title>Apartment Studio 3D</title>
+// O título da página publicada pode ter sido trocado pelo dono (ele renomeia direto na página). Para não desfazer
+// a troca numa republicação, passe o título atual: npm run artefato -- --titulo="…". Ele não fica no repositório.
+const tituloPedido = process.argv.find((a) => a.startsWith("--titulo="))?.slice("--titulo=".length);
+const titulo = (tituloPedido || "Apartment Studio 3D").replace(/&/g, "&amp;").replace(/</g, "&lt;");
+
+const pagina = `<title>${titulo}</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Space+Grotesk:wght@600&display=swap">
 <style>${estilo}</style>

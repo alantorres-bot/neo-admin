@@ -116,6 +116,9 @@ Antes de mexer, leia:
 - Antes de mudar o layout a pedido do Alan, leia o projeto dele: ArtifactData `get`, coleção `projetos`,
   documento `principal`; as versões que ele guardou ficam na coleção `versoes` (uma por documento). Se ele alterou algo no app (`alteradoPeloUsuario`), respeite o que ele fez e combine
   como aplicar a mudança — a base nova só entra para ele quando aceitar o aviso "há uma versão nova".
+- **O Alan renomeou a página publicada** (13/11): republicar com o título padrão é recusado ("versão mais nova de
+  outra sessão") e desfaria a troca. Antes de republicar, veja o título atual (`action: "read"` ou a própria recusa) e gere
+  com `npm run artefato -- --titulo="<título atual>"`. O título escolhido por ele não entra no repositório.
 - Regras de página publicada que valem para a interface: cores só por tokens (tema claro e escuro), sem
   `alert/confirm/prompt`, sem download por link, tudo embutido (scripts externos só de CDN permitido).
 
@@ -171,6 +174,9 @@ Pedido do Alan (13/11/2026): cozinha e guarda-roupa da suíte detalhados para or
 - O caderno vai para terceiros: sem nome, endereço ou nome do edifício. Textos neutros ("cliente", não "você").
 - PDF leve: nada de texto com contorno nem hachura em padrão (pesavam 6 MB); fundo branco atrás do texto e cor chapada.
 - Números em texto corrido com vírgula decimal (`fmt`); milhar com ponto.
+- Lava-louças e forno **alinhados** (pedido do Alan, 13/11): os dois na mesma base (elevação 16 cm no 3D); no caderno,
+  as frentes de cima do M2 e do M3 começam na mesma linha. Não voltar ao nicho elevado.
+- Chapas: `chapas.ts` estima a compra por plano de corte (não por área ÷ chapa). Mudou peça → os números mudam sozinhos.
 - Página publicada do caderno: https://claude.ai/artifact/DPLCsCxLucQiXsRitLuGT8 (privada; capacidade `downloads`).
   Gerar com `node scripts/gerar-marcenaria.mjs --pagina=<arquivo>` e republicar na mesma URL sem `capabilities`.
   Ao mudar qualquer medida, regenerar PDF, planilha **e** página, e subir a revisão (`REVISAO` em `caderno.ts`).

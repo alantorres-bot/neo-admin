@@ -8,7 +8,7 @@ import { criarMobilia, criarVistas } from "./mobilia";
 import { criarPlantaReal } from "./plantaReal";
 import type { Planta, Projeto } from "./tipos";
 
-export const BASE_ATUAL = "2026-11-13.4";
+export const BASE_ATUAL = "2026-11-13.5";
 
 export const AZUL_MARINHO = "#1c2444";
 

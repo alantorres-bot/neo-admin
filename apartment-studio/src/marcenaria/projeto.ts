@@ -5,7 +5,7 @@
 import { PALETA } from "../catalogo/catalogo";
 import { criarProjetoBase } from "../modelo/projetoBase";
 import type { Projeto } from "../modelo/tipos";
-import { criarCozinha } from "./cozinha";
+import { FOLGA_NICHO_LAVA, criarCozinha } from "./cozinha";
 import { caixaDoMovel, criarQuadros, movelDoProjeto } from "./quadros";
 import { criarSuite } from "./suite";
 import type { Caixa3, Classe, LinhaPeca, Modulo, Padrao, Pendencia, Quadro, Solido } from "./tipos";
@@ -231,10 +231,10 @@ export function criarMarcenaria(projeto: Projeto = criarProjetoBase()): Marcenar
       nome: "Lava-louças compacta (8 serviços)",
       situacao: sit("coz-lavaloucas"),
       medida: dims(lv),
-      vao: [m3.s1 - m3.s0 - 30, lv.z1 - lv.z0, 574],
-      onde: "M3 (nicho elevado)",
+      vao: [m3.s1 - m3.s0 - 30, lv.z1 - lv.z0 + FOLGA_NICHO_LAVA, 574],
+      onde: "M3 (alinhada com o forno)",
       pontos: "Água e esgoto pelo módulo da pia (M4); tomada no M4",
-      atencao: "Folga vertical zero com a medida típica; porta aberta avança ≈ 550 mm no corredor de 880 mm.",
+      atencao: `Folga de ${FOLGA_NICHO_LAVA} mm na altura com a medida típica; porta aberta avança ≈ 550 mm no corredor de 880 mm.`,
     },
     {
       nome: "Micro-ondas",

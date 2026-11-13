@@ -29,7 +29,7 @@ export function criarMobilia(): Movel[] {
     it("coz-forno", "forno", "Forno de embutir 60 cm", 42.5, 251, 90, { grupo: "cozinha", situacao: "comprar", obs: "Confirmar se já tem." }),
     it("coz-cooktop", "cooktop", "Cooktop 4 bocas", 40.5, 251, 90, { grupo: "cozinha", situacao: "comprar", obs: "Confirmar se já tem." }),
     it("coz-base-lavaloucas", "armario-base", "Módulo da lava-louças", 40, 311.5, 90, { ...coz, ...dim(61, 60, 87), opcoes: { gavetas: 1, portas: 0, rodape: 10 } }),
-    it("coz-lavaloucas", "lava-loucas-compacta", "Lava-louças Electrolux 8 serviços", 45, 311.5, 90, { grupo: "cozinha", situacao: "tenho", obs: "Medidas típicas (55 × 52 × 59,5); conferir o modelo." }),
+    it("coz-lavaloucas", "lava-loucas-compacta", "Lava-louças Electrolux 8 serviços", 45, 311.5, 90, { grupo: "cozinha", situacao: "tenho", elevacao: 16, obs: "Alinhada com o forno (mesma base, a 16 cm do piso) — pedido do Alan em 13/11. Medidas típicas (55 × 52 × 59,5); conferir o modelo." }),
     it("coz-base-pia", "armario-base", "Armário da pia", 40, 377, 90, { ...coz, ...dim(70, 60, 87), opcoes: { portas: 2, rodape: 10 } }),
     it("coz-base-porta", "armario-base", "Armário de 1 porta", 40, 430, 90, { ...coz, ...dim(36, 60, 87), opcoes: { portas: 1, rodape: 10 } }),
     it("coz-bancada", "bancada", "Bancada de quartzo branco", 41, 293.5, 90, { ...coz, ...dim(309, 62, 3) }),

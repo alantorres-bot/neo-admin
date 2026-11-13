@@ -18,6 +18,8 @@ export function alturasDasGavetas(n: number, alturaUtil: number): number[] {
 }
 
 const m = (v: number) => Math.round(v * 1000) / 1000;
+/** Folga acima da lava-louças, entre o aparelho e o teto do nicho. */
+export const FOLGA_NICHO_LAVA = 5;
 /** Número para texto corrido (vírgula decimal). */
 const t = (v: number) => String(Math.round(v * 10) / 10).replace(".", ",");
 
@@ -73,16 +75,25 @@ export function criarCozinha(projeto: Projeto, qa: Quadro, qb: Quadro): Conjunto
     });
   }
 
+  // ------------------------------------------------------------------ M2 e M3 — forno e lava-louças alinhados
+  // Os dois aparelhos ficam na mesma base e as frentes de cima dos dois módulos começam na mesma linha
+  // (3 mm acima do aparelho mais alto). Pedido do cliente em 13/11/2026.
+  const fornoA = cxA("coz-forno");
+  const lavaA = cxA("coz-lavaloucas");
+  const zFrenteDeCima = Math.max(fornoA.z1, lavaA.z1) + FOLGA;
+
   // ------------------------------------------------------------------ M2 — forno e cooktop
   {
     const b = cxA("coz-base-forno");
-    const forno = cxA("coz-forno");
+    const forno = fornoA;
     const corpo = { ...b, z0: b.z0 + opc("coz-base-forno", "rodape") * 10 };
     const { solidos, vao } = caixa({ c: corpo, frente: true, base: false, tampo: "travessas-pe", fundo: false });
+    const zRegua0 = corpo.z0 + FOLGA;
+    const zRegua1 = forno.z0 - FOLGA;
     solidos.push(
       solido("Base de apoio do forno", "base", "branco", { s0: vao.s0, s1: vao.s1, d0: vao.d0, d1: vao.d1, z0: forno.z0 - ESP.frente, z1: forno.z0 }, { obs: "18 mm; recebe o peso do forno" }),
-      ...frente({ nome: "Régua inferior fixa", classe: "frente-fixa", s0: b.s0, s1: b.s1, z0: corpo.z0 + FOLGA, z1: forno.z0 - FOLGA, d1: b.d1, padrao: "verde" }),
-      ...frente({ nome: "Frente fixa superior (sob o cooktop)", classe: "frente-fixa", s0: b.s0, s1: b.s1, z0: forno.z1 + FOLGA, z1: corpo.z1 - FOLGA, d1: b.d1, padrao: "verde", cava: true }),
+      ...frente({ nome: "Régua inferior fixa", classe: "frente-fixa", s0: b.s0, s1: b.s1, z0: zRegua0, z1: zRegua1, d1: b.d1, padrao: "verde" }),
+      ...frente({ nome: "Frente fixa superior (sob o cooktop)", classe: "frente-fixa", s0: b.s0, s1: b.s1, z0: zFrenteDeCima, z1: corpo.z1 - FOLGA, d1: b.d1, padrao: "verde", cava: true }),
     );
     modulos.push({
       cod: "M2",
@@ -91,7 +102,7 @@ export function criarCozinha(projeto: Projeto, qa: Quadro, qb: Quadro): Conjunto
       conjunto: qa.id,
       movelIds: ["coz-base-forno"],
       caixa: b,
-      externo: "Forno de embutir à vista; régua fixa de 54 mm embaixo e frente fixa de 114 mm em cima (com a linha do cava alinhada aos vizinhos).",
+      externo: `Forno de embutir à vista, alinhado com a lava-louças do M3: régua fixa de ${zRegua1 - zRegua0} mm embaixo e frente fixa de ${corpo.z1 - FOLGA - zFrenteDeCima} mm em cima, com a linha do cava alinhada aos vizinhos.`,
       interno: `Nicho do forno: ${vao.s1 - vao.s0} L × ${forno.z1 - forno.z0} A × ${vao.d1 - vao.d0} P, sem fundo (ventilação e tomada). Sob o tampo, só travessas em pé: o corpo do cooktop ocupa esse espaço.`,
       abertura: "Sem portas (frentes fixas).",
       solidos,
@@ -102,6 +113,7 @@ export function criarCozinha(projeto: Projeto, qa: Quadro, qb: Quadro): Conjunto
       notas: [
         "Medidas do nicho pelo padrão de forno de embutir de 60 cm — forno e cooktop ainda não definidos: conferir os dois manuais antes de cortar.",
         "Tomada do forno fora da área do nicho (módulo vizinho ou abaixo), conforme o manual.",
+        "A régua de baixo e a frente de cima têm a mesma altura das do M3. Se o forno comprado tiver outra altura, ajustar as duas frentes de cima juntas.",
       ],
     });
   }
@@ -109,15 +121,18 @@ export function criarCozinha(projeto: Projeto, qa: Quadro, qb: Quadro): Conjunto
   // ------------------------------------------------------------------ M3 — lava-louças compacta
   {
     const b = cxA("coz-base-lavaloucas");
-    const lv = cxA("coz-lavaloucas");
+    const lv = lavaA;
     const corpo = { ...b, z0: b.z0 + opc("coz-base-lavaloucas", "rodape") * 10 };
-    const { solidos, vao } = caixa({ c: corpo, frente: true, latS0: "verde", latS1: "verde", tampo: "tras-pe", obsFundo: "recortes para mangueiras e tomada" });
-    const zGaveta = corpo.z0 + FOLGA;
+    const { solidos, vao } = caixa({ c: corpo, frente: true, latS0: "verde", latS1: "verde", base: false, tampo: "tras-pe", obsFundo: "recortes para mangueiras e tomada" });
+    const zTeto = lv.z1 + FOLGA_NICHO_LAVA;
+    const zRegua0 = corpo.z0 + FOLGA;
+    const zRegua1 = lv.z0 - FOLGA;
     solidos.push(
-      solido("Prateleira de apoio da lava-louças", "prateleira", "verde", { s0: vao.s0, s1: vao.s1, d0: vao.d0, d1: vao.d1, z0: lv.z0 - ESP.frente, z1: lv.z0 }, { obs: "18 mm, fixa; aparelho ≈ 30 kg" }),
-      ...frente({ nome: "Frente da gaveta inferior", classe: "frente-gaveta", s0: b.s0, s1: b.s1, z0: zGaveta, z1: lv.z0 - FOLGA, d1: b.d1, padrao: "verde", obs: "lisa, abertura por toque" }),
-      ...gaveta({ nome: "Gaveta inferior", s0: vao.s0, s1: vao.s1, d1: vao.d1, comp: 500, z0: zGaveta + 20, h: 100 }),
-      solido("Perfil de arremate sobre a lava-louças", "perfil", undefined, { s0: b.s0 + FOLGA / 2, s1: b.s1 - FOLGA / 2, d0: b.d1 - ESP.frente, d1: b.d1 - ESP.frente + 6, z0: lv.z1, z1: corpo.z1 - FOLGA }, { cor: "#3a4233" }),
+      solido("Base de apoio da lava-louças", "base", "verde", { s0: vao.s0, s1: vao.s1, d0: vao.d0, d1: vao.d1, z0: lv.z0 - ESP.frente, z1: lv.z0 }, { obs: "18 mm, fixa; aparelho ≈ 30 kg" }),
+      solido("Teto do nicho (apoio da gaveta)", "prateleira", "branco", { s0: vao.s0, s1: vao.s1, d0: vao.d0 + ESP.caixa, d1: vao.d1, z0: zTeto, z1: zTeto + ESP.caixa }, { obs: "fixo" }),
+      ...frente({ nome: "Régua inferior fixa", classe: "frente-fixa", s0: b.s0, s1: b.s1, z0: zRegua0, z1: zRegua1, d1: b.d1, padrao: "verde" }),
+      ...frente({ nome: "Frente da gaveta superior", classe: "frente-gaveta", s0: b.s0, s1: b.s1, z0: zFrenteDeCima, z1: corpo.z1 - FOLGA, d1: b.d1, padrao: "verde", cava: true }),
+      ...gaveta({ nome: "Gaveta superior", s0: vao.s0, s1: vao.s1, d1: vao.d1, comp: 500, z0: zTeto + ESP.caixa + 6, h: 60 }),
     );
     modulos.push({
       cod: "M3",
@@ -126,18 +141,19 @@ export function criarCozinha(projeto: Projeto, qa: Quadro, qb: Quadro): Conjunto
       conjunto: qa.id,
       movelIds: ["coz-base-lavaloucas"],
       caixa: b,
-      externo: "Lava-louças à vista em nicho elevado; gaveta baixa embaixo (frente lisa de 154 mm, como no 3D).",
-      interno: `Nicho: ${vao.s1 - vao.s0} L × ${lv.z1 - lv.z0} A × ${vao.d1 - vao.d0} P, laterais internas verdes (ficam à vista ao redor do aparelho). Gaveta inferior com caixa de 100 mm.`,
-      abertura: "Gaveta com corrediça telescópica e abertura por toque (sem puxador, como no 3D).",
+      externo: `Lava-louças à vista, alinhada com o forno do M2 (mesma base, a ${lv.z0} mm do piso): régua fixa de ${zRegua1 - zRegua0} mm embaixo e gaveta rasa em cima, com frente de ${corpo.z1 - FOLGA - zFrenteDeCima} mm e puxador cava.`,
+      interno: `Nicho: ${vao.s1 - vao.s0} L × ${zTeto - lv.z0} A × ${vao.d1 - vao.d0} P, laterais internas verdes (ficam à vista ao redor do aparelho). Gaveta superior com caixa de 60 mm (talheres, panos).`,
+      abertura: "Gaveta com corrediça telescópica de extração total e amortecimento; puxador cava.",
       solidos,
       ferragens: [
-        { item: "cor-500-toque", qtd: 1 },
+        { item: "cor-500", qtd: 1 },
+        { item: "cava", qtd: m((b.s1 - b.s0 - FOLGA) / 1000) },
         { item: "pe-100", qtd: 4 },
       ],
       notas: [
-        `Altura livre do nicho = ${lv.z1 - lv.z0} mm, igual à altura típica do aparelho (folga zero): conferir o modelo; se preciso, reduzir a gaveta de baixo.`,
+        `Nicho com ${zTeto - lv.z0} mm de altura para aparelho típico de ${lv.z1 - lv.z0} mm (${FOLGA_NICHO_LAVA} mm de folga): conferir o modelo.`,
+        "Alinhamento pedido pelo cliente (13/11/2026): a lava-louças desceu 100 mm, para a mesma base do forno; a gaveta que ficava embaixo passou para cima, mais rasa. Proposta: se preferir, a frente de cima pode ser fixa, como a do M2.",
         "Água, esgoto e tomada pelo módulo da pia (M4): prever furos de passagem na lateral.",
-        "Alternativa para a gaveta: puxador cava como nas demais frentes (muda levemente o visual — depende de autorização).",
       ],
     });
   }
