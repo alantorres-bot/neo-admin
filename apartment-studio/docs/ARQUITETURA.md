@@ -190,6 +190,12 @@ pontos (4K só em computador; nunca acima do que a placa desenha). A prévia abr
 com a imagem embutida. Salvar: na página publicada, pela capacidade `downloads` (o aparelho pede confirmação;
 a página nunca baixa sozinha); fora dela, download comum. Sem como salvar, a prévia orienta a tocar e segurar.
 
+## Caderno de marcenaria
+
+Projeto executivo da cozinha e do guarda-roupa para orçamento (PDF de 28 pranchas A3 + planilha), gerado do modelo 3D
+por `npm run marcenaria`. Código em `src/marcenaria/`, saída em `docs/marcenaria/`. Detalhes, regras e decisões em
+`docs/MARCENARIA.md`. Não faz parte do aplicativo: é um gerador de documentos que lê o mesmo projeto-base.
+
 ## Decisões técnicas
 
 - Rótulos numa camada DOM própria projetada a cada quadro (o `<Html>` do drei falhou com React 19).

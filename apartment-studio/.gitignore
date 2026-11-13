@@ -2,3 +2,7 @@ node_modules
 dist
 tests/e2e/capturas
 dist-artefato
+
+# caderno de marcenaria: o HTML e as prévias saem de `npm run marcenaria` (o PDF, a planilha e as imagens ficam no repositório)
+docs/marcenaria/previa/
+docs/marcenaria/caderno-marcenaria.html

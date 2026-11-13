@@ -146,3 +146,11 @@ Parede lateral: 3,87 m do shaft até a parede da porta (cota). Profundidade da b
 Respondidas pelo Alan em 13/11: painel lateral da geladeira — **manter**; armário de espelho com 90 cm — **sim**;
 portas — **de madeira, um pouco mais escura que os armários da cozinha**; parede azul-marinho — **opção A, atrás
 do sofá** (só do lado da sala); rodapé — **branco**; banheiro azulejado de branco até o teto — **sim**.
+
+## 7. Marcenaria para orçamento (13/11/2026)
+
+O Alan pediu o projeto executivo da cozinha e do guarda-roupa para orçar com marceneiros: ver `MARCENARIA.md` e
+`marcenaria/caderno-marcenaria.pdf`. Ficaram para ele confirmar: o interior do guarda-roupa (proposta), o canto do L
+da cozinha, o tipo de puxador cava, o número de portas do aéreo superior, o puxador das portas de espelho e se os
+complementos da suíte (ponte, painel, cabeceira, criados) entram no orçamento. Continuam em aberto as perguntas 1, 3 e 4
+da seção 6 (modelos dos aparelhos, forno e cooktop, cama) e o pé-direito — todas mudam medidas do caderno.

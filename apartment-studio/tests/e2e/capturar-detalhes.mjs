@@ -2,6 +2,7 @@
  * Fotos de perto dos itens que têm foto de referência (rack, cadeira, eletros, marcenaria, espelho do banheiro),
  * para conferir lado a lado com as fotos do Alan. Salva em tests/e2e/capturas/detalhes/.
  * Uso: npm run build && node tests/e2e/capturar-detalhes.mjs [nome...] [--nitido]   (sem nomes: todas)
+ * --formato=jpg, --escala=1.5 e --saida=docs/marcenaria/imagens servem ao caderno de marcenaria (vistas "marc-*").
  * --nitido: 2× de resolução, em capturas/detalhes-nitido/ (imagens que vão para o Alan).
  * --hora=20 (hora do dia, 6 a 22), --luzes (acende as luzes de dia), --sem-realismo (desliga o acabamento realista);
  *   com qualquer um deles o arquivo ganha um sufixo (ex.: cozinha-geral-20h.png).
@@ -16,7 +17,10 @@ const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 const raiz = join(dirname(fileURLToPath(import.meta.url)), "../..");
 const nitido = process.argv.includes("--nitido");
-const saida = join(raiz, "tests/e2e/capturas", nitido ? "detalhes-nitido" : "detalhes");
+const opcaoCedo = (nome) => process.argv.find((a) => a.startsWith(`--${nome}=`))?.split("=")[1];
+const formato = opcaoCedo("formato") ?? "png"; // png | jpg
+const escala = Number(opcaoCedo("escala") ?? (nitido ? 2 : 1));
+const saida = opcaoCedo("saida") ? join(raiz, opcaoCedo("saida")) : join(raiz, "tests/e2e/capturas", nitido ? "detalhes-nitido" : "detalhes");
 mkdirSync(saida, { recursive: true });
 const PORTA = 5183;
 
@@ -42,6 +46,13 @@ const DETALHES = {
   "portas-corredor": { de: [418, 352, 150], para: [650, 352, 105] },
   "porta-entrada": { de: [300, 400, 150], para: [337, 531, 105], esconder: ["jan-mesa", "jan-cadeira-1", "jan-cadeira-2", "jan-cadeira-3", "jan-cadeira-4"] },
   "banheiro-geral": { de: [640, 408, 160], para: [540, 505, 95] },
+  // ---- caderno de marcenaria (docs/marcenaria): vistas de frente, sem a parede que ficaria na frente da câmera
+  "marc-cozinha-frontal": { de: [404, 300, 150], para: [10, 300, 128], tirarParedes: ["p-coz-sala"], esconder: ["sala-sofa", "sala-quadro", "jan-mesa", "jan-cadeira-1", "jan-cadeira-2", "jan-cadeira-3", "jan-cadeira-4", "jan-remo-1", "jan-remo-2"] },
+  "marc-cozinha-servico": { de: [118, 300, 128], para: [96, 80, 82] },
+  "marc-suite-frontal": { de: [636, 206, 140], para: [913, 206, 128], tirarParedes: ["p-q2-q1"], fecharPortas: true, esconder: ["q2-cama", "q2-guarda-roupa", "q2-escrivaninha", "q2-cadeira", "q2-ar", "sui-ar", "sui-cama"] },
+  "marc-suite-guarda-roupa": { de: [700, 48, 165], para: [850, 335, 105] },
+  "marc-suite-canto": { de: [676, 150, 160], para: [846, 372, 118] },
+  "marc-suite-ponte": { de: [672, 336, 165], para: [850, 115, 95] },
 };
 
 const opcao = (nome) => process.argv.find((a) => a.startsWith(`--${nome}=`))?.split("=")[1];
@@ -63,7 +74,7 @@ try {
     await new Promise((r) => setTimeout(r, 250));
   }
   const browser = await chromium.launch({ args: ["--use-angle=swiftshader", "--enable-unsafe-swiftshader"] });
-  const context = await browser.newContext({ viewport: { width: 1100, height: 800 }, deviceScaleFactor: nitido ? 2 : 1 });
+  const context = await browser.newContext({ viewport: { width: 1100, height: 800 }, deviceScaleFactor: escala });
   const page = await context.newPage();
   page.on("console", (m) => m.type() === "error" && erros.push(m.text()));
   page.on("pageerror", (e) => erros.push(String(e)));
@@ -81,9 +92,17 @@ try {
         const esconder = new Set(d.esconder ?? []);
         const mover = d.mover ?? {};
         const vista = { id: `det-${nome}`, nome, de: { x: d.de[0], y: d.de[1], altura: d.de[2] }, para: { x: d.para[0], y: d.para[1], altura: d.para[2] } };
+        const semParede = new Set(d.tirarParedes ?? []);
         app.setState((s) => ({
           projeto: {
             ...base,
+            planta: semParede.size
+              ? {
+                  ...base.planta,
+                  paredes: base.planta.paredes.filter((p) => !semParede.has(p.id)),
+                  aberturas: base.planta.aberturas.filter((a) => !semParede.has(a.paredeId)).map((a) => (d.fecharPortas ? { ...a, aberta: 0 } : a)),
+                }
+              : base.planta,
             moveis: base.moveis.filter((m) => !esconder.has(m.id)).map((m) => (mover[m.id] ? { ...m, x: mover[m.id][0], y: mover[m.id][1], rotacao: mover[m.id][2] } : m)),
             vistas: [...base.vistas, vista],
           },
@@ -104,7 +123,7 @@ try {
       { nome, d, hora, luzes, semRealismo },
     );
     await page.waitForTimeout(hora !== null || luzes ? 2600 : 1500);
-    await page.screenshot({ path: join(saida, `${nome}${sufixo}.png`) });
+    await page.screenshot(formato === "jpg" ? { path: join(saida, `${nome}${sufixo}.jpg`), type: "jpeg", quality: 86 } : { path: join(saida, `${nome}${sufixo}.png`) });
     console.log(`✔ ${nome}`);
   }
   await browser.close();

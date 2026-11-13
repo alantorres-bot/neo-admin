@@ -153,6 +153,25 @@ Antes de mexer, leia:
 - O que abre por cima de tudo (prévia, avisos de tela inteira) vai num portal em `document.body`: os painéis criam
   o próprio contexto de empilhamento e escondem o que fica dentro deles.
 
+## Caderno de marcenaria (projeto executivo para orçamento)
+
+Pedido do Alan (13/11/2026): cozinha e guarda-roupa da suíte detalhados para orçar com três marceneiros. Ler
+`apartment-studio/docs/MARCENARIA.md` antes de mexer.
+
+- Código em `apartment-studio/src/marcenaria/`; saída em `docs/marcenaria/` (PDF de 28 pranchas A3 + planilha XLSX).
+  Gerar com `npm run marcenaria`; conferir com `node scripts/gerar-marcenaria.mjs --previa` e **olhar as pranchas**.
+- **Uma fonte só**: cada peça é um sólido (s ao longo da parede, d profundidade, z altura, em mm). Vistas, cortes,
+  balões, lista de peças, fitas e áreas saem dos mesmos sólidos. Não desenhar nada "à mão" fora deles.
+- A envoltória de cada módulo vem do 3D (`caixaDoMovel`). Mudou um móvel em `mobilia.ts`? O caderno acompanha e o
+  teste de correspondência avisa se algo ficou de fora. Interior, espessuras e ferragens são proposta técnica.
+- Toda cota carrega a origem: `P` planta · `E` estimada · `A` aparelho típico · `T` proposta · sem marca = 3D aprovado.
+  Nunca apresentar estimada como confirmada; o que falta vira pendência (prancha P-01), não número inventado.
+- Não alterar o visual aprovado (larguras, número de portas, cores) sem autorização do Alan: quando a execução pede
+  mudança (ex.: portas de 769,5 mm, canto do L), manter o desenho, registrar a ressalva e oferecer a alternativa.
+- O caderno vai para terceiros: sem nome, endereço ou nome do edifício. Textos neutros ("cliente", não "você").
+- PDF leve: nada de texto com contorno nem hachura em padrão (pesavam 6 MB); fundo branco atrás do texto e cor chapada.
+- Números em texto corrido com vírgula decimal (`fmt`); milhar com ponto.
+
 ## Verificação (obrigatória ao fim de cada etapa)
 
 1. `npm run typecheck && npm test` em `apartment-studio/`.

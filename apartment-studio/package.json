@@ -10,7 +10,8 @@
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "e2e": "node tests/e2e/verificar-visual.mjs",
-    "artefato": "node scripts/gerar-artefato.mjs"
+    "artefato": "node scripts/gerar-artefato.mjs",
+    "marcenaria": "node scripts/gerar-marcenaria.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",
