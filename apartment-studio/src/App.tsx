@@ -13,6 +13,7 @@ export function App() {
   const provisoria = useApp((s) => s.projeto.planta.provisoria);
   const calibrando = useApp((s) => s.calibracao.ativa);
   const novaBase = useApp((s) => s.novaBase);
+  const avisoLento = useApp((s) => s.avisoLento);
   const temSelecao = useApp((s) => s.selecao !== null);
 
   useEffect(() => {
@@ -37,6 +38,7 @@ export function App() {
           {provisoria && <span className="pilula alerta">Planta provisória · medidas estimadas (≈)</span>}
         </div>
         {novaBase && <AvisoBase />}
+        {avisoLento && !novaBase && <AvisoLento />}
       </main>
     </div>
   );
@@ -56,6 +58,23 @@ function AvisoBase() {
         </button>
         <button className="botao secundario" onClick={() => useApp.setState({ novaBase: false })}>
           Manter a minha
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** O modo realista pesou neste aparelho e foi desligado sozinho. */
+function AvisoLento() {
+  const fechar = () => useApp.setState({ avisoLento: false });
+  return (
+    <div className="aviso-base" role="status" aria-label="Modo realista desligado" data-teste="aviso-lento">
+      <p>
+        <strong>Desliguei o modo realista para ficar mais leve.</strong> Neste aparelho a imagem com reflexos e sombras suaves estava travando. Para ver assim mesmo, toque em Realista na barra.
+      </p>
+      <div className="linha-botoes">
+        <button className="botao" onClick={fechar}>
+          Entendi
         </button>
       </div>
     </div>

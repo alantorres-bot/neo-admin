@@ -174,8 +174,45 @@ function texRemo() {
   return t;
 }
 
+/** Relevo do veio da madeira (tons de cinza): sulcos finos ao longo do veio, igual para todas as cores. */
+function relevoMadeira() {
+  return textura("madeira-relevo", 512, 512, (g, w, h) => {
+    const rnd = semente(7);
+    g.fillStyle = "#808080";
+    g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 220; i++) {
+      const v = rnd() > 0.5 ? 40 : 200;
+      g.strokeStyle = `rgba(${v},${v},${v},${0.1 + rnd() * 0.25})`;
+      g.lineWidth = 0.5 + rnd() * 1.4;
+      g.beginPath();
+      let x = rnd() * w;
+      g.moveTo(x, 0);
+      for (let y = 0; y <= h; y += 32) {
+        x += (rnd() - 0.5) * 2.2;
+        g.lineTo(x, y);
+      }
+      g.stroke();
+    }
+  });
+}
+
+/** Relevo de tecido: trama fina de fios cruzados. */
+function relevoTecido() {
+  return textura("tecido-relevo", 128, 128, (g, w, h) => {
+    g.fillStyle = "#808080";
+    g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 4) {
+      for (let x = 0; x < w; x += 4) {
+        const claro = (x / 4 + y / 4) % 2 === 0;
+        g.fillStyle = claro ? "#a8a8a8" : "#5c5c5c";
+        g.fillRect(x, y, claro ? 4 : 3, claro ? 3 : 4);
+      }
+    }
+  });
+}
+
 /** Tamanho real (cm) de um ladrilho de cada textura. */
-const ESCALA: Partial<Record<Acabamento, number>> = { madeira: 110, granilite: 70, granito: 45, palhinha: 14 };
+const ESCALA: Partial<Record<Acabamento, number>> = { madeira: 110, granilite: 70, granito: 45, palhinha: 14, tecido: 9 };
 
 /** Repetição da textura para a face dominante da peça: [u, v, girar 90°]. */
 function repeticao(peca: Peca, acab: Acabamento): [number, number, boolean] {
@@ -203,7 +240,9 @@ function repeticao(peca: Peca, acab: Acabamento): [number, number, boolean] {
 
 const materiais = new Map<string, THREE.Material>();
 
-export function materialDaPeca(peca: Peca, cor: string, acab: Acabamento): THREE.Material {
+export function materialDaPeca(peca: Peca, cor: string, acab: Acabamento, aceso = true): THREE.Material {
+  // difusor de LED apagado: branco fosco, sem brilho próprio
+  if (acab === "led" && !aceso) return unico("led-apagado", () => new THREE.MeshStandardMaterial({ color: "#e9e6df", roughness: 0.6 }));
   if (peca.tex === "arte") return unico("tex-arte", () => new THREE.MeshStandardMaterial({ map: texArte(), roughness: 0.9 }));
   if (peca.tex === "remo") {
     return unico("tex-remo", () => new THREE.MeshStandardMaterial({ map: texRemo(), transparent: true, alphaTest: 0.5, roughness: 0.8, side: THREE.DoubleSide }));
@@ -213,7 +252,7 @@ export function materialDaPeca(peca: Peca, cor: string, acab: Acabamento): THREE
   const duasFaces = peca.g === "onda" || peca.g === "cone";
   const chave = `${acab}|${cor}|${ru}|${rv}|${girar ? 1 : 0}|${duasFaces ? 2 : 1}`;
   return unico(chave, () => {
-    const m = criar(cor, acab, ru, rv, girar);
+    const m = criar(cor, acab, ru, rv, girar, peca.g === "onda");
     if (duasFaces) m.side = THREE.DoubleSide;
     return m;
   });
@@ -239,42 +278,182 @@ function comMapa(base: THREE.CanvasTexture, ru: number, rv: number, girar: boole
   return t;
 }
 
-function criar(cor: string, acab: Acabamento, ru: number, rv: number, girar: boolean): THREE.Material {
+/** Cortinas acesas pela claridade de fora: materiais que ganham um brilho próprio de dia (ver luzDoDiaNosTecidos). */
+const cortinas = new Set<THREE.MeshStandardMaterial>();
+let claridade = 1;
+
+/** Chamado pela cena quando a hora muda: de dia a cortina deixa a luz atravessar; à noite, não. */
+export function luzDoDiaNosTecidos(dia: number) {
+  claridade = dia;
+  for (const m of cortinas) m.emissiveIntensity = 0.3 * dia;
+}
+
+function criar(cor: string, acab: Acabamento, ru: number, rv: number, girar: boolean, cortina = false): THREE.Material {
   const P = (p: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial(p);
   switch (acab) {
     case "madeira":
-      return P({ map: comMapa(texMadeira(cor), ru, rv, girar), roughness: 0.62 });
+      return P({ map: comMapa(texMadeira(cor), ru, rv, girar), bumpMap: comMapa(relevoMadeira(), ru, rv, girar), bumpScale: 0.7, roughness: 0.58 });
     case "granilite":
-      return P({ map: comMapa(texSalpicado(cor, "granilite"), ru, rv, girar), roughness: 0.55 });
+      return P({ map: comMapa(texSalpicado(cor, "granilite"), ru, rv, girar), roughness: 0.5 });
     case "granito":
-      return P({ map: comMapa(texSalpicado(cor, "granito"), ru, rv, girar), roughness: 0.3 });
+      return P({ map: comMapa(texSalpicado(cor, "granito"), ru, rv, girar), roughness: 0.2, envMapIntensity: 1.3 });
     case "palhinha":
       return P({ map: comMapa(texPalhinha(cor), ru, rv, girar), roughness: 0.8 });
     case "pedra":
-      return P({ color: cor, roughness: 0.25 });
+      // quartzo ou porcelanato polido
+      return P({ color: cor, roughness: 0.18, envMapIntensity: 1.3 });
     case "fosco":
-      return P({ color: cor, roughness: 0.92 });
-    case "tecido":
-      return P({ color: cor, roughness: 1 });
+      // laca fosca / MDF: quase sem brilho, mas não chapado
+      return P({ color: cor, roughness: 0.72 });
+    case "tecido": {
+      if (cortina) {
+        const m = P({ color: cor, roughness: 1, emissive: cor, emissiveIntensity: 0.3 * claridade });
+        cortinas.add(m);
+        return m;
+      }
+      // estofado: brilho aveludado nas bordas e trama em relevo
+      const comTrama = ru !== 1 || rv !== 1;
+      return new THREE.MeshPhysicalMaterial({
+        color: cor,
+        roughness: 0.95,
+        sheen: 0.55,
+        sheenRoughness: 0.7,
+        sheenColor: new THREE.Color(cor).lerp(new THREE.Color("#ffffff"), 0.5),
+        ...(comTrama ? { bumpMap: comMapa(relevoTecido(), ru, rv, false), bumpScale: 0.6 } : {}),
+      });
+    }
     case "inox":
-      return P({ color: cor, roughness: 0.35, metalness: 0.75 });
+      // escovado: parte da luz espalha (não é espelho), senão a geladeira fica escura dentro de casa
+      return P({ color: cor, roughness: 0.36, metalness: 0.6, envMapIntensity: 2.2 });
     case "metal":
-      return P({ color: cor, roughness: 0.5, metalness: 0.5 });
+      return P({ color: cor, roughness: 0.45, metalness: 0.6, envMapIntensity: 1.3 });
     case "cromado":
-      return P({ color: cor, roughness: 0.18, metalness: 0.9 });
+      return P({ color: cor, roughness: 0.12, metalness: 1, envMapIntensity: 1.8 });
     case "louca":
-      return P({ color: cor, roughness: 0.2 });
+      return P({ color: cor, roughness: 0.12, envMapIntensity: 1.3 });
     case "vidro-preto":
-      return P({ color: cor, roughness: 0.12, metalness: 0.3 });
+      return P({ color: cor, roughness: 0.06, metalness: 0.5, envMapIntensity: 1.5 });
     case "espelho":
-      return P({ color: cor, roughness: 0.08, metalness: 0.35, envMapIntensity: 1.6 });
+      return P({ color: cor, roughness: 0.05, metalness: 0.9, envMapIntensity: 1.6 });
     case "led":
-      return P({ color: cor, emissive: cor, emissiveIntensity: 1.5 });
+      return P({ color: cor, emissive: cor, emissiveIntensity: 2.4 });
     case "vidro":
-      return new THREE.MeshPhysicalMaterial({ color: cor, transparent: true, opacity: 0.28, roughness: 0.05, metalness: 0, depthWrite: false, side: THREE.DoubleSide });
+      return new THREE.MeshPhysicalMaterial({ color: cor, transparent: true, opacity: 0.22, roughness: 0.03, metalness: 0, envMapIntensity: 1.4, depthWrite: false, side: THREE.DoubleSide });
     default:
-      return P({ color: cor, roughness: 0.6 });
+      return P({ color: cor, roughness: 0.55 });
   }
+}
+
+// ------------------------------------------------------------------------------------ paredes
+
+/** Textura de revestimento de parede; as faces usam coordenadas em metros, então `repeat` = 1 / tamanho real. */
+function texRevestimento(tipo: "azulejo" | "cimento" | "tijolinho", cor: string): THREE.Texture {
+  if (tipo === "azulejo") {
+    // 2 × 4 peças de 60 × 30 cm, quase brancas, com junta fina: a cor do material tinge
+    const t = textura("azulejo", 512, 512, (g, w, h) => {
+      const rnd = semente(5);
+      const lw = w / 2;
+      const lh = h / 4;
+      for (let i = 0; i < 2; i++) {
+        for (let j = 0; j < 4; j++) {
+          const v = 246 + Math.round(rnd() * 8);
+          g.fillStyle = `rgb(${v},${v},${v})`;
+          g.fillRect(i * lw, j * lh, lw, lh);
+        }
+      }
+      g.strokeStyle = "rgba(120,120,120,0.55)";
+      g.lineWidth = 2;
+      for (let i = 0; i <= 2; i++) {
+        g.beginPath();
+        g.moveTo(i * lw, 0);
+        g.lineTo(i * lw, h);
+        g.stroke();
+      }
+      for (let j = 0; j <= 4; j++) {
+        g.beginPath();
+        g.moveTo(0, j * lh);
+        g.lineTo(w, j * lh);
+        g.stroke();
+      }
+    });
+    t.repeat.set(1 / 1.2, 1 / 1.2);
+    return t;
+  }
+  if (tipo === "cimento") {
+    // cimento queimado: manchas largas e suaves, 2 × 2 m
+    const t = textura("cimento", 512, 512, (g, w, h) => {
+      const rnd = semente(23);
+      g.fillStyle = "#f2f2f2";
+      g.fillRect(0, 0, w, h);
+      for (let i = 0; i < 260; i++) {
+        const x = rnd() * w;
+        const y = rnd() * h;
+        const r = 20 + rnd() * 90;
+        const grad = g.createRadialGradient(x, y, 0, x, y, r);
+        const v = rnd() > 0.5 ? 255 : 150;
+        grad.addColorStop(0, `rgba(${v},${v},${v},${0.05 + rnd() * 0.07})`);
+        grad.addColorStop(1, `rgba(${v},${v},${v},0)`);
+        g.fillStyle = grad;
+        g.fillRect(x - r, y - r, r * 2, r * 2);
+      }
+    });
+    t.repeat.set(1 / 2, 1 / 2);
+    return t;
+  }
+  // tijolinho: 4 tijolos de 22 × 6,5 cm por fiada, 8 fiadas, junta de 1 cm (92 × 60 cm), já na cor escolhida
+  const t = textura(`tijolinho|${cor}`, 736, 480, (g, w, h) => {
+    const rnd = semente(47);
+    g.fillStyle = tom(cor, 0.62);
+    g.fillRect(0, 0, w, h);
+    const bw = w / 4;
+    const bh = h / 8;
+    const junta = 8;
+    for (let j = 0; j < 8; j++) {
+      const desloc = j % 2 ? bw / 2 : 0;
+      for (let i = -1; i < 5; i++) {
+        g.fillStyle = tom(cor, 0.86 + rnd() * 0.28);
+        g.fillRect(i * bw + desloc + junta / 2, j * bh + junta / 2, bw - junta, bh - junta);
+      }
+    }
+  });
+  t.repeat.set(1 / 0.92, 1 / 0.6);
+  return t;
+}
+
+const COR_TOPO_PAREDE = "#4b4e53";
+
+/**
+ * Material de um grupo de faces de parede (ver geometriaParede.ts): "topo", "rodape" ou "revestimento|#cor".
+ * `modo`: "planta" pinta tudo de escuro (desenho técnico); "selecionada" realça a parede sem esconder a cor dela.
+ */
+export function materialDaParede(chave: string, modo: "normal" | "planta" | "selecionada" = "normal", corPlanta = COR_TOPO_PAREDE): THREE.Material {
+  const P = (p: THREE.MeshStandardMaterialParameters) => new THREE.MeshStandardMaterial(p);
+  if (chave === "topo") return unico("parede|topo", () => P({ color: COR_TOPO_PAREDE, roughness: 0.9 }));
+  if (modo === "planta") return unico(`parede|planta|${corPlanta}`, () => P({ color: corPlanta, roughness: 0.92 }));
+  // selecionada: a mesma pintura com um realce azulado por cima — a cor que está sendo escolhida continua à vista
+  if (modo === "selecionada") {
+    return unico(`parede|selecionada|${chave}`, () => {
+      const m = (materialDaParede(chave) as THREE.MeshStandardMaterial).clone();
+      m.emissive = new THREE.Color("#5b9dff");
+      m.emissiveIntensity = 0.22;
+      return m;
+    });
+  }
+  if (chave === "rodape") return unico("parede|rodape", () => P({ color: "#f6f4ef", roughness: 0.45 }));
+  const [revestimento, cor] = chave.split("|");
+  return unico(`parede|${chave}`, () => {
+    switch (revestimento) {
+      case "azulejo":
+        return P({ color: cor, map: texRevestimento("azulejo", cor), roughness: 0.2 });
+      case "cimento":
+        return P({ color: cor, map: texRevestimento("cimento", cor), roughness: 0.82 });
+      case "tijolinho":
+        return P({ map: texRevestimento("tijolinho", cor), roughness: 0.9 });
+      default:
+        // tinta de parede: fosca
+        return P({ color: cor, roughness: 0.9 });
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------------- geometrias

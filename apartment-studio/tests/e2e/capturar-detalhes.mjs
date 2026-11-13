@@ -3,6 +3,8 @@
  * para conferir lado a lado com as fotos do Alan. Salva em tests/e2e/capturas/detalhes/.
  * Uso: npm run build && node tests/e2e/capturar-detalhes.mjs [nome...] [--nitido]   (sem nomes: todas)
  * --nitido: 2× de resolução, em capturas/detalhes-nitido/ (imagens que vão para o Alan).
+ * --hora=20 (hora do dia, 6 a 22), --luzes (acende as luzes de dia), --sem-realismo (desliga o acabamento realista);
+ *   com qualquer um deles o arquivo ganha um sufixo (ex.: cozinha-geral-20h.png).
  */
 import { spawn } from "node:child_process";
 import { mkdirSync } from "node:fs";
@@ -39,6 +41,11 @@ const DETALHES = {
   "banheiro-geral": { de: [640, 408, 160], para: [540, 505, 95] },
 };
 
+const opcao = (nome) => process.argv.find((a) => a.startsWith(`--${nome}=`))?.split("=")[1];
+const hora = opcao("hora") ? Number(opcao("hora")) : null;
+const luzes = process.argv.includes("--luzes");
+const semRealismo = process.argv.includes("--sem-realismo");
+const sufixo = `${hora !== null ? `-${String(hora).replace(".", "h")}${Number.isInteger(hora) ? "h" : ""}` : ""}${luzes ? "-luzes" : ""}${semRealismo ? "-simples" : ""}`;
 const pedidos = process.argv.slice(2).filter((a) => !a.startsWith("--"));
 const nomes = pedidos.length ? pedidos : Object.keys(DETALHES);
 const servidor = spawn("npx", ["vite", "preview", "--port", String(PORTA), "--strictPort"], { cwd: raiz, stdio: "pipe" });
@@ -63,7 +70,7 @@ try {
     const d = DETALHES[nome];
     if (!d) throw new Error(`Detalhe desconhecido: ${nome}`);
     await page.evaluate(
-      ({ nome, d }) => {
+      ({ nome, d, hora, luzes, semRealismo }) => {
         const app = window.__estudio;
         const base = (window.__base ??= app.getState().projeto);
         const esconder = new Set(d.esconder ?? []);
@@ -76,13 +83,23 @@ try {
             vistas: [...base.vistas, vista],
           },
           selecao: null,
-          visao: { ...s.visao, camera: "interna", vistaId: vista.id, paredes: "inteiras", cotas: false, teto: !d.semParedes },
+          visao: {
+            ...s.visao,
+            camera: "interna",
+            vistaId: vista.id,
+            paredes: "inteiras",
+            cotas: false,
+            teto: !d.semParedes,
+            horaSol: hora ?? s.visao.horaSol,
+            luzArtificial: luzes,
+            realismo: !semRealismo,
+          },
         }));
       },
-      { nome, d },
+      { nome, d, hora, luzes, semRealismo },
     );
-    await page.waitForTimeout(1500);
-    await page.screenshot({ path: join(saida, `${nome}.png`) });
+    await page.waitForTimeout(hora !== null || luzes ? 2600 : 1500);
+    await page.screenshot({ path: join(saida, `${nome}${sufixo}.png`) });
     console.log(`✔ ${nome}`);
   }
   await browser.close();

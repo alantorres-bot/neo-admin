@@ -42,6 +42,9 @@ export function criarMobilia(): Movel[] {
     it("coz-microondas", "microondas", "Micro-ondas Midea", 30.5, 416.5, 90, { grupo: "cozinha", situacao: "tenho", elevacao: 157, obs: "Medidas típicas (46 × 35 × 27); conferir o modelo." }),
     it("coz-depurador", "depurador", "Depurador slim", 28, 251, 90, { grupo: "cozinha", situacao: "comprar" }),
     it("coz-led", "fita-led", "Fita de LED sob o aéreo", 13.25, 262, 90, { ...coz, ...dim(246, 2.5, 0.6), elevacao: 154.3 }),
+    // fitas de LED embutidas no teto, paralelas à bancada (como na foto de referência)
+    it("coz-led-teto-1", "fita-led-teto", "Fita de LED no teto (perto da bancada)", 84, 295, 90, { ...coz, ...dim(290, 3, 0.6) }),
+    it("coz-led-teto-2", "fita-led-teto", "Fita de LED no teto (corredor)", 124, 295, 90, { ...coz, ...dim(290, 3, 0.6) }),
     // torre da geladeira
     it("coz-painel-geladeira", "peca-marcenaria", "Painel lateral da torre", 47.5, 449.5, 90, { ...coz, ...dim(3, 75, 260), obs: "Off-white, como o aéreo de cima. Na foto de referência não há painel: o aéreo passa direto por cima da geladeira." }),
     it("coz-aereo-geladeira", "armario-aereo", "Armário sobre a geladeira", 46, 488.5, 90, { ...coz, ...dim(75, 72, 62), opcoes: { portas: 2 } }),

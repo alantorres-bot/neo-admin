@@ -32,8 +32,28 @@ export interface Parede {
   espessura: Medida;
   /** Altura própria (guarda-corpo, mureta). Sem valor = pé-direito do projeto. */
   altura?: Medida;
-  /** Cor das faces (Etapa 5 trocará por materiais). */
+  /** Cor da pintura da parede inteira (as duas faces), quando não há acabamento próprio no trecho. */
   cor?: string;
+  /** Acabamento próprio de cada face, por ambiente: "a parede atrás do sofá, do lado da sala". */
+  acabamentos?: AcabamentoParede[];
+}
+
+/** O que cobre a face de uma parede. */
+export type Revestimento = "pintura" | "azulejo" | "cimento" | "tijolinho";
+
+/**
+ * Lado de uma parede: andando do vértice `a` para o `b` (na planta, com y para baixo), "direita" é a face
+ * do lado direito de quem anda e "esquerda" a do outro lado (ver geometria.ts).
+ */
+export type LadoParede = "direita" | "esquerda";
+
+/** Acabamento de um trecho de face: o lado da parede voltado para um ambiente. */
+export interface AcabamentoParede {
+  lado: LadoParede;
+  /** Id do ambiente para o qual o trecho está voltado. Sem ambiente: a face inteira desse lado. */
+  ambiente?: string;
+  cor?: string;
+  revestimento?: Revestimento;
 }
 
 export type TipoAbertura = "porta" | "porta-correr" | "janela" | "vao";
@@ -53,7 +73,11 @@ export interface Abertura {
   abrePara?: "esquerda" | "direita";
   /** Quanto a folha aparece aberta no desenho, em graus (padrão 75; 0 = fechada). */
   aberta?: number;
+  /** Cor da folha da porta (padrão: branca). */
+  cor?: string;
 }
+
+export type MaterialPiso = "porcelanato" | "madeira" | "cimento";
 
 export type TipoAmbiente =
   | "sala"
@@ -74,7 +98,10 @@ export interface Ambiente {
   poligono: string[];
   /** Área informada na planta (m²), se houver — serve de conferência. */
   areaInformada?: number;
-  piso?: string; // cor do piso (Etapa 5: material)
+  /** Cor do piso. */
+  piso?: string;
+  /** Material do piso (padrão: porcelanato). */
+  pisoMaterial?: MaterialPiso;
   /** Ambiente externo não recebe teto. */
   externo?: boolean;
 }

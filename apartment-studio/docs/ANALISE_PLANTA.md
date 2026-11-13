@@ -57,6 +57,18 @@ vermelho = divergente após edição, tracejado = a confirmar).
 | Janela do banheiro | 55 × 60, peitoril 150 | estimada | largura medida |
 | Janela área de serviço → varanda | 65 cm de largura (100 × peitoril 110) | estimada | é janela: o Alan pediu a pedra da bancada "abaixo da janela". Largura medida na planta (≈63 cm, à direita, encostada na divisória). A foto do decorado confirma a posição e um peitoril ≈25–30 cm acima do tanque; nela a janela parece um pouco mais larga — **medir no local** |
 
+### Acabamentos que também não constam na planta (adotados na Etapa 5, trocáveis na interface)
+
+| Elemento | Adotado | De onde veio |
+|---|---|---|
+| Portas e batentes | Brancos, com maçaneta de alavanca e guarnição de 6 cm | padrão de entrega; no decorado as esquadrias são brancas |
+| Esquadrias (janelas e porta da varanda) | Alumínio branco | fotos do decorado (banheiro e área de serviço) |
+| Paredes do banheiro | Azulejo branco 60 × 30 até o teto | decorado: box azulejado até o teto; no trecho da pia lá é meia parede |
+| Rodapé | Branco, 7 cm, nas paredes pintadas | padrão — conferir |
+| Piso | Porcelanato claro 60 × 60 | cor da planta; formato estimado |
+| Vista pelas janelas | Céu e uma linha de prédios ao longe | cenário genérico: o andar e a vista real não são conhecidos |
+| Sol | Arco de leste a oeste pelo lado da varanda | o norte não foi informado (pergunta 4) |
+
 ## 4. Portas e aberturas (larguras medidas na imagem calibrada)
 
 | Abertura | Largura (vão com batente) | Abre para |

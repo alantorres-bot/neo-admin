@@ -14,8 +14,9 @@ npm install
 npm run dev            # http://localhost:5180
 npm test               # regras de geometria, móveis e catálogo (Vitest)
 npm run build && npm run e2e                      # verificação visual e funcional no Chromium
-node tests/e2e/capturar-ambientes.mjs --limpo     # galeria de perspectivas (use --celular / --escuro / --nitido)
-node tests/e2e/capturar-detalhes.mjs [nome...]    # fotos de perto dos itens com foto de referência (docs/referencias)
+node tests/e2e/capturar-ambientes.mjs --limpo     # galeria de perspectivas (--celular / --escuro / --nitido / --hora=20 / --so=10-sala,10-suite)
+node tests/e2e/capturar-detalhes.mjs [nome...]    # fotos de perto dos itens com foto de referência (--nitido / --hora=20 / --luzes / --sem-realismo)
+node tests/e2e/medir-desempenho.mjs               # chamadas de desenho e triângulos por vista (comparar antes/depois de mexer na cena)
 npm run artefato && node tests/e2e/verificar-artefato.mjs   # página única publicável + teste em tela de celular
 ```
 
@@ -23,7 +24,7 @@ npm run artefato && node tests/e2e/verificar-artefato.mjs   # página única pub
 
 - Endereço: https://claude.ai/artifact/VUR55xAmwntHzhc96f3que (privada; só o Alan abre).
 - `npm run artefato` gera `dist-artefato/apartment-studio.html`: CSS, JavaScript e a imagem da planta embutidos
-  (≈1,3 MB). O Claude publica esse arquivo com a ferramenta Artifact, sempre no mesmo endereço
+  (≈1,8 MB). O Claude publica esse arquivo com a ferramenta Artifact, sempre no mesmo endereço
   (de outra conversa: ler o artefato primeiro e passar `url`), mantendo `capabilities: {db: {}}`.
 - **Salvamento**: na página publicada o projeto vai para o banco de dados da própria página, documento
   `projetos/principal` (`{ app, base, atualizadoEm, projeto }`, ≈30 KB; limite 256 KiB), e continua indo
@@ -36,7 +37,8 @@ npm run artefato && node tests/e2e/verificar-artefato.mjs   # página única pub
 
 ## Stack
 
-React 19 + TypeScript + Vite · Three.js + React Three Fiber + Drei · Zustand · IndexedDB (idb-keyval) · CSS puro.
+React 19 + TypeScript + Vite · Three.js + React Three Fiber + Drei · postprocessing (sombreamento de cantos, brilho,
+curva de tons) · Zustand · IndexedDB (idb-keyval) · CSS puro.
 
 ## Pastas
 
@@ -45,19 +47,27 @@ src/
   modelo/      tipos.ts            modelo paramétrico (planta, móveis, vistas, projeto)
                geometria.ts        funções puras: paredes, áreas, cotas, encontros de parede
                plantaReal.ts       leitura da planta + cotas conferidas
+               geometria.ts (cont.) lados da parede, faixas de face por ambiente, pintura/revestimento, linha de visão
                moveis.ts           área ocupada, conflitos (parede, porta, outro móvel), encaixe ao arrastar
                mobilia.ts          móveis do Alan posicionados em cm + vistas por ambiente
                projetoBase.ts      junta planta + mobília + vistas; BASE_ATUAL identifica a revisão
   catalogo/    formas.ts           formas paramétricas (peças em cm a partir de L × P × A e opções)
-               catalogo.ts         biblioteca (76 itens em 5 categorias), paleta do projeto, cores por parte
+               catalogo.ts         biblioteca (78 itens em 5 categorias), paleta do projeto, cores por parte, luz de cada item
+               luzes.ts            luzes que os móveis emitem (plafon, pendente, abajur, fitas de LED) e "o ambiente tem luz de teto?"
   estado/      store.ts            Zustand: projeto, histórico, seleção, visão, painel
                persistencia.ts     IndexedDB (navegador)
                nuvem.ts            banco de dados da página publicada (capacidade db do Artifact)
   cena/        Cena, Paredes, Aberturas, Ambientes, Moveis, Cameras, Referencia, Rotulos, materiais
+               luz.ts              luz conforme a hora (sol, céu, difusa, noite) — pura, testada
+               Luzes.tsx           luzes dos móveis e claridade das janelas · Ceu.tsx céu e horizonte vistos pelas janelas
+               PosProcesso.tsx     acabamento realista da imagem + vigia de desempenho (desempenho.ts)
+               geometriaParede.ts  faces da parede agrupadas por material (pintura por lado, topo, rodapé) — pura, testada
+               Espelho.tsx         espelho que reflete o ambiente (areaEspelho.ts junta as portas num espelho só)
   ui/          BarraFerramentas, PainelLateral, PainelMoveis, PainelPropriedades, PropMovel, Vistas, …
+               acabamentos.tsx     paletas de tons prontos, nomes de acabamento/revestimento/piso, seletor de cor
 scripts/       gerar-artefato.mjs  página única para publicar
-tests/e2e/     verificar-visual.mjs (41 verificações), verificar-artefato.mjs, capturar-ambientes.mjs (galeria),
-               capturar-detalhes.mjs (item de perto, para comparar com a foto)
+tests/e2e/     verificar-visual.mjs (62 verificações), verificar-artefato.mjs (celular), capturar-ambientes.mjs (galeria),
+               capturar-detalhes.mjs (item de perto, para comparar com a foto), medir-desempenho.mjs
 docs/          ARQUITETURA.md, ANALISE_PLANTA.md, PREFERENCIAS.md
 docs/referencias/   fotos enviadas pelo Alan (reduzidas) + LEIAME.md com o que cada uma mostra
 public/referencia/planta-apartamento.webp   imagem original da planta (decalque calibrado)
@@ -104,8 +114,50 @@ versão nova (uma cópia da sua fica guardada) ou manter a sua.
 | 2 | Geometria 3D paramétrica | Feita: 14/16 cotas conferidas, 2 a confirmar |
 | 3 | Navegação e câmeras | Feita: 3D orbital, planta, por dentro (teclado e toque), vistas por ambiente |
 | 4 | Editor de móveis e biblioteca | **Feita**: 76 itens; adicionar, selecionar, arrastar com encaixe, girar, redimensionar em cm, cores, duplicar, excluir, travar; avisos de conflito; apartamento montado com as coisas do Alan; rack, cadeira, eletros, cozinha e banheiro conferidos de perto com as fotos dele (`docs/referencias/`) |
-| 5 | Materiais, texturas e iluminação realista | Parcial: acabamentos e texturas por código, luz ambiente com reflexo, porcelanato, estofado arredondado, plafons. Falta: troca de acabamento pela interface, cores de parede, oclusão de ambiente, luminárias reais |
+| 5 | Materiais, texturas e iluminação realista | **Feita** (ver "Luz e materiais"): hora do dia com sol entrando pelas janelas, noite com as luzes da casa e fitas de LED, sombreamento de cantos, espelhos que refletem, materiais com relevo e brilho, rodapé, portas e esquadrias; troca de acabamento e cor de cada parte do móvel, pintura por face de parede ou por ambiente, revestimentos e piso pela interface. Não entrou: foto com traçado de raios (fica com as "imagens fotorrealistas" previstas para depois) |
 | 6 | Persistência, versões e exportação | Parcial: salvamento automático (navegador e conta), desfazer/refazer, aviso de base nova. Faltam versões nomeadas e exportar imagem |
+
+## Luz e materiais (Etapa 5)
+
+**Hora do dia** (`cena/luz.ts`, relógio de 6h a 22h na barra): sol em arco de leste a oeste passando pelo lado da
+varanda (o norte da planta não foi informado), cor quente perto do horizonte, noite depois das 18h30. À noite as
+luzes da casa acendem sozinhas; de dia, pelo botão Luzes. Na vista de planta vale sempre o meio-dia, sem sombra.
+
+**Por dentro** o teto faz sombra: o sol só entra pelas janelas e pela porta da varanda (manchas de sol no piso).
+A claridade do céu entra por uma luz de área em cada vão voltado para fora (`LuzDasJanelas`), que não faz sombra;
+a luz difusa fica baixa para haver contraste. A cortina é tecido leve: não barra o sol e brilha um pouco de dia.
+
+**Luzes da casa** (`catalogo/luzes.ts` + `cena/Luzes.tsx`): cada item do catálogo pode declarar `luz` — "ponto"
+(plafon, pendente, abajur, luminária de piso) ou "fita" (LED, luz de área para um lado). Brilho, tom e
+"apagada" são opções do móvel. Ambiente sem luminária de teto ganha um plafon automático no centro. Nenhuma luz
+artificial faz sombra (custaria um desenho da cena por luz); o sombreamento de cantos compensa.
+Calibração: `SOL_PLENO` (1,55) e `FORCA_PLAFON` (3,2). `verificar-artefato.mjs` exige que a casa acesa à noite
+fique, na média, mais escura que de dia — se mexer nas forças, esse teste avisa.
+
+**Acabamento da imagem** (`PosProcesso.tsx`, botão Realista): oclusão de ambiente (N8AO, meia resolução, sem o
+modo "transparência", que redesenhava a cena duas vezes), brilho suave nas luzes (bloom) e curva de tons ACES.
+Desligado na vista de planta. Um vigia (`desempenho.ts`) mede o tempo entre quadros enquanto a cena está em
+movimento: se a mediana de 24 quadros seguidos passa de 125 ms, desliga o modo realista uma vez por visita e
+mostra um aviso (a pessoa pode religar no botão).
+
+**Espelhos** (`Espelho.tsx`): as frentes com acabamento "espelho" de um móvel viram um espelho só, que desenha a
+cena de novo do ponto de vista do reflexo — apenas com a câmera por dentro, a menos de 5 m, de frente e sem
+parede no meio (`haParedeEntre`). Fora disso aparece o acabamento simples.
+
+**Paredes** (`geometriaParede.ts` + `Paredes.tsx`): uma malha por parede, com um grupo de faces por material.
+Cada face é dividida pelo ambiente para o qual está voltada (`faixasDaFace`), e cada trecho pode ter cor e
+revestimento próprios (`Parede.acabamentos`: pintura, azulejo, cimento queimado, tijolinho). Rodapé de 7 cm nas
+faces internas pintadas (não no banheiro nem em face revestida). Selecionada, a parede ganha só um realce: a cor
+escolhida continua à vista. Pisos: porcelanato, madeira em réguas ou cimento, com cor (`Ambiente.pisoMaterial`).
+
+**Móveis**: as peças de cada móvel são unidas numa malha por material. Madeira com relevo do veio, estofado com
+trama e brilho aveludado, inox escovado, pedra e louça polidas, LED que apaga quando as luzes estão apagadas.
+
+**Custo de desenho** (`medir-desempenho.mjs`, vista 3D com paredes baixas): 990 chamadas antes da Etapa 5 →
+≈ 480 depois, já com os efeitos; por dentro, 950 → ≈ 450 (≈ 190 à noite, sem a sombra do sol; +200 a 300 com um
+espelho à vista). Trocar a combinação de luzes (acender, anoitecer, entrar na vista por dentro) recompila os
+materiais na primeira vez — um instante de preparo, depois fica guardado. O tempo por quadro medido aqui é de um
+navegador sem placa de vídeo: vale para comparar antes/depois, não como previsão do celular.
 
 ## Decisões técnicas
 

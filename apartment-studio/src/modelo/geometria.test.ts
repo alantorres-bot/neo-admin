@@ -6,7 +6,11 @@ import {
   comprimentoParede,
   conferirCotas,
   definirComprimento,
+  ambientesDaParede,
+  haParedeEntre,
+  ladoInternoDaAbertura,
   medirCota,
+  pontoAoLadoDaParede,
   distanciaAteBorda,
   pontoDeVista,
   recortarTrechos,
@@ -155,5 +159,80 @@ describe("ponto de vista interno", () => {
   it("distância até a borda", () => {
     const q = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }];
     expect(distanciaAteBorda({ x: 50, y: 50 }, 1, 0, q)).toBeCloseTo(50, 6);
+  });
+});
+
+describe("lados da parede", () => {
+  const planta = criarPlantaReal();
+  const parede = (id: string) => planta.paredes.find((p) => p.id === id)!;
+  const abertura = (id: string) => planta.aberturas.find((a) => a.id === id)!;
+
+  it("o ponto ao lado fica fora da espessura, do lado pedido", () => {
+    const p = parede("p-coz-sala");
+    const meio = comprimentoParede(planta, p) / 2;
+    const d = pontoAoLadoDaParede(planta, p, meio, "direita", 15);
+    const e = pontoAoLadoDaParede(planta, p, meio, "esquerda", 15);
+    // os dois pontos ficam a (espessura + 30) cm um do outro, um de cada lado
+    expect(Math.hypot(d.x - e.x, d.y - e.y)).toBeCloseTo(p.espessura.valor + 30, 5);
+  });
+
+  it("a divisória entre cozinha e sala tem a cozinha de um lado e a sala do outro", () => {
+    const lados = ambientesDaParede(planta, parede("p-coz-sala"));
+    expect([lados.direita?.id, lados.esquerda?.id].sort()).toEqual(["amb-cozinha", "amb-sala"]);
+  });
+
+  it("parede externa só tem ambiente de um lado", () => {
+    const lados = ambientesDaParede(planta, parede("p-coz-esq"));
+    expect(Object.values(lados).map((a) => a!.id)).toEqual(["amb-cozinha"]);
+  });
+
+  it("janelas e a porta da varanda sabem qual é o lado de dentro", () => {
+    const dentro = (id: string) => {
+      const ab = abertura(id);
+      const lado = ladoInternoDaAbertura(planta, ab);
+      return lado ? ambientesDaParede(planta, parede(ab.paredeId), ab.posicao.valor)[lado]?.id : null;
+    };
+    expect(dentro("pt-varanda")).toBe("amb-sala");
+    expect(dentro("j-servico")).toBe("amb-cozinha");
+    expect(dentro("j-quarto1")).toBe("amb-quarto1");
+    expect(dentro("j-quarto2")).toBe("amb-quarto2");
+    expect(dentro("j-banheiro")).toBe("amb-banheiro");
+  });
+
+  it("porta entre dois ambientes internos não tem lado de dentro", () => {
+    expect(ladoInternoDaAbertura(planta, abertura("pt-quarto1"))).toBeNull();
+    expect(ladoInternoDaAbertura(planta, abertura("pt-banheiro"))).toBeNull();
+  });
+});
+
+describe("linha de visão", () => {
+  const planta = criarPlantaReal();
+
+  it("dentro do mesmo ambiente não há parede no caminho", () => {
+    expect(haParedeEntre(planta, { x: 200, y: 120 }, { x: 380, y: 280 })).toBe(false); // sala
+    expect(haParedeEntre(planta, { x: 700, y: 48 }, { x: 850, y: 335 })).toBe(false); // suíte
+  });
+
+  it("da sala para o quarto 2 há a parede entre eles", () => {
+    expect(haParedeEntre(planta, { x: 300, y: 150 }, { x: 520, y: 150 })).toBe(true);
+  });
+
+  it("da suíte não se vê o espelho do banheiro; da porta do banheiro, sim", () => {
+    const espelho = { x: 581, y: 512 };
+    expect(haParedeEntre(planta, { x: 700, y: 48 }, espelho)).toBe(true);
+    expect(haParedeEntre(planta, { x: 440, y: 380 }, { x: 440, y: 512 })).toBe(true); // do corredor, longe da porta
+    expect(haParedeEntre(planta, { x: 598, y: 400 }, espelho)).toBe(false); // vista "Banheiro": parada no vão da porta
+    const porta = planta.aberturas.find((a) => a.id === "pt-banheiro")!;
+    const parede = planta.paredes.find((p) => p.id === porta.paredeId)!;
+    const a = planta.vertices.find((v) => v.id === parede.a)!;
+    const b = planta.vertices.find((v) => v.id === parede.b)!;
+    const L = Math.hypot(b.x - a.x, b.y - a.y);
+    // 40 cm para fora do banheiro, bem na frente da porta: enxerga o espelho pelo vão
+    const naPorta = { x: a.x + ((b.x - a.x) * porta.posicao.valor) / L, y: a.y + ((b.y - a.y) * porta.posicao.valor) / L - 40 };
+    expect(haParedeEntre(planta, naPorta, { x: naPorta.x, y: 512 })).toBe(false);
+  });
+
+  it("o guarda-corpo da varanda não tapa a vista", () => {
+    expect(haParedeEntre(planta, { x: 200, y: 40 }, { x: 200, y: -200 })).toBe(false);
   });
 });

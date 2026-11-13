@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { HORA_MAX, HORA_MIN, luzesAcesas, condicaoDeLuz, rotuloHora } from "../cena/luz";
 import { useApp, type ModoCamera, type ModoParedes } from "../estado/store";
 
 const CAMERAS: { id: ModoCamera; rotulo: string; dica: string }[] = [
@@ -68,7 +69,8 @@ export function BarraFerramentas() {
     return () => window.removeEventListener("keydown", kd);
   }, []);
 
-  const alternar = (chave: "teto" | "cotas" | "moveis" | "luzArtificial") => definirVisao({ [chave]: !visao[chave] });
+  const alternar = (chave: "teto" | "cotas" | "moveis" | "luzArtificial" | "realismo") => definirVisao({ [chave]: !visao[chave] });
+  const noite = condicaoDeLuz(visao.horaSol).noite;
 
   return (
     <header className="barra">
@@ -106,12 +108,26 @@ export function BarraFerramentas() {
         <button className={visao.cotas ? "ativo" : ""} onClick={() => alternar("cotas")} title="Nomes, áreas e medidas">
           Medidas
         </button>
-        <button className={visao.luzArtificial ? "ativo" : ""} onClick={() => alternar("luzArtificial")} title="Acender as luzes dos ambientes" data-teste="alternar-luzes">
+        <button
+          className={luzesAcesas(visao) ? "ativo" : ""}
+          onClick={() => alternar("luzArtificial")}
+          disabled={noite}
+          title={noite ? "À noite as luzes ficam acesas" : "Acender as luzes dos ambientes"}
+          data-teste="alternar-luzes"
+        >
           Luzes
         </button>
-        <label className="hora" title="Hora do dia (posição do sol)">
-          ☀ {String(Math.floor(visao.horaSol)).padStart(2, "0")}h
-          <input id="hora-sol" type="range" min={6} max={18} step={0.5} value={visao.horaSol} onChange={(e) => definirVisao({ horaSol: Number(e.target.value) })} aria-label="Hora do dia" />
+        <button
+          className={visao.realismo ? "ativo" : ""}
+          onClick={() => alternar("realismo")}
+          title="Imagem realista: sombra nos cantos, espelhos que refletem e brilho das luzes. Desligue se ficar lento."
+          data-teste="alternar-realismo"
+        >
+          Realista
+        </button>
+        <label className="hora" title="Hora do dia: posição do sol, pôr do sol e noite">
+          {rotuloHora(visao.horaSol)}
+          <input id="hora-sol" type="range" min={HORA_MIN} max={HORA_MAX} step={0.5} value={visao.horaSol} onChange={(e) => definirVisao({ horaSol: Number(e.target.value) })} aria-label="Hora do dia" />
         </label>
       </div>
 

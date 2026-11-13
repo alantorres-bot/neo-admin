@@ -5,6 +5,7 @@ import { useApp } from "../estado/store";
 import { ambienteDoPonto } from "../modelo/geometria";
 import { conflitosDoMovel, folgaFrontal } from "../modelo/moveis";
 import type { Movel, Situacao } from "../modelo/tipos";
+import { EscolhaDeCor, opcoesDeAcabamento, TONS_LUZ, TONS_MOVEL } from "./acabamentos";
 import { CampoNumero } from "./campos";
 import { NOME_SITUACAO } from "./PainelMoveis";
 
@@ -23,9 +24,12 @@ export function PropMovel({ movel }: { movel: Movel }) {
   const partes = useMemo(() => {
     if (!item) return [];
     const usados = new Set(pecasDoMovel(item.forma, { L: movel.largura, P: movel.profundidade, A: movel.altura }, opcoes).map((p) => p.slot));
-    return Object.entries(slots).filter(([nome, s]) => usados.has(nome) && s.acabamento !== "vidro" && s.acabamento !== "espelho" && nome !== "arte" && nome !== "remo");
+    // vidro, espelho e a peça que brilha (LED) não entram: a cor delas não é pintura
+    return Object.entries(slots).filter(([nome, s]) => usados.has(nome) && s.acabamento !== "vidro" && s.acabamento !== "espelho" && s.acabamento !== "led" && nome !== "arte" && nome !== "remo");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [movel.catalogoId, movel.largura, movel.profundidade, movel.altura, movel.opcoes, movel.cores]);
+  }, [movel.catalogoId, movel.largura, movel.profundidade, movel.altura, movel.opcoes, movel.cores, movel.acabamentos]);
+  const brilho = typeof opcoes.brilho === "number" ? opcoes.brilho : 1;
+  const slotLed = Object.entries(slots).find(([, s]) => s.acabamento === "led")?.[0];
 
   const conflitos = conflitosDoMovel(projeto, movel);
   const ambiente = ambienteDoPonto(projeto.planta, movel);
@@ -92,22 +96,66 @@ export function PropMovel({ movel }: { movel: Movel }) {
         </>
       )}
 
+      {item?.luz && (
+        <>
+          <h3 className="secao">Luz</h3>
+          <label className="campo">
+            <span className="campo-rotulo">Brilho: {Math.round(brilho * 100)}%{opcoes.apagada === true ? " (apagada)" : ""}</span>
+            <input
+              type="range"
+              id="movel-brilho"
+              min={0}
+              max={2}
+              step={0.1}
+              value={opcoes.apagada === true ? 0 : brilho}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                mudar("Brilho da luz", { opcoes: { ...movel.opcoes, brilho: v, apagada: v === 0 } });
+              }}
+            />
+          </label>
+          <EscolhaDeCor
+            tons={TONS_LUZ}
+            valor={typeof opcoes.corLuz === "string" ? opcoes.corLuz : item.luz.cor}
+            id="movel-tom-luz"
+            rotulo="tom da luz"
+            aoEscolher={(cor) =>
+              // o difusor (a peça que brilha) acompanha o tom da luz
+              mudar("Tom da luz", { opcoes: { ...movel.opcoes, corLuz: cor }, ...(slotLed ? { cores: { ...movel.cores, [slotLed]: cor } } : {}) })
+            }
+          />
+          <p className="dica">Acende com o botão Luzes, ou sozinha à noite (arraste o relógio da barra).</p>
+        </>
+      )}
+
       {partes.length > 0 && (
         <>
-          <h3 className="secao">Cores</h3>
-          <div className="cores">
-            {partes.map(([nome, s]) => (
-              <label key={nome} className="cor">
-                <input
-                  type="color"
-                  id={`cor-${nome}`}
-                  value={s.cor.length === 7 ? s.cor : "#cccccc"}
-                  onChange={(e) => mudar(`Cor: ${s.rotulo}`, { cores: { ...movel.cores, [nome]: e.target.value } })}
-                />
-                <span>{s.rotulo}</span>
-              </label>
-            ))}
-          </div>
+          <h3 className="secao">Cores e acabamentos</h3>
+          {partes.map(([nome, s]) => (
+            <div className="parte" key={nome}>
+              <div className="parte-topo">
+                <span className="parte-nome">{s.rotulo}</span>
+                <select
+                  aria-label={`Acabamento: ${s.rotulo}`}
+                  data-teste={`acabamento-${nome}`}
+                  value={s.acabamento}
+                  onChange={(e) => mudar(`Acabamento: ${s.rotulo}`, { acabamentos: { ...movel.acabamentos, [nome]: e.target.value } })}
+                >
+                  {opcoesDeAcabamento(s.acabamento).map(([valor, rotulo]) => (
+                    <option key={valor} value={valor}>
+                      {rotulo}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <EscolhaDeCor tons={TONS_MOVEL} valor={s.cor} id={`cor-${nome}`} rotulo={s.rotulo} aoEscolher={(cor) => mudar(`Cor: ${s.rotulo}`, { cores: { ...movel.cores, [nome]: cor } })} />
+            </div>
+          ))}
+          {(movel.cores || movel.acabamentos) && (
+            <button className="botao secundario" onClick={() => mudar("Voltar às cores do catálogo", { cores: undefined, acabamentos: undefined })}>
+              Voltar às cores originais
+            </button>
+          )}
         </>
       )}
 

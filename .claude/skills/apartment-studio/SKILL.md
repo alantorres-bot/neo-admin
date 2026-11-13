@@ -118,6 +118,25 @@ Antes de mexer, leia:
 - Regras de página publicada que valem para a interface: cores só por tokens (tema claro e escuro), sem
   `alert/confirm/prompt`, sem download por link, tudo embutido (scripts externos só de CDN permitido).
 
+## Luz, materiais e desempenho (Etapa 5)
+
+- **Luz** vem de `cena/luz.ts` (hora → sol, céu, difusa, noite). Não espalhe intensidades pelo código: ajuste
+  `SOL_PLENO` (luz.ts) e `FORCA_PLAFON` (catalogo.ts) e rode `node tests/e2e/verificar-artefato.mjs`, que exige a
+  casa acesa à noite mais escura, na média, que de dia. Depois de mexer em luz ou material, capture **dia e noite**
+  (`capturar-ambientes.mjs --limpo` e `--limpo --hora=20`) e olhe as duas.
+- **Luminária nova** = item de catálogo com `luz` ("ponto" ou "fita"). Luz presa no teto dispensa o plafon
+  automático do ambiente (`ambienteTemLuzDeTeto`). Luz artificial não faz sombra — não ligue `castShadow` nelas.
+- **Parede**: pintura e revestimento ficam em `Parede.acabamentos`, por lado e por ambiente (`definirAcabamento`,
+  `pintarAmbiente`). "Atrás do sofá" = parede `p-coz-sala`, lado da sala; "atrás dos remos" = `p-fundo-jantar`,
+  lado do jantar. Nunca pinte `Parede.cor` para isso: ela vale para as duas faces.
+- **Acabamento novo de móvel**: `Acabamento` em formas.ts + `criar()` em materiais.ts + nome em `ui/acabamentos.tsx`.
+- **Desempenho**: a cena precisa rodar no celular. Antes e depois de mexer no desenho, rode
+  `node tests/e2e/medir-desempenho.mjs` (referência: ≈ 460 chamadas na vista 3D, ≈ 440 por dentro). Peças de um
+  móvel são unidas por material; paredes são uma malha com grupos. Não crie malha por peça nem material por peça.
+  Espelho de verdade só à vista (`haParedeEntre`); efeitos novos entram atrás do botão Realista.
+- O estado do app fica acessível nos testes com `?teste` na URL: `window.__estudio` (store) e `window.__cena`
+  (cena do React Three Fiber, sempre atual).
+
 ## Verificação (obrigatória ao fim de cada etapa)
 
 1. `npm run typecheck && npm test` em `apartment-studio/`.

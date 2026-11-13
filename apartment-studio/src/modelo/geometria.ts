@@ -1,5 +1,5 @@
 /** Funções puras de geometria do modelo (cm). Testadas em geometria.test.ts. */
-import type { Abertura, Ambiente, CotaPlanta, Parede, Planta, RefCota, Vertice } from "./tipos";
+import type { Abertura, AcabamentoParede, Ambiente, CotaPlanta, LadoParede, Parede, Planta, RefCota, Revestimento, Vertice } from "./tipos";
 
 export interface Ponto {
   x: number;
@@ -393,4 +393,192 @@ export function pontoNoPoligono(p: Ponto, poligono: Ponto[]): boolean {
 /** Ambiente que contém o ponto (cm), se houver. */
 export function ambienteDoPonto(planta: Planta, p: Ponto): Ambiente | undefined {
   return planta.ambientes.find((amb) => pontoNoPoligono(p, pontosAmbiente(planta, amb)));
+}
+
+// ------------------------------------------------------------------------------- lados da parede
+
+/*
+ * Cada parede tem duas faces (tipo LadoParede). Andando do vértice `a` para o `b` (na planta, com y para baixo),
+ * "direita" é a face do lado direito de quem anda e "esquerda" a do outro lado.
+ * Na cena, "direita" é a face +z do bloco da parede.
+ */
+export const LADOS_PAREDE: readonly LadoParede[] = ["direita", "esquerda"];
+
+/** Ponto a `dist` cm da face da parede, do lado pedido, a `u` cm do vértice `a` ao longo dela. */
+export function pontoAoLadoDaParede(planta: Planta, parede: Parede, u: number, lado: LadoParede, dist = 15): Ponto {
+  const [a, b] = extremos(planta, parede);
+  const L = comprimento(a, b) || 1;
+  const dx = (b.x - a.x) / L;
+  const dy = (b.y - a.y) / L;
+  const s = (lado === "direita" ? 1 : -1) * (parede.espessura.valor / 2 + dist);
+  return { x: a.x + dx * u - dy * s, y: a.y + dy * u + dx * s };
+}
+
+/** Ambiente encostado em cada face da parede (amostrado a `u` cm do vértice `a`; padrão: no meio). */
+export function ambientesDaParede(planta: Planta, parede: Parede, u?: number): Partial<Record<LadoParede, Ambiente>> {
+  const pos = u ?? comprimentoParede(planta, parede) / 2;
+  const out: Partial<Record<LadoParede, Ambiente>> = {};
+  for (const lado of LADOS_PAREDE) {
+    const amb = ambienteDoPonto(planta, pontoAoLadoDaParede(planta, parede, pos, lado));
+    if (amb) out[lado] = amb;
+  }
+  return out;
+}
+
+/**
+ * Lado de dentro de uma janela ou porta que dá para fora: a face voltada para um ambiente interno,
+ * quando do outro lado há a rua ou um ambiente externo (varanda). `null` em abertura entre dois ambientes internos.
+ */
+export function ladoInternoDaAbertura(planta: Planta, ab: Abertura): LadoParede | null {
+  const parede = planta.paredes.find((p) => p.id === ab.paredeId);
+  if (!parede) return null;
+  const lados = ambientesDaParede(planta, parede, ab.posicao.valor);
+  const interno = (l: LadoParede) => !!lados[l] && !lados[l]!.externo;
+  if (interno("direita") && !interno("esquerda")) return "direita";
+  if (interno("esquerda") && !interno("direita")) return "esquerda";
+  return null;
+}
+
+/** Trecho de uma face voltado para um ambiente (ou para fora, sem ambiente). `u` em cm a partir do vértice `a`. */
+export interface FaixaFace {
+  u0: number;
+  u1: number;
+  ambiente?: Ambiente;
+}
+
+/**
+ * Divide a face de uma parede nos trechos voltados para cada ambiente. Uma parede comprida pode dar para a
+ * sala num pedaço e para a varanda em outro: cada pedaço pode ter a sua pintura.
+ */
+export function faixasDaFace(planta: Planta, parede: Parede, lado: LadoParede): FaixaFace[] {
+  const L = comprimentoParede(planta, parede);
+  const em = (u: number) => ambienteDoPonto(planta, pontoAoLadoDaParede(planta, parede, u, lado));
+  const PASSO = 4;
+  const faixas: FaixaFace[] = [];
+  let inicio = 0;
+  let atual = em(Math.min(L, 1));
+  for (let u = PASSO; u <= L + PASSO; u += PASSO) {
+    const fim = u >= L;
+    const amb = fim ? atual : em(u);
+    if (!fim && amb?.id === atual?.id) continue;
+    let corte = L;
+    if (!fim) {
+      // afina a fronteira entre os dois ambientes por bisseção (até 1 mm)
+      let a = u - PASSO;
+      let b = u;
+      while (b - a > 0.1) {
+        const m = (a + b) / 2;
+        if (em(m)?.id === atual?.id) a = m;
+        else b = m;
+      }
+      corte = Math.round(((a + b) / 2) * 10) / 10;
+    }
+    if (corte - inicio > 0.5) faixas.push({ u0: inicio, u1: corte, ambiente: atual });
+    else if (faixas.length > 0) faixas[faixas.length - 1].u1 = corte;
+    if (fim) break;
+    inicio = corte;
+    atual = amb;
+  }
+  if (faixas.length === 0) faixas.push({ u0: 0, u1: L, ambiente: atual });
+  faixas[faixas.length - 1].u1 = L;
+  // Os ambientes são medidos pelo eixo das paredes: nos encontros sobra uma lasca de poucos centímetros
+  // "voltada" para o ambiente vizinho, que na obra fica dentro da outra parede. Ela se junta à faixa ao lado.
+  for (let i = 0; i < faixas.length && faixas.length > 1; ) {
+    if (faixas[i].u1 - faixas[i].u0 >= LASCA_MAXIMA) {
+      i++;
+      continue;
+    }
+    const vizinha = i > 0 ? faixas[i - 1] : faixas[i + 1];
+    vizinha.u0 = Math.min(vizinha.u0, faixas[i].u0);
+    vizinha.u1 = Math.max(vizinha.u1, faixas[i].u1);
+    faixas.splice(i, 1);
+    i = Math.max(0, i - 1);
+  }
+  // vizinhas voltadas para o mesmo ambiente viram uma só
+  for (let i = faixas.length - 1; i > 0; i--) {
+    if (faixas[i].ambiente?.id !== faixas[i - 1].ambiente?.id) continue;
+    faixas[i - 1].u1 = faixas[i].u1;
+    faixas.splice(i, 1);
+  }
+  return faixas;
+}
+
+/** Trecho de face mais curto que isto (cm), num encontro de paredes, não conta como face de um ambiente. */
+const LASCA_MAXIMA = 14;
+
+export const COR_PAREDE_PADRAO = "#f3f0ea";
+
+/** Cor e revestimento efetivos de um trecho de face (acabamento próprio → cor da parede → padrão). */
+export function acabamentoDaFaixa(parede: Parede, lado: LadoParede, ambienteId?: string): { cor: string; revestimento: Revestimento } {
+  const doLado = (parede.acabamentos ?? []).filter((a) => a.lado === lado);
+  const proprio: AcabamentoParede | undefined = doLado.find((a) => a.ambiente !== undefined && a.ambiente === ambienteId) ?? doLado.find((a) => a.ambiente === undefined);
+  return { cor: proprio?.cor ?? parede.cor ?? COR_PAREDE_PADRAO, revestimento: proprio?.revestimento ?? "pintura" };
+}
+
+/** Devolve a parede com o acabamento do trecho trocado (ou removido, com `acabamento` vazio). */
+export function definirAcabamento(parede: Parede, lado: LadoParede, ambienteId: string | undefined, acabamento: { cor?: string; revestimento?: Revestimento } | null): Parede {
+  const outros = (parede.acabamentos ?? []).filter((a) => !(a.lado === lado && a.ambiente === ambienteId));
+  const limpo = acabamento && (acabamento.cor || (acabamento.revestimento && acabamento.revestimento !== "pintura")) ? acabamento : null;
+  const acabamentos = limpo ? [...outros, { lado, ...(ambienteId ? { ambiente: ambienteId } : {}), ...limpo }] : outros;
+  const { acabamentos: _antigos, ...resto } = parede;
+  return acabamentos.length > 0 ? { ...resto, acabamentos } : resto;
+}
+
+/**
+ * Pinta (ou reveste) todas as faces voltadas para um ambiente: "pintar a sala inteira".
+ * Só o que vier em `acabamento` muda: trocar a cor mantém o azulejo de quem já tem; `null` volta tudo ao padrão.
+ */
+export function pintarAmbiente(planta: Planta, ambienteId: string, acabamento: { cor?: string; revestimento?: Revestimento } | null): Planta {
+  return {
+    ...planta,
+    paredes: planta.paredes.map((parede) => {
+      if (parede.tipo === "guarda-corpo") return parede;
+      let nova = parede;
+      for (const lado of LADOS_PAREDE) {
+        if (!faixasDaFace(planta, parede, lado).some((f) => f.ambiente?.id === ambienteId)) continue;
+        const atual = (nova.acabamentos ?? []).find((a) => a.lado === lado && a.ambiente === ambienteId);
+        nova = definirAcabamento(nova, lado, ambienteId, acabamento && { cor: acabamento.cor ?? atual?.cor, revestimento: acabamento.revestimento ?? atual?.revestimento });
+      }
+      return nova;
+    }),
+  };
+}
+
+/** Cores das faces voltadas para um ambiente (sem repetição) — para mostrar "a sala está pintada de…". */
+export function coresDoAmbiente(planta: Planta, ambienteId: string): string[] {
+  const cores = new Set<string>();
+  for (const parede of planta.paredes) {
+    if (parede.tipo === "guarda-corpo") continue;
+    for (const lado of LADOS_PAREDE) {
+      if (faixasDaFace(planta, parede, lado).some((f) => f.ambiente?.id === ambienteId)) cores.add(acabamentoDaFaixa(parede, lado, ambienteId).cor.toLowerCase());
+    }
+  }
+  return [...cores];
+}
+
+// ------------------------------------------------------------------------------- linha de visão
+
+/**
+ * Há parede entre os pontos `p` e `q` (cm)? Vale o eixo da parede; passar por dentro de um vão
+ * (porta, janela ou passagem) não conta como parede. Usado para saber se um espelho está à vista.
+ */
+export function haParedeEntre(planta: Planta, p: Ponto, q: Ponto): boolean {
+  const dx = q.x - p.x;
+  const dy = q.y - p.y;
+  for (const parede of planta.paredes) {
+    if (parede.tipo === "guarda-corpo") continue;
+    const [a, b] = extremos(planta, parede);
+    const ex = b.x - a.x;
+    const ey = b.y - a.y;
+    const den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-9) continue; // paralelas
+    // p + t·(q − p) = a + s·(b − a)
+    const t = ((a.x - p.x) * ey - (a.y - p.y) * ex) / den;
+    const s = ((a.x - p.x) * dy - (a.y - p.y) * dx) / den;
+    if (t <= 0.001 || t >= 0.999 || s < 0 || s > 1) continue;
+    const u = s * Math.hypot(ex, ey);
+    const noVao = planta.aberturas.some((ab) => ab.paredeId === parede.id && Math.abs(u - ab.posicao.valor) <= ab.largura.valor / 2);
+    if (!noVao) return true;
+  }
+  return false;
 }

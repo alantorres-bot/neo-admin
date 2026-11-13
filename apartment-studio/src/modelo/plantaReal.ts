@@ -11,6 +11,7 @@
  * - Portas e janelas: largura e posição medidas na imagem calibrada ("estimada");
  *   alturas e peitoris não aparecem na planta ("estimada", padrão de mercado).
  */
+import { pintarAmbiente } from "./geometria";
 import type { Abertura, Ambiente, CotaPlanta, Medida, OrigemMedida, Parede, Planta, RefCota, Vertice } from "./tipos";
 
 /** Marcador da imagem original da planta; a cena resolve para o arquivo ou para a imagem embutida. */
@@ -199,7 +200,7 @@ export function criarPlantaReal(): Planta {
       "Lida como do corredor até a parede da porta de entrada; o modelo dá ≈ 1,27."),
   ];
 
-  return {
+  const planta: Planta = {
     nome: "Apartamento — planta de referência",
     peDireito: est(260, "não consta na planta — padrão residencial, conferir"),
     vertices,
@@ -221,4 +222,9 @@ export function criarPlantaReal(): Planta {
       calibracao: { cotaCm: 386, medidoPx: 498 },
     },
   };
+  // Banheiro azulejado de branco até o teto, como no decorado do prédio (lá o trecho da pia tem meia parede
+  // de azulejo e pintura em cima). É acabamento, não medida: troca-se na interface, parede por parede.
+  return pintarAmbiente(planta, "amb-banheiro", { revestimento: "azulejo", cor: COR_AZULEJO });
 }
+
+export const COR_AZULEJO = "#f4f3ef";

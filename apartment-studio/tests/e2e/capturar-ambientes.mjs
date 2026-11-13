@@ -16,6 +16,9 @@ const celular = process.argv.includes("--celular");
 const escuro = process.argv.includes("--escuro");
 const limpo = process.argv.includes("--limpo"); // sem painéis, só a cena
 const nitido = process.argv.includes("--nitido"); // 2× para imagens que vão para o Alan
+const opcao = (nome) => process.argv.find((a) => a.startsWith(`--${nome}=`))?.split("=")[1];
+const hora = opcao("hora") ? Number(opcao("hora")) : null; // --hora=20: tudo à noite
+const so = opcao("so")?.split(","); // --so=00-3d,10-sala: só essas imagens
 const saida = join(raiz, "tests/e2e/capturas", celular ? "celular" : nitido ? "perspectivas" : "ambientes");
 mkdirSync(saida, { recursive: true });
 const PORTA = 5182;
@@ -37,18 +40,20 @@ try {
     colorScheme: escuro ? "dark" : "light",
   });
   const page = await context.newPage();
+  page.setDefaultTimeout(90_000); // sem placa de vídeo, a primeira imagem de cada vista demora
   page.on("console", (m) => m.type() === "error" && erros.push(m.text()));
   page.on("pageerror", (e) => erros.push(String(e)));
-  await page.goto(`http://localhost:${PORTA}/`);
+  await page.goto(`http://localhost:${PORTA}/?teste`);
   await page.waitForSelector("canvas");
   await page.waitForTimeout(2500);
+  if (hora !== null) await page.evaluate((h) => window.__estudio.setState((s) => ({ visao: { ...s.visao, horaSol: h } })), hora);
   if (limpo) await page.addStyleTag({ content: ".painel,.faixa-inferior,.vistas,.andar,.camada-rotulos,.barra{display:none!important}" });
   if (limpo) {
     // sem painéis sobra espaço: aproxima a câmera para o apartamento ocupar o quadro
     await page.waitForTimeout(600);
     const c = await page.locator("canvas").boundingBox();
     await page.mouse.move(c.x + c.width / 2, c.y + c.height / 2);
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 17; i++) {
       await page.mouse.wheel(0, -260);
       await page.waitForTimeout(120);
     }
@@ -56,8 +61,9 @@ try {
   // clique por script: funciona mesmo com a barra escondida no modo --limpo
   const clicar = (teste) => page.evaluate((t) => document.querySelector(`[data-teste="${t}"]`).click(), teste);
   const foto = async (nome) => {
-    await page.waitForTimeout(1200);
-    await page.screenshot({ path: join(saida, `${nome}${escuro ? "-escuro" : ""}.png`) });
+    if (so && !so.includes(nome)) return;
+    await page.waitForTimeout(hora !== null ? 2400 : 1400);
+    await page.screenshot({ path: join(saida, `${nome}${hora !== null ? `-${hora}h` : ""}${escuro ? "-escuro" : ""}.png`) });
   };
   await foto("00-3d");
   await clicar("paredes-recortadas");
@@ -67,8 +73,11 @@ try {
   await clicar("paredes-inteiras");
   const vistas = await page.evaluate(() => [...document.querySelectorAll(".vistas button")].map((b) => b.getAttribute("data-teste")));
   for (const v of vistas) {
+    const nome = `10-${v.replace("vista-v-", "")}`;
+    // vista não pedida: nem troca de câmera (no Chromium sem placa de vídeo cada troca custa caro)
+    if (so && !so.includes(nome)) continue;
     await clicar(v);
-    await foto(`10-${v.replace("vista-v-", "")}`);
+    await foto(nome);
   }
   await browser.close();
 } finally {

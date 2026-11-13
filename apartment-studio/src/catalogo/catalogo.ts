@@ -34,6 +34,23 @@ export interface ItemCatalogo {
   elevacao?: number;
   slots: Record<string, SlotCor>;
   opcoes?: Opcoes;
+  /** Luz que o item emite quando as luzes da casa estão acesas (ver luzes.ts). */
+  luz?: LuzItem;
+}
+
+/** Fonte de luz de um item do catálogo. */
+export interface LuzItem {
+  /** "ponto": lâmpada (plafon, pendente, abajur). "fita": faixa que ilumina para um lado (fita de LED). */
+  tipo: "ponto" | "fita";
+  cor: string;
+  /** Força da luz, na escala da cena (o sol do meio-dia vale ≈ 1,55). */
+  intensidade: number;
+  /** Só "ponto": até onde a luz chega, em cm. */
+  alcance?: number;
+  /** Onde a luz nasce, em fração de largura, altura e profundidade do item (0, 0, 0 = centro da base). */
+  em?: [number, number, number];
+  /** Só "fita": para onde ilumina (padrão: para baixo). */
+  direcao?: "baixo" | "cima" | "frente";
 }
 
 /** Paleta do projeto do Alan (docs/PREFERENCIAS.md). */
@@ -65,6 +82,12 @@ export const PALETA = {
   espelho: "#d2dde3",
   vidro: "#cfe3ee",
 } as const;
+
+/**
+ * Força de um plafon de teto, na escala da cena. Calibrada para a parede a 2 m ficar clara sem estourar
+ * e para a casa acesa à noite ficar, na média, mais escura que de dia (conferido em verificar-artefato.mjs).
+ */
+export const FORCA_PLAFON = 3.2;
 
 const S = (rotulo: string, cor: string, acabamento: Acabamento = "liso"): SlotCor => ({ rotulo, cor, acabamento });
 
@@ -201,16 +224,18 @@ export const CATALOGO: ItemCatalogo[] = [
   { id: "chuveiro", nome: "Chuveiro", categoria: "banheiro", forma: "chuveiro", largura: 12, profundidade: 22, altura: 20, elevacao: 195, slots: { cromado: S("Metal", "#c9ccd0", "cromado") } },
   { id: "vaso-sanitario", nome: "Vaso com caixa acoplada", categoria: "banheiro", forma: "vaso", largura: 38, profundidade: 62, altura: 78, slots: { louca: S("Louça", PALETA.louca, "louca") } },
   { id: "toalheiro", nome: "Toalheiro (barra)", categoria: "banheiro", forma: "toalheiro", largura: 50, profundidade: 8, altura: 6, elevacao: 120, slots: { cromado: S("Metal", "#c9ccd0", "cromado") } },
-  { id: "fita-led", nome: "Fita de LED", categoria: "banheiro", forma: "caixa", largura: 80, profundidade: 2.5, altura: 0.6, elevacao: 119, slots: { principal: S("Luz", "#ffe2b0", "led") } },
+  { id: "fita-led", nome: "Fita de LED", categoria: "banheiro", forma: "caixa", largura: 80, profundidade: 2.5, altura: 0.6, elevacao: 119, slots: { principal: S("Luz", "#ffe2b0", "led") }, luz: { tipo: "fita", cor: "#ffd9a8", intensidade: 10, direcao: "baixo" } },
 
   // ------------------------------------------------------------------------------------ Decoração
   { id: "quadro", nome: "Quadro", categoria: "decoracao", forma: "quadro", largura: 46, profundidade: 3, altura: 62, elevacao: 124, slots: { moldura: S("Moldura", "#1c1c1c"), arte: S("Arte", "#b9a583") } },
   { id: "remo", nome: "Remo decorativo", categoria: "decoracao", forma: "remo", largura: 19, profundidade: 2, altura: 95, elevacao: 100, slots: { remo: S("Remo", "#ffffff") } },
   { id: "planta-vaso", nome: "Planta em vaso", categoria: "decoracao", forma: "planta", largura: 45, profundidade: 45, altura: 110, slots: { vaso: S("Vaso", "#d8d2c8", "louca"), folha: S("Folhagem", "#4f7a4a", "fosco") } },
   { id: "planta-pequena", nome: "Planta pequena", categoria: "decoracao", forma: "planta", largura: 20, profundidade: 20, altura: 35, slots: { vaso: S("Vaso", "#f1efeb", "louca"), folha: S("Folhagem", "#4f7a4a", "fosco") } },
-  { id: "luminaria-piso", nome: "Luminária de piso", categoria: "decoracao", forma: "luminaria", largura: 26, profundidade: 26, altura: 150, slots: { metal: S("Estrutura", "#161616", "metal"), detalhe: S("Detalhe", "#c9a06a", "metal") }, opcoes: { tipo: "piso" } },
-  { id: "pendente", nome: "Luminária pendente", categoria: "decoracao", forma: "luminaria", largura: 35, profundidade: 35, altura: 70, elevacao: 190, slots: { metal: S("Fio", "#161616", "metal"), detalhe: S("Cúpula", "#161616", "metal") }, opcoes: { tipo: "pendente" } },
-  { id: "abajur", nome: "Abajur", categoria: "decoracao", forma: "luminaria", largura: 22, profundidade: 22, altura: 40, elevacao: 55, slots: { tecido: S("Cúpula", "#efe9dc", "tecido"), detalhe: S("Base", "#c9a06a", "metal") }, opcoes: { tipo: "abajur" } },
+  { id: "luminaria-piso", nome: "Luminária de piso", categoria: "decoracao", forma: "luminaria", largura: 26, profundidade: 26, altura: 150, slots: { metal: S("Estrutura", "#161616", "metal"), detalhe: S("Detalhe", "#c9a06a", "metal") }, opcoes: { tipo: "piso" }, luz: { tipo: "ponto", cor: "#ffd2a1", intensidade: 2, alcance: 420, em: [0.3, 0.86, 0.22] } },
+  { id: "pendente", nome: "Luminária pendente", categoria: "decoracao", forma: "luminaria", largura: 35, profundidade: 35, altura: 70, elevacao: 190, slots: { metal: S("Fio", "#161616", "metal"), detalhe: S("Cúpula", "#161616", "metal") }, opcoes: { tipo: "pendente" }, luz: { tipo: "ponto", cor: "#ffd9ae", intensidade: 3, alcance: 480, em: [0, 0.1, 0] } },
+  { id: "abajur", nome: "Abajur", categoria: "decoracao", forma: "luminaria", largura: 22, profundidade: 22, altura: 40, elevacao: 55, slots: { tecido: S("Cúpula", "#efe9dc", "tecido"), detalhe: S("Base", "#c9a06a", "metal") }, opcoes: { tipo: "abajur" }, luz: { tipo: "ponto", cor: "#ffd6a6", intensidade: 1.2, alcance: 300, em: [0, 0.75, 0] } },
+  { id: "plafon", nome: "Plafon de teto", categoria: "decoracao", forma: "cilindro", largura: 30, profundidade: 30, altura: 3, elevacao: 257, slots: { principal: S("Luz", "#fff3dd", "led") }, luz: { tipo: "ponto", cor: "#ffe3bf", intensidade: FORCA_PLAFON, alcance: 700, em: [0, -12, 0] } },
+  { id: "fita-led-teto", nome: "Fita de LED no teto", categoria: "decoracao", forma: "caixa", largura: 200, profundidade: 3, altura: 0.6, elevacao: 259.4, slots: { principal: S("Luz", "#fff0d6", "led") }, luz: { tipo: "fita", cor: "#ffe6c4", intensidade: 17, direcao: "baixo" } },
   { id: "vaso-decorativo", nome: "Vaso decorativo", categoria: "decoracao", forma: "cilindro", largura: 14, profundidade: 14, altura: 28, slots: { principal: S("Vaso", "#2f5d3a", "louca") }, opcoes: { afunila: 0.7 } },
   { id: "banqueta-redonda", nome: "Banqueta redonda", categoria: "decoracao", forma: "banqueta", largura: 36, profundidade: 36, altura: 45, slots: { madeira: S("Estrutura", "#1b1b1b", "metal"), assento: S("Assento", "#c39a6b", "madeira") }, opcoes: { redonda: true } },
 ];

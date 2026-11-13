@@ -66,6 +66,33 @@ for (const tema of ["light", "dark"]) {
     await page.waitForTimeout(1500);
     await page.screenshot({ path: join(saida, "celular-entrada.png") });
     ok((await page.locator(".andar button").count()) === 4, "botões de andar aparecem na vista interna");
+    // Etapa 5 no celular: noite (as luzes acendem sozinhas) e o botão que desliga o modo realista
+    const media = () =>
+      page.evaluate(() => {
+        const c = document.querySelector("canvas");
+        const t = document.createElement("canvas");
+        t.width = t.height = 60;
+        const g = t.getContext("2d");
+        g.drawImage(c, 0, 0, 60, 60);
+        const d = g.getImageData(0, 0, 60, 60).data;
+        let soma = 0;
+        for (let i = 0; i < d.length; i += 4) soma += d[i] + d[i + 1] + d[i + 2];
+        return soma / (d.length / 4) / 3;
+      });
+    const dia = await media();
+    await page.locator("#hora-sol").fill("21");
+    await page.waitForTimeout(2500);
+    const noite = await media();
+    ok((await page.locator(".hora").innerText()).includes("☾"), "relógio do celular muda para a noite");
+    ok(noite > 25 && noite < dia, `à noite a cena fica mais escura, mas iluminada pelas luzes da casa (${dia.toFixed(0)} → ${noite.toFixed(0)})`);
+    await page.screenshot({ path: join(saida, "celular-noite.png") });
+    await page.evaluate(() => document.querySelector('[data-teste="alternar-realismo"]').click());
+    await page.waitForTimeout(1500);
+    const simples = await media();
+    ok(simples > 25, `com Realista desligado a cena continua desenhada (${simples.toFixed(0)})`);
+    await page.evaluate(() => document.querySelector('[data-teste="alternar-realismo"]').click());
+    await page.locator("#hora-sol").fill("10");
+    await page.waitForTimeout(800);
     // planta embutida: liga o decalque e confere que a imagem carregou
     const carregou = await page.evaluate(
       () =>

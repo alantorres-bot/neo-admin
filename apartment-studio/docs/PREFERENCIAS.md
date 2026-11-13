@@ -68,6 +68,10 @@ escrivaninha, guarda-roupa, duas banquetas na varanda), marcada como **sugestão
 | Banheiro | Branco, granito cinza salpicado, puxadores pretos | `#f1efeb`, `#6f6c69` |
 | Suíte | Carvalho claro, portas cinza, espelho, puxadores de alumínio | `#d9c9ae`, `#9c9891` |
 | Paredes / piso | Off-white / porcelanato cinza claro (como na planta) | `#f3f0ea` / `#d3d0cb` |
+| Portas, batentes, rodapé e esquadrias | Branco (como no decorado) | `#f2f0eb` / `#f6f4ef` / `#eceae6` |
+| Azulejo do banheiro | Branco, 60 × 30 | `#f4f3ef` |
+| Luzes | Quentes (plafons, fitas de LED, luminária de piso) | `#ffd9a8` a `#ffe6c4` |
+| Em aberto | Parede azul-marinho (sofá ou remos) | `#1c2444` |
 
 Preferências declaradas: madeira clara combinando com branco ou outra cor; **armário de cima maior e o de baixo
 menor** ("gerando essa diferença"); nada de granito escuro salpicado na cozinha.
@@ -84,12 +88,13 @@ Parede lateral: 3,87 m do shaft até a parede da porta (cota). Profundidade da b
 | Lava-louças | 61 cm | Electrolux em nicho elevado, gaveta embaixo |
 | Pia | 70 cm | Cuba inox 50 × 40, 2 portas |
 | Armário | 36 cm | 1 porta |
-| Torre da geladeira | 78 cm | Painel off-white de 3 cm + vão de 75 cm; armário em cima |
+| Torre da geladeira | 78 cm | Painel off-white de 3 cm + vão de 75 cm; armário em cima. **Painel mantido — decisão do Alan (13/11)** |
 
 - **Pedra sob a janela** (pedido do Alan): 1,28 × 0,65 m, do shaft até a divisória da sala; embaixo, tanque (cuba 50 × 40) e a lava e seca encostada na divisória.
 - **Shaft no canto do L** (pedido do Alan para considerar): ≈22 × 65 cm na minha leitura da planta; a bancada contorna.
 - Aéreos em dois níveis: superior off-white 62 cm até o teto (4 portas); inferior madeira clara **35 cm**, recuado; **faixa verde de 8 cm** entre eles (como na referência; antes eram 38 + 5); nicho aberto de madeira com o micro-ondas perto da geladeira; fita de LED; frontão granilite de 65 cm.
-- Diferenças em relação à foto de referência, mantidas por decisão anterior: lá o aéreo de cima passa direto por cima da geladeira, **sem painel lateral** (aqui há um painel off-white de 3 cm); lá a lava-louças é de piso, de 45 cm (a do Alan é a compacta, em nicho elevado); lá o teto tem fitas de LED embutidas (fica para a etapa de iluminação).
+- Diferenças em relação à foto de referência: lá o aéreo de cima passa direto por cima da geladeira, **sem painel lateral** (aqui o painel off-white de 3 cm fica — decisão do Alan em 13/11); lá a lava-louças é de piso, de 45 cm (a do Alan é a compacta, em nicho elevado).
+- **Iluminação como na referência (Etapa 5):** duas fitas de LED embutidas no teto, de 2,90 m, paralelas à bancada (a 12 e a 52 cm da frente dela), mais a fita sob o aéreo de madeira. Tom quente. Com elas a cozinha não tem plafon.
 - Em relação ao primeiro desenho da outra conversa (escala errada): saiu um armário de 55 cm e o de 2 portas virou gaveteiro, porque a parede real tem 3,87 m e não 4,74 m.
 
 ## 5. Decisões por ambiente e pontos de atenção (medidas reais)
@@ -113,7 +118,8 @@ Parede lateral: 3,87 m do shaft até a parede da porta (cota). Profundidade da b
 - Pontos de água/esgoto da máquina e do tanque precisam estar na parede da janela ou no shaft — confirmar com a construtora. No decorado a torneira do tanque sai da parede da janela, ao lado dela, e a máquina fica na parede lateral.
 
 **Banheiro (2,40 × 1,20 m)**
-- Armário de espelho como no decorado: do vidro do box até a parede (1,46 m), sobre o vaso e a pia. Fica a 1,20 m do piso, acima da caixa acoplada.
+- Armário de espelho como no decorado: do vidro do box até a parede (1,46 m), sobre o vaso e a pia. Fica a 1,20 m do piso, acima da caixa acoplada. **Altura de 90 cm confirmada pelo Alan (13/11).**
+- Paredes azulejadas de branco até o teto (como o box do decorado) e fita de LED quente sob o espelho — acabamento adotado na Etapa 5, trocável.
 - A planta mostra um shaft ao lado do box (≈92 × 25 cm): o box fica com ≈89 × 95 cm.
 - Vaso entre o box e o gabinete, com ≈37 cm do eixo até o vidro do box.
 - Janela na parede externa, ao lado da pia (na foto de referência ela fica dentro do box).
@@ -130,8 +136,10 @@ Parede lateral: 3,87 m do shaft até a parede da porta (cota). Profundidade da b
 4. Cama da suíte: é a de casal padrão (138 × 188) mesmo? Vai levar a sua ou comprar?
 5. Fotos que ainda não vieram para esta conversa: sofá, luminária, cortina, quadro, prateleira, remos, guarda-roupa (estilo e modelo) e a mesa. Enviar, se quiser que eu confira os detalhes como fiz com o rack e a cadeira.
 6. Quarto 2: qual será o uso (hóspedes, escritório)?
-7. Parede azul-marinho atrás do sofá ou dos remos: sim ou não?
+7. Parede azul-marinho: **atrás do sofá (opção A) ou atrás dos remos (opção B)?** As duas foram mostradas ao Alan em imagem (13/11); por enquanto as paredes seguem off-white. Aplicar: tocar na parede e escolher o tom no lado certo.
 8. Pendentes da planta: cotas 2,52 e 1,32, pé-direito, norte (ver `ANALISE_PLANTA.md`).
 9. Medidas reais da cadeira (a foto não tem cotas; usei 47 × 47 × 86 cm).
-10. Painel lateral da geladeira: manter (off-white) ou tirar, como na referência, e ganhar 3 cm?
-11. Armário de espelho do banheiro: altura (usei 90 cm pela foto do decorado).
+10. Portas internas e de entrada: brancas mesmo? (adotei branco; a cor troca tocando na porta).
+11. Tom das luzes: adotei quente (≈2700 K) em toda a casa.
+
+Respondidas: painel lateral da geladeira — **manter**; armário de espelho com 90 cm — **sim** (Alan, 13/11).

@@ -53,7 +53,7 @@ function ListaAmbientes() {
       <ul className="lista">
         {planta.ambientes.map((a) => (
           <li key={a.id} className={selecao?.tipo === "ambiente" && selecao.id === a.id ? "selecionado" : ""}>
-            <button className="item" onClick={() => selecionar({ tipo: "ambiente", id: a.id })}>
+            <button className="item" data-teste={`ambiente-${a.id}`} onClick={() => selecionar({ tipo: "ambiente", id: a.id })}>
               <span className="amostra" style={{ background: a.piso }} />
               <span className="item-nome">{a.nome}</span>
               <span className="item-valor">≈ {fmtM2(areaAmbienteM2(planta, a))}</span>

@@ -17,9 +17,12 @@ export interface Visao {
   teto: boolean;
   cotas: boolean;
   moveis: boolean;
+  /** Luzes da casa acesas pelo botão (à noite acendem sozinhas — ver cena/luz.ts). */
   luzArtificial: boolean;
-  /** Hora do dia para a posição do sol (6–18). */
+  /** Hora do dia: posição do sol, cor do céu e noite (6–22). */
   horaSol: number;
+  /** Acabamento realista da imagem: sombreamento de cantos, espelhos e brilho. Desligar deixa mais leve. */
+  realismo: boolean;
   /** Ambiente onde a câmera interna é posicionada (quando não há vista escolhida). */
   ambienteInterno: string;
   /** Vista interna escolhida (projeto.vistas). */
@@ -43,6 +46,8 @@ interface EstadoApp {
   salvoOnde: "conta" | "aparelho" | null;
   /** Existe um projeto-base mais novo do que o salvo neste navegador (e há alterações locais). */
   novaBase: boolean;
+  /** O modo realista foi desligado sozinho porque o aparelho ficou lento (mostra um aviso). */
+  avisoLento: boolean;
   painel: { aba: AbaPainel; aberto: boolean };
   /** Pontos clicados durante a calibração da imagem da planta (cm, no plano). */
   calibracao: { ativa: boolean; pontos: Ponto[] };
@@ -89,6 +94,7 @@ export const useApp = create<EstadoApp>((set, get) => ({
     moveis: true,
     luzArtificial: false,
     horaSol: 10,
+    realismo: true,
     ambienteInterno: "amb-sala",
     vistaId: "v-entrada",
   },
@@ -96,6 +102,7 @@ export const useApp = create<EstadoApp>((set, get) => ({
   salvoEm: null,
   salvoOnde: null,
   novaBase: false,
+  avisoLento: false,
   painel: { aba: "ambientes", aberto: telaLarga },
   calibracao: { ativa: false, pontos: [] },
 

@@ -1,11 +1,15 @@
-import { memo, useMemo, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { useThree, type ThreeEvent } from "@react-three/fiber";
 import { itemCatalogo, opcoesDoMovel, slotsDoMovel } from "../catalogo/catalogo";
-import { pecasDoMovel } from "../catalogo/formas";
+import { pecasDoMovel, type Peca } from "../catalogo/formas";
 import { useApp } from "../estado/store";
 import { conflitosDoMovel, encaixar } from "../modelo/moveis";
 import type { Movel, Projeto } from "../modelo/tipos";
+import { areaDeEspelho } from "./areaEspelho";
+import { EspelhoReal } from "./Espelho";
+import { luzesAcesas } from "./luz";
 import { geometriaDaPeca, materialDaPeca, tamanhoReal } from "./materiais";
 import { COR_SELECAO, M } from "./util";
 
@@ -16,36 +20,66 @@ const contornoGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1));
 const matSelecao = new THREE.LineBasicMaterial({ color: COR_SELECAO });
 const matConflito = new THREE.LineBasicMaterial({ color: "#e0364f" });
 
-/** As peças do móvel (só refaz quando forma, medidas, opções ou cores mudam — não ao mover). */
-const Pecas = memo(function Pecas({ movel }: { movel: Movel }) {
+const _pos = new THREE.Vector3();
+const _quat = new THREE.Quaternion();
+const _euler = new THREE.Euler();
+const _escala = new THREE.Vector3();
+const _matriz = new THREE.Matrix4();
+
+/** Cópia da geometria da peça já no lugar dela dentro do móvel (posição, giro e tamanho aplicados). */
+function geometriaNoLugar(p: Peca): THREE.BufferGeometry {
+  const base = geometriaDaPeca(p);
+  const g = base.index ? base.toNonIndexed() : base.clone();
+  _pos.set(M(p.p[0]), M(p.p[1]), M(p.p[2]));
+  _quat.setFromEuler(p.r ? _euler.set(p.r[0] * RAD, p.r[1] * RAD, p.r[2] * RAD) : _euler.set(0, 0, 0));
+  if (tamanhoReal(p)) _escala.set(1, 1, 1);
+  else _escala.set(M(p.s[0]), M(p.s[1]), p.g === "plano" ? 1 : M(p.s[2]));
+  return g.applyMatrix4(_matriz.compose(_pos, _quat, _escala));
+}
+
+/**
+ * As peças do móvel, juntas numa malha por material (um armário de 30 peças vira 3 ou 4 desenhos em vez de 30:
+ * é o que deixa a cena leve no celular). Só refaz quando forma, medidas, opções ou cores mudam — não ao mover.
+ */
+const Pecas = memo(function Pecas({ movel, aceso }: { movel: Movel; aceso: boolean }) {
   const { catalogoId, largura, profundidade, altura, opcoes, cores, acabamentos } = movel;
-  const pecas = useMemo(() => {
+  const { malhas, espelho } = useMemo(() => {
     const item = itemCatalogo(catalogoId);
-    if (!item) return [];
+    if (!item) return { malhas: [], espelho: null };
+    const frentesEspelhadas: Peca[] = [];
     const slots = slotsDoMovel({ catalogoId, cores, acabamentos });
-    return pecasDoMovel(item.forma, { L: largura, P: profundidade, A: altura }, opcoesDoMovel({ catalogoId, opcoes })).map((p) => {
+    const grupos = new Map<string, { mat: THREE.Material; geos: THREE.BufferGeometry[]; sombra: boolean; recebe: boolean }>();
+    for (const p of pecasDoMovel(item.forma, { L: largura, P: profundidade, A: altura }, opcoesDoMovel({ catalogoId, opcoes }))) {
       const slot = slots[p.slot] ?? { cor: "#bdbdbd", acabamento: "liso" as const };
-      return { p, geo: geometriaDaPeca(p), mat: materialDaPeca(p, slot.cor, slot.acabamento), transparente: slot.acabamento === "vidro" };
+      const mat = materialDaPeca(p, slot.cor, slot.acabamento, aceso);
+      const transparente = slot.acabamento === "vidro";
+      if (slot.acabamento === "espelho" && p.g === "caixa" && !p.r) frentesEspelhadas.push(p);
+      // vidro, figuras recortadas (remo) e cortina não fazem sombra: a cortina é tecido leve, deixa o sol passar
+      const sombra = !transparente && p.g !== "plano" && p.g !== "onda";
+      const chave = `${mat.uuid}|${sombra ? 1 : 0}`;
+      let grupo = grupos.get(chave);
+      if (!grupo) grupos.set(chave, (grupo = { mat, geos: [], sombra, recebe: !transparente }));
+      grupo.geos.push(geometriaNoLugar(p));
+    }
+    const prontas = [...grupos.values()].map(({ mat, geos, sombra, recebe }) => {
+      const geo = geos.length === 1 ? geos[0] : mergeGeometries(geos, false);
+      if (geos.length > 1) geos.forEach((g) => g.dispose());
+      return { mat, geo, sombra, recebe };
     });
-  }, [catalogoId, largura, profundidade, altura, opcoes, cores, acabamentos]);
+    return { malhas: prontas, espelho: areaDeEspelho(frentesEspelhadas) };
+  }, [catalogoId, largura, profundidade, altura, opcoes, cores, acabamentos, aceso]);
+  useEffect(() => () => malhas.forEach((m) => m.geo.dispose()), [malhas]);
 
   return (
     <>
-      {pecas.map(({ p, geo, mat, transparente }, i) => (
-        <mesh
-          key={i}
-          geometry={geo}
-          material={mat}
-          position={[M(p.p[0]), M(p.p[1]), M(p.p[2])]}
-          rotation={p.r ? [p.r[0] * RAD, p.r[1] * RAD, p.r[2] * RAD] : undefined}
-          scale={tamanhoReal(p) ? undefined : [M(p.s[0]), M(p.s[1]), p.g === "plano" ? 1 : M(p.s[2])]}
-          castShadow={!transparente && p.g !== "plano"}
-          receiveShadow={!transparente}
-        />
+      {malhas.map(({ mat, geo, sombra, recebe }, i) => (
+        <mesh key={i} geometry={geo} material={mat} castShadow={sombra} receiveShadow={recebe} />
       ))}
+      {espelho && <EspelhoReal area={espelho} />}
     </>
   );
 }, (a, b) =>
+  a.aceso === b.aceso &&
   a.movel.catalogoId === b.movel.catalogoId &&
   a.movel.largura === b.movel.largura &&
   a.movel.profundidade === b.movel.profundidade &&
@@ -62,6 +96,7 @@ function MovelMesh({ movel }: { movel: Movel }) {
   const arrasto = useRef<{ dx: number; dy: number; antes: Projeto; moveu: boolean } | null>(null);
 
   const emConflito = useApp((s) => (selecionado ? conflitosDoMovel(s.projeto, movel).length > 0 : false));
+  const aceso = useApp((s) => luzesAcesas(s.visao));
 
   const noPlano = (e: ThreeEvent<PointerEvent>) => {
     const h = M(movel.elevacao);
@@ -123,7 +158,7 @@ function MovelMesh({ movel }: { movel: Movel }) {
       onPointerUp={aoSoltar}
       onPointerCancel={aoSoltar}
     >
-      <Pecas movel={movel} />
+      <Pecas movel={movel} aceso={aceso} />
       {selecionado && (
         <lineSegments
           geometry={contornoGeo}
