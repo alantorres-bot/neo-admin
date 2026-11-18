@@ -4,10 +4,9 @@ import { notFound } from "next/navigation";
 import { ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { rotuloMes } from "@/lib/modulos/rh/calendario";
 import { ROTULO_FORMA } from "@/lib/modulos/rh/colaboradores/modulo";
 import { titulosDoItem } from "@/lib/modulos/rh/folha/lancamento";
-import { ROTA_FOLHA } from "@/lib/modulos/rh/folha/modulo";
+import { ROTA_FOLHA, rotuloFolha } from "@/lib/modulos/rh/folha/modulo";
 import { PARTES_FOLHA, valorDaParte } from "@/lib/modulos/rh/arquivo-bb";
 import { codigosDoTitulo, contaPagadora, ROTULO_TIPO } from "@/lib/modulos/rh/lancamento";
 import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
@@ -40,7 +39,8 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
     lerLancamentos(supabase, id), lerParametrosRh(supabase),
   ]);
   if (!mes) notFound();
-  const recibos = await lerRecibos(supabase, { competencia: mes.competencia });
+  const mensal = mes.tipo === "mensal";
+  const recibos = mensal ? await lerRecibos(supabase, { competencia: mes.competencia }) : [];
   const naFolha = new Set(itens.map((i) => i.colaborador_id));
   const pix = itens.filter((i) => i.forma_pagamento !== "fopag" && i.valor > 0);
   const partesFopag = PARTES_FOLHA.filter((p) => itens.some((i) => i.forma_pagamento === "fopag" && valorDaParte(i, p) > 0));
@@ -56,7 +56,7 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
       <Button variant="ghost" size="sm" render={<Link href={`${ROTA_FOLHA}/meses?ano=${mes.competencia.slice(0, 4)}`} />}><ArrowLeft /> Meses</Button>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
-          <h2 className="text-lg font-bold">Folha de {rotuloMes(mes.competencia)} <Badge variant="outline" className="ml-2 align-middle">{ROTULO_STATUS[mes.status]}</Badge></h2>
+          <h2 className="text-lg font-bold">Folha {mensal ? "de " : "do "}{rotuloFolha(mes.competencia, mes.tipo)} <Badge variant="outline" className="ml-2 align-middle">{ROTULO_STATUS[mes.status]}</Badge></h2>
           <p className="text-sm text-muted-foreground">
             Pagamento até {formatarData(mes.data_pagamento)}
             {mes.conferida_em ? ` · conferida ${quando(mes.conferida_em)}${mes.conferida_por_nome ? ` por ${mes.conferida_por_nome}` : ""}` : ""}
@@ -71,16 +71,16 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
       {podeOperar && mes.status === "aberta" && (
         <div className="flex flex-wrap items-center gap-3">
           <ImportarLiquidos mesId={mes.id} />
-          <span className="text-xs text-muted-foreground">Relação Geral dos Líquidos (.xls) do escritório: um arquivo por empresa e por cálculo (Folha Mensal, 13º, Férias).</span>
+          <span className="text-xs text-muted-foreground">{mensal ? "Relação Geral dos Líquidos (.xls) do escritório: um arquivo por empresa e por cálculo (Folha Mensal, Férias). O 13º vai na folha do 13º." : "Relação Geral dos Líquidos (.xls) do cálculo do 13º, um arquivo por empresa."}</span>
         </div>
       )}
 
-      <GradeFolha mesId={mes.id} editavel={podeOperar && mes.status === "aberta"} itens={itens} />
+      <GradeFolha mesId={mes.id} tipo={mes.tipo} editavel={podeOperar && mes.status === "aberta"} itens={itens} />
 
-      <DecimoTerceiroDoMes linhas={itens.filter((i) => i.decimo_terceiro > 0).map((i) => ({ id: i.id, cod_fornecedor: i.cod_fornecedor, nome: i.nome, empregador: i.empregador, forma_pagamento: i.forma_pagamento, decimo_terceiro: i.decimo_terceiro }))} />
+      {mensal && <DecimoTerceiroDoMes linhas={itens.filter((i) => i.decimo_terceiro > 0).map((i) => ({ id: i.id, cod_fornecedor: i.cod_fornecedor, nome: i.nome, empregador: i.empregador, forma_pagamento: i.forma_pagamento, decimo_terceiro: i.decimo_terceiro }))} />}
 
-      <RecibosDoMes mesId={mes.id} competencia={mes.competencia} aberta={mes.status === "aberta"} podeOperar={podeOperar} recibos={recibos}
-        pessoas={pessoas.filter((p) => p.ativo || naFolha.has(p.id))} rubricas={rubricas} vigencias={vigencias} />
+      {mensal && <RecibosDoMes mesId={mes.id} competencia={mes.competencia} aberta={mes.status === "aberta"} podeOperar={podeOperar} recibos={recibos}
+        pessoas={pessoas.filter((p) => p.ativo || naFolha.has(p.id))} rubricas={rubricas} vigencias={vigencias} />}
 
       {importacoes.length > 0 && (
         <section className="space-y-2">
@@ -119,7 +119,7 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
           <PainelConsistem id={mes.id} ligado={parametros.folhaLigado} podeLancar={podeOperar} parametrosHref={`${ROTA_FOLHA}/parametros`}
             descricao="Um título por pessoa e tipo (salário, férias, 13º, avulso), contra o fornecedor (Nº), com vencimento no dia do pagamento e o portador da empregadora/forma."
             lancar={lancarNoConsistem} resolver={resolverLancamento}
-            linhas={itens.flatMap((i) => titulosDoItem(i, mes.competencia).map((t) => {
+            linhas={itens.flatMap((i) => titulosDoItem(i, mes.competencia, mes.tipo).map((t) => {
               const l = ultimo.get(`${i.id}:${t.tipo}`);
               return { chave: `${i.id}:${t.tipo}`, cod_fornecedor: i.cod_fornecedor, nome: i.nome, tipo: ROTULO_TIPO[t.tipo], valor: t.valor,
                 portador: codigosDoTitulo(parametros.parametros, t.tipo, i.empregador, i.forma_pagamento)?.codPortador ?? null,

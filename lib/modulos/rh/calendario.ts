@@ -55,6 +55,13 @@ export function enesimoDiaUtil(mes: string, n: number): string {
   for (let i = 0; ; d = new Date(d.getTime() + MS_DIA)) if (ehDiaUtil(d) && ++i >= Math.max(n, 1)) return paraIso(d);
 }
 
+/** Último dia útil até a data (ela mesma, se for dia útil). */
+export function diaUtilAte(data: string): string {
+  let d = paraData(data);
+  while (!ehDiaUtil(d)) d = new Date(d.getTime() - MS_DIA);
+  return paraIso(d);
+}
+
 /** Folha do mês M: paga no 5º dia útil de M+1. */
 export const pagamentoDaFolha = (competencia: string) => enesimoDiaUtil(somarMeses(competencia, 1), 5);
 

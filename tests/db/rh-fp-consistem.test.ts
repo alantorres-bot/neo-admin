@@ -36,9 +36,12 @@ beforeAll(async () => {
            values ($1, 'NEO SERVIÇOS', '658', 'PESSOA 658', '111.444.777-35', '2764-2', '9999-9', 'fopag', false)`, [empresa]);
   comp = (await rpc(rhOperador, `select rh_fp_abrir_competencia('2026-12-01') as id`)).rows[0].id as string;
   for (const l of (await q(`select id, cod_fornecedor, empregador, forma_pagamento from rh_fp_itens where competencia_id = $1`, [comp])).rows) itens[l.cod_fornecedor as string] = l;
+  // folha mensal antiga com 13º dentro (antes da 0529): a trava de tipo fica desligada só para montar o caso
+  await q(`alter table rh_fp_itens disable trigger trg_rh_fp_itens_tipo`);
   await rpc(rhOperador, `select rh_fp_salvar_itens($1, $2::jsonb)`, [comp, JSON.stringify([
     { id: itens["660"].id, liquido: 1954.26, decimo_terceiro: 1672.76 }, { id: itens["658"].id, liquido: 2398.59 },
   ])]);
+  await q(`alter table rh_fp_itens enable trigger trg_rh_fp_itens_tipo`);
 });
 
 describe("folha: contas a pagar no Consistem (0521)", () => {

@@ -12,6 +12,13 @@ describe("títulos da folha no Consistem", () => {
     expect(titulosDoItem({ id: "z", liquido: 0, ferias_acrescimos: 0, decimo_terceiro: 0, avulso: 0 }, "2026-10-01")).toEqual([]);
   });
 
+  it("na folha do 13º o tipo vem da folha, não do mês", () => {
+    const so13 = { id: "c", liquido: 0, ferias_acrescimos: 0, decimo_terceiro: 2000, avulso: 0 };
+    expect(titulosDoItem(so13, "2026-11-01", "decimo_1")).toEqual([{ item_id: "c", tipo: "decimo_1", valor: 2000 }]);
+    expect(titulosDoItem(so13, "2026-12-01", "decimo_2").map((t) => t.tipo)).toEqual(["decimo_2"]);
+    expect(titulosALancar([so13], "2026-12-01", new Set(), "decimo_2").map((t) => t.tipo)).toEqual(["decimo_2"]);
+  });
+
   it("deixa de fora os que já têm lançamento ativo (pessoa × tipo)", () => {
     const b = { ...item, id: "b", decimo_terceiro: 0, avulso: 0 };
     expect(titulosALancar([item, b], "2026-10-01", new Set(["a:salario", "b:decimo_1"])).map((t) => `${t.item_id}:${t.tipo}`))

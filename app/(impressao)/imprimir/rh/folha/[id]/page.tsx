@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { BotaoImprimir } from "@/app/(impressao)/imprimir/contas-pagar/autorizacao/[id]/botao-imprimir";
 import { lerItens, lerMes, ROTULO_STATUS, type ItemFolha } from "@/app/(plataforma)/rh/folha/dados";
-import { rotuloMes } from "@/lib/modulos/rh/calendario";
 import { FORMAS_GRAVADAS, ROTULO_FORMA } from "@/lib/modulos/rh/colaboradores/modulo";
-import { MODULO_FOLHA } from "@/lib/modulos/rh/folha/modulo";
+import { MODULO_FOLHA, rotuloFolha } from "@/lib/modulos/rh/folha/modulo";
 import { formatarData } from "@/lib/modulos/financeiro/recebiveis/formatos";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
@@ -26,7 +25,7 @@ export default async function PaginaImprimirFolha({ params }: PageProps<"/imprim
   const [mes, todos] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id)]);
   if (!mes) notFound();
   const itens = todos.filter((i) => i.valor > 0);
-  // o 13º (1ª parcela, no mês do aniversário) sai em seção própria, como a linha "13º SALÁRIO" da planilha do RH
+  // o 13º sai em seção própria, como a linha "13º SALÁRIO" da planilha do RH
   const folha = (i: ItemFolha) => i.liquido + i.ferias_acrescimos;
   const decimos = itens.filter((i) => i.decimo_terceiro > 0);
   const empresas = [...new Set(itens.map((i) => i.empregador))].sort();
@@ -39,7 +38,7 @@ export default async function PaginaImprimirFolha({ params }: PageProps<"/imprim
       <BotaoImprimir />
       <article className="relatorio">
         <header className="mb-4 flex items-start justify-between gap-4 border-b-2 border-black pb-3">
-          <p className="text-[16px] font-bold uppercase leading-tight">Folha de pagamento — {rotuloMes(mes.competencia)}</p>
+          <p className="text-[16px] font-bold uppercase leading-tight">Folha de pagamento — {rotuloFolha(mes.competencia, mes.tipo)}</p>
           <div className="text-right text-[11px]">
             <p>Pagamento até {formatarData(mes.data_pagamento)} · {ROTULO_STATUS[mes.status]}</p>
             {selo && <p className="mt-1 inline-block border-2 border-black px-2 py-0.5 text-[12px] font-bold tracking-wide">{selo}</p>}
@@ -70,7 +69,7 @@ export default async function PaginaImprimirFolha({ params }: PageProps<"/imprim
         })}
         {decimos.length > 0 && (
           <section className="mb-4 break-inside-avoid-page">
-            <h2 className="mb-1 text-[12px] font-bold uppercase">13º salário — 1ª parcela</h2>
+            <h2 className="mb-1 text-[12px] font-bold uppercase">{mes.tipo === "decimo_2" ? "13º salário — 2ª parcela" : mes.tipo === "decimo_1" ? "13º salário — 1ª parcela" : "13º salário"}</h2>
             <table className="w-full border-collapse text-[11px]">
               <thead>
                 <tr className="border-b border-black text-left"><th className="w-16 py-0.5">Nº</th><th>Funcionário</th><th className="text-right">Valor</th><th className="pl-4">Pagamento</th></tr>
