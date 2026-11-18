@@ -72,8 +72,11 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
 - **Relação Geral dos Líquidos** (.xls do escritório): um arquivo por empresa e por cálculo. "Folha Mensal" preenche o
   **líquido**; o do 13º preenche o **13º**; o de férias, quando houver, preenche **férias/acréscimos**.
   - O arquivo é identificado pelo CNPJ e pela competência do cabeçalho.
-  - A competência tem de ser a da folha. Exceção (05/11/2026): o **13º de um mês seguinte** é aceito, para pagar o adiantamento
+  - A competência tem de ser a da folha. Exceção (05/11/2026): o **13º de um mês seguinte** era aceito, para pagar o adiantamento
     junto com a folha atual (ex.: 1ª parcela de 11/2026 na folha de 10/2026). Folha Mensal e Férias de outro mês continuam recusadas.
+  - **Desde 18/11/2026 (0529)** o cálculo do 13º só entra na **folha do 13º** (regra 4), e a competência do arquivo tem de ser a
+    dela: 11/AAAA na 1ª parcela, 12/AAAA na 2ª. A folha mensal recusa o arquivo do 13º, e a do 13º recusa os outros cálculos.
+    Ainda não chegou um arquivo do "13o Integral" para conferir a competência que o escritório põe nele.
   - Cada pessoa é casada pelo **código do escritório** (`rh_colaboradores.matricula_escritorio`).
   - **O nome também tem de conferir** (05/11/2026): primeiro nome igual e o 2º nome do mais curto presente no outro (tolera
     abreviação, nome cortado, sufixo " - FÉRIAS…" e até 2 letras de diferença). Se não conferir, a pessoa não grava e aparece em
@@ -113,7 +116,21 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
 3. **Um mês por empresa:** o fechamento junta as três empresas, mas cada uma tem a sua lista, os seus totais e as suas guias.
 4. **Valor a pagar por pessoa** = líquido + férias/acréscimos + 13º do mês + avulsos.
    - Cada parte é uma **natureza**: salário, férias/acréscimos, 13º 1ª parcela, 13º 2ª parcela, avulso.
-   - **13º 1ª parcela (decisão de 15/10/2026):**
+   - **Folhas do 13º (decisão de 18/11/2026; migration 0529). Substitui a de 15/10, logo abaixo.**
+     - O 13º tem **folha própria**, uma por parcela: **13º 1ª parcela/AAAA** (competência novembro) e **13º 2ª parcela/AAAA**
+       (competência dezembro), ao lado da folha mensal na tela Meses e abertas pelo mesmo "Abrir mês".
+     - Pagamento sugerido: último dia útil até **30/11** (1ª) e até **20/12** (2ª), sem contar feriados. São os prazos da
+       Lei 4.749/1965, confirmados pelo Alan.
+     - Mesmo fluxo da folha mensal (aberta → conferida → aprovada → paga), com pendências próprias ("Fechar folha de 13º 1ª
+       parcela/2026"…), relatório, arquivo do BB (parte 13º), PIX e títulos no Consistem: o tipo do título é o da folha
+       (13º 1ª ou 13º 2ª parcela).
+     - Na folha do 13º só existe o 13º. Líquido, férias/acréscimos e avulsos ficam zerados, e os recibos avulsos não entram.
+       Entram os colaboradores ativos.
+     - O valor vem da Relação de Líquidos do cálculo do 13º (Importar do escritório) ou é digitado na grade.
+     - A folha mensal não recebe mais 13º: a coluna não é digitável e só aparece nos meses que já tinham valor (jan–out/2026).
+     - Quem já recebeu a 1ª parcela no mês do aniversário em 2026 não é descontado sozinho. O RH lança na folha da 1ª parcela só
+       quem falta, como vier no arquivo do escritório.
+   - **13º 1ª parcela (decisão de 15/10/2026, substituída em 18/11/2026):**
      - É paga na folha do **mês do aniversário** da pessoa. Quem faz aniversário em **dezembro** recebe na folha de **novembro**.
      - O valor é o do escritório (cálculo "13o Adiantamento"), na coluna 13º. Entra pelo "Importar do escritório" quando vier a
        Relação dos Líquidos do cálculo; se não vier, é digitado do PDF.
@@ -162,7 +179,8 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
       crédito só.
       - Tipos: **salário** (líquido), **férias** (férias/acréscimos), **13º 1ª parcela**, **13º 2ª parcela** e **avulso** (soma dos
         recibos do mês).
-      - O 13º da folha de **dezembro** é a 2ª parcela; nos outros meses é a 1ª.
+      - Na folha do 13º, o tipo é o da folha (0529). Nas folhas mensais antigas, o 13º de **dezembro** era a 2ª parcela e, nos
+        outros meses, a 1ª.
       - Fornecedor = Nº; valor = o do tipo; vencimento = 5º dia útil de M+1; documento = sigla + MMAA (SA, FE, D1, D2, AV; o VT
         continua VT).
       - Complemento: `<TIPO> - MM/AAAA`, ex.: `SALÁRIO - 10/2026`, `13º SALÁRIO 1ª PARCELA - 10/2026`.
@@ -225,6 +243,8 @@ As abas de RH > Folha de pagamento:
   com os dados de VT em campos próprios. Migração de `rh_vt_colaboradores`; o VT passa a apontar para ele.
 - **`rh_fp_competencias`:** mês × empresa (competência, empresa, data de pagamento, status, quem conferiu, aprovou e pagou, arquivo
   do BB).
+  - Desde a 0529, `tipo` (`mensal | decimo_1 | decimo_2`) e unicidade por competência × tipo. A folha do 13º tem competência
+    novembro (1ª) ou dezembro (2ª).
 - **`rh_fp_itens`:** pessoa no mês (foto do cadastro, natureza, valor, forma, origem `escritorio | avulso`, motivo do avulso, PIX
   pago).
 - **`rh_fp_extrato`:** o que veio do escritório, por pessoa e nos totais, quando houver o arquivo. É a base das conferências.
@@ -260,7 +280,7 @@ Nenhum dado pessoal vai para `docs/amostras/` (LGPD).
 6. **Fornecedores das guias no Consistem:** os códigos de Receita Federal e de Caixa/FGTS, e se o consignado vai contra a Caixa
    ou contra o banco do empréstimo.
 7. **Férias, rescisões e 13º:** se entram como natureza no mês (como hoje na planilha) ou como lançamentos com data própria.
-   - O 13º 1ª parcela está resolvido (regra 4, 15/10/2026).
+   - O 13º está resolvido: folhas próprias da 1ª e da 2ª parcela (regra 4, 18/11/2026).
    - Continuam em aberto a 2ª parcela (dezembro), as férias e as rescisões.
 8. **Neo Formas para Concreto:** quem está nessa folha (pró-labore?) e quais guias ela gera.
 9. **Avulsos:** como aparecem no relatório e nos títulos, e se precisam de aprovação própria.

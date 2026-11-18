@@ -5,7 +5,7 @@ import { z } from "zod";
 import { FORMAS_PAGAMENTO } from "@/lib/modulos/rh/colaboradores/modulo";
 import { inicioDoMes } from "@/lib/modulos/rh/calendario";
 import { titulosALancar } from "@/lib/modulos/rh/folha/lancamento";
-import { ROTA_FOLHA } from "@/lib/modulos/rh/folha/modulo";
+import { ROTA_FOLHA, TIPOS_FOLHA, type TipoFolha } from "@/lib/modulos/rh/folha/modulo";
 import { codigosDoTitulo, montarTitulo, ROTULO_TIPO } from "@/lib/modulos/rh/lancamento";
 import { hojeEmCuiaba } from "@/lib/nucleo/fila";
 import { gerarRecorrentes } from "../recibos-acoes";
@@ -34,13 +34,16 @@ async function chamar(funcao: string, args: Record<string, unknown>, nivel: "ope
   return { ok: true };
 }
 
-export async function abrirMes(mes: string): Promise<{ ok: true; id: string; aviso?: string } | { ok: false; erro: string }> {
+/** Abre a folha do mês (mensal) ou a do 13º do ano do mês escolhido (decimo_1 / decimo_2). */
+export async function abrirMes(mes: string, tipo: TipoFolha = "mensal"): Promise<{ ok: true; id: string; aviso?: string } | { ok: false; erro: string }> {
   const negado = await exigir("operador");
   if (negado) return { ok: false, erro: negado };
   if (!/^\d{4}-\d{2}$/.test(mes)) return { ok: false, erro: "Escolha o mês da folha." };
+  if (!TIPOS_FOLHA.includes(tipo)) return { ok: false, erro: "Tipo de folha inválido." };
   const supabase = await criarClienteServidor();
-  const { data, error } = await supabase.rpc("rh_fp_abrir_competencia", { p_competencia: inicioDoMes(mes) });
+  const { data, error } = await supabase.rpc("rh_fp_abrir_competencia", { p_competencia: inicioDoMes(mes), p_tipo: tipo });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
+  if (tipo !== "mensal") { revalidatePath(ROTA_FOLHA, "layout"); return { ok: true, id: data as string }; }
   // Os recibos recorrentes nascem com o mês (modelos ativos de quem está na folha).
   const rec = await gerarRecorrentes(data as string);
   revalidatePath(ROTA_FOLHA, "layout");
@@ -127,7 +130,7 @@ export async function lancarNoConsistem(id: string, esperado: { quantidade: numb
   if (!mes) return { ok: false, erro: "Mês não encontrado." };
   if (!parametros.folhaLigado) return { ok: false, erro: "O lançamento da folha no Consistem está desligado (aba Parâmetros)." };
   const ativos = new Set(lancamentos.filter((l) => l.situacao !== "erro").map((l) => `${l.item_id}:${l.tipo}`));
-  const alvo = titulosALancar(itens, mes.competencia, ativos).filter((t) => escolhidos.has(`${t.item_id}:${t.tipo}`));
+  const alvo = titulosALancar(itens, mes.competencia, ativos, mes.tipo).filter((t) => escolhidos.has(`${t.item_id}:${t.tipo}`));
   const total = alvo.reduce((s, t) => s + Math.round(t.valor * 100), 0);
   if (alvo.length !== esperado.quantidade || total !== esperado.totalCentavos) return { ok: false, erro: "Os títulos mudaram desde que a página abriu; recarregue e confira de novo." };
   if (!alvo.length) return { ok: false, erro: "Nenhum título a lançar." };

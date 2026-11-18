@@ -46,10 +46,10 @@ describe("folha: importação da Relação Geral dos Líquidos (0512)", () => {
       .toEqual([{ aplicadas: 2, ligadas: 1, total: "7610.95", sem: 1, importado_por: rhOperador }]);
   });
 
-  it("13º vai para a coluna do 13º; o líquido fica", async () => {
-    await importar(rhOperador, { natureza: "decimo_terceiro", total: 1672.76, linhas: [{ item_id: itens["658"], valor: 1672.76 }] });
-    expect((await rpc(rhConsulta, `select liquido::text, decimo_terceiro::text, valor::text from rh_fp_itens where id = $1`, [itens["658"]])).rows[0])
-      .toEqual({ liquido: "2398.59", decimo_terceiro: "1672.76", valor: "4071.35" });
+  it("13º na folha mensal é recusado (folha própria, 0529); o líquido fica", async () => {
+    await expect(importar(rhOperador, { natureza: "decimo_terceiro", total: 1672.76, linhas: [{ item_id: itens["658"], valor: 1672.76 }] })).rejects.toThrow(/13º tem folha própria/);
+    expect((await rpc(rhConsulta, `select liquido::text, decimo_terceiro::text from rh_fp_itens where id = $1`, [itens["658"]])).rows[0])
+      .toEqual({ liquido: "2398.59", decimo_terceiro: "0.00" });
   });
 
   it("recusa soma diferente do total, linha de outra empresa e mês fechado", async () => {

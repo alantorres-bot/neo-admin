@@ -1,6 +1,7 @@
 // Leituras do módulo Folha de pagamento (RLS de quem chama; nada é gravado aqui).
 import type { FormaPagamento } from "@/lib/modulos/rh/colaboradores/modulo";
 import type { TipoTitulo } from "@/lib/modulos/rh/lancamento";
+import type { TipoFolha } from "@/lib/modulos/rh/folha/modulo";
 import type { ChaveParametro, Rubrica, TipoRecibo, Vigencia } from "@/lib/modulos/rh/folha/recibos";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
@@ -10,14 +11,14 @@ export type StatusFolha = "aberta" | "conferida" | "aprovada" | "paga";
 export const ROTULO_STATUS: Record<StatusFolha, string> = { aberta: "Aberta", conferida: "Conferida (aguardando aprovação)", aprovada: "Aprovada", paga: "Paga" };
 
 export type MesFolha = {
-  id: string; competencia: string; data_pagamento: string; status: StatusFolha;
+  id: string; competencia: string; tipo: TipoFolha; data_pagamento: string; status: StatusFolha;
   conferida_em: string | null; aprovada_em: string | null; paga_em: string | null; reaberta_em: string | null; reaberta_motivo: string | null;
   arquivo_bb_gerado_em: string | null; conferida_por_nome?: string | null; aprovada_por_nome?: string | null;
 };
-const COLUNAS_MES = "id, competencia, data_pagamento, status, conferida_em, aprovada_em, paga_em, reaberta_em, reaberta_motivo, arquivo_bb_gerado_em, conferida_por, aprovada_por";
+const COLUNAS_MES = "id, competencia, tipo, data_pagamento, status, conferida_em, aprovada_em, paga_em, reaberta_em, reaberta_motivo, arquivo_bb_gerado_em, conferida_por, aprovada_por";
 
 export async function lerMeses(supabase: Cliente, ano: number): Promise<MesFolha[]> {
-  const { data } = await supabase.from("rh_fp_competencias").select(COLUNAS_MES).gte("competencia", `${ano}-01-01`).lte("competencia", `${ano}-12-01`).order("competencia");
+  const { data } = await supabase.from("rh_fp_competencias").select(COLUNAS_MES).gte("competencia", `${ano}-01-01`).lte("competencia", `${ano}-12-01`).order("competencia").order("tipo", { ascending: false });
   return (data ?? []) as MesFolha[];
 }
 

@@ -4,7 +4,7 @@ import type { SituacaoFechamento } from "@/lib/modulos/rh/painel/painel";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 
 type Cliente = Awaited<ReturnType<typeof criarClienteServidor>>;
-const COLUNAS_MES = "id, competencia, data_pagamento, status, conferida_em, aprovada_em, paga_em, reaberta_em, reaberta_motivo, arquivo_bb_gerado_em, conferida_por, aprovada_por";
+const COLUNAS_MES = "id, competencia, tipo, data_pagamento, status, conferida_em, aprovada_em, paga_em, reaberta_em, reaberta_motivo, arquivo_bb_gerado_em, conferida_por, aprovada_por";
 
 export type PendenciaRh = { id: string; titulo: string; descricao: string | null; prazo: string | null; criticidade: string; link: string | null };
 
@@ -22,17 +22,26 @@ async function totaisDe(supabase: Cliente, mes: MesFolha, cache: Map<string, Tot
 }
 
 export async function lerPainel(supabase: Cliente, ano: number): Promise<DadosPainel> {
-  const [meses, abertos, emAprovacao, ultimaPaga, ativos, comVt, pend] = await Promise.all([
+  const [todas, abertos, emAprovacao, ultimaPaga, ativos, comVt, pend] = await Promise.all([
     lerMeses(supabase, ano),
-    supabase.from("rh_fp_competencias").select(COLUNAS_MES).eq("status", "aberta").order("competencia").limit(1),
-    supabase.from("rh_fp_competencias").select(COLUNAS_MES).in("status", ["conferida", "aprovada"]).order("competencia", { ascending: false }).limit(1),
-    supabase.from("rh_fp_competencias").select(COLUNAS_MES).eq("status", "paga").order("competencia", { ascending: false }).limit(1),
+    supabase.from("rh_fp_competencias").select(COLUNAS_MES).eq("tipo", "mensal").eq("status", "aberta").order("competencia").limit(1),
+    supabase.from("rh_fp_competencias").select(COLUNAS_MES).eq("tipo", "mensal").in("status", ["conferida", "aprovada"]).order("competencia", { ascending: false }).limit(1),
+    supabase.from("rh_fp_competencias").select(COLUNAS_MES).eq("tipo", "mensal").eq("status", "paga").order("competencia", { ascending: false }).limit(1),
     supabase.from("rh_colaboradores").select("id", { count: "exact", head: true }).eq("ativo", true),
     supabase.from("rh_colaboradores").select("id", { count: "exact", head: true }).eq("ativo", true).eq("recebe_vt", true),
     supabase.from("pendencias").select("id, titulo, descricao, prazo, criticidade, link").like("modulo", "rh.%").in("status", ["aberta", "em_andamento"])
       .order("prazo", { ascending: true, nullsFirst: false }).limit(8),
   ]);
-  const totais = await totaisDoAno(supabase, meses.map((m) => m.id));
+  const totais = await totaisDoAno(supabase, todas.map((m) => m.id));
+  // O painel mostra um mês por barra: a folha do 13º (0529) soma na folha mensal do mesmo mês (sem ela, fica de fora).
+  const meses = todas.filter((m) => m.tipo === "mensal");
+  for (const d of todas.filter((m) => m.tipo !== "mensal")) {
+    const alvo = meses.find((m) => m.competencia === d.competencia);
+    const t13 = totais.get(d.id);
+    if (!alvo || !t13) continue;
+    const t = totais.get(alvo.id) ?? { pessoas: 0, total: 0, porEmpresa: {}, decimo: 0, avulso: 0 };
+    totais.set(alvo.id, { ...t, total: t.total + t13.total, decimo: t.decimo + t13.decimo });
+  }
 
   // Fechamento em andamento: o mês aberto mais antigo, com o que já foi lançado nele.
   let fechamento: DadosPainel["fechamento"] = null;
@@ -63,7 +72,7 @@ export async function lerPainel(supabase: Cliente, ano: number): Promise<DadosPa
     const anteriorComp = new Date(`${mesDestaque.competencia}T00:00:00Z`);
     anteriorComp.setUTCMonth(anteriorComp.getUTCMonth() - 1);
     const comp = anteriorComp.toISOString().slice(0, 10);
-    const { data: ant } = await supabase.from("rh_fp_competencias").select(COLUNAS_MES).eq("competencia", comp).maybeSingle();
+    const { data: ant } = await supabase.from("rh_fp_competencias").select(COLUNAS_MES).eq("competencia", comp).eq("tipo", "mensal").maybeSingle();
     const anterior = ant ? await totaisDe(supabase, ant as MesFolha, totais) : null;
     destaque = { mes: mesDestaque, totais: await totaisDe(supabase, mesDestaque, totais), anterior: anterior?.total ?? null };
   }

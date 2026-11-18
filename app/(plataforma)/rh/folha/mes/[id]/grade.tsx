@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { FORMAS_PAGAMENTO, ROTULO_FORMA, type FormaPagamento } from "@/lib/modulos/rh/colaboradores/modulo";
-import { lerReais, NATUREZAS, valorAPagar, type Natureza } from "@/lib/modulos/rh/folha/modulo";
+import { lerReais, NATUREZAS, ROTULO_NATUREZA, valorAPagar, type Natureza, type TipoFolha } from "@/lib/modulos/rh/folha/modulo";
 import { atualizarDoCadastro, salvarItens, type ItemEditado } from "../acoes";
 import type { ItemFolha } from "../../dados";
 
@@ -23,8 +23,11 @@ const editavelDe = (i: ItemFolha): Editavel => ({
   liquido: paraTexto(i.liquido), ferias_acrescimos: paraTexto(i.ferias_acrescimos), decimo_terceiro: paraTexto(i.decimo_terceiro), avulso: paraTexto(i.avulso),
 });
 
-/** Grade da folha do mês: uma linha por pessoa, valores por natureza; grava as linhas alteradas de uma vez. */
-export function GradeFolha({ mesId, editavel, itens }: { mesId: string; editavel: boolean; itens: ItemFolha[] }) {
+/** Grade da folha: uma linha por pessoa, valores por natureza; grava as linhas alteradas de uma vez. Na folha do 13º só o 13º; na
+ *  mensal o 13º não é mais digitado (folha própria desde 0529) e a coluna só aparece nos meses antigos que têm valor. */
+export function GradeFolha({ mesId, tipo, editavel, itens }: { mesId: string; tipo: TipoFolha; editavel: boolean; itens: ItemFolha[] }) {
+  const colunas: readonly Natureza[] = tipo !== "mensal" ? ["decimo_terceiro"] : itens.some((i) => i.decimo_terceiro > 0) ? NATUREZAS : NATUREZAS.filter((n) => n !== "decimo_terceiro");
+  const digitavel = (n: Natureza) => n !== "avulso" && (tipo === "mensal" ? n !== "decimo_terceiro" : true);
   const router = useRouter();
   const [mudancas, setMudancas] = useState<Record<string, Editavel>>({});
   const [soComValor, setSoComValor] = useState(!editavel);
@@ -44,8 +47,8 @@ export function GradeFolha({ mesId, editavel, itens }: { mesId: string; editavel
     for (const { i, e, centavos, v } of linhas) {
       total += centavos;
       for (const g of [`Empresa: ${i.empregador}`, `Pagamento: ${ROTULO_FORMA[e.forma_pagamento]}`]) grupos.set(g, (grupos.get(g) ?? 0) + centavos);
-      // 13º em separado do salário (pago no mês do aniversário), como a linha "13º SALÁRIO" da planilha do RH
-      const partes: [string, number][] = [["Salários (líquido + férias/acréscimos)", v.liquido + v.ferias_acrescimos], ["13º salário — 1ª parcela", v.decimo_terceiro], ["Avulsos (fora da folha do escritório)", v.avulso]];
+      // 13º em separado do salário, como a linha "13º SALÁRIO" da planilha do RH
+      const partes: [string, number][] = [["Salários (líquido + férias/acréscimos)", v.liquido + v.ferias_acrescimos], ["13º salário", v.decimo_terceiro], ["Avulsos (fora da folha do escritório)", v.avulso]];
       for (const [g, x] of partes) if (x > 0) grupos.set(g, (grupos.get(g) ?? 0) + Math.round(x * 100));
     }
     return { total, grupos: [...grupos.entries()].sort() };
@@ -90,8 +93,8 @@ export function GradeFolha({ mesId, editavel, itens }: { mesId: string; editavel
         <TableHeader>
           <TableRow>
             <TableHead>Nº</TableHead><TableHead>Funcionário</TableHead><TableHead>Empresa</TableHead><TableHead>Pagamento</TableHead>
-            <TableHead className="text-right">Líquido</TableHead><TableHead className="text-right">Férias/acréscimos</TableHead><TableHead className="text-right">13º (1ª parcela)</TableHead>
-            <TableHead className="text-right">Avulso (recibos)</TableHead><TableHead>Recibos</TableHead><TableHead className="text-right">A pagar</TableHead>
+            {colunas.map((n) => <TableHead key={n} className="text-right">{n === "avulso" ? "Avulso (recibos)" : ROTULO_NATUREZA[n]}</TableHead>)}
+            {tipo === "mensal" && <TableHead>Recibos</TableHead>}<TableHead className="text-right">A pagar</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -107,18 +110,20 @@ export function GradeFolha({ mesId, editavel, itens }: { mesId: string; editavel
                   </select>
                 ) : ROTULO_FORMA[e.forma_pagamento]}
               </TableCell>
-              {NATUREZAS.map((n) => (
+              {colunas.map((n) => (
                 <TableCell key={n} className="text-right tabular-nums">
-                  {editavel && n !== "avulso" ? (
+                  {editavel && digitavel(n) ? (
                     <Input aria-label={`${n} de ${i.nome}`} inputMode="decimal" value={e[n]} onChange={(x) => alterar(i, { [n]: x.target.value })}
                       aria-invalid={Number.isNaN(lerReais(e[n]))} className={DINHEIRO} />
                   ) : (i[n] ? reais(Math.round(i[n] * 100)) : "")}
                 </TableCell>
               ))}
-              <TableCell>
-                {/* avulso e motivo vêm dos recibos avulsos do mês (0514) */}
-                <span className="text-xs">{i.avulso_motivo ?? ""}</span>
-              </TableCell>
+              {tipo === "mensal" && (
+                <TableCell>
+                  {/* avulso e motivo vêm dos recibos avulsos do mês (0514) */}
+                  <span className="text-xs">{i.avulso_motivo ?? ""}</span>
+                </TableCell>
+              )}
               <TableCell className="text-right font-medium tabular-nums">{invalido ? "—" : reais(centavos)}</TableCell>
             </TableRow>
           ))}
@@ -129,7 +134,7 @@ export function GradeFolha({ mesId, editavel, itens }: { mesId: string; editavel
           {totais.grupos.map(([g, c]) => (
             <TableRow key={g}><TableCell>{g}</TableCell><TableCell className="w-40 text-right tabular-nums">{reais(c)}</TableCell></TableRow>
           ))}
-          <TableRow className="font-bold"><TableCell>Total a pagar no mês</TableCell><TableCell className="text-right tabular-nums">{reais(totais.total)}</TableCell></TableRow>
+          <TableRow className="font-bold"><TableCell>{tipo === "mensal" ? "Total a pagar no mês" : "Total a pagar do 13º"}</TableCell><TableCell className="text-right tabular-nums">{reais(totais.total)}</TableCell></TableRow>
         </TableBody>
       </Table>
     </div>

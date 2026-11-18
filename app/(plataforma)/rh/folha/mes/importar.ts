@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { lerXls } from "@/lib/integracoes/importador/xls";
 import { casarRelacao, erroDeCompetencia, interpretarRelacao, type Casamento, type Relacao } from "@/lib/modulos/rh/folha/relacao-liquidos";
-import { ROTA_FOLHA, ROTULO_NATUREZA } from "@/lib/modulos/rh/folha/modulo";
+import { ROTA_FOLHA, ROTULO_NATUREZA, rotuloFolha } from "@/lib/modulos/rh/folha/modulo";
 import { rotuloMes } from "@/lib/modulos/rh/calendario";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
@@ -38,6 +38,13 @@ async function ler(mesId: string, dados: FormData, ligacoes: Record<string, stri
   const [mes, itens] = await Promise.all([lerMes(supabase, mesId), lerItens(supabase, mesId)]);
   if (!mes) return { ok: false, erro: "Mês não encontrado." };
   if (mes.status !== "aberta") return { ok: false, erro: "A folha deste mês não está aberta." };
+  // O 13º tem folha própria (0529): o arquivo do cálculo 13º só entra nela, ela só aceita esse cálculo e da mesma competência
+  // (novembro = 1ª parcela, dezembro = 2ª). A exceção do 13º de um mês seguinte (05/11) só valia na folha mensal.
+  if (mes.tipo === "mensal" && r.relacao.natureza === "decimo_terceiro") return { ok: false, erro: `O arquivo é do cálculo "${r.relacao.calculo}": importe na folha do 13º (tela Meses > Abrir mês).` };
+  if (mes.tipo !== "mensal" && r.relacao.natureza !== "decimo_terceiro") return { ok: false, erro: `A folha do 13º só aceita o cálculo do 13º; este arquivo é "${r.relacao.calculo}".` };
+  if (mes.tipo !== "mensal" && r.relacao.competencia !== mes.competencia) {
+    return { ok: false, erro: `O arquivo é de ${rotuloMes(r.relacao.competencia)}, e esta é a folha do ${rotuloFolha(mes.competencia, mes.tipo)} (competência ${rotuloMes(mes.competencia)}).` };
+  }
   const erroMes = erroDeCompetencia(r.relacao, mes.competencia, rotuloMes);
   if (erroMes) return { ok: false, erro: erroMes };
   const casamento = casarRelacao(r.relacao, itens, ligacoes);
