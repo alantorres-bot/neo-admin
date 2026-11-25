@@ -73,6 +73,7 @@ de cada função). Recuperar: corrigir a causa e rodar `executar` de novo com o 
 
 | Data | Commit | Revisão Cloud Run | Funções | Quem |
 |---|---|---|---|---|
+| 25/11/2026 | 06e6a3e (PR #28 cartão: entrada na data da compra após o fechamento; leva o PR #27, 13º da folha) | neo-admin-c06e6a3ebe1b8-202611251412 | — | Alan (Claude) |
 
 ## 5. Virada (quando tudo acima estiver pronto)
 1. Combinar um horário sem uso. Avisar que as alterações feitas no sistema antigo depois do passo 2 não serão copiadas.
