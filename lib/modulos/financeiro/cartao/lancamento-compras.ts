@@ -105,7 +105,8 @@ export function montarTitulosCompra(e: {
   if (faltando.length) return { ok: false, erro: `Preencha: ${faltando.map((k) => ROTULO_CAMPO_COMPRA[k].toLowerCase()).join(", ")}.` };
   if (!linha.dataCompra || !/^\d{4}-\d{2}-\d{2}$/.test(linha.dataCompra)) return { ok: false, erro: "A linha não tem a data da compra." };
   if (!e.fechamento || !/^\d{4}-\d{2}-\d{2}$/.test(e.fechamento)) return { ok: false, erro: "Fatura sem mês do cartão (fechamento)." };
-  const entrada = e.fechamento;
+  // Compra depois do fechamento (ex.: 17/11 numa fatura fechada em 15/11): o Consistem recusa entrada anterior à emissão.
+  const entrada = linha.dataCompra > e.fechamento ? linha.dataCompra : e.fechamento;
   const primeira = linha.parcelaNum ?? 1;
   const total = linha.parcelaTotal ?? 1;
   if (primeira < 1 || primeira > total) return { ok: false, erro: "Parcela inválida na linha da fatura." };

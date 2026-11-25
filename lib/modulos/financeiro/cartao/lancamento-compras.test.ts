@@ -58,6 +58,11 @@ describe("títulos da compra", () => {
     ]);
     expect(r.titulos[3].payload.complementoHistorico).toBe("CARTÃO SICREDI PF 5x — LATAM AIR PARC 5/5");
   });
+  it("compra depois do fechamento: entrada na data da compra (o Consistem recusa entrada antes da emissão)", () => {
+    const r = montarTitulosCompra({ linha: { ...linha("PREMMIA*BR", 19), dataCompra: "2026-11-17" }, cartao: SICREDI_PF, campos: CAMPOS, vencimentoFatura: "2026-11-25", competencia: "2026-11-01", fechamento: "2026-11-15" });
+    if (!r.ok) throw new Error(r.erro);
+    expect(r.titulos[0].payload).toMatchObject({ dataEmissao: "2026-11-17", dataEntrada: "2026-11-17" });
+  });
   it("recusa estorno, campo vazio e linha sem data", () => {
     const base = { cartao: SICREDI_PF, vencimentoFatura: "2026-10-13", competencia: "2026-10-01", fechamento: "2026-09-26" };
     expect(montarTitulosCompra({ ...base, linha: linha("X", -10), campos: CAMPOS })).toMatchObject({ ok: false, erro: /Estorno/ });
