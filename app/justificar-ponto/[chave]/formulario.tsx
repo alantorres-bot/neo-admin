@@ -8,11 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { horas, pendenciasDoFormulario, ROTULO_TIPO, TIPOS, type Tipo } from "@/lib/modulos/rh/ponto/modulo";
 import { formatarData } from "@/lib/nucleo/fila";
-import { salvarPeloLink } from "./acoes";
+import { anexarPeloLink, salvarPeloLink } from "./acoes";
 
 export type OcorrenciaDoLink = {
   id: string; nome: string; cargo: string | null; data: string; dia_semana: string; previsto: string; marcacoes: string[]; falta: boolean;
-  falta_atraso_min: number; tipo: Tipo | null; horario: string | null; observacao: string | null;
+  falta_atraso_min: number; tipo: Tipo | null; horario: string | null; observacao: string | null; atestados: string[];
 };
 
 type Valor = { tipo: Tipo | null; horario: string; observacao: string };
@@ -51,6 +51,15 @@ export function FormularioJustificativas({ chave, ocorrencias }: { chave: string
     router.refresh();
   });
 
+  const anexar = (ocorrencia: string, arquivo: File) => iniciar(async () => {
+    const dados = new FormData();
+    dados.set("chave", chave); dados.set("ocorrencia", ocorrencia); dados.set("arquivo", arquivo);
+    const r = await anexarPeloLink(dados);
+    if (!r.ok) { toast.error(r.erro); return; }
+    toast.success(r.aviso ?? "Atestado anexado.");
+    router.refresh();
+  });
+
   const feitas = Object.values(valores).filter((v) => v.tipo).length;
   return (
     <div className="space-y-3">
@@ -83,6 +92,14 @@ export function FormularioJustificativas({ chave, ocorrencias }: { chave: string
                       )}
                       <Input value={v.observacao} onChange={(e) => mudar(o.id, { observacao: e.target.value })} placeholder="Descreva o que aconteceu (obrigatório)"
                         aria-label="Observação" className="h-8 flex-1" maxLength={500} />
+                    </div>
+                    <div className="text-xs">
+                      {(o.atestados ?? []).map((n, i) => <div key={i} className="text-muted-foreground">Anexado: {n}</div>)}
+                      <label className={`text-elo underline ${pendente ? "pointer-events-none opacity-50" : "cursor-pointer"}`}>
+                        {o.atestados?.length ? "Anexar outro arquivo" : "Anexar atestado"}
+                        <input type="file" accept=".pdf,.png,.jpg,.jpeg" className="sr-only" disabled={pendente}
+                          onChange={(e) => { const f = e.target.files?.[0]; if (f) anexar(o.id, f); e.target.value = ""; }} />
+                      </label>
                     </div>
                   </TableCell>
                 </TableRow>

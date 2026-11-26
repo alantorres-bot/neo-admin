@@ -73,3 +73,11 @@ export function pendenciasDoFormulario(itens: readonly { tipo: Tipo | null; obse
   if (horarioRuim) erros.push(`${horarioRuim} horário(s) inválido(s) (use hh:mm).`);
   return erros;
 }
+
+/** Nome com que o RH baixa o atestado para a pasta do funcionário: "NOME - dd-mm-aaaa - atestado.ext". */
+export function nomeDoAtestado(funcionario: string, data: string, arquivo: string): string {
+  const [a, m, d] = data.slice(0, 10).split("-");
+  const ext = /\.([A-Za-z0-9]{1,5})$/.exec(arquivo)?.[1]?.toLowerCase() ?? "pdf";
+  const nome = funcionario.replace(/[\\/:*?"<>|]+/g, " ").replace(/\s+/g, " ").trim() || "FUNCIONARIO";
+  return `${nome} - ${d}-${m}-${a} - atestado.${ext}`;
+}

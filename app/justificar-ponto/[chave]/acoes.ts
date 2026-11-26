@@ -32,3 +32,22 @@ export async function salvarPeloLink(entrada: z.input<typeof esquema>, enviar: b
   revalidatePath(`${ROTA_JUSTIFICAR}/${d.data.chave}`);
   return { ok: true, aviso: enviar ? "Justificativas enviadas ao RH. Obrigado!" : "Salvo. Falta enviar." };
 }
+
+const esquemaAnexo = z.object({ chave: z.string().regex(/^[0-9a-f]{64}$/, "Link inválido."), ocorrencia: z.string().uuid("Ocorrência inválida.") });
+
+/** Atestado que o líder anexa na linha da ocorrência. Sobe pela Edge Function (service role), que confere a chave e o lote. */
+export async function anexarPeloLink(dados: FormData): Promise<Resultado> {
+  const d = esquemaAnexo.safeParse({ chave: dados.get("chave"), ocorrencia: dados.get("ocorrencia") });
+  if (!d.success) return { ok: false, erro: d.error.issues[0].message };
+  const arquivo = dados.get("arquivo");
+  if (!(arquivo instanceof File) || arquivo.size === 0) return { ok: false, erro: "Escolha o arquivo do atestado." };
+  if (arquivo.size > 10 * 1024 * 1024) return { ok: false, erro: "O arquivo passa do limite de 10 MB." };
+  const supabase = await criarClienteServidor();
+  const { error } = await supabase.functions.invoke("rh-ponto-link-anexar", { body: dados });
+  if (error) {
+    const detalhe = await (error as { context?: Response }).context?.json?.().catch(() => null) as { erro?: string } | null;
+    return { ok: false, erro: detalhe?.erro ?? "Não foi possível enviar o atestado. Tente novamente." };
+  }
+  revalidatePath(`${ROTA_JUSTIFICAR}/${d.data.chave}`);
+  return { ok: true, aviso: "Atestado anexado. O RH já recebe." };
+}

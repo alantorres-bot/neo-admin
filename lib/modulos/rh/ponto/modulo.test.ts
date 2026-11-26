@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { casarColaborador } from "./casar-colaborador";
-import { acaoSugerida, horas, minutos, pendenciasDoFormulario } from "./modulo";
+import { acaoSugerida, horas, minutos, nomeDoAtestado, pendenciasDoFormulario } from "./modulo";
 
 describe("horas e minutos", () => {
   it("ida e volta, com sinal", () => {
@@ -51,5 +51,14 @@ describe("casarColaborador", () => {
     expect(casarColaborador("CAUÃ DE NASCIMENTO", cadastro)).toBe("b");
     expect(casarColaborador("JOSE DA SOUZA", cadastro)).toBeNull();   // dois JOSE … SOUZA
     expect(casarColaborador("NINGUEM", cadastro)).toBeNull();
+  });
+});
+
+describe("nomeDoAtestado", () => {
+  it("monta nome, data e extensão do arquivo enviado", () => {
+    expect(nomeDoAtestado("CARLOS HENRIQUE DE OLIVEIRA", "2026-11-11", "foto atestado.JPG")).toBe("CARLOS HENRIQUE DE OLIVEIRA - 11-11-2026 - atestado.jpg");
+  });
+  it("tira caractere proibido em nome de arquivo e cai em pdf sem extensão", () => {
+    expect(nomeDoAtestado("ANA/MARIA:  SILVA", "2026-11-03", "atestado")).toBe("ANA MARIA SILVA - 03-11-2026 - atestado.pdf");
   });
 });

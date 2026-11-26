@@ -61,7 +61,7 @@ justifica ocorrência por ocorrência num formulário. O RH ajusta no Control iD
    | Batida indevida (trabalhou normalmente) | Desconsiderar a marcação |
    | Atraso ou saída antecipada sem justificativa: abater no banco de horas (rótulo de 26/10/2026) | Banco de horas se o saldo do PDF cobre; senão desconto (ou parte de cada) |
    | Falta sem justificativa | Descontar |
-   | Falta ou atraso justificado | Abonar; o **RH** anexa o atestado (o líder não anexa, por LGPD) |
+   | Falta ou atraso justificado | Abonar; o atestado vem anexado pelo líder no link ou o RH anexa |
    | Outro | Ver a observação do líder |
 
    A **observação é obrigatória em todas** as justificativas (0524, 26/10/2026): o líder descreve o que aconteceu, para o RH ter o contexto.
@@ -91,6 +91,12 @@ justifica ocorrência por ocorrência num formulário. O RH ajusta no Control iD
     "Aguardando líder" fica crítica;
   - "Ajustar no Control iD — …": quando o líder envia; encerrada na conclusão.
 - **Documentos:** o PDF do Control iD é anexo do lote (`relatorio_ponto`); os atestados são anexos das ocorrências (`atestado`).
+  - **Atestado pelo link (0530, 26/11/2026, decisão do Alan):** o líder anexa na linha da ocorrência ("Anexar atestado"), PDF/JPG/PNG
+    até 10 MB, no máx. 5 por ocorrência, só enquanto o lote está com ele (enviado/devolvido). Sobe pela Edge Function
+    `rh-ponto-link-anexar` (service role; confere a chave e o lote) para o mesmo lugar do anexo do RH. O líder vê só o nome do
+    que enviou; não abre nem apaga (é prova). Substitui a regra antiga "o líder não anexa, por LGPD".
+  - **Baixar (RH):** ao lado de cada atestado, o ícone de download salva como `NOME DO FUNCIONÁRIO - dd-mm-aaaa - atestado.<ext>`
+    (`nomeDoAtestado`), pronto para a pasta do funcionário.
 
 ## 7. Telas
 - **RH > Ponto > Quinzenas:**
@@ -102,7 +108,7 @@ justifica ocorrência por ocorrência num formulário. O RH ajusta no Control iD
 - **Setores e líderes** (gestor edita).
 - **Parâmetros:** prazo do líder (gestor).
 - **Formulário público** (`/justificar-ponto/<chave>`): tipo, horário e observação por ocorrência; nome de quem envia; "Salvar e
-  continuar depois" e "Enviar justificativas". Não é indexado.
+  continuar depois" e "Enviar justificativas"; "Anexar atestado" por ocorrência. Não é indexado.
 
 ## 8. Dados (prefixo `rh_pt_`)
 - **`rh_pt_setores`:** nome, `responsavel_nome`, `email`, `email_copia`, ativo.
