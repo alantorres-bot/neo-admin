@@ -194,12 +194,13 @@ export async function anexarAtestado(dados: FormData): Promise<Resultado> {
   return { ok: true, aviso: "Documento anexado." };
 }
 
-export async function linkDoAnexo(caminho: string): Promise<{ ok: true; url: string } | { ok: false; erro: string }> {
+/** Link curto do anexo. Com `baixarComo`, o navegador baixa o arquivo com esse nome (para a pasta do funcionário). */
+export async function linkDoAnexo(caminho: string, baixarComo?: string): Promise<{ ok: true; url: string } | { ok: false; erro: string }> {
   const negado = await exigir("operador");
   if (negado) return { ok: false, erro: negado };
   if (!caminho.startsWith(`${MODULO_PONTO}/`)) return { ok: false, erro: "Anexo inválido." };
   const supabase = await criarClienteServidor();
-  const r = await supabase.storage.from("anexos").createSignedUrl(caminho, 300);
+  const r = await supabase.storage.from("anexos").createSignedUrl(caminho, 300, baixarComo ? { download: baixarComo.slice(0, 200) } : undefined);
   return r.error || !r.data ? { ok: false, erro: "Não foi possível abrir o arquivo." } : { ok: true, url: r.data.signedUrl };
 }
 

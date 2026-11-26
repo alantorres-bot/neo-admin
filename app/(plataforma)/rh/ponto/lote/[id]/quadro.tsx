@@ -2,14 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Link2, Mail, Paperclip } from "lucide-react";
+import { Download, Link2, Mail, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, useLinhasVisiveis } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import type { ModoEmail } from "@/lib/modulos/rh/ponto/email";
-import { horas, ROTA_JUSTIFICAR, ROTULO_TIPO, type StatusLote } from "@/lib/modulos/rh/ponto/modulo";
+import { horas, nomeDoAtestado, ROTA_JUSTIFICAR, ROTULO_TIPO, type StatusLote } from "@/lib/modulos/rh/ponto/modulo";
 import { formatarData } from "@/lib/nucleo/fila";
 import { desconectarGmail, iniciarConexaoGmail } from "@/app/(plataforma)/financeiro/filial/acoes";
 import type { Ocorrencia } from "../../dados";
@@ -19,6 +19,10 @@ type Arquivo = { caminho: string; nome: string };
 
 function abrirAnexo(caminho: string) {
   void linkDoAnexo(caminho).then((r) => (r.ok ? window.open(r.url, "_blank", "noopener") : toast.error(r.erro)));
+}
+
+function baixarAnexo(caminho: string, nome: string) {
+  void linkDoAnexo(caminho, nome).then((r) => (r.ok ? window.location.assign(r.url) : toast.error(r.erro)));
 }
 
 /** Diálogo com motivo obrigatório (devolver ao líder, cancelar). */
@@ -194,7 +198,13 @@ export function GradeOcorrencias({ loteId, status, podeOperar, colaboradores, oc
                 </TableCell>
                 <TableCell className="max-w-64 text-sm">{o.acao}</TableCell>
                 <TableCell className="text-xs">
-                  {o.atestados.map((a) => <button key={a.caminho} type="button" className="block text-elo underline" onClick={() => abrirAnexo(a.caminho)}>{a.nome}</button>)}
+                  {o.atestados.map((a) => (
+                    <div key={a.caminho} className="flex items-center gap-1">
+                      <button type="button" className="text-elo underline" onClick={() => abrirAnexo(a.caminho)}>{a.nome}</button>
+                      <button type="button" className="text-elo" title="Baixar com o nome do funcionário e a data" aria-label={`Baixar ${a.nome}`}
+                        onClick={() => baixarAnexo(a.caminho, nomeDoAtestado(o.nome, o.data, a.nome))}><Download className="size-3.5" /></button>
+                    </div>
+                  ))}
                   {podeOperar && (o.tipo === "justificada" || o.atestados.length > 0) && !["concluido", "cancelado"].includes(status) && (
                     <label className="cursor-pointer text-elo underline">
                       Anexar

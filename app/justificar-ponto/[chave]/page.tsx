@@ -47,7 +47,7 @@ export default async function PaginaJustificarPeloLink({ params }: PageProps<"/j
         {editavel ? (
           <p className="text-sm text-muted-foreground">
             Escolha a justificativa de cada ocorrência, descreva o que aconteceu, informe o seu nome e clique em &quot;Enviar justificativas&quot;{lote.prazo ? ` até ${formatarData(lote.prazo)}` : ""}.
-            Dá para salvar e terminar depois pelo mesmo link. Atestado ou declaração: entregue direto ao RH.
+            Dá para salvar e terminar depois pelo mesmo link. Atestado ou declaração: anexe na linha do funcionário (PDF ou foto) ou entregue ao RH.
           </p>
         ) : (
           <p className="text-sm text-muted-foreground">
