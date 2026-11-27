@@ -66,7 +66,7 @@ describe("folha de pagamento: mês e pagamento (0511)", () => {
   it("atualizar do cadastro traz dados novos e quem entrou; valores ficam", async () => {
     await q(`update rh_colaboradores set ativo = true where cod_fornecedor = '999'`);
     await q(`update rh_colaboradores set agencia = '1216-5' where cod_fornecedor = '658'`);
-    expect((await rpc(rhOperador, `select rh_fp_atualizar_do_cadastro($1) as r`, [comp])).rows[0].r).toEqual({ atualizados: 1, incluidos: 1 });
+    expect((await rpc(rhOperador, `select rh_fp_atualizar_do_cadastro($1) as r`, [comp])).rows[0].r).toEqual({ atualizados: 1, incluidos: 1, travados: 0 });
     expect(await item("658")).toMatchObject({ agencia: "1216-5", liquido: "2398.59" });
   });
 

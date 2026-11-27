@@ -168,7 +168,9 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
 5. **Fluxo:** aberto → conferido → aprovado (gestor) → pago, com o mesmo desenho do VT.
    - Para passar a "conferido", as conferências da regra 6 têm de estar ok ou justificadas.
    - Depois de aprovado nada muda, só a marcação dos PIX.
-   - Reabrir é só do gestor, com motivo, e é recusado se já houver título no Consistem.
+   - Reabrir é só do gestor, com motivo. Desde 27/11/2026 (0533) os títulos já lançados no Consistem **ficam valendo e travam**
+     os valores deles (regra 10). É recusado com título em envio ou sem resposta, e com a folha **paga** que tenha título no
+     Consistem (regerar o arquivo do BB pagaria todos de novo).
    - Nada é apagado; tudo passa por auditoria.
 6. **Conferências automáticas**, por empresa. Cada diferença acima da tolerância (ponto em aberto 3) vira um apontamento que
    precisa de justificativa.
@@ -196,7 +198,17 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
    - Entram no arquivo do BB, no PIX e nos títulos, conforme a forma de pagamento.
 10. **Títulos no Consistem** (decisões de 14/10 e 22/10/2026; migration 0521). Nada sai sozinho.
     - A chave liga/desliga começa desligada; o operador confere e clica, com o mesmo livro imutável e envio único do VT.
-    - O botão aparece com a folha **aprovada**. Depois do primeiro título lançado, a folha não reabre.
+    - O botão aparece com a folha **aprovada**.
+    - **Desfazer um título e corrigir só uma pessoa** (decisão de 27/11/2026; migration 0533; caso do avulso do Joanilson):
+      1. Excluir o título **à mão no Consistem**. A API não tem exclusão (só inclui, altera e lê).
+      2. O gestor clica em **Cancelar** no quadro. A Edge Function `rh-fp-cancelar-titulo` lê o título no Consistem e só grava
+         "cancelado" se a resposta for "Lançamento não cadastrado!". A resposta fica guardada como evidência, com quem, quando e o
+         motivo. Título com pagamento é recusado (o estorno da baixa é com o financeiro); título que ainda existe também.
+      3. O gestor reabre a folha. Os demais títulos continuam lançados e **travados**: com título ativo de um tipo, a coluna desse
+         tipo não muda (salário → líquido, férias, avulso, 13º). Fornecedor, empresa, empregador e forma não mudam com qualquer
+         título ativo. "Atualizar do cadastro" mantém esses campos nas linhas travadas e avisa quantas foram.
+      4. Corrigir, conferir e aprovar de novo. O quadro oferece só o que não tem título ativo; o índice único impede duplicar.
+    - Com a folha reaberta, o quadro aparece só para leitura, mostrando o que está travado.
     - **Por funcionário:** um título por pessoa × **tipo** com valor no mês. O 13º fica separado do salário; no BB continua um
       crédito só.
       - Tipos: **salário** (líquido), **férias** (férias/acréscimos), **13º 1ª parcela**, **13º 2ª parcela** e **avulso** (soma dos
@@ -224,6 +236,11 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
     - Desde 23/10/2026 o operador escolhe quais títulos (pessoa × tipo) lançar; todos começam marcados. O painel é o mesmo do VT.
     - Todos os títulos vão para a empresa **1 (Neo Formas)** do Consistem.
     - **Por guia** (DARF, FGTS mensal e FGTS consignado, contra o fornecedor do órgão): fica para depois, junto com a F3.
+    - **Portador no 13º** (conferido em 27/11/2026): a folha do 13º usa a mesma regra da mensal. O portador nasce no título pela
+      tabela empregadora × forma (`rh_codigos_titulo`), e nenhuma das duas troca o portador depois. A única troca automática
+      do sistema é a do Cartão (`crt-trocar-portador`). **A confirmar com o financeiro:** se o portador dos títulos da folha é
+      trocado à mão no Consistem antes do borderô FOPAG e qual filtro é usado no CCFFE065. Se for, a troca reaproveita
+      `alterarPortador`/`conferirTroca`.
 
 11. **Checklist do mês e prazos** (Fila do dia):
     - ponto da 1ª e da 2ª quinzena enviado ao escritório (prazo: ponto em aberto 2);

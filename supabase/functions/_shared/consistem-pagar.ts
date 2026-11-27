@@ -224,6 +224,35 @@ export function juntarListasParcelamento(listas: readonly (readonly Record<strin
 export const lancamentoNaoCadastrado = (status: number | undefined, mensagem: string): boolean =>
   status === 404 || (status === 400 && /n[aã]o cadastrad/i.test(mensagem));
 
+/**
+ * Antes de cancelar no Neo Admin um título que o painel lançou (RH, 0533): o que a leitura do detalhe no Consistem diz.
+ * Só "excluido" libera o cancelamento. Título com pagamento nunca é cancelado; resposta estranha = incerto (nada muda).
+ */
+export type ConferenciaCancelamento =
+  | { tipo: "excluido" }
+  | { tipo: "pago"; valorPagoCentavos: number | null; dataPagamento: string | null }
+  | { tipo: "em_aberto" }
+  | { tipo: "incerto"; mensagem: string };
+
+export function conferirParaCancelar(
+  codLancamento: string,
+  leitura: { detalhe: Record<string, unknown> } | { erro: { status?: number; mensagem: string } },
+): ConferenciaCancelamento {
+  if ("erro" in leitura) {
+    return lancamentoNaoCadastrado(leitura.erro.status, leitura.erro.mensagem)
+      ? { tipo: "excluido" }
+      : { tipo: "incerto", mensagem: `Não foi possível ler o lançamento ${codLancamento} no Consistem: ${leitura.erro.mensagem.slice(0, 160)}` };
+  }
+  const d = leitura.detalhe;
+  if (texto(d.codLancamento) !== codLancamento) {
+    return { tipo: "incerto", mensagem: `O Consistem respondeu sem o lançamento ${codLancamento}; confira lá antes de cancelar.` };
+  }
+  const valorPagoCentavos = paraCentavos(d.valorPago);
+  const dataPagamento = paraDataIso(d.dataPagamento);
+  if ((valorPagoCentavos ?? 0) > 0 || dataPagamento) return { tipo: "pago", valorPagoCentavos, dataPagamento };
+  return { tipo: "em_aberto" };
+}
+
 export type FornecedorApi = { codFornecedor: string; nome: string; nomeFantasia: string; documentoBruto: string; ativo: boolean; codCategoria: number | null };
 
 export function normalizarFornecedorApi(r: Record<string, unknown>): FornecedorApi | null {

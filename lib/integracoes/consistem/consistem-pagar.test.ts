@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { paraCentavos as paraCentavosReceber, paraDataIso as paraDataIsoReceber } from "../../../supabase/functions/_shared/consistem-receber";
 import {
   classificarLancamento,
+  conferirParaCancelar,
   diaSeguinte,
   estaEmAberto,
   FILTRO_BORDERO,
@@ -187,5 +188,22 @@ describe("planejarSincronizacaoPagar", () => {
     const plano = planejarSincronizacaoPagar([lanc({ codLancamento: "1" }), lanc({ codLancamento: "1", saldoCentavos: 1 })], []);
     expect(plano.novos).toHaveLength(1);
     expect(plano.duplicadosApi).toEqual(["1"]);
+  });
+});
+
+describe("conferirParaCancelar (título do RH antes de cancelar, 0533)", () => {
+  it("só 'não cadastrado' (400) ou 404 é excluído; outro erro é incerto", () => {
+    expect(conferirParaCancelar("50001", { erro: { status: 400, mensagem: 'Consistem HTTP 400: {"mensagem":"Lançamento não cadastrado!"}' } })).toEqual({ tipo: "excluido" });
+    expect(conferirParaCancelar("50001", { erro: { status: 404, mensagem: "Consistem HTTP 404" } })).toEqual({ tipo: "excluido" });
+    expect(conferirParaCancelar("50001", { erro: { status: 500, mensagem: "Consistem HTTP 500" } }).tipo).toBe("incerto");
+    expect(conferirParaCancelar("50001", { erro: { mensagem: "fetch failed" } }).tipo).toBe("incerto");
+  });
+  it("título existente: pago (valor ou data) ou em aberto; resposta de outro código é incerta", () => {
+    expect(conferirParaCancelar("50001", { detalhe: { codLancamento: 50001, valorPago: "0,00", dataPagamento: "0" } })).toEqual({ tipo: "em_aberto" });
+    expect(conferirParaCancelar("50001", { detalhe: { codLancamento: 50001, valorPago: "1.954,26", dataPagamento: "2027-01-07" } }))
+      .toEqual({ tipo: "pago", valorPagoCentavos: 195426, dataPagamento: "2027-01-07" });
+    expect(conferirParaCancelar("50001", { detalhe: { codLancamento: 50001, valorPago: "", dataPagamento: "2027-01-07" } }).tipo).toBe("pago");
+    expect(conferirParaCancelar("50001", { detalhe: {} }).tipo).toBe("incerto");
+    expect(conferirParaCancelar("50001", { detalhe: { codLancamento: 49999 } }).tipo).toBe("incerto");
   });
 });

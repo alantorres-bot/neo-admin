@@ -58,7 +58,7 @@ export function FluxoFolha({ id, status, podeOperar, ehGestor, partesFopag }: { 
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Reabrir a folha</DialogTitle>
-              <DialogDescription>Volta para “aberta”: a conferência, a aprovação, o arquivo do BB e a marcação de paga são desfeitos.</DialogDescription>
+              <DialogDescription>Volta para “aberta”: a conferência, a aprovação, o arquivo do BB e a marcação de paga são desfeitos. Títulos já lançados no Consistem continuam valendo e travam os valores deles; para corrigir um, cancele o título antes.</DialogDescription>
             </DialogHeader>
             <Textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={2} maxLength={300} placeholder="Motivo" />
             <div className="flex justify-end">
