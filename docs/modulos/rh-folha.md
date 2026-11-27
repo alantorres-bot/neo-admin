@@ -111,6 +111,20 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
      - Do arquivo só saem nº RHiD, CPF, nome, empresa, departamento, cargo e admissão, lidos no navegador. Senha, PIN, endereço e
        filiação não são enviados.
      - O **departamento** dá o setor do colaborador: é o setor do RH > Ponto com o mesmo nome. Esse setor é usado pelo Banco de horas.
+   - **Novo pela ficha (decisão de 27/11/2026, migration 0532):** em RH > Colaboradores, "Novo pela ficha" recebe o PDF da
+     **Ficha Registro de Empregado** do escritório e abre o formulário de novo colaborador preenchido. O PDF não é guardado.
+     - Lê pela posição na página (`lib/modulos/rh/colaboradores/ficha-registro.ts`): nome, CPF, empregadora (pelo CNPJ),
+       matrícula do escritório, admissão, salário, cargo (função) e os dados pessoais: nascimento, telefone, endereço, PIS, RG
+       (número, órgão, emissão), CTPS (número, série, UF), pai e mãe. Esses dados pessoais ficam em colunas próprias (0532) e
+       aparecem em "Dados pessoais (ficha de registro)" ao editar qualquer colaborador.
+     - **Matrícula do escritório** = o "Nº" do canto da ficha (000222 → 222). Quando a "Matrícula eSocial" difere, o cadastro
+       segue o Nº, salvo Nº 000001 (ficha reimpressa sozinha), em que vale a eSocial. Conferido com 40 fichas em 27/11/2026; se os
+       dois diferem, o formulário avisa para conferir.
+     - O RH completa o que a ficha não traz (em amarelo): **nº de fornecedor** (botão Consistem), forma de pagamento,
+       agência/conta e VT. Empresa do Consistem sugerida: a mais comum entre quem tem a mesma empregadora.
+     - CPF já cadastrado: não cria outro, avisa quem é. Ficha digitalizada como imagem (sem texto) não é lida: cadastra digitando.
+     - Gravação: `rh_salvar_colaborador` grava função, admissão, salário e dados pessoais só com `p_dados_ficha` (o formulário
+       sempre manda). Chamadas sem ele não mexem nesses campos.
 2. **Competência e pagamento:** a folha do mês M é paga no **5º dia útil de M+1** (decisão de 14/10/2026). Ex.: setembro/2026 é
    pago até 07/10/2026. Para contar os dias úteis, a semana vai de segunda a sexta; feriados ajustados à mão, como no VT.
 3. **Um mês por empresa:** o fechamento junta as três empresas, mas cada uma tem a sua lista, os seus totais e as suas guias.

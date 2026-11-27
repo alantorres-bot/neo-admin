@@ -6,11 +6,14 @@ import type { EstadoForm } from "@/components/formularios/dialogo-formulario";
 import { casarComCadastro, type Casamento, type FuncionarioControlId } from "@/lib/modulos/rh/colaboradores/controlid";
 import { divergencias, lerTarifa, normalizarAgencia, normalizarCodFornecedor, normalizarConta, normalizarCpf, type Divergencia, type FornecedorConsistem } from "@/lib/modulos/rh/colaboradores/cadastro";
 import { ehFormaPagamento, ROTA_COLABORADORES } from "@/lib/modulos/rh/colaboradores/modulo";
+import { lerFichaRegistro } from "@/lib/modulos/rh/colaboradores/ficha-registro";
+import { extrairPaginasDoPdf } from "@/lib/modulos/financeiro/cartao/fatura-pdf";
+import { lerReais } from "@/lib/modulos/rh/folha/modulo";
 import { ROTA_VT } from "@/lib/modulos/rh/vale-transporte/modulo";
 import { temAcesso } from "@/lib/nucleo/permissoes";
 import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
-import { COLUNAS_COLABORADOR, paraColaborador, type ColaboradorLinha } from "./dados";
+import { COLUNAS_COLABORADOR, paraColaborador, type ColaboradorLinha, type RascunhoColaborador } from "./dados";
 
 type Cliente = Awaited<ReturnType<typeof criarClienteServidor>>;
 const mensagemDeErro = (e: { code?: string; message: string }) => (e.code === "P0001" ? e.message : "Não foi possível salvar. Tente novamente.");
@@ -57,16 +60,93 @@ export async function salvarColaborador(_anterior: EstadoForm, dados: FormData):
   const valorFixo = fixoBruto ? lerTarifa(fixoBruto) : null;
   if (fixoBruto && valorFixo === null) return { erro: "Valor fixo mensal inválido (ex.: 800,00)." };
   if (recebeVt && tarifa === null && valorFixo === null) return { erro: "Quem recebe VT precisa do valor da passagem (ex.: 4,95) ou do valor fixo mensal." };
+  const ficha = lerDadosFicha(dados);
+  if (!ficha.ok) return { erro: ficha.erro };
   const d = v.data;
   const supabase = await criarClienteServidor();
   const { error } = await supabase.rpc("rh_salvar_colaborador", {
     p_id: d.id, p_empresa: d.empresaId, p_empregador: d.empregador, p_cod_fornecedor: cod.valor, p_nome: d.nome, p_cpf: cpf.valor,
     p_agencia: agencia.valor, p_conta: conta.valor, p_forma_pagamento: forma, p_ativo: dados.get("ativo") === "on", p_observacao: d.observacao || null,
-    p_recebe_vt: recebeVt, p_tarifa: tarifa, p_valor_fixo: valorFixo, p_passagens_dia: d.passagensDia, p_matricula_escritorio: matricula || null,
+    p_recebe_vt: recebeVt, p_tarifa: tarifa, p_valor_fixo: valorFixo, p_passagens_dia: d.passagensDia, p_matricula_escritorio: matricula || null, ...ficha.parametros,
   });
   if (error) return { erro: mensagemDeErro(error) };
   revalidar();
   return { ok: true };
+}
+
+// ---------------------------------------------------------------- dados da ficha de registro (0532)
+
+const dataOpcional = (d: FormData, nome: string) => {
+  const t = texto(d, nome);
+  return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
+};
+
+/** Função, admissão, salário e dados pessoais do formulário (a caixa `dadosFicha` diz que o formulário novo os mandou). */
+function lerDadosFicha(d: FormData): { ok: true; parametros: Record<string, string | number | boolean | null> } | { ok: false; erro: string } {
+  if (d.get("dadosFicha") !== "1") return { ok: true, parametros: {} };
+  const salarioTexto = texto(d, "salario");
+  const salario = salarioTexto ? lerReais(salarioTexto) : null;
+  if (salario !== null && !(salario > 0)) return { ok: false, erro: "Salário inválido (ex.: 2.145,87)." };
+  const pis = texto(d, "pis").replace(/\D/g, "");
+  if (pis && pis.length !== 11) return { ok: false, erro: "PIS: 11 dígitos." };
+  const telefone = texto(d, "telefone");
+  if (telefone && !/^[0-9 ()+-]{8,20}$/.test(telefone)) return { ok: false, erro: "Telefone inválido (só números, espaço, parênteses e hífen)." };
+  const rg = texto(d, "rg").replace(/\s/g, "").toUpperCase();
+  if (rg && !/^[0-9A-Z.-]{3,20}$/.test(rg)) return { ok: false, erro: "RG inválido." };
+  const ctps = texto(d, "ctps").replace(/\D/g, ""), serie = texto(d, "ctpsSerie").replace(/\D/g, ""), uf = texto(d, "ctpsUf").toUpperCase();
+  if (ctps.length > 11 || serie.length > 6) return { ok: false, erro: "CTPS: número até 11 dígitos e série até 6." };
+  if (uf && !/^[A-Z]{2}$/.test(uf)) return { ok: false, erro: "UF da CTPS: duas letras (ex.: MT)." };
+  const limite = (nome: string, max: number) => texto(d, nome).slice(0, max) || null;
+  return { ok: true, parametros: {
+    p_dados_ficha: true, p_funcao: limite("funcao", 60), p_data_admissao: dataOpcional(d, "dataAdmissao"), p_salario: salario,
+    p_data_nascimento: dataOpcional(d, "dataNascimento"), p_telefone: telefone || null, p_endereco: limite("endereco", 200), p_pis: pis || null,
+    p_rg: rg || null, p_rg_orgao: limite("rgOrgao", 20), p_rg_emissao: dataOpcional(d, "rgEmissao"), p_ctps: ctps || null, p_ctps_serie: serie || null,
+    p_ctps_uf: uf || null, p_nome_pai: limite("nomePai", 120), p_nome_mae: limite("nomeMae", 120),
+  } };
+}
+
+export type RespostaFicha =
+  | { ok: true; rascunho: RascunhoColaborador; avisos: string[] }
+  | { ok: false; erro: string; existente?: { id: string; nome: string } };
+
+/**
+ * Lê a Ficha Registro de Empregado (PDF do escritório) e devolve o rascunho do novo colaborador para o formulário. Nada é
+ * gravado e o PDF não é guardado (decisão de 27/11/2026). CPF já cadastrado: devolve quem é, para editar em vez de duplicar.
+ */
+export async function lerFicha(dados: FormData): Promise<RespostaFicha> {
+  const sessao = await exigirSessao();
+  if (!temAcesso(sessao.acesso, "rh", "operador")) return { ok: false, erro: SEM_PERMISSAO };
+  const arquivo = dados.get("arquivo");
+  if (!(arquivo instanceof File) || arquivo.size === 0) return { ok: false, erro: "Escolha o PDF da ficha de registro." };
+  if (arquivo.size > 5 * 1024 * 1024) return { ok: false, erro: "O PDF passa de 5 MB." };
+  if (!/\.pdf$/i.test(arquivo.name) && arquivo.type !== "application/pdf") return { ok: false, erro: "A ficha tem de ser um PDF." };
+  const ext = await extrairPaginasDoPdf(await arquivo.arrayBuffer());
+  if (!ext.ok) return { ok: false, erro: ext.erro.includes("não tem texto") ? "Este PDF não tem texto (foi digitalizado como imagem): use a ficha em PDF que o escritório envia, ou cadastre digitando." : ext.erro };
+  const r = lerFichaRegistro(ext.paginas);
+  if (!r.ok) return r;
+  const f = r.dados;
+  const supabase = await criarClienteServidor();
+  if (f.cpf) {
+    const { data: existente } = await supabase.from("rh_colaboradores").select("id, nome").eq("cpf", f.cpf).maybeSingle();
+    if (existente) return { ok: false, erro: `${existente.nome} já está cadastrado com este CPF: use "Editar" na linha dele.`, existente: { id: existente.id as string, nome: existente.nome as string } };
+  }
+  // empresa do Consistem sugerida: a mais comum entre quem tem a mesma empregadora (mesma regra da 0520)
+  let empresaId: string | undefined;
+  if (f.empregador) {
+    const { data } = await supabase.from("rh_colaboradores").select("empresa_id").eq("empregador", f.empregador);
+    const contagem = new Map<string, number>();
+    for (const c of data ?? []) contagem.set(c.empresa_id as string, (contagem.get(c.empresa_id as string) ?? 0) + 1);
+    empresaId = [...contagem.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+  }
+  return {
+    ok: true, avisos: r.avisos,
+    rascunho: {
+      empresa_id: empresaId, empregador: f.empregador ?? undefined, nome: f.nome ?? undefined, cpf: f.cpf, matricula_escritorio: f.matriculaEscritorio,
+      data_admissao: f.dataAdmissao, salario: f.salario, funcao: f.funcao, data_nascimento: f.dataNascimento, telefone: f.telefone, endereco: f.endereco,
+      pis: f.pis, rg: f.rg, rg_orgao: f.rgOrgao, rg_emissao: f.rgEmissao, ctps: f.ctps, ctps_serie: f.ctpsSerie, ctps_uf: f.ctpsUf,
+      nome_pai: f.nomePai, nome_mae: f.nomeMae, ativo: true,
+    },
+  };
 }
 
 // ---------------------------------------------------------------- Consistem (só leitura)
