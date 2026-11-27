@@ -41,7 +41,7 @@ describe("folha: recibos avulsos (0514)", () => {
       { chave: "assiduidade_mensal", vigente_desde: "2026-01-01", valor: "120.00" }, { chave: "assiduidade_mensal", vigente_desde: "2026-06-01", valor: "185.00" },
       { chave: "salario_minimo", vigente_desde: "2026-01-01", valor: "1621.00" },
     ]);
-    expect((await rpc(rhConsulta, `select count(*)::int as n from rh_fp_rubricas`)).rows[0].n).toBe(18);
+    expect((await rpc(rhConsulta, `select count(*)::int as n from rh_fp_rubricas`)).rows[0].n).toBe(19);   // 18 da 0514 + decimo_por_fora (0531)
     await expect(rpc(rhOperador, `select rh_salvar_parametro('salario_minimo', '2027-01-01', 1700)`)).rejects.toThrow(/gestor/);
     await rpc(rhGestor, `select rh_salvar_parametro('salario_minimo', '2027-01-15', 1700)`);
     expect((await q(`select vigente_desde::text from rh_parametros where valor = 1700`)).rows[0].vigente_desde).toBe("2027-01-01");

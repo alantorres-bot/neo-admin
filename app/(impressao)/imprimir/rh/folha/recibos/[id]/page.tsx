@@ -21,7 +21,7 @@ export default async function PaginaRecibosDoMes({ params }: PageProps<"/imprimi
   const mes = await lerMes(supabase, id);
   if (!mes) notFound();
   const [recibos, { data: empresa }] = await Promise.all([
-    lerRecibos(supabase, { competencia: mes.competencia }),
+    lerRecibos(supabase, { competencia: mes.competencia, folha: mes.tipo }),
     supabase.from("empresas").select("razao_social, cnpj").eq("codigo_erp", "1").maybeSingle(),
   ]);
   const empregador = { razao_social: empresa?.razao_social ?? "NEO FORMAS PARA CONCRETO LTDA", cnpj: empresa?.cnpj ?? null };

@@ -2,6 +2,7 @@
 // Página de impressão: <table> cru é permitido aqui (CLAUDE.md, regra 10).
 import type { Recibo } from "@/app/(plataforma)/rh/folha/dados";
 import { rotuloMes } from "@/lib/modulos/rh/calendario";
+import { rotuloFolha } from "@/lib/modulos/rh/folha/modulo";
 import { ROTULO_TIPO_RECIBO } from "@/lib/modulos/rh/folha/recibos";
 import { reaisPorExtenso } from "@/lib/nucleo/extenso";
 
@@ -25,7 +26,7 @@ function Via({ r, empregador, via }: { r: Recibo; empregador: Empregador; via: s
         </div>
         <div className="text-right">
           <p className="text-[15px] font-bold uppercase leading-tight tracking-wide">Recibo de pagamento</p>
-          <p className="text-[10px]">Referente a {rotuloMes(r.competencia)} · {ROTULO_TIPO_RECIBO[r.tipo]}</p>
+          <p className="text-[10px]">Referente a {r.folha === "mensal" ? rotuloMes(r.competencia) : rotuloFolha(r.competencia, r.folha)} · {ROTULO_TIPO_RECIBO[r.tipo]}</p>
         </div>
       </header>
       <div className="grid grid-cols-[auto_1fr_auto_auto] gap-x-4 gap-y-0.5 border-b border-black px-4 py-2 text-[10.5px]">

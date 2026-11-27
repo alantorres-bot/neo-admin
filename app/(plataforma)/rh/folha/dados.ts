@@ -102,26 +102,28 @@ export async function lerVigencias(supabase: Cliente): Promise<Vigencia[]> {
   return (data ?? []).map((v) => ({ chave: v.chave as ChaveParametro, valor: Number(v.valor), vigente_desde: v.vigente_desde as string }));
 }
 
-export type PessoaRecibo = { id: string; cod_fornecedor: string; nome: string; empregador: string; cpf: string | null; funcao: string | null; salario: number | null; insalubridade_pct: number; adicional_noturno_pct: number; ativo: boolean };
+export type PessoaRecibo = { id: string; cod_fornecedor: string; nome: string; empregador: string; cpf: string | null; funcao: string | null; salario: number | null; insalubridade_pct: number; adicional_noturno_pct: number; ativo: boolean; data_admissao: string | null };
 
 export async function lerPessoasRecibo(supabase: Cliente): Promise<PessoaRecibo[]> {
-  const { data } = await supabase.from("rh_colaboradores").select("id, cod_fornecedor, nome, empregador, cpf, funcao, salario, insalubridade_pct, adicional_noturno_pct, ativo")
+  const { data } = await supabase.from("rh_colaboradores").select("id, cod_fornecedor, nome, empregador, cpf, funcao, salario, insalubridade_pct, adicional_noturno_pct, ativo, data_admissao")
     .not("cod_fornecedor", "is", null).order("nome");   // sem nº de fornecedor (cadastro a completar) não entra na folha
   return (data ?? []).map((p) => ({ ...(p as PessoaRecibo), salario: p.salario === null ? null : Number(p.salario) }));
 }
 
 export type LinhaRecibo = { ordem: number; rubrica: string; descricao: string; natureza: "provento" | "desconto"; referencia: number; valor: number };
 export type Recibo = {
-  id: string; competencia: string; colaborador_id: string; tipo: TipoRecibo; salario: number | null; funcao: string | null; insalubridade_pct: number; adicional_noturno_pct: number;
+  id: string; competencia: string; colaborador_id: string; tipo: TipoRecibo; folha: TipoFolha; salario: number | null; funcao: string | null; insalubridade_pct: number; adicional_noturno_pct: number;
   periodo_inicio: string | null; periodo_fim: string | null; mensagem: string | null; proventos: number; descontos: number; total: number;
   cancelado: boolean; cancelado_motivo: string | null; criado_em: string; linhas: LinhaRecibo[];
   nome: string; cod_fornecedor: string; cpf: string | null; empregador: string;
 };
 
-/** Recibos de uma competência (ou um recibo pelo id), com linhas e dados da pessoa. */
-export async function lerRecibos(supabase: Cliente, filtro: { competencia?: string; id?: string; incluirCancelados?: boolean }): Promise<Recibo[]> {
-  let q = supabase.from("rh_fp_recibos").select("id, competencia, colaborador_id, tipo, salario, funcao, insalubridade_pct, adicional_noturno_pct, periodo_inicio, periodo_fim, mensagem, proventos, descontos, total, cancelado, cancelado_motivo, criado_em").order("criado_em");
+/** Recibos de uma competência (ou um recibo pelo id), com linhas e dados da pessoa. `folha`: a mensal e a do 13º têm a mesma
+ *  competência em novembro e dezembro (0531). */
+export async function lerRecibos(supabase: Cliente, filtro: { competencia?: string; folha?: TipoFolha; id?: string; incluirCancelados?: boolean }): Promise<Recibo[]> {
+  let q = supabase.from("rh_fp_recibos").select("id, competencia, colaborador_id, tipo, folha, salario, funcao, insalubridade_pct, adicional_noturno_pct, periodo_inicio, periodo_fim, mensagem, proventos, descontos, total, cancelado, cancelado_motivo, criado_em").order("criado_em");
   if (filtro.competencia) q = q.eq("competencia", filtro.competencia);
+  if (filtro.folha) q = q.eq("folha", filtro.folha);
   if (filtro.id) q = q.eq("id", filtro.id);
   if (!filtro.incluirCancelados) q = q.eq("cancelado", false);
   const { data } = await q;

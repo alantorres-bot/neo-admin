@@ -86,10 +86,33 @@ export function dividirPorMes(inicio: string, fim: string): Trecho[] {
 }
 
 export const TIPOS_RECIBO = ["recorrente", "compra_ferias", "inicio_antes_registro", "eventual"] as const;
-export type TipoRecibo = (typeof TIPOS_RECIBO)[number];
+/** decimo_recorrente (0531) nasce só na folha do 13º, pelo quadro "13º dos recibos recorrentes"; não entra no assistente de recibo. */
+export type TipoRecibo = (typeof TIPOS_RECIBO)[number] | "decimo_recorrente";
 export const ROTULO_TIPO_RECIBO: Record<TipoRecibo, string> = {
   recorrente: "Recorrente", compra_ferias: "Compra de férias", inicio_antes_registro: "Início antes do registro", eventual: "Eventual",
+  decimo_recorrente: "13º por fora",
 };
+
+/**
+ * Avos do 13º no ano: meses com 15 dias ou mais de trabalho, da admissão (ou de janeiro) até dezembro. Sem admissão no cadastro,
+ * 12. O RH pode mudar o número na tela (afastamentos, saída no ano).
+ */
+export function avosDoDecimo(ano: number, admissao: string | null): number {
+  if (!admissao || Number(admissao.slice(0, 4)) < ano) return 12;
+  if (Number(admissao.slice(0, 4)) > ano) return 0;
+  const mes = Number(admissao.slice(5, 7));
+  const diasNoMes = Number(fimDoMes(admissao).slice(8, 10)) - Number(admissao.slice(8, 10)) + 1;
+  return 12 - mes + (diasNoMes >= 15 ? 1 : 0);
+}
+
+/**
+ * 13º do recibo recorrente (decisão de 27/11/2026), em centavos: cheio = base (proventos do recibo de um mês) × avos ÷ 12;
+ * 1ª parcela = metade do cheio; 2ª = cheio − o que já saiu na 1ª.
+ */
+export function decimoDoRecorrente(baseCentavos: number, avos: number, parcela: "decimo_1" | "decimo_2", jaPagoCentavos = 0): number {
+  const cheio = Math.round((baseCentavos * Math.min(Math.max(avos, 0), 12)) / 12);
+  return Math.max(0, parcela === "decimo_1" ? Math.round(cheio / 2) : cheio - jaPagoCentavos);
+}
 
 /**
  * Linhas padrão de um trecho de dias: a rubrica principal (salário – férias ou dias normais) + assiduidade + insalubridade e

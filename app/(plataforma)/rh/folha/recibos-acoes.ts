@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { inicioDoMes } from "@/lib/modulos/rh/calendario";
-import { ROTA_FOLHA } from "@/lib/modulos/rh/folha/modulo";
+import { ROTA_FOLHA, rotuloFolha, type TipoFolha } from "@/lib/modulos/rh/folha/modulo";
 import {
   calcularRecibo, dividirPorMes, linhasDeDias, mensagemDoPeriodo, parametrosVigentes, TIPOS_RECIBO,
   type DadosPessoa, type LinhaEntrada, type Rubrica,
@@ -42,12 +42,12 @@ const esquemaRecibo = z.object({
 });
 export type EntradaRecibo = z.input<typeof esquemaRecibo>;
 
-async function gravarUm(supabase: Cliente, o: { competencia: string; colaboradorId: string; tipo: string; pessoa: DadosPessoa; funcao: string | null; inicio: string | null; fim: string | null; mensagem: string; linhas: LinhaEntrada[]; descricoes?: (string | null | undefined)[]; vigencias: Awaited<ReturnType<typeof lerVigencias>>; substitui?: string | null }) {
+async function gravarUm(supabase: Cliente, o: { competencia: string; colaboradorId: string; tipo: string; pessoa: DadosPessoa; funcao: string | null; inicio: string | null; fim: string | null; mensagem: string; linhas: LinhaEntrada[]; descricoes?: (string | null | undefined)[]; vigencias: Awaited<ReturnType<typeof lerVigencias>>; substitui?: string | null; folha?: TipoFolha }) {
   const calc = calcularRecibo(o.linhas, o.pessoa, parametrosVigentes(o.vigencias, o.competencia));
   const linhas = calc.linhas.map((l, i) => ({ rubrica: l.rubrica, descricao: o.descricoes?.[i] || l.descricao, referencia: l.referencia, valor: l.centavos / 100 }));
   const { error } = await supabase.rpc("rh_fp_gravar_recibo", {
     p_competencia: o.competencia, p_colaborador: o.colaboradorId, p_tipo: o.tipo, p_salario: o.pessoa.salario, p_insalubridade: o.pessoa.insalubridade_pct,
-    p_noturno: o.pessoa.adicional_noturno_pct, p_funcao: o.funcao, p_inicio: o.inicio, p_fim: o.fim, p_mensagem: o.mensagem, p_linhas: linhas, p_substitui: o.substitui ?? null,
+    p_noturno: o.pessoa.adicional_noturno_pct, p_funcao: o.funcao, p_inicio: o.inicio, p_fim: o.fim, p_mensagem: o.mensagem, p_linhas: linhas, p_substitui: o.substitui ?? null, p_folha: o.folha ?? "mensal",
   });
   return error ? { ok: false as const, erro: mensagemDeErro(error) } : { ok: true as const, liquido: calc.liquido };
 }
@@ -131,7 +131,8 @@ export async function gerarRecorrentes(mesId: string): Promise<Resultado> {
   ]);
   if (!mes) return { ok: false, erro: "Mês não encontrado." };
   if (mes.status !== "aberta") return { ok: false, erro: "A folha deste mês não está aberta." };
-  const existentes = await lerRecibos(supabase, { competencia: mes.competencia });
+  if (mes.tipo !== "mensal") return { ok: false, erro: "Recibos recorrentes são da folha do mês." };
+  const existentes = await lerRecibos(supabase, { competencia: mes.competencia, folha: "mensal" });
   const jaTem = new Set(existentes.filter((r) => r.tipo === "recorrente").map((r) => r.colaborador_id));
   const naFolha = new Set(itens.map((i) => i.colaborador_id));
   const pessoa = new Map(pessoas.map((p) => [p.id, p]));
@@ -152,6 +153,43 @@ export async function gerarRecorrentes(mesId: string): Promise<Resultado> {
   }
   revalidatePath(ROTA_FOLHA, "layout");
   return { ok: true, aviso: `${gerados} recibo(s) recorrente(s) gerado(s).${pulados.length ? ` Ficaram de fora: ${pulados.join("; ")}.` : ""}` };
+}
+
+const esquemaDecimo = z.array(z.object({ colaboradorId: uuid, avos: z.number().int().min(1).max(12), valor: z.number().positive("Valor do 13º zerado.").max(1_000_000) })).min(1, "Marque quem recebe o 13º por fora.").max(200);
+
+/**
+ * Folha do 13º: gera o recibo do 13º por fora de quem o RH marcou (decisão de 27/11/2026). O valor vem da tela
+ * (decimoDoRecorrente, que o RH pode ajustar); a referência do recibo são os avos. Entra no avulso da folha do 13º (0531).
+ */
+export async function gerarDecimoRecorrentes(mesId: string, entrada: z.input<typeof esquemaDecimo>): Promise<Resultado> {
+  const negado = await exigir("operador");
+  if (negado) return { ok: false, erro: negado };
+  if (!uuid.safeParse(mesId).success) return { ok: false, erro: "Folha inválida." };
+  const v = esquemaDecimo.safeParse(entrada);
+  if (!v.success) return { ok: false, erro: v.error.issues[0].message };
+  const supabase = await criarClienteServidor();
+  const [mes, pessoas, rubricas, vigencias] = await Promise.all([lerMes(supabase, mesId), lerPessoasRecibo(supabase), lerRubricas(supabase), lerVigencias(supabase)]);
+  if (!mes) return { ok: false, erro: "Folha não encontrada." };
+  if (mes.tipo === "mensal") return { ok: false, erro: "O 13º por fora vai na folha do 13º." };
+  if (mes.status !== "aberta") return { ok: false, erro: "A folha do 13º não está aberta." };
+  const rubrica = rubricas.find((r) => r.codigo === "decimo_por_fora");
+  if (!rubrica) return { ok: false, erro: "Rubrica 13º SALÁRIO - POR FORA não cadastrada ou inativa." };
+  const pessoa = new Map(pessoas.map((p) => [p.id, p]));
+  let gerados = 0, total = 0;
+  const falhas: string[] = [];
+  for (const l of v.data) {
+    const p = pessoa.get(l.colaboradorId);
+    if (!p) { falhas.push("pessoa não encontrada"); continue; }
+    const r = await gravarUm(supabase, {
+      competencia: mes.competencia, colaboradorId: p.id, tipo: "decimo_recorrente", folha: mes.tipo, funcao: p.funcao, inicio: null, fim: null,
+      pessoa: { salario: p.salario ?? 0, insalubridade_pct: p.insalubridade_pct, adicional_noturno_pct: p.adicional_noturno_pct },
+      mensagem: `${rotuloFolha(mes.competencia, mes.tipo)} · ${l.avos}/12 avos`, linhas: [{ rubrica, referencia: l.avos, valor: l.valor }], vigencias,
+    });
+    if (r.ok) { gerados++; total += r.liquido; } else falhas.push(`${p.nome} (${r.erro})`);
+  }
+  revalidatePath(ROTA_FOLHA, "layout");
+  if (!gerados) return { ok: false, erro: `Nenhum recibo gerado: ${falhas.join("; ")}.` };
+  return { ok: true, aviso: `${gerados} recibo(s) do 13º por fora, total ${reais(total)}. O valor entrou no avulso da folha.${falhas.length ? ` Ficaram de fora: ${falhas.join("; ")}.` : ""}` };
 }
 
 const esquemaModelo = z.object({ colaboradorId: uuid, ativo: z.boolean(), linhas: z.array(esquemaLinha.omit({ descricao: true })).min(1, "O modelo precisa de pelo menos uma linha.").max(20) });

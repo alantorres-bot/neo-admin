@@ -36,8 +36,10 @@ function linhasDoRecibo(r: Recibo, catalogo: ReadonlyMap<string, Rubrica>): Linh
 }
 
 /** Recibos avulsos do mês: lista, novo recibo (assistente por tipo), recorrentes, cancelar e imprimir. */
-export function RecibosDoMes({ mesId, competencia, aberta, podeOperar, recibos, pessoas, rubricas, vigencias }: {
+export function RecibosDoMes({ mesId, competencia, aberta, podeOperar, recibos, pessoas, rubricas, vigencias, soLista = false }: {
   mesId: string; competencia: string; aberta: boolean; podeOperar: boolean; recibos: Recibo[]; pessoas: PessoaRecibo[]; rubricas: Rubrica[]; vigencias: Vigencia[];
+  /** Folha do 13º: só lista, imprime e cancela os recibos do 13º por fora (nascem no quadro próprio). */
+  soLista?: boolean;
 }) {
   const router = useRouter();
   const [pendente, iniciar] = useTransition();
@@ -61,12 +63,12 @@ export function RecibosDoMes({ mesId, competencia, aberta, podeOperar, recibos, 
     <section className="space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h3 className="text-base font-bold">Recibos avulsos</h3>
+          <h3 className="text-base font-bold">{soLista ? "Recibos do 13º por fora" : "Recibos avulsos"}</h3>
           <p className="text-xs text-muted-foreground">Pagamentos fora da folha do escritório. O total de cada pessoa entra sozinho na coluna Avulso da folha.</p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {editavel && <NovoRecibo competencia={competencia} pessoas={pessoas} rubricas={rubricas} vigencias={vigencias} />}
-          {editavel && <Button variant="outline" size="sm" disabled={pendente} onClick={recorrentes}><Repeat /> Gerar recorrentes</Button>}
+          {editavel && !soLista && <NovoRecibo competencia={competencia} pessoas={pessoas} rubricas={rubricas} vigencias={vigencias} />}
+          {editavel && !soLista && <Button variant="outline" size="sm" disabled={pendente} onClick={recorrentes}><Repeat /> Gerar recorrentes</Button>}
           {recibos.length > 0 && <Button variant="outline" size="sm" render={<a href={`/imprimir/rh/folha/recibos/${mesId}`} target="_blank" rel="noreferrer" />}><Printer /> Imprimir todos</Button>}
         </div>
       </div>
@@ -89,7 +91,7 @@ export function RecibosDoMes({ mesId, competencia, aberta, podeOperar, recibos, 
                 <TableCell className="text-right font-medium tabular-nums">{reaisC(Math.round(r.total * 100))}</TableCell>
                 <TableCell className="whitespace-nowrap">
                   <Button variant="ghost" size="sm" render={<a href={`/imprimir/rh/folha/recibo/${r.id}`} target="_blank" rel="noreferrer" />}><Printer /> Recibo</Button>
-                  {editavel && <NovoRecibo key={r.id} recibo={r} competencia={competencia} pessoas={pessoas} rubricas={rubricas} vigencias={vigencias} />}
+                  {editavel && !soLista && <NovoRecibo key={r.id} recibo={r} competencia={competencia} pessoas={pessoas} rubricas={rubricas} vigencias={vigencias} />}
                   {editavel && <Button variant="ghost" size="sm" onClick={() => { setCancelando(r); setMotivo(""); }}><XCircle /> Cancelar</Button>}
                 </TableCell>
               </TableRow>
@@ -121,7 +123,7 @@ function NovoRecibo({ recibo, competencia, pessoas, rubricas, vigencias }: { rec
   const [aberto, setAberto] = useState(false);
   const [pendente, iniciar] = useTransition();
   const catalogo = useMemo(() => new Map(rubricas.map((r) => [r.codigo, r])), [rubricas]);
-  const [tipo, setTipo] = useState<TipoRecibo>(recibo?.tipo ?? "compra_ferias");
+  const [tipo, setTipo] = useState<Exclude<TipoRecibo, "decimo_recorrente">>(recibo && recibo.tipo !== "decimo_recorrente" ? recibo.tipo : "compra_ferias");   // 13º por fora não passa por aqui (soLista)
   const [pessoaId, setPessoaId] = useState(recibo?.colaborador_id ?? "");
   const [salario, setSalario] = useState(recibo?.salario ? recibo.salario.toLocaleString("pt-BR", { minimumFractionDigits: 2 }) : "");
   const [funcao, setFuncao] = useState(recibo?.funcao ?? "");
@@ -177,7 +179,7 @@ function NovoRecibo({ recibo, competencia, pessoas, rubricas, vigencias }: { rec
         </DialogHeader>
         <div className="grid gap-3 sm:grid-cols-2">
           <div className="grid gap-1"><Label>Tipo</Label>
-            <select value={tipo} onChange={(e) => setTipo(e.target.value as TipoRecibo)} className={SELECAO} disabled={!!recibo}>
+            <select value={tipo} onChange={(e) => setTipo(e.target.value as typeof tipo)} className={SELECAO} disabled={!!recibo}>
               {(["compra_ferias", "inicio_antes_registro", "eventual", "recorrente"] as const).map((t) => <option key={t} value={t}>{ROTULO_TIPO_RECIBO[t]}</option>)}
             </select>
           </div>
