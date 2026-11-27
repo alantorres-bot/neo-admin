@@ -390,7 +390,8 @@ modelos recorrentes.
   - Telas em `app/(plataforma)/rh/folha/`:
     - Meses: total por empresa.
     - Mês: grade editável, filtro "só quem tem valor", "Atualizar do cadastro", totais por empresa, forma e avulsos, PIX e
-      botões do fluxo.
+      botões do fluxo. "Atualizar do cadastro" inclui quem entrou depois de aberto o mês (ativo e com nº de fornecedor);
+      colaborador inativo sem valor não aparece na grade (27/11/2026; a linha fica no banco, sem valor).
     - Download do BB.
     - Relatório `app/(impressao)/imprimir/rh/folha/[id]`: por empresa, com Nº, funcionário, valor e pagamento; avulsos à parte;
       totais por forma.

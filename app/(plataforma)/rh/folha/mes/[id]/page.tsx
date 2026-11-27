@@ -44,6 +44,9 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
   const mensal = mes.tipo === "mensal";
   const recibos = await lerRecibos(supabase, { competencia: mes.competencia, folha: mes.tipo });
   const naFolha = new Set(itens.map((i) => i.colaborador_id));
+  // Inativo sem valor não aparece na grade (a linha fica no banco: registro não se apaga); com valor, continua (ex.: 13º de quem saiu).
+  const inativos = new Set(pessoas.filter((p) => !p.ativo).map((p) => p.id));
+  const itensDaGrade = itens.filter((i) => i.valor > 0 || !inativos.has(i.colaborador_id));
   // Folha do 13º: 13º por fora de quem tem recibo recorrente ativo (0531)
   let decimoRecorrentes: LinhaDecimoRecorrente[] = [];
   if (mes.tipo !== "mensal") {
@@ -102,7 +105,7 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
         </div>
       )}
 
-      <GradeFolha mesId={mes.id} tipo={mes.tipo} editavel={podeOperar && mes.status === "aberta"} itens={itens} />
+      <GradeFolha mesId={mes.id} tipo={mes.tipo} editavel={podeOperar && mes.status === "aberta"} itens={itensDaGrade} />
 
       {mensal && <DecimoTerceiroDoMes linhas={itens.filter((i) => i.decimo_terceiro > 0).map((i) => ({ id: i.id, cod_fornecedor: i.cod_fornecedor, nome: i.nome, empregador: i.empregador, forma_pagamento: i.forma_pagamento, decimo_terceiro: i.decimo_terceiro }))} />}
 
