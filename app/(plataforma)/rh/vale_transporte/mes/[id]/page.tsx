@@ -31,6 +31,10 @@ export default async function PaginaMes({ params }: PageProps<"/rh/vale_transpor
   const supabase = await criarClienteServidor();
   const [mes, itens, lancamentos, parametros] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id), lerLancamentos(supabase, id), lerParametrosRh(supabase)]);
   if (!mes) notFound();
+  // Inativo sem valor (marcado "Sem VT" pelo "Atualizar do cadastro") não aparece na grade; a linha fica no banco (registro não se apaga).
+  const { data: inativos } = await supabase.from("rh_colaboradores").select("id").eq("ativo", false).in("id", itens.map((i) => i.colaborador_id));
+  const ocultos = new Set((inativos ?? []).map((k) => k.id as string));
+  const itensDaGrade = itens.filter((i) => i.valor > 0 || !ocultos.has(i.colaborador_id));
 
   const editavel = podeOperar && mes.status === "aberta" && !mes.importada;
   const aprovadoOuPago = mes.status === "aprovada" || mes.status === "paga";
@@ -61,7 +65,7 @@ export default async function PaginaMes({ params }: PageProps<"/rh/vale_transpor
         <FluxoMes id={mes.id} status={mes.status} importada={mes.importada} podeOperar={podeOperar} ehGestor={ehGestor} temFopag={temFopag} />
       </div>
 
-      <GradeMes mesId={mes.id} competencia={mes.competencia} editavel={editavel} diasPadrao={mes.dias_uteis_padrao} itens={itens} />
+      <GradeMes mesId={mes.id} competencia={mes.competencia} editavel={editavel} diasPadrao={mes.dias_uteis_padrao} itens={itensDaGrade} />
 
       {aprovadoOuPago && !mes.importada && (
         <>
