@@ -26,7 +26,8 @@ const editavelDe = (i: ItemFolha): Editavel => ({
 /** Grade da folha: uma linha por pessoa, valores por natureza; grava as linhas alteradas de uma vez. Na folha do 13º só o 13º; na
  *  mensal o 13º não é mais digitado (folha própria desde 0529) e a coluna só aparece nos meses antigos que têm valor. */
 export function GradeFolha({ mesId, tipo, editavel, itens }: { mesId: string; tipo: TipoFolha; editavel: boolean; itens: ItemFolha[] }) {
-  const colunas: readonly Natureza[] = tipo !== "mensal" ? ["decimo_terceiro"] : itens.some((i) => i.decimo_terceiro > 0) ? NATUREZAS : NATUREZAS.filter((n) => n !== "decimo_terceiro");
+  const comAvulso = itens.some((i) => i.avulso > 0);   // na folha do 13º, o 13º por fora dos recibos recorrentes (0531)
+  const colunas: readonly Natureza[] = tipo !== "mensal" ? (comAvulso ? ["decimo_terceiro", "avulso"] : ["decimo_terceiro"]) : itens.some((i) => i.decimo_terceiro > 0) ? NATUREZAS : NATUREZAS.filter((n) => n !== "decimo_terceiro");
   const digitavel = (n: Natureza) => n !== "avulso" && (tipo === "mensal" ? n !== "decimo_terceiro" : true);
   const router = useRouter();
   const [mudancas, setMudancas] = useState<Record<string, Editavel>>({});
@@ -94,7 +95,7 @@ export function GradeFolha({ mesId, tipo, editavel, itens }: { mesId: string; ti
           <TableRow>
             <TableHead>Nº</TableHead><TableHead>Funcionário</TableHead><TableHead>Empresa</TableHead><TableHead>Pagamento</TableHead>
             {colunas.map((n) => <TableHead key={n} className="text-right">{n === "avulso" ? "Avulso (recibos)" : ROTULO_NATUREZA[n]}</TableHead>)}
-            {tipo === "mensal" && <TableHead>Recibos</TableHead>}<TableHead className="text-right">A pagar</TableHead>
+            {(tipo === "mensal" || comAvulso) && <TableHead>Recibos</TableHead>}<TableHead className="text-right">A pagar</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -118,7 +119,7 @@ export function GradeFolha({ mesId, tipo, editavel, itens }: { mesId: string; ti
                   ) : (i[n] ? reais(Math.round(i[n] * 100)) : "")}
                 </TableCell>
               ))}
-              {tipo === "mensal" && (
+              {(tipo === "mensal" || comAvulso) && (
                 <TableCell>
                   {/* avulso e motivo vêm dos recibos avulsos do mês (0514) */}
                   <span className="text-xs">{i.avulso_motivo ?? ""}</span>

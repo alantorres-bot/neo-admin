@@ -60,6 +60,29 @@ describe("folha do 13º (0529)", () => {
       .toEqual([{ tipo: "decimo_1", avulso: "0.00" }, { tipo: "mensal", avulso: "300.00" }]);
   });
 
+  it("13º por fora (0531): recibo decimo_recorrente entra no avulso da folha do 13º, um por pessoa; mensal não se mistura", async () => {
+    const colab = (await q(`select id from rh_colaboradores where cod_fornecedor = '660'`)).rows[0].id;
+    const linhas = JSON.stringify([{ rubrica: "decimo_por_fora", referencia: 12, valor: 450 }]);
+    const gravar = (tipo: string, folha: string) => rpc(rhOperador,
+      `select rh_fp_gravar_recibo('2026-11-01', $1, $2, 2000, 0, 0, null, null, null, null, $3::jsonb, null, $4) as id`, [colab, tipo, linhas, folha]);
+    await expect(gravar("decimo_recorrente", "mensal")).rejects.toThrow(/só vai na folha do 13º/);
+    await expect(gravar("eventual", "decimo_1")).rejects.toThrow(/só vai na folha do 13º/);
+    await expect(gravar("decimo_recorrente", "decimo_2")).rejects.toThrow(/Abra a folha de 13º 2ª parcela\/2026/);   // competência 11 ≠ dezembro
+    const id = (await gravar("decimo_recorrente", "decimo_1")).rows[0].id as string;
+    await expect(gravar("decimo_recorrente", "decimo_1")).rejects.toThrow(/já tem o recibo do 13º por fora/);
+    const avulsos = async () => (await q(`select c.tipo, i.avulso::text, i.avulso_motivo, i.valor::text from rh_fp_itens i join rh_fp_competencias c on c.id = i.competencia_id
+      where i.cod_fornecedor = '660' and c.competencia = '2026-11-01' order by c.tipo`)).rows;
+    expect(await avulsos()).toEqual([
+      { tipo: "decimo_1", avulso: "450.00", avulso_motivo: "Recibo(s): 13º por fora", valor: "2122.76" },
+      { tipo: "mensal", avulso: "300.00", avulso_motivo: "Recibo(s): eventual", valor: "2254.26" },
+    ]);
+    await rpc(rhOperador, `select rh_fp_cancelar_recibo($1, 'teste')`, [id]);
+    expect((await avulsos())[0].avulso).toBe("0.00");
+    await gravar("decimo_recorrente", "decimo_1");   // cancelado libera gerar de novo
+    expect((await avulsos()).map((r) => r.avulso)).toEqual(["450.00", "300.00"]);
+    await expect(salvar(d1, [{ id: itens.d1, decimo_terceiro: 1672.76, liquido: 1 }])).rejects.toThrow(/só tem o 13º/);
+  });
+
   it("fluxo com o rótulo do 13º; Consistem: na folha do 13º 1ª parcela só decimo_1", async () => {
     await rpc(rhOperador, `select rh_fp_conferir($1)`, [d1]);
     await rpc(rhGestor, `select rh_fp_aprovar($1)`, [d1]);

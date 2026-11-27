@@ -15,7 +15,9 @@ import { exigirSessao } from "@/lib/nucleo/sessao";
 import { criarClienteServidor } from "@/lib/supabase/servidor";
 import { lerParametrosRh } from "../../../_consistem/dados";
 import { PainelConsistem } from "../../../_consistem/painel";
-import { lerImportacoes, lerItens, lerLancamentos, lerMes, lerPessoasRecibo, lerRecibos, lerRubricas, lerVigencias, ROTULO_STATUS } from "../../dados";
+import { lerImportacoes, lerItens, lerLancamentos, lerMes, lerModelos, lerPessoasRecibo, lerRecibos, lerRubricas, lerVigencias, ROTULO_STATUS } from "../../dados";
+import { avosDoDecimo, calcularRecibo, parametrosVigentes, type Rubrica } from "@/lib/modulos/rh/folha/recibos";
+import { DecimoDosRecorrentes, type LinhaDecimoRecorrente } from "./decimo-recorrentes";
 import { lancarNoConsistem, resolverLancamento } from "../acoes";
 import { RecibosDoMes } from "./recibos";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -40,8 +42,33 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
   ]);
   if (!mes) notFound();
   const mensal = mes.tipo === "mensal";
-  const recibos = mensal ? await lerRecibos(supabase, { competencia: mes.competencia }) : [];
+  const recibos = await lerRecibos(supabase, { competencia: mes.competencia, folha: mes.tipo });
   const naFolha = new Set(itens.map((i) => i.colaborador_id));
+  // Folha do 13º: 13º por fora de quem tem recibo recorrente ativo (0531)
+  let decimoRecorrentes: LinhaDecimoRecorrente[] = [];
+  if (mes.tipo !== "mensal") {
+    const ano = Number(mes.competencia.slice(0, 4));
+    const [modelos, daPrimeira] = await Promise.all([
+      lerModelos(supabase),
+      mes.tipo === "decimo_2" ? lerRecibos(supabase, { competencia: `${ano}-11-01`, folha: "decimo_1" }) : Promise.resolve([]),
+    ]);
+    const catalogo = new Map<string, Rubrica>(rubricas.map((r) => [r.codigo, r]));
+    const pessoa = new Map(pessoas.map((p) => [p.id, p]));
+    const par = parametrosVigentes(vigencias, mes.competencia);
+    const centavos = (v: number) => Math.round(v * 100);
+    decimoRecorrentes = modelos.filter((m) => m.ativo && naFolha.has(m.colaborador_id) && pessoa.get(m.colaborador_id)?.salario).map((m) => {
+      const p = pessoa.get(m.colaborador_id)!;
+      const linhas = m.linhas.flatMap((l) => (catalogo.get(l.rubrica) ? [{ rubrica: catalogo.get(l.rubrica)!, referencia: Number(l.referencia), valor: l.valor ?? null }] : []));
+      const gerado = recibos.find((r) => r.colaborador_id === p.id && r.tipo === "decimo_recorrente");
+      return {
+        colaboradorId: p.id, cod_fornecedor: p.cod_fornecedor, nome: p.nome,
+        base: calcularRecibo(linhas, { salario: p.salario!, insalubridade_pct: p.insalubridade_pct, adicional_noturno_pct: p.adicional_noturno_pct }, par).proventos,
+        avos: avosDoDecimo(ano, p.data_admissao),
+        jaPago: daPrimeira.filter((r) => r.colaborador_id === p.id && r.tipo === "decimo_recorrente").reduce((s, r) => s + centavos(r.total), 0),
+        gerado: gerado ? centavos(gerado.total) : null,
+      };
+    }).sort((a, b) => a.nome.localeCompare(b.nome, "pt-BR"));
+  }
   const pix = itens.filter((i) => i.forma_pagamento !== "fopag" && i.valor > 0);
   const partesFopag = PARTES_FOLHA.filter((p) => itens.some((i) => i.forma_pagamento === "fopag" && valorDaParte(i, p) > 0));
   // Último lançamento de cada pessoa × tipo (o ativo, se houver; senão o erro mais recente).
@@ -79,8 +106,10 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
 
       {mensal && <DecimoTerceiroDoMes linhas={itens.filter((i) => i.decimo_terceiro > 0).map((i) => ({ id: i.id, cod_fornecedor: i.cod_fornecedor, nome: i.nome, empregador: i.empregador, forma_pagamento: i.forma_pagamento, decimo_terceiro: i.decimo_terceiro }))} />}
 
-      {mensal && <RecibosDoMes mesId={mes.id} competencia={mes.competencia} aberta={mes.status === "aberta"} podeOperar={podeOperar} recibos={recibos}
-        pessoas={pessoas.filter((p) => p.ativo || naFolha.has(p.id))} rubricas={rubricas} vigencias={vigencias} />}
+      {mes.tipo !== "mensal" && <DecimoDosRecorrentes mesId={mes.id} parcela={mes.tipo} editavel={podeOperar && mes.status === "aberta"} linhas={decimoRecorrentes} />}
+
+      {(mensal || recibos.length > 0) && <RecibosDoMes mesId={mes.id} competencia={mes.competencia} aberta={mes.status === "aberta"} podeOperar={podeOperar} recibos={recibos}
+        pessoas={pessoas.filter((p) => p.ativo || naFolha.has(p.id))} rubricas={rubricas} vigencias={vigencias} soLista={!mensal} />}
 
       {importacoes.length > 0 && (
         <section className="space-y-2">

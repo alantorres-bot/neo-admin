@@ -124,8 +124,16 @@ O que a amostra de setembro mostrou (é por isso que existem as conferências da
      - Mesmo fluxo da folha mensal (aberta → conferida → aprovada → paga), com pendências próprias ("Fechar folha de 13º 1ª
        parcela/2026"…), relatório, arquivo do BB (parte 13º), PIX e títulos no Consistem: o tipo do título é o da folha
        (13º 1ª ou 13º 2ª parcela).
-     - Na folha do 13º só existe o 13º. Líquido, férias/acréscimos e avulsos ficam zerados, e os recibos avulsos não entram.
+     - Na folha do 13º só existe o 13º. Líquido e férias/acréscimos ficam zerados, e os recibos avulsos do mês não entram.
        Entram os colaboradores ativos.
+     - **13º por fora dos recibos recorrentes (decisão de 27/11/2026; migration 0531).** Quem tem modelo recorrente ativo aparece
+       no quadro "13º dos recibos recorrentes" da folha do 13º. O RH marca quem recebe (nada é gerado sem marcar).
+       - Base = proventos do recibo recorrente de um mês (modelo + salário do cadastro + parâmetros da competência da folha).
+       - 13º cheio = base × avos ÷ 12. Avos sugeridos pela admissão (mês com 15 dias ou mais conta; sem admissão, 12), editáveis.
+       - 1ª parcela = metade do cheio; 2ª = cheio − o 13º por fora já pago na 1ª. O valor pode ser ajustado antes de gerar.
+       - Gera um recibo tipo "13º por fora" (rubrica 13º SALÁRIO - POR FORA, referência = avos), um por pessoa e folha
+         (`rh_fp_recibos.folha`). Ele entra no **Avulso** da folha do 13º: soma no A pagar, vai no PIX/arquivo do BB (parte
+         avulso) e vira título "avulso" no Consistem. Cancelar o recibo tira do avulso e libera gerar outro.
      - O valor vem da Relação de Líquidos do cálculo do 13º (Importar do escritório) ou é digitado na grade.
      - A folha mensal não recebe mais 13º: a coluna não é digitável e só aparece nos meses que já tinham valor (jan–out/2026).
      - Quem já recebeu a 1ª parcela no mês do aniversário em 2026 não é descontado sozinho. O RH lança na folha da 1ª parcela só

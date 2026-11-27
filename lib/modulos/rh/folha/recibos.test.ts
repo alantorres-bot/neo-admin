@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calcularRecibo, dividirPorMes, linhasDeDias, mensagemDoPeriodo, parametrosVigentes, type Rubrica, type Vigencia } from "./recibos";
+import { avosDoDecimo, calcularRecibo, decimoDoRecorrente, dividirPorMes, linhasDeDias, mensagemDoPeriodo, parametrosVigentes, type Rubrica, type Vigencia } from "./recibos";
 
 const R = (codigo: string, forma: Rubrica["forma"], extra: Partial<Rubrica> = {}): Rubrica =>
   ({ codigo, descricao: codigo.toUpperCase(), natureza: "provento", forma, parametro: null, pct_campo: null, ...extra });
@@ -59,5 +59,24 @@ describe("recibos avulsos: cálculo", () => {
   it("mensagens", () => {
     expect(mensagemDoPeriodo("compra_ferias", "2026-07-20", "2026-07-31", { inicio: "2026-07-20", fim: "2026-08-08" })).toBe("Férias de 20/07/2026 a 08/08/2026 — neste recibo, 20/07/2026 a 31/07/2026");
     expect(mensagemDoPeriodo("inicio_antes_registro", "2026-09-08", "2026-09-14")).toBe("Trabalho de 08/09/2026 a 14/09/2026, antes do registro");
+  });
+});
+
+describe("13º do recibo recorrente (27/11/2026)", () => {
+  it("avos: ano cheio, admissão no ano (15 dias ou mais conta o mês) e admissão depois", () => {
+    expect(avosDoDecimo(2026, null)).toBe(12);
+    expect(avosDoDecimo(2026, "2019-05-10")).toBe(12);
+    expect(avosDoDecimo(2026, "2026-03-17")).toBe(10);   // março tem 15 dias (17–31): abr–dez + março
+    expect(avosDoDecimo(2026, "2026-03-18")).toBe(9);    // 14 dias em março: não conta
+    expect(avosDoDecimo(2026, "2026-02-14")).toBe(11);   // fev/2026 tem 28 dias: 14–28 = 15
+    expect(avosDoDecimo(2026, "2027-01-04")).toBe(0);
+  });
+  it("1ª parcela = metade do cheio; 2ª = cheio − o já pago", () => {
+    expect(decimoDoRecorrente(150_000, 12, "decimo_1")).toBe(75_000);
+    expect(decimoDoRecorrente(150_000, 10, "decimo_1")).toBe(62_500);           // 1.500 × 10/12 = 1.250 → 625
+    expect(decimoDoRecorrente(100_001, 7, "decimo_1")).toBe(29_167);            // 583,34 → 291,67
+    expect(decimoDoRecorrente(100_001, 7, "decimo_2", 29_167)).toBe(29_167);    // 1ª + 2ª = cheio
+    expect(decimoDoRecorrente(150_000, 12, "decimo_2", 0)).toBe(150_000);       // não recebeu a 1ª: sai tudo na 2ª
+    expect(decimoDoRecorrente(150_000, 12, "decimo_2", 200_000)).toBe(0);
   });
 });
