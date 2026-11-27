@@ -80,7 +80,7 @@ export async function lerImportacoes(supabase: Cliente, competenciaId: string): 
 
 // ---------------------------------------------------------------- Consistem (0521)
 
-export type LancamentoFolhaLinha = { id: string; item_id: string; tipo: TipoTitulo; lote: string; situacao: "reservado" | "enviando" | "lancado" | "erro"; cod_lancamento_erp: string | null; erro: string | null; valor: number; criado_em: string };
+export type LancamentoFolhaLinha = { id: string; item_id: string; tipo: TipoTitulo; lote: string; situacao: "reservado" | "enviando" | "lancado" | "erro" | "cancelado"; cod_lancamento_erp: string | null; erro: string | null; valor: number; criado_em: string };
 
 export async function lerLancamentos(supabase: Cliente, competenciaId: string): Promise<LancamentoFolhaLinha[]> {
   const { data } = await supabase.from("rh_fp_lancamentos_erp").select("id, item_id, tipo, lote, situacao, cod_lancamento_erp, erro, valor, criado_em").eq("competencia_id", competenciaId).order("criado_em");

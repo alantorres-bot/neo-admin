@@ -18,7 +18,7 @@ import { PainelConsistem } from "../../../_consistem/painel";
 import { lerImportacoes, lerItens, lerLancamentos, lerMes, lerModelos, lerPessoasRecibo, lerRecibos, lerRubricas, lerVigencias, ROTULO_STATUS } from "../../dados";
 import { avosDoDecimo, calcularRecibo, parametrosVigentes, type Rubrica } from "@/lib/modulos/rh/folha/recibos";
 import { DecimoDosRecorrentes, type LinhaDecimoRecorrente } from "./decimo-recorrentes";
-import { lancarNoConsistem, resolverLancamento } from "../acoes";
+import { cancelarLancamento, lancarNoConsistem, resolverLancamento } from "../acoes";
 import { RecibosDoMes } from "./recibos";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { ImportarLiquidos } from "./importar";
@@ -74,12 +74,15 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
   }
   const pix = itens.filter((i) => i.forma_pagamento !== "fopag" && i.valor > 0);
   const partesFopag = PARTES_FOLHA.filter((p) => itens.some((i) => i.forma_pagamento === "fopag" && valorDaParte(i, p) > 0));
-  // Último lançamento de cada pessoa × tipo (o ativo, se houver; senão o erro mais recente).
+  // Último lançamento de cada pessoa × tipo (o ativo, se houver; senão o erro/cancelado mais recente).
   const ultimo = new Map<string, (typeof lancamentos)[number]>();
   for (const l of lancamentos) {
     const atual = ultimo.get(`${l.item_id}:${l.tipo}`);
-    if (!atual || atual.situacao === "erro") ultimo.set(`${l.item_id}:${l.tipo}`, l);
+    if (!atual || atual.situacao === "erro" || atual.situacao === "cancelado") ultimo.set(`${l.item_id}:${l.tipo}`, l);
   }
+  const aprovada = mes.status === "aprovada" || mes.status === "paga";
+  // Folha reaberta com títulos preservados: o quadro aparece (só leitura) para mostrar o que está travado.
+  const comTitulos = lancamentos.some((l) => l.situacao !== "erro" && l.situacao !== "cancelado");
 
   return (
     <div className="space-y-5">
@@ -145,12 +148,18 @@ export default async function PaginaMesFolha({ params }: PageProps<"/rh/folha/me
         </section>
       )}
 
-      {(mes.status === "aprovada" || mes.status === "paga") && (
+      {(aprovada || comTitulos) && (
         <section className="space-y-2">
           <h3 className="text-base font-bold">Contas a pagar no Consistem</h3>
-          <PainelConsistem id={mes.id} ligado={parametros.folhaLigado} podeLancar={podeOperar} parametrosHref={`${ROTA_FOLHA}/parametros`}
+          {!aprovada && (
+            <p className="text-sm text-amber-700">
+              Folha reaberta: os títulos lançados continuam valendo e os valores deles ficam travados. Para mudar um deles, cancele o título
+              (o gestor, depois de excluí-lo no Consistem). O que faltar é lançado depois de aprovar de novo.
+            </p>
+          )}
+          <PainelConsistem id={mes.id} ligado={parametros.folhaLigado} podeLancar={podeOperar && aprovada} parametrosHref={`${ROTA_FOLHA}/parametros`}
             descricao="Um título por pessoa e tipo (salário, férias, 13º, avulso), contra o fornecedor (Nº), com vencimento no dia do pagamento e o portador da empregadora/forma."
-            lancar={lancarNoConsistem} resolver={resolverLancamento}
+            lancar={lancarNoConsistem} resolver={resolverLancamento} cancelar={ehGestor ? cancelarLancamento : undefined}
             linhas={itens.flatMap((i) => titulosDoItem(i, mes.competencia, mes.tipo).map((t) => {
               const l = ultimo.get(`${i.id}:${t.tipo}`);
               return { chave: `${i.id}:${t.tipo}`, cod_fornecedor: i.cod_fornecedor, nome: i.nome, tipo: ROTULO_TIPO[t.tipo], valor: t.valor,

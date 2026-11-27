@@ -58,8 +58,9 @@ export async function atualizarDoCadastro(id: string): Promise<Resultado> {
   const { data, error } = await supabase.rpc("rh_fp_atualizar_do_cadastro", { p_id: id });
   if (error) return { ok: false, erro: mensagemDeErro(error) };
   revalidatePath(ROTA_FOLHA, "layout");
-  const r = data as { atualizados: number; incluidos: number };
-  return { ok: true, aviso: `Cadastro aplicado: ${r.atualizados} atualizados, ${r.incluidos} incluídos.` };
+  const r = data as { atualizados: number; incluidos: number; travados?: number };
+  const travados = r.travados ? ` ${r.travados} com título no Consistem ficaram com o fornecedor/empregador do mês (cancele o título para mudar).` : "";
+  return { ok: true, aviso: `Cadastro aplicado: ${r.atualizados} atualizados, ${r.incluidos} incluídos.${travados}` };
 }
 
 const valor = z.number().min(0).max(1_000_000);
@@ -129,7 +130,7 @@ export async function lancarNoConsistem(id: string, esperado: { quantidade: numb
   const [mes, itens, lancamentos, parametros] = await Promise.all([lerMes(supabase, id), lerItens(supabase, id), lerLancamentos(supabase, id), lerParametrosRh(supabase)]);
   if (!mes) return { ok: false, erro: "Mês não encontrado." };
   if (!parametros.folhaLigado) return { ok: false, erro: "O lançamento da folha no Consistem está desligado (aba Parâmetros)." };
-  const ativos = new Set(lancamentos.filter((l) => l.situacao !== "erro").map((l) => `${l.item_id}:${l.tipo}`));
+  const ativos = new Set(lancamentos.filter((l) => l.situacao !== "erro" && l.situacao !== "cancelado").map((l) => `${l.item_id}:${l.tipo}`));
   const alvo = titulosALancar(itens, mes.competencia, ativos, mes.tipo).filter((t) => escolhidos.has(`${t.item_id}:${t.tipo}`));
   const total = alvo.reduce((s, t) => s + Math.round(t.valor * 100), 0);
   if (alvo.length !== esperado.quantidade || total !== esperado.totalCentavos) return { ok: false, erro: "Os títulos mudaram desde que a página abriu; recarregue e confira de novo." };
@@ -156,4 +157,20 @@ export async function lancarNoConsistem(id: string, esperado: { quantidade: numb
 export async function resolverLancamento(idLancamento: string, cod: string, motivo: string): Promise<Resultado> {
   if (!uuid.safeParse(idLancamento).success) return { ok: false, erro: "Lançamento inválido." };
   return chamar("rh_fp_resolver_lancamento", { p_id: idLancamento, p_cod: cod.trim() || null, p_motivo: motivo.trim() });
+}
+
+/**
+ * Gestor: título excluído no Consistem → "cancelado" aqui (0533). A Edge Function confere no Consistem antes (só grava se o
+ * título não existir mais; pago ou ainda existente é recusado). Libera reabrir sem os outros títulos e lançar a pessoa de novo.
+ */
+export async function cancelarLancamento(idLancamento: string, motivo: string): Promise<Resultado> {
+  const negado = await exigir("gestor");
+  if (negado) return { ok: false, erro: negado };
+  if (!uuid.safeParse(idLancamento).success) return { ok: false, erro: "Lançamento inválido." };
+  if (motivo.trim().length < 3) return { ok: false, erro: "Informe o motivo." };
+  const supabase = await criarClienteServidor();
+  const { data, error } = await supabase.functions.invoke("rh-fp-cancelar-titulo", { body: { id: idLancamento, motivo: motivo.trim() } });
+  revalidatePath(ROTA_FOLHA, "layout");
+  if (error) return { ok: false, erro: await mensagemDaFuncao(error, "Não foi possível falar com a função de cancelamento. Nada foi alterado.") };
+  return { ok: true, aviso: (data as { aviso?: string }).aviso };
 }
