@@ -10,6 +10,7 @@ import { lerColaboradores, lerEmpresas } from "./dados";
 import { ConferenciaConsistem } from "./conferencia";
 import { DialogoColaborador } from "./form-colaborador";
 import { ImportarControlId } from "./importar-controlid";
+import { NovoPelaFicha } from "./ficha-registro";
 
 export const metadata: Metadata = { title: "Colaboradores" };
 
@@ -41,7 +42,7 @@ export default async function PaginaColaboradores({ searchParams }: PageProps<"/
             </Link>
           )}
         </p>
-        {podeOperar && <div className="flex gap-2"><ImportarControlId /><DialogoColaborador empresas={empresas} empregadores={empregadores} /></div>}
+        {podeOperar && <div className="flex gap-2"><ImportarControlId /><NovoPelaFicha empresas={empresas} empregadores={empregadores} /><DialogoColaborador empresas={empresas} empregadores={empregadores} /></div>}
       </div>
       {fopagSemConta.length > 0 && (
         <p className="rounded-[3px] border border-destructive/40 p-3 text-sm text-destructive">

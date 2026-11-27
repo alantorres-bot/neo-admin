@@ -12,8 +12,12 @@ export type EstadoForm = { ok?: boolean; erro?: string; chave?: number };
 type Props = {
   titulo: string;
   descricao?: string;
-  /** conteúdo do botão que abre o diálogo */
-  botao: React.ReactNode;
+  /** conteúdo do botão que abre o diálogo (sem botão: aberto pelo código, com `aberto`/`aoMudarAberto`) */
+  botao?: React.ReactNode;
+  aberto?: boolean;
+  aoMudarAberto?: (aberto: boolean) => void;
+  /** texto acima dos campos (ex.: avisos da leitura de um arquivo) */
+  topo?: React.ReactNode;
   variante?: "default" | "outline" | "ghost" | "secondary";
   tamanho?: "default" | "sm" | "xs" | "icon-sm";
   rotuloSalvar?: string;
@@ -29,8 +33,11 @@ function BotaoSalvar({ rotulo }: { rotulo: string }) {
 
 export function DialogoFormulario({
   titulo, descricao, botao, variante = "outline", tamanho = "sm", rotuloSalvar = "Salvar", mensagemSucesso, acao, children,
+  aberto: abertoFora, aoMudarAberto, topo,
 }: Props) {
-  const [aberto, setAberto] = useState(false);
+  const [abertoDentro, setAbertoDentro] = useState(false);
+  const aberto = abertoFora ?? abertoDentro;
+  const setAberto = (v: boolean) => { setAbertoDentro(v); aoMudarAberto?.(v); };
   const [erro, setErro] = useState<string>();
 
   async function enviar(dados: FormData) {
@@ -46,12 +53,13 @@ export function DialogoFormulario({
 
   return (
     <Dialog open={aberto} onOpenChange={(valor) => { setAberto(valor); if (valor) setErro(undefined); }}>
-      <DialogTrigger render={<Button variant={variante} size={tamanho} />}>{botao}</DialogTrigger>
+      {botao && <DialogTrigger render={<Button variant={variante} size={tamanho} />}>{botao}</DialogTrigger>}
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{titulo}</DialogTitle>
           {descricao && <DialogDescription>{descricao}</DialogDescription>}
         </DialogHeader>
+        {topo}
         <form action={enviar} className="grid gap-4">
           {children}
           {erro && <p role="alert" className="text-sm text-destructive">{erro}</p>}
