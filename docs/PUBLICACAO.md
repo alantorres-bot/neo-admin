@@ -76,6 +76,7 @@ de cada função). Recuperar: corrigir a causa e rodar `executar` de novo com o 
 | 25/11/2026 | 06e6a3e (PR #28 cartão: entrada na data da compra após o fechamento; leva o PR #27, 13º da folha) | neo-admin-c06e6a3ebe1b8-202611251412 | — | Alan (Claude) |
 | 26/11/2026 | cb28126 (PR #30 ponto: líder anexa atestado pelo link, RH baixa com nome padronizado; 0530 aplicada+registrada antes) | neo-admin-ccb28126acb48-202611261251 | rh-ponto-link-anexar (v1, verify_jwt false) | Alan (Claude) |
 | 27/11/2026 | bc0607e (PR #32 folha: 13º por fora dos recibos recorrentes na folha do 13º; 0531 aplicada+registrada antes) | neo-admin-cbc0607ed97d4-202611271450 | — | Alan (Claude) |
+| 27/11/2026 | 1f71311 (PR #34 colaboradores: novo pela Ficha Registro de Empregado; 0532 aplicada+registrada antes) | neo-admin-c1f71311c56cb-202611271627 | — | Alan (Claude) |
 
 ## 5. Virada (quando tudo acima estiver pronto)
 1. Combinar um horário sem uso. Avisar que as alterações feitas no sistema antigo depois do passo 2 não serão copiadas.
